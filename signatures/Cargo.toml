@@ -5,3 +5,8 @@ edition = "2024"
 
 [dependencies]
 minisign = "0.7.9"
+thiserror = "2.0.12"
+
+[dev-dependencies]
+anyhow = "1.0.98"
+tempfile = "3.20.0"
