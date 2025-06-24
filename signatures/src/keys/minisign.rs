@@ -20,6 +20,8 @@ pub mod errs {
     }
 }
 
+// Beware, if the path ends with /, it is dropped before appending .pub.
+// See https://www.reddit.com/r/rust/comments/ooh5wn/damn_trailing_slash/
 fn append_pub_extension<T: AsRef<Path>>(p: &T) -> PathBuf {
     let path = p.as_ref();
     let file_name = path
@@ -171,5 +173,16 @@ mod asfaload_index_tests {
     }
 
     #[test]
-    fn test_prevent_overwrite() {}
+    fn test_append_pub_extension() {
+        let p = Path::new("/home/asfa/key");
+        let buf_with_ext = append_pub_extension(&p);
+        let with_ext = buf_with_ext.as_path();
+        assert_eq!(with_ext.to_str(), Some("/home/asfa/key.pub"));
+
+        // Illustration that the trailing / is dropped. See append_pub_extension comment.
+        let p = Path::new("/home/asfa/key/");
+        let buf_with_ext = append_pub_extension(&p);
+        let with_ext = buf_with_ext.as_path();
+        assert_eq!(with_ext.to_str(), Some("/home/asfa/key.pub"));
+    }
 }
