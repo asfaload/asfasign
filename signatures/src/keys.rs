@@ -1,6 +1,5 @@
 mod minisign;
 use std::path::Path;
-use tap::prelude::*
 
 enum AsfaloadKeyPairs {
     Minisign(minisign::KeyPair),
@@ -30,8 +29,27 @@ trait AsfaloadSecretKey {
     {
         Self::from_bytes(&s.into_bytes())
     }
-    fn from_file<P: AsRef<Path>>(
-        path: P,
-        password: String,
-    ) -> Result<Self, Self::KeyError>  where Self:Sized;
+    fn from_file<P: AsRef<Path>>(path: P, password: String) -> Result<Self, Self::KeyError>
+    where
+        Self: Sized;
+}
+
+trait AsfaloadPublicKey {
+    type PublicKey;
+    type Signature;
+    type VerifyError;
+    type KeyError;
+    fn verify(&self, signature: Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError>;
+    fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError>
+    where
+        Self: Sized;
+    fn from_string(s: String) -> Result<Self, Self::KeyError>
+    where
+        Self: Sized,
+    {
+        Self::from_bytes(&s.into_bytes())
+    }
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::KeyError>
+    where
+        Self: Sized;
 }

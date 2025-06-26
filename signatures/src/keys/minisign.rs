@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::keys::{AsfaloadKeyPair, AsfaloadSecretKey, minisign::errs::KeyError};
+use crate::keys::{AsfaloadKeyPair, AsfaloadPublicKey, AsfaloadSecretKey};
 
 pub mod errs {
     use thiserror::Error;
@@ -23,6 +23,11 @@ pub mod errs {
     pub enum SignError {
         #[error("Signature failed")]
         SignatureFailed(#[from] minisign::PError),
+    }
+    #[derive(Error, Debug)]
+    pub enum VerifyError {
+        #[error("Verification failed")]
+        VerificationFailed(#[from] minisign::PError),
     }
 }
 
@@ -124,6 +129,35 @@ impl AsfaloadSecretKey for MinisignSecretKey {
     }
 }
 
+struct MinisignPublicKey {
+    key: minisign::PublicKey,
+}
+
+impl AsfaloadPublicKey for MinisignPublicKey {
+    type PublicKey = MinisignPublicKey;
+    type Signature = minisign::SignatureBox;
+    type VerifyError = errs::VerifyError;
+    type KeyError = errs::KeyError;
+
+    fn verify(
+        &self,
+        signature: minisign::SignatureBox,
+        data: &[u8],
+    ) -> Result<(), errs::VerifyError> {
+        let data_reader = Cursor::new(data);
+        minisign::verify(&self.key, &signature, data_reader, true, false, false)?;
+        Ok(())
+    }
+
+    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
+        let k = minisign::PublicKey::from_bytes(data)?;
+        Ok(MinisignPublicKey { key: k })
+    }
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError> {
+        let k = minisign::PublicKey::from_file(path)?;
+        Ok(MinisignPublicKey { key: k })
+    }
+}
 #[cfg(test)]
 mod asfaload_index_tests {
 
