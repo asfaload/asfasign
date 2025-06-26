@@ -106,16 +106,16 @@ struct MinisignSecretKey {
 
 impl AsfaloadSecretKey for MinisignSecretKey {
     type SecretKey = MinisignSecretKey;
-    type Signature = minisign::SignatureBox;
+    type Signature = MinisignSignature;
     type SignError = errs::SignError;
     type KeyError = errs::KeyError;
 
-    fn sign(&self, data: &[u8]) -> Result<minisign::SignatureBox, errs::SignError> {
+    fn sign(&self, data: &[u8]) -> Result<MinisignSignature, errs::SignError> {
         let data_reader = Cursor::new(data);
         // Intermediate assignment for error conversion
         // https://doc.rust-lang.org/rust-by-example/std/result/question_mark.html
         let sig = minisign::sign(None, &self.key, data_reader, None, None)?;
-        Ok(sig)
+        Ok(MinisignSignature { signature: sig })
     }
 
     fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
@@ -133,19 +133,26 @@ struct MinisignPublicKey {
     key: minisign::PublicKey,
 }
 
+struct MinisignSignature {
+    signature: minisign::SignatureBox,
+}
+
 impl AsfaloadPublicKey for MinisignPublicKey {
     type PublicKey = MinisignPublicKey;
-    type Signature = minisign::SignatureBox;
+    type Signature = MinisignSignature;
     type VerifyError = errs::VerifyError;
     type KeyError = errs::KeyError;
 
-    fn verify(
-        &self,
-        signature: minisign::SignatureBox,
-        data: &[u8],
-    ) -> Result<(), errs::VerifyError> {
+    fn verify(&self, signature: MinisignSignature, data: &[u8]) -> Result<(), errs::VerifyError> {
         let data_reader = Cursor::new(data);
-        minisign::verify(&self.key, &signature, data_reader, true, false, false)?;
+        minisign::verify(
+            &self.key,
+            &signature.signature,
+            data_reader,
+            true,
+            false,
+            false,
+        )?;
         Ok(())
     }
 
