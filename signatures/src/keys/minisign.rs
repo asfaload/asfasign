@@ -166,7 +166,9 @@ mod asfaload_index_tests {
     use anyhow::{Context, Result};
 
     use super::*;
-
+    //------------------------------------------------------------
+    // Keypairs
+    //------------------------------------------------------------
     #[test]
     fn test_new() -> Result<()> {
         // Assign keypair then save it on disk, passing a file name
@@ -191,7 +193,7 @@ mod asfaload_index_tests {
 
         // Not overwriting
         // ---------------
-        fn panic_if_writing_file(save_result: Result<&KeyPair, KeyError>) {
+        fn panic_if_writing_file(save_result: Result<&KeyPair, errs::KeyError>) {
             match save_result {
                 Ok(_) => panic!("should not overwrite existing file!"),
                 Err(e) => match e {
@@ -253,5 +255,34 @@ mod asfaload_index_tests {
         let buf_with_ext = append_pub_extension(&p);
         let with_ext = buf_with_ext.as_path();
         assert_eq!(with_ext.to_str(), Some("/home/asfa/key.pub"));
+    }
+    //------------------------------------------------------------
+    // AsfaloadSecretKey
+    //------------------------------------------------------------
+    #[test]
+    fn test_secret_key() -> Result<()> {
+        // Save keypair in temp dir
+        let temp_dir = tempfile::tempdir().unwrap();
+        let kp = minisign::KeyPair::new("mypass")?;
+        kp.save(&temp_dir)?;
+
+        // Load secret key from disk
+        let secret_key_path = temp_dir.as_ref().to_path_buf().join("key");
+        let secret_key = <MinisignSecretKey as AsfaloadSecretKey>::from_file(
+            secret_key_path,
+            "mypass".to_string(),
+        )?;
+
+        // Generate signature
+        let bytes_to_sign = &"My string to sign".to_string().into_bytes();
+        let signature = secret_key.sign(bytes_to_sign)?;
+
+        // Load public key from disk
+        let public_key_path = temp_dir.as_ref().to_path_buf().join("key.pub");
+        let public_key = <MinisignPublicKey as AsfaloadPublicKey>::from_file(public_key_path)?;
+
+        // Verify signature
+        public_key.verify(signature, bytes_to_sign)?;
+        Ok(())
     }
 }
