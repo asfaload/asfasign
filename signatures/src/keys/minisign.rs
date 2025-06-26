@@ -2,10 +2,11 @@ pub use minisign::KeyPair;
 use std::{
     ffi::OsString,
     fs,
+    io::Cursor,
     path::{Path, PathBuf},
 };
 
-use crate::keys::{AsfaloadKeyPair, minisign::errs::KeyError};
+use crate::keys::{AsfaloadKeyPair, AsfaloadSecretKey, minisign::errs::KeyError};
 
 pub mod errs {
     use thiserror::Error;
@@ -17,6 +18,11 @@ pub mod errs {
         IOError(#[from] std::io::Error),
         #[error("Refusing to overwrite existing files")]
         NotOverwriting(String),
+    }
+    #[derive(Error, Debug)]
+    pub enum SignError {
+        #[error("Signature failed")]
+        SignatureFailed(#[from] minisign::PError),
     }
 }
 
@@ -86,6 +92,35 @@ impl<'a> AsfaloadKeyPair<'a> for minisign::KeyPair {
         } else {
             save_to_file_path(self, path)
         }
+    }
+}
+
+struct MinisignSecretKey {
+    key: minisign::SecretKey,
+}
+
+impl AsfaloadSecretKey for MinisignSecretKey {
+    type SecretKey = MinisignSecretKey;
+    type Signature = minisign::SignatureBox;
+    type SignError = errs::SignError;
+    type KeyError = errs::KeyError;
+
+    fn sign(&self, data: &[u8]) -> Result<minisign::SignatureBox, errs::SignError> {
+        let data_reader = Cursor::new(data);
+        // Intermediate assignment for error conversion
+        // https://doc.rust-lang.org/rust-by-example/std/result/question_mark.html
+        let sig = minisign::sign(None, &self.key, data_reader, None, None)?;
+        Ok(sig)
+    }
+
+    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
+        let k = minisign::SecretKey::from_bytes(data)?;
+        Ok(MinisignSecretKey { key: k })
+    }
+
+    fn from_file<P: AsRef<Path>>(path: P, password: String) -> Result<Self, errs::KeyError> {
+        let k = minisign::SecretKey::from_file(path, Some(password))?;
+        Ok(MinisignSecretKey { key: k })
     }
 }
 
