@@ -6,7 +6,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::keys::{AsfaloadKeyPair, AsfaloadPublicKey, AsfaloadSecretKey};
+use crate::keys::{
+    AsfaloadKeyPair, AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSecretKey,
+    AsfaloadSecretKeyTrait, AsfaloadSignature,
+};
 
 pub mod errs {
     use thiserror::Error;
@@ -100,50 +103,37 @@ impl<'a> AsfaloadKeyPair<'a> for minisign::KeyPair {
     }
 }
 
-struct MinisignSecretKey {
-    key: minisign::SecretKey,
-}
-
-impl AsfaloadSecretKey for MinisignSecretKey {
-    type SecretKey = MinisignSecretKey;
-    type Signature = MinisignSignature;
+impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
+    type SecretKey = minisign::SecretKey;
+    type Signature = AsfaloadSignature<minisign::SignatureBox>;
     type SignError = errs::SignError;
     type KeyError = errs::KeyError;
 
-    fn sign(&self, data: &[u8]) -> Result<MinisignSignature, errs::SignError> {
+    fn sign(&self, data: &[u8]) -> Result<Self::Signature, errs::SignError> {
         let data_reader = Cursor::new(data);
         // Intermediate assignment for error conversion
         // https://doc.rust-lang.org/rust-by-example/std/result/question_mark.html
         let sig = minisign::sign(None, &self.key, data_reader, None, None)?;
-        Ok(MinisignSignature { signature: sig })
+        Ok(AsfaloadSignature { signature: sig })
     }
 
     fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
         let k = minisign::SecretKey::from_bytes(data)?;
-        Ok(MinisignSecretKey { key: k })
+        Ok(AsfaloadSecretKey { key: k })
     }
 
     fn from_file<P: AsRef<Path>>(path: P, password: String) -> Result<Self, errs::KeyError> {
         let k = minisign::SecretKey::from_file(path, Some(password))?;
-        Ok(MinisignSecretKey { key: k })
+        Ok(AsfaloadSecretKey { key: k })
     }
 }
 
-struct MinisignPublicKey {
-    key: minisign::PublicKey,
-}
-
-struct MinisignSignature {
-    signature: minisign::SignatureBox,
-}
-
-impl AsfaloadPublicKey for MinisignPublicKey {
-    type PublicKey = MinisignPublicKey;
-    type Signature = MinisignSignature;
+impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
+    type Signature = AsfaloadSignature<minisign::SignatureBox>;
     type VerifyError = errs::VerifyError;
     type KeyError = errs::KeyError;
 
-    fn verify(&self, signature: MinisignSignature, data: &[u8]) -> Result<(), errs::VerifyError> {
+    fn verify(&self, signature: Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError> {
         let data_reader = Cursor::new(data);
         minisign::verify(
             &self.key,
@@ -158,11 +148,11 @@ impl AsfaloadPublicKey for MinisignPublicKey {
 
     fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
         let k = minisign::PublicKey::from_bytes(data)?;
-        Ok(MinisignPublicKey { key: k })
+        Ok(AsfaloadPublicKey { key: k })
     }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError> {
         let k = minisign::PublicKey::from_file(path)?;
-        Ok(MinisignPublicKey { key: k })
+        Ok(AsfaloadPublicKey { key: k })
     }
 }
 #[cfg(test)]
@@ -275,10 +265,7 @@ mod asfaload_index_tests {
 
         // Load secret key from disk
         let secret_key_path = temp_dir.as_ref().to_path_buf().join("key");
-        let secret_key = <MinisignSecretKey as AsfaloadSecretKey>::from_file(
-            secret_key_path,
-            "mypass".to_string(),
-        )?;
+        let secret_key = AsfaloadSecretKey::from_file(secret_key_path, "mypass".to_string())?;
 
         // Generate signature
         let bytes_to_sign = &"My string to sign".to_string().into_bytes();
@@ -286,7 +273,7 @@ mod asfaload_index_tests {
 
         // Load public key from disk
         let public_key_path = temp_dir.as_ref().to_path_buf().join("key.pub");
-        let public_key = <MinisignPublicKey as AsfaloadPublicKey>::from_file(public_key_path)?;
+        let public_key = AsfaloadPublicKey::from_file(public_key_path)?;
 
         // Verify signature
         public_key.verify(signature, bytes_to_sign)?;

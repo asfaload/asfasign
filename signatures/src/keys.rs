@@ -14,7 +14,7 @@ trait AsfaloadKeyPair<'a> {
     fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, Self::KeyErr>;
 }
 
-trait AsfaloadSecretKey {
+trait AsfaloadSecretKeyTrait {
     type SecretKey;
     type Signature;
     type SignError;
@@ -34,8 +34,10 @@ trait AsfaloadSecretKey {
         Self: Sized;
 }
 
-trait AsfaloadPublicKey {
-    type PublicKey;
+struct AsfaloadSecretKey<K> {
+    key: K,
+}
+trait AsfaloadPublicKeyTrait {
     type Signature;
     type VerifyError;
     type KeyError;
@@ -52,4 +54,13 @@ trait AsfaloadPublicKey {
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::KeyError>
     where
         Self: Sized;
+}
+
+struct AsfaloadPublicKey<K> {
+    key: K,
+}
+
+#[derive(Debug)]
+struct AsfaloadSignature<S> {
+    signature: S,
 }
