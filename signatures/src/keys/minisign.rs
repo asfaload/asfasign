@@ -7,8 +7,8 @@ use std::{
 };
 
 use crate::keys::{
-    AsfaloadKeyPair, AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSecretKey,
-    AsfaloadSecretKeyTrait, AsfaloadSignature,
+    AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
+    AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
 };
 
 pub mod errs {
@@ -32,6 +32,12 @@ pub mod errs {
         #[error("Verification failed")]
         VerificationFailed(#[from] minisign::PError),
     }
+
+    #[derive(Error, Debug)]
+    pub enum SignatureError {
+        #[error("")]
+        VerificationFailed(#[from] minisign::PError),
+    }
 }
 
 // Beware, if the path ends with /, it is dropped before appending .pub.
@@ -52,30 +58,35 @@ fn append_pub_extension<T: AsRef<Path>>(p: &T) -> PathBuf {
     pub_path_buf
 }
 fn save_to_file_path<T: AsRef<Path>>(
-    keypair: &minisign::KeyPair,
+    keypair: &AsfaloadKeyPair<minisign::KeyPair>,
     p: T,
-) -> Result<&minisign::KeyPair, errs::KeyError> {
+) -> Result<&AsfaloadKeyPair<minisign::KeyPair>, errs::KeyError> {
     let path = p.as_ref();
     // Use "key"" as default name
     // Secret key to disk
-    let sk_bytes = keypair.sk.to_box(None)?.to_bytes();
-    let () = fs::write(path, &sk_bytes)?;
+    let sk_string = keypair.key_pair.sk.to_box(None)?.into_string();
+    let () = fs::write(path, &sk_string)?;
 
     // Pub key to disk
-    let pk_bytes = keypair.pk.to_box()?.to_bytes();
+    let pk_string = keypair.key_pair.pk.to_box()?.into_string();
     let pub_path_buf = append_pub_extension(&p);
-
-    let () = fs::write(pub_path_buf.as_path(), &pk_bytes)?;
+    let () = fs::write(pub_path_buf.as_path(), &pk_string)?;
+    let pk_string2 = keypair.key_pair.pk.to_box()?.into_string();
 
     Ok(keypair)
 }
-impl<'a> AsfaloadKeyPair<'a> for minisign::KeyPair {
+impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
+    type PublicKey = minisign::PublicKey;
+    type SecretKey = minisign::SecretKey;
     type KeyErr = errs::KeyError;
     fn new(password: &str) -> Result<Self, errs::KeyError> {
         let kp = KeyPair::generate_encrypted_keypair(Some(password.to_string()))?;
-        Ok(kp)
+        Ok(AsfaloadKeyPair { key_pair: kp })
     }
-    fn save<T: AsRef<Path>>(&self, p: T) -> Result<&KeyPair, errs::KeyError> {
+    fn save<T: AsRef<Path>>(
+        &self,
+        p: T,
+    ) -> Result<&AsfaloadKeyPair<minisign::KeyPair>, errs::KeyError> {
         let path = p.as_ref();
         // If this is a path to an existing dir
         if path.is_dir() {
@@ -101,6 +112,12 @@ impl<'a> AsfaloadKeyPair<'a> for minisign::KeyPair {
             save_to_file_path(self, path)
         }
     }
+    fn public_key(&self) -> &Self::PublicKey {
+        &self.key_pair.pk
+    }
+    fn secret_key(&self) -> &Self::SecretKey {
+        &self.key_pair.sk
+    }
 }
 
 impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
@@ -122,8 +139,9 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
         Ok(AsfaloadSecretKey { key: k })
     }
 
-    fn from_file<P: AsRef<Path>>(path: P, password: String) -> Result<Self, errs::KeyError> {
-        let k = minisign::SecretKey::from_file(path, Some(password))?;
+    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, errs::KeyError> {
+        let k = minisign::SecretKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
+            .into_secret_key(Some(password.into()))?;
         Ok(AsfaloadSecretKey { key: k })
     }
 }
@@ -151,8 +169,24 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         Ok(AsfaloadPublicKey { key: k })
     }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError> {
-        let k = minisign::PublicKey::from_file(path)?;
+        let k = minisign::PublicKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
+            .into_public_key()?;
         Ok(AsfaloadPublicKey { key: k })
+    }
+}
+
+impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
+    type SignatureError = errs::SignatureError;
+    fn from_string(
+        data: &str,
+    ) -> Result<AsfaloadSignature<minisign::SignatureBox>, errs::SignatureError> {
+        let s = minisign::SignatureBox::from_string(data)?;
+        Ok(AsfaloadSignature { signature: s })
+    }
+
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError> {
+        let s = minisign::SignatureBox::from_file(path)?;
+        Ok(AsfaloadSignature { signature: s })
     }
 }
 #[cfg(test)]
@@ -168,29 +202,41 @@ mod asfaload_index_tests {
     //------------------------------------------------------------
     #[test]
     fn test_new() -> Result<()> {
-        // Assign keypair then save it on disk, passing a file name
-        let kp: minisign::KeyPair = AsfaloadKeyPair::new("mypass")?;
-        let temp_dir = tempfile::tempdir().context("Unable to create a temporary directory")?;
-        let temp_file_path = temp_dir.path().join("mykey");
-        let kpr = kp.save(&temp_file_path)?;
-        assert!(temp_dir.path().join("mykey").exists());
-        assert!(temp_dir.path().join("mykey.pub").exists());
-        assert_eq!(kp.pk, kpr.pk);
-        assert_eq!(kp.sk, kpr.sk);
-
         // Assign keypair then save it on disk, passing a dir
-        let kp: minisign::KeyPair = AsfaloadKeyPair::new("mypass")?;
+        let kp = AsfaloadKeyPair::new("mypass")?;
         let temp_dir = tempfile::tempdir().context("Unable to create a temporary directory")?;
         let temp_file_path = temp_dir.path();
         let kpr = kp.save(temp_file_path)?;
         assert!(temp_dir.path().join("key").exists());
         assert!(temp_dir.path().join("key.pub").exists());
-        assert_eq!(kp.pk, kpr.pk);
-        assert_eq!(kp.sk, kpr.sk);
+        // Load keys from just created files
+        let sk = AsfaloadSecretKey::from_file(temp_dir.path().join("key"), "mypass")?;
+        let pk = AsfaloadPublicKey::from_file(temp_dir.path().join("key.pub"))?;
+        // The secret key returned in the key pair is encrypted and unusable as such.
+        // To decrypted, put it in the box and reopen the box.
+        // See https://github.com/jedisct1/rust-minisign/issues/3
+        let sk_box = kp.key_pair.sk.to_box(None)?;
+        let decrypted_sk = sk_box.into_secret_key(Some("mypass".into()))?;
+        assert_eq!(sk.key, decrypted_sk);
+        assert_eq!(pk.key, kpr.key_pair.pk);
+        // Check we can sign and verify with these keys
+        let data = b"lorem ipsum";
+        let sig = sk.sign(data)?;
+        pk.verify(sig, data)?;
 
-        // Not overwriting
-        // ---------------
-        fn panic_if_writing_file(save_result: Result<&KeyPair, errs::KeyError>) {
+        // Assign keypair then save it on disk, passing a file name
+        let kp = AsfaloadKeyPair::new("mypass")?;
+        let temp_dir = tempfile::tempdir().context("Unable to create a temporary directory")?;
+        let temp_file_path = temp_dir.path().join("mykey");
+        let _kpr = kp.save(&temp_file_path)?;
+        assert!(temp_dir.path().join("mykey").exists());
+        assert!(temp_dir.path().join("mykey.pub").exists());
+
+        // Saving keys does not overwrite existing files
+        // ---------------------------------------------
+        fn panic_if_writing_file(
+            save_result: Result<&AsfaloadKeyPair<minisign::KeyPair>, errs::KeyError>,
+        ) {
             match save_result {
                 Ok(_) => panic!("should not overwrite existing file!"),
                 Err(e) => match e {
@@ -203,7 +249,7 @@ mod asfaload_index_tests {
         // Default name "key"
         let existing_default_path = temp_dir.path().join("key");
         File::create(&existing_default_path)?;
-        let kp = minisign::KeyPair::new("mypass")?;
+        let kp = AsfaloadKeyPair::new("mypass")?;
         let save_result = kp.save(&temp_dir);
         panic_if_writing_file(save_result);
         fs::remove_file(existing_default_path)?;
@@ -211,7 +257,7 @@ mod asfaload_index_tests {
         // Default name "key.pub"
         let existing_default_path = temp_dir.path().join("key.pub");
         File::create(&existing_default_path)?;
-        let kp = minisign::KeyPair::new("mypass")?;
+        let kp = AsfaloadKeyPair::new("mypass")?;
         let save_result = kp.save(&temp_dir);
         panic_if_writing_file(save_result);
         fs::remove_file(existing_default_path)?;
@@ -219,7 +265,7 @@ mod asfaload_index_tests {
         // Custom file name, priv exists
         let temp_file_path = temp_dir.path().join("mykey");
         File::create(&temp_file_path)?;
-        let kp = minisign::KeyPair::new("mypass")?;
+        let kp = AsfaloadKeyPair::new("mypass")?;
         let save_result = kp.save(&temp_file_path);
         panic_if_writing_file(save_result);
         fs::remove_file(&temp_file_path)?;
@@ -227,7 +273,7 @@ mod asfaload_index_tests {
         // Custom file name, pub exists
         let pub_temp_file_path = temp_dir.path().join("mykey.pub");
         File::create(&pub_temp_file_path)?;
-        let kp = minisign::KeyPair::new("mypass")?;
+        let kp = AsfaloadKeyPair::new("mypass")?;
         let save_result = kp.save(&temp_file_path);
         panic_if_writing_file(save_result);
         fs::remove_file(pub_temp_file_path)?;
@@ -235,7 +281,7 @@ mod asfaload_index_tests {
         // Call new and save on the same line
         let temp_dir = tempfile::tempdir().context("Unable to create a temporary directory")?;
         let temp_file_path = temp_dir.path().join("key");
-        let _kp = minisign::KeyPair::new("mypass")?.save(temp_file_path)?;
+        let _kp = AsfaloadKeyPair::new("mypass")?.save(temp_file_path)?;
 
         Ok(())
     }
@@ -260,12 +306,12 @@ mod asfaload_index_tests {
     fn test_secret_key() -> Result<()> {
         // Save keypair in temp dir
         let temp_dir = tempfile::tempdir().unwrap();
-        let kp = minisign::KeyPair::new("mypass")?;
+        let kp = AsfaloadKeyPair::new("mypass")?;
         kp.save(&temp_dir)?;
 
         // Load secret key from disk
         let secret_key_path = temp_dir.as_ref().to_path_buf().join("key");
-        let secret_key = AsfaloadSecretKey::from_file(secret_key_path, "mypass".to_string())?;
+        let secret_key = AsfaloadSecretKey::from_file(secret_key_path, "mypass")?;
 
         // Generate signature
         let bytes_to_sign = &"My string to sign".to_string().into_bytes();
