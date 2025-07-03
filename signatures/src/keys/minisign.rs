@@ -76,8 +76,8 @@ fn save_to_file_path<T: AsRef<Path>>(
     Ok(keypair)
 }
 impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
-    type PublicKey = minisign::PublicKey;
-    type SecretKey = minisign::SecretKey;
+    type PublicKey = AsfaloadPublicKey<minisign::PublicKey>;
+    type SecretKey = AsfaloadSecretKey<minisign::SecretKey>;
     type KeyErr = errs::KeyError;
     fn new(password: &str) -> Result<Self, errs::KeyError> {
         let kp = KeyPair::generate_encrypted_keypair(Some(password.to_string()))?;
@@ -112,11 +112,21 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
             save_to_file_path(self, path)
         }
     }
-    fn public_key(&self) -> &Self::PublicKey {
-        &self.key_pair.pk
+    fn public_key(&self) -> Self::PublicKey {
+        AsfaloadPublicKey {
+            key: self.key_pair.pk.clone(),
+        }
     }
-    fn secret_key(&self) -> &Self::SecretKey {
-        &self.key_pair.sk
+    fn secret_key(&self, password: &str) -> Result<Self::SecretKey, Self::KeyErr> {
+        let r = AsfaloadSecretKey {
+            key: self
+                .key_pair
+                .sk
+                .to_box(None)?
+                .into_secret_key(Some(password.into()))?
+                .clone(),
+        };
+        Ok(r)
     }
 }
 

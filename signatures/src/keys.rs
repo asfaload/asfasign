@@ -19,8 +19,13 @@ trait AsfaloadKeyPairTrait<'a> {
     // in this newly created filr, and save the public key in the same filename with added suffx
     // '.pub'
     fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, Self::KeyErr>;
-    fn secret_key(&self) -> &Self::SecretKey;
-    fn public_key(&self) -> &Self::PublicKey;
+    // As we use minisign as the first (and initially only) signing scheme, our proposed API is
+    // modelled after it. When we generate a minisign key pai, the private key is encrypted and
+    // needs to be decrypted for use.
+    // This method returns the decrypted secret key, and thus requires the decryption password as
+    // argument.
+    fn secret_key(&self, password: &str) -> Result<Self::SecretKey, Self::KeyErr>;
+    fn public_key(&self) -> Self::PublicKey;
 }
 
 #[derive(Debug)]
@@ -28,6 +33,8 @@ struct AsfaloadKeyPair<T> {
     key_pair: T,
 }
 
+// This trait should never give access to the private key it manages, as it is non-encrypted (for
+// minisign)
 trait AsfaloadSecretKeyTrait {
     type SecretKey;
     type Signature;
@@ -48,7 +55,10 @@ trait AsfaloadSecretKeyTrait {
         Self: Sized;
 }
 
+// Struct to store a secret key immediately usable.
+// This means that for minisign, it holds the non-encrypted secret key.
 struct AsfaloadSecretKey<K> {
+    // Keep it private as for minisign it is the decrypted key, i.e. non password protected.
     key: K,
 }
 trait AsfaloadPublicKeyTrait {
