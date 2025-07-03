@@ -210,6 +210,14 @@ mod asfaload_index_tests {
     //------------------------------------------------------------
     // Keypairs
     //------------------------------------------------------------
+    // Helper to initialise a new key pair and get its keys
+    fn get_key_pair() -> Result<(
+        AsfaloadPublicKey<minisign::PublicKey>,
+        AsfaloadSecretKey<minisign::SecretKey>,
+    )> {
+        let kp = AsfaloadKeyPair::new("mypass")?;
+        Ok((kp.public_key(), kp.secret_key("mypass")?))
+    }
     #[test]
     fn test_new() -> Result<()> {
         // Assign keypair then save it on disk, passing a dir
