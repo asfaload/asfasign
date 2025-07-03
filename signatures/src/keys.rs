@@ -91,10 +91,19 @@ struct AsfaloadSignature<S> {
 
 trait AsfaloadSignatureTrait {
     type SignatureError;
+    fn to_string(&self) -> String;
     fn from_string(s: &str) -> Result<Self, Self::SignatureError>
     where
         Self: Sized;
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::SignatureError>
     where
         Self: Sized;
+
+    // As we need to serialise to json, and json does not support multiline strings, we ssupport
+    // the serialisation to base64 format.
+    fn from_b64(s: &str) -> Result<Self, Self::SignatureError>
+    where
+        Self: Sized;
+
+    fn to_b64(&self) -> String;
 }

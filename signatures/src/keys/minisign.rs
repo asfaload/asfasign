@@ -1,3 +1,4 @@
+use base64::{Engine, prelude::BASE64_STANDARD};
 pub use minisign::KeyPair;
 use std::{
     ffi::OsString,
@@ -12,6 +13,7 @@ use crate::keys::{
 };
 
 pub mod errs {
+    use base64::DecodeError;
     use thiserror::Error;
     #[derive(Error, Debug)]
     pub enum KeyError {
@@ -35,8 +37,12 @@ pub mod errs {
 
     #[derive(Error, Debug)]
     pub enum SignatureError {
-        #[error("")]
+        #[error("Signature verification failed")]
         VerificationFailed(#[from] minisign::PError),
+        #[error("base64 decoding of signature failed")]
+        Base64DecodeFailed(#[from] base64::DecodeError),
+        #[error("Invalid Utf8 string")]
+        Utf8DecodeFailed(#[from] std::str::Utf8Error),
     }
 }
 
@@ -187,6 +193,11 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
 
 impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
     type SignatureError = errs::SignatureError;
+
+    fn to_string(&self) -> String {
+        self.signature.to_string()
+    }
+
     fn from_string(
         data: &str,
     ) -> Result<AsfaloadSignature<minisign::SignatureBox>, errs::SignatureError> {
@@ -197,6 +208,18 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError> {
         let s = minisign::SignatureBox::from_file(path)?;
         Ok(AsfaloadSignature { signature: s })
+    }
+    fn from_b64(s: &str) -> Result<Self, Self::SignatureError>
+    where
+        Self: Sized,
+    {
+        let s = BASE64_STANDARD.decode(s)?;
+        Self::from_string(std::str::from_utf8(&s)?)
+    }
+
+    fn to_b64(&self) -> String {
+        let s = self.signature.to_string();
+        BASE64_STANDARD.encode(s)
     }
 }
 #[cfg(test)]
@@ -341,6 +364,24 @@ mod asfaload_index_tests {
 
         // Verify signature
         public_key.verify(&signature, bytes_to_sign)?;
+        Ok(())
+    }
+    #[test]
+    fn test_signature_from_string_formats() -> Result<()> {
+        let (pk, sk) = get_key_pair()?;
+        let data = b"lorem ipsum";
+        let sig = sk.sign(data)?;
+
+        // String serialisation
+        let sig_str = sig.to_string();
+        let sig_from_str = AsfaloadSignature::from_string(sig_str.as_str())?;
+        pk.verify(&sig_from_str, data)?;
+
+        // Base64 serialisation
+        let sig_b64 = sig.to_b64();
+        let sig_from_b64 = AsfaloadSignature::from_b64(&sig_b64)?;
+        pk.verify(&sig_from_b64, data)?;
+
         Ok(())
     }
 }
