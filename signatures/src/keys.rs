@@ -55,7 +55,7 @@ trait AsfaloadPublicKeyTrait {
     type Signature;
     type VerifyError;
     type KeyError;
-    fn verify(&self, signature: Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError>;
+    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError>;
     fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError>
     where
         Self: Sized;

@@ -151,7 +151,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     type VerifyError = errs::VerifyError;
     type KeyError = errs::KeyError;
 
-    fn verify(&self, signature: Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError> {
+    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError> {
         let data_reader = Cursor::new(data);
         minisign::verify(
             &self.key,
@@ -222,7 +222,7 @@ mod asfaload_index_tests {
         // Check we can sign and verify with these keys
         let data = b"lorem ipsum";
         let sig = sk.sign(data)?;
-        pk.verify(sig, data)?;
+        pk.verify(&sig, data)?;
 
         // Assign keypair then save it on disk, passing a file name
         let kp = AsfaloadKeyPair::new("mypass")?;
@@ -322,7 +322,7 @@ mod asfaload_index_tests {
         let public_key = AsfaloadPublicKey::from_file(public_key_path)?;
 
         // Verify signature
-        public_key.verify(signature, bytes_to_sign)?;
+        public_key.verify(&signature, bytes_to_sign)?;
         Ok(())
     }
 }
