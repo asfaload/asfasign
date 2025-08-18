@@ -179,6 +179,10 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         Ok(())
     }
 
+    fn to_base64(&self) -> String {
+        self.key.to_base64()
+    }
+
     fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError> {
         let k = minisign::PublicKey::from_bytes(data)?;
         Ok(AsfaloadPublicKey { key: k })
@@ -350,7 +354,7 @@ mod asfaload_index_tests {
     // AsfaloadSecretKey
     //------------------------------------------------------------
     #[test]
-    fn test_loading_keys() -> Result<()> {
+    fn test_keys_methods() -> Result<()> {
         // Save keypair in temp dir
         let temp_dir = tempfile::tempdir().unwrap();
         let kp = AsfaloadKeyPair::new("mypass")?;
@@ -383,6 +387,10 @@ mod asfaload_index_tests {
         })?;
         let public_key_from_string = AsfaloadPublicKey::from_base64(public_key_string.to_string())?;
         public_key_from_string.verify(&signature, bytes_to_sign)?;
+
+        // Test AsfaloadPublicKey::from_base64
+        let b64 = public_key_from_string.to_base64();
+        assert_eq!(b64, public_key_string);
 
         Ok(())
     }
