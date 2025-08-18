@@ -183,6 +183,8 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         let k = minisign::PublicKey::from_bytes(data)?;
         Ok(AsfaloadPublicKey { key: k })
     }
+    // When saving to a file, we store a PublicKeyBox as encouraged by minisign for storage.
+    // Other methods manipulate the PublickKey directly
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::KeyError> {
         let k = minisign::PublicKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
             .into_public_key()?;
