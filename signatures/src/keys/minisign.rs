@@ -77,7 +77,6 @@ fn save_to_file_path<T: AsRef<Path>>(
     let pk_string = keypair.key_pair.pk.to_box()?.into_string();
     let pub_path_buf = append_pub_extension(&p);
     let () = fs::write(pub_path_buf.as_path(), &pk_string)?;
-    let pk_string2 = keypair.key_pair.pk.to_box()?.into_string();
 
     Ok(keypair)
 }
