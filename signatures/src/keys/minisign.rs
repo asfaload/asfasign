@@ -179,11 +179,11 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         Ok(())
     }
 
-    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
+    fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError> {
         let k = minisign::PublicKey::from_bytes(data)?;
         Ok(AsfaloadPublicKey { key: k })
     }
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError> {
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::KeyError> {
         let k = minisign::PublicKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
             .into_public_key()?;
         Ok(AsfaloadPublicKey { key: k })
