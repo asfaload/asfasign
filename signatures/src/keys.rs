@@ -69,7 +69,7 @@ trait AsfaloadPublicKeyTrait {
     fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError>
     where
         Self: Sized;
-    fn from_string(s: String) -> Result<Self, Self::KeyError>
+    fn from_base64(s: String) -> Result<Self, Self::KeyError>
     where
         Self: Sized,
     {
