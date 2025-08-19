@@ -190,23 +190,9 @@ mod tests {
         assert_eq!(config.master_keys[0].signers[0].kind, SignerKind::Key);
 
         assert!(config.admin_keys.is_some());
-        assert_eq!(
-            config
-                .admin_keys
-                .as_ref()
-                .expect("Should be some as checked earlier")[0]
-                .threshold,
-            2
-        );
-        assert_eq!(
-            config
-                .admin_keys
-                .as_ref()
-                .expect("Should be some as checked earlier")[0]
-                .signers[0]
-                .kind,
-            SignerKind::Key
-        );
+        let admin_keys = config.admin_keys.as_ref().expect("admin_keys should be present");
+        assert_eq!(admin_keys[0].threshold, 2);
+        assert_eq!(admin_keys[0].signers[0].kind, SignerKind::Key);
 
         let json_str_with_invalid_b64_keys = r#"
     {
