@@ -1,4 +1,4 @@
-mod minisign;
+pub mod minisign;
 use std::path::Path;
 
 enum AsfaloadKeyPairs {
@@ -61,7 +61,7 @@ struct AsfaloadSecretKey<K> {
     // Keep it private as for minisign it is the decrypted key, i.e. non password protected.
     key: K,
 }
-trait AsfaloadPublicKeyTrait {
+pub trait AsfaloadPublicKeyTrait {
     type Signature;
     type VerifyError;
     type KeyError;
@@ -81,12 +81,12 @@ trait AsfaloadPublicKeyTrait {
         Self: Sized;
 }
 
-struct AsfaloadPublicKey<K> {
+pub struct AsfaloadPublicKey<K> {
     key: K,
 }
 
 #[derive(Debug)]
-struct AsfaloadSignature<S> {
+pub struct AsfaloadSignature<S> {
     signature: S,
 }
 
