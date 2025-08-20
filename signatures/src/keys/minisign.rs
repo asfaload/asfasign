@@ -77,7 +77,6 @@ fn save_to_file_path<T: AsRef<Path>>(
     let pk_string = keypair.key_pair.pk.to_box()?.into_string();
     let pub_path_buf = append_pub_extension(&p);
     let () = fs::write(pub_path_buf.as_path(), &pk_string)?;
-    let pk_string2 = keypair.key_pair.pk.to_box()?.into_string();
 
     Ok(keypair)
 }
@@ -180,13 +179,24 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         Ok(())
     }
 
-    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
+    fn to_base64(&self) -> String {
+        self.key.to_base64()
+    }
+
+    fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError> {
         let k = minisign::PublicKey::from_bytes(data)?;
         Ok(AsfaloadPublicKey { key: k })
     }
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError> {
+    // When saving to a file, we store a PublicKeyBox as encouraged by minisign for storage.
+    // Other methods manipulate the PublickKey directly
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::KeyError> {
         let k = minisign::PublicKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
             .into_public_key()?;
+        Ok(AsfaloadPublicKey { key: k })
+    }
+
+    fn from_base64(s: String) -> Result<Self, Self::KeyError> {
+        let k = minisign::PublicKey::from_base64(s.as_str())?;
         Ok(AsfaloadPublicKey { key: k })
     }
 }
@@ -344,7 +354,7 @@ mod asfaload_index_tests {
     // AsfaloadSecretKey
     //------------------------------------------------------------
     #[test]
-    fn test_secret_key() -> Result<()> {
+    fn test_keys_methods() -> Result<()> {
         // Save keypair in temp dir
         let temp_dir = tempfile::tempdir().unwrap();
         let kp = AsfaloadKeyPair::new("mypass")?;
@@ -360,10 +370,28 @@ mod asfaload_index_tests {
 
         // Load public key from disk
         let public_key_path = temp_dir.as_ref().to_path_buf().join("key.pub");
-        let public_key = AsfaloadPublicKey::from_file(public_key_path)?;
+        let public_key = AsfaloadPublicKey::from_file(&public_key_path)?;
 
         // Verify signature
         public_key.verify(&signature, bytes_to_sign)?;
+
+        // Load key from base64 and validate
+        let value_read = fs::read_to_string(&public_key_path)?;
+        // When we saved the key to disk using the Box, it wrote a comment
+        // followed by the base64 encoded key. Thus here we only need the second line.
+        let public_key_string = value_read.lines().nth(1).ok_or_else(|| {
+            errs::KeyError::IOError(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Public key file does not contain a second line",
+            ))
+        })?;
+        let public_key_from_string = AsfaloadPublicKey::from_base64(public_key_string.to_string())?;
+        public_key_from_string.verify(&signature, bytes_to_sign)?;
+
+        // Test AsfaloadPublicKey::from_base64
+        let b64 = public_key_from_string.to_base64();
+        assert_eq!(b64, public_key_string);
+
         Ok(())
     }
     #[test]
