@@ -2,6 +2,7 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 pub use minisign::KeyPair;
 use std::{
     ffi::OsString,
+    fmt::Display,
     fs,
     io::Cursor,
     path::{Path, PathBuf},
@@ -230,6 +231,22 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
     fn to_b64(&self) -> String {
         let s = self.signature.to_string();
         BASE64_STANDARD.encode(s)
+    }
+}
+
+use std::hash::{Hash, Hasher};
+
+impl PartialEq for AsfaloadPublicKey<minisign::PublicKey> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key.to_base64() == other.key.to_base64()
+    }
+}
+
+impl Eq for AsfaloadPublicKey<minisign::PublicKey> {}
+
+impl Hash for AsfaloadPublicKey<minisign::PublicKey> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.key.to_base64().hash(state);
     }
 }
 #[cfg(test)]

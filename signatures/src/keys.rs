@@ -1,12 +1,12 @@
 pub mod minisign;
 use std::path::Path;
 
-enum AsfaloadKeyPairs {
+pub enum AsfaloadKeyPairs {
     Minisign(minisign::KeyPair),
 }
 
 // Trait that we will implement for keypairs we support. Inintially only minisign::KeyPair
-trait AsfaloadKeyPairTrait<'a> {
+pub trait AsfaloadKeyPairTrait<'a> {
     type PublicKey;
     type SecretKey;
     type KeyErr;
@@ -29,13 +29,13 @@ trait AsfaloadKeyPairTrait<'a> {
 }
 
 #[derive(Debug)]
-struct AsfaloadKeyPair<T> {
+pub struct AsfaloadKeyPair<T> {
     key_pair: T,
 }
 
 // This trait should never give access to the private key it manages, as it is non-encrypted (for
 // minisign)
-trait AsfaloadSecretKeyTrait {
+pub trait AsfaloadSecretKeyTrait {
     type SecretKey;
     type Signature;
     type SignError;
@@ -57,14 +57,14 @@ trait AsfaloadSecretKeyTrait {
 
 // Struct to store a secret key immediately usable.
 // This means that for minisign, it holds the non-encrypted secret key.
-struct AsfaloadSecretKey<K> {
+pub struct AsfaloadSecretKey<K> {
     // Keep it private as for minisign it is the decrypted key, i.e. non password protected.
     key: K,
 }
 pub trait AsfaloadPublicKeyTrait {
     type Signature;
     type VerifyError;
-    type KeyError;
+    type KeyError: std::fmt::Display;
     fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError>;
     fn to_base64(&self) -> String;
     fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError>
@@ -81,6 +81,7 @@ pub trait AsfaloadPublicKeyTrait {
         Self: Sized;
 }
 
+#[derive(Debug, Clone)]
 pub struct AsfaloadPublicKey<K> {
     key: K,
 }
@@ -90,8 +91,8 @@ pub struct AsfaloadSignature<S> {
     signature: S,
 }
 
-trait AsfaloadSignatureTrait {
-    type SignatureError;
+pub trait AsfaloadSignatureTrait {
+    type SignatureError: std::fmt::Display;
     fn to_string(&self) -> String;
     fn from_string(s: &str) -> Result<Self, Self::SignatureError>
     where
