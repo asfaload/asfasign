@@ -94,14 +94,15 @@ where
 
     /// Check if all groups in a category meet their thresholds
     pub fn check_groups(groups: &[SignerGroup<P>], signatures: &HashMap<P, S>) -> bool {
-        groups.iter().all(|group| {
-            let count = group
-                .signers
-                .iter()
-                .filter(|signer| signatures.contains_key(&signer.data.pubkey))
-                .count();
-            count >= group.threshold as usize
-        })
+        !groups.is_empty()
+            && groups.iter().all(|group| {
+                let count = group
+                    .signers
+                    .iter()
+                    .filter(|signer| signatures.contains_key(&signer.data.pubkey))
+                    .count();
+                count >= group.threshold as usize
+            })
     }
 }
 
@@ -377,8 +378,8 @@ mod tests {
         assert!(!agg_sig.is_admin_complete(&signers_config_mixed));
         // Empty admin_keys array is never complete
         let mut signers_config_empty_admin = signers_config_mixed.clone();
-        signers_config_empty_admin.admin_keys = None;
-        assert!(!agg_sig.is_admin_complete(&signers_config_mixed));
+        signers_config_empty_admin.admin_keys = Some([].to_vec());
+        assert!(!agg_sig.is_admin_complete(&signers_config_empty_admin));
 
         assert_eq!(agg_sig.origin, "test_origin");
     }
@@ -744,5 +745,15 @@ mod tests {
         test_groups
             .iter()
             .for_each(|g| check_validity(g.0.to_string(), &g.1, g.2));
+
+        // Empty groups are always incomplete
+        assert!(!AggregateSignature::<_, _>::check_groups(
+            &[],
+            &HashMap::<AsfaloadPublicKey<minisign::PublicKey>, AsfaloadSignature<SignatureBox>>::new(),
+        ));
+        assert!(!AggregateSignature::<_, _>::check_groups(
+            &[],
+            &signatures_1_2_3_4
+        ));
     }
 }
