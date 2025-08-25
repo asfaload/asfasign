@@ -1,9 +1,6 @@
 use base64::{Engine as _, prelude::BASE64_STANDARD};
-use minisign::SignatureBox;
-use signatures::keys::{
-    AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-};
-use signers_file::{KeyFormat, SignerGroup, SignerKind, SignersConfig};
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signers_file::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
 use std::path::Path;
 use thiserror::Error;
@@ -111,7 +108,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
+    use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
+    use signers_file::{KeyFormat, SignerKind};
     use tempfile::TempDir;
 
     #[test]
