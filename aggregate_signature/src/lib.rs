@@ -117,6 +117,82 @@ mod tests {
 
     #[test]
     fn test_load_and_complete() {
+        // Generate keypairs
+        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey = keypair.public_key();
+        let seckey = keypair.secret_key("password").unwrap();
+        let keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey2 = keypair2.public_key();
+        let _seckey2 = keypair2.secret_key("password").unwrap();
+
+        // Create signature
+        let data = b"test data";
+        let signature = seckey.sign(data).unwrap();
+
+        // Create signatures map manually
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey.clone(), signature);
+
+        // Create aggregate signature manually
+        let agg_sig: AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+        > = AggregateSignature {
+            signatures,
+            origin: "test_origin".to_string(),
+        };
+
+        // Create signers config JSON string
+        let json_config_template = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://example.com",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          ],
+          "threshold": THRESHOLD_PLACEHOLDER
+        }
+      ],
+      "master_keys": [],
+      "admin_keys": null
+    }
+    "#;
+
+        // Replace placeholders with actual public keys
+        let json_config = json_config_template.replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64());
+        let json_config = json_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
+        let json_config = json_config.replace("THRESHOLD_PLACEHOLDER", "1");
+
+        // Parse signers config from JSON
+        let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            signers_file::parse_signers_config(&json_config).unwrap();
+
+        // Should be complete with threshold 1
+        assert!(agg_sig.is_artifact_complete(&signers_config));
+
+        // Should be incomplete with threshold 2
+        let high_threshold_config =
+            json_config_template.replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64());
+        let high_threshold_config =
+            high_threshold_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
+        let high_threshold_config = high_threshold_config.replace("THRESHOLD_PLACEHOLDER", "2");
+        let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            signers_file::parse_signers_config(&high_threshold_config).unwrap();
+        assert!(!agg_sig.is_artifact_complete(&signers_config));
+
+        assert_eq!(agg_sig.origin, "test_origin");
+    }
+
+    // This test illustrates how a signers config can be defined programmatically. This
+    // will not be the usual case, but could be handy.
+    #[test]
+    fn test_load_and_complete_programmatically() {
         // Create temp directory
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
