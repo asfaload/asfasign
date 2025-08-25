@@ -86,7 +86,7 @@ pub struct AsfaloadPublicKey<K> {
     key: K,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AsfaloadSignature<S> {
     signature: S,
 }

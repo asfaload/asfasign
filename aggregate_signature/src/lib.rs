@@ -97,7 +97,7 @@ where
     }
 
     /// Check if all groups in a category meet their thresholds
-    fn check_groups(groups: &[SignerGroup<P>], signatures: &HashMap<P, S>) -> bool {
+    pub fn check_groups(groups: &[SignerGroup<P>], signatures: &HashMap<P, S>) -> bool {
         groups.iter().all(|group| {
             let count = group
                 .signers
@@ -376,5 +376,368 @@ mod tests {
         assert!(agg_sig.is_master_complete(&signers_config_mixed));
 
         assert_eq!(agg_sig.origin, "test_origin");
+    }
+
+    #[test]
+    fn test_check_groups_from_json_minimal() {
+        // Generate keypairs
+        let keypair1 = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey1 = keypair1.public_key();
+        let seckey1 = keypair1.secret_key("password").unwrap();
+        let keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey2 = keypair2.public_key();
+        let seckey2 = keypair2.secret_key("password").unwrap();
+        let keypair3 = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey3 = keypair3.public_key();
+        let seckey3 = keypair3.secret_key("password").unwrap();
+        let keypair4 = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey4 = keypair4.public_key();
+        let seckey4 = keypair4.secret_key("password").unwrap();
+
+        let substitute_keys = |tpl: String| {
+            let res = tpl.replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64());
+            let res = res.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
+            let res = res.replace("PUBKEY3_PLACEHOLDER", &pubkey3.to_base64());
+            res.replace("PUBKEY4_PLACEHOLDER", &pubkey4.to_base64())
+        };
+
+        let build_groups = |tpl: String| {
+            let json = substitute_keys(tpl);
+
+            let groups: Vec<SignerGroup<AsfaloadPublicKey<minisign::PublicKey>>> =
+                serde_json::from_str(&json).unwrap();
+            groups
+        };
+
+        let check_validity = |tpl: String,
+                              signatures: &HashMap<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<SignatureBox>,
+        >,
+                              expected_valid: bool| {
+            let groups = build_groups(tpl);
+            if expected_valid {
+                assert!(AggregateSignature::<_, _>::check_groups(
+                    &groups, signatures
+                ))
+            } else {
+                assert!(!AggregateSignature::<_, _>::check_groups(
+                    &groups, signatures
+                ))
+            }
+        };
+        // Create signatures for pubkey1 and pubkey2 only
+        let data = b"test data";
+        let sig1 = seckey1.sign(data).unwrap();
+        let sig2 = seckey2.sign(data).unwrap();
+        let sig3 = seckey3.sign(data).unwrap();
+        let sig4 = seckey4.sign(data).unwrap();
+
+        // Create signatures maps
+        // The name of the variable indicates which signatures is contains
+        let mut signatures_1 = HashMap::new();
+        signatures_1.insert(pubkey1.clone(), sig1.clone());
+        let mut signatures_1_2 = HashMap::new();
+        signatures_1_2.insert(pubkey1.clone(), sig1.clone());
+        signatures_1_2.insert(pubkey2.clone(), sig2.clone());
+        let mut signatures_1_2_4 = HashMap::new();
+        signatures_1_2_4.insert(pubkey1.clone(), sig1.clone());
+        signatures_1_2_4.insert(pubkey2.clone(), sig2.clone());
+        signatures_1_2_4.insert(pubkey4.clone(), sig4.clone());
+        let mut signatures_1_3 = HashMap::new();
+        signatures_1_3.insert(pubkey1.clone(), sig1.clone());
+        signatures_1_3.insert(pubkey3.clone(), sig3.clone());
+        let mut signatures_2_4 = HashMap::new();
+        signatures_2_4.insert(pubkey2.clone(), sig2.clone());
+        signatures_2_4.insert(pubkey4.clone(), sig4.clone());
+        let mut signatures_1_3_4 = HashMap::new();
+        signatures_1_3_4.insert(pubkey1.clone(), sig1.clone());
+        signatures_1_3_4.insert(pubkey3.clone(), sig3.clone());
+        signatures_1_3_4.insert(pubkey4.clone(), sig4.clone());
+        let mut signatures_1_2_3_4 = HashMap::new();
+        signatures_1_2_3_4.insert(pubkey1.clone(), sig1.clone());
+        signatures_1_2_3_4.insert(pubkey2.clone(), sig2.clone());
+        signatures_1_2_3_4.insert(pubkey3.clone(), sig3.clone());
+        signatures_1_2_3_4.insert(pubkey4.clone(), sig4.clone());
+
+        // Aliases for explicit meaning of argument passed
+        let complete = true;
+        let incomplete = false;
+
+        // Define group check tests in this vector of tuples of the form
+        // (json_string, signatures_present, expected_completeness)
+        let test_groups = [
+            //------------------------------------------------------------
+            // 1-of-1 complete
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+        ],
+        "threshold": 1
+      }
+    ]
+    "#,
+                signatures_1.clone(),
+                complete,
+            ),
+            //------------------------------------------------------------
+            // 1-of-1 complete, with additional irrelevant signature
+            // The signature by someone not in the signers groups is not an error
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+        ],
+        "threshold": 1
+      }
+    ]
+    "#,
+                signatures_1_2.clone(),
+                complete,
+            ),
+            //------------------------------------------------------------
+            // 2-of-2 complete
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } },
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      }
+    ]
+    "#,
+                signatures_1_2.clone(),
+                complete,
+            ),
+            //------------------------------------------------------------
+            // 2-of-2 incomplete
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } },
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      }
+    ]
+    "#,
+                signatures_1.clone(),
+                incomplete,
+            ),
+            //------------------------------------------------------------
+            // 2-of-2 incomplete but with an additional irrelevant signature.
+            // The signature from a signer not in the group does not help reach the threshold.
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } },
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      }
+    ]
+    "#,
+                signatures_1_3.clone(),
+                incomplete,
+            ),
+            //------------------------------------------------------------
+            // 2-of-2 complete but with additional irrelevant signatures.
+            // This is not an error.
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } },
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      }
+    ]
+    "#,
+                signatures_1_2_3_4.clone(),
+                complete,
+            ),
+            //------------------------------------------------------------
+            // 2-of-1: this will never be complete, even if we have the signature from the
+            // signer and an additional one.
+            // FIXME: this json should raise an error when parsed to build our rust object.
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      }
+    ]
+    "#,
+                signatures_1_2.clone(),
+                incomplete,
+            ),
+            //------------------------------------------------------------
+            // Multiple 1-of-1 groups.
+            // This is equivalent to one 2-of-2 group with the same signers.
+            // All groups must have their threshold reached for the signature to be complete.
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+        ],
+        "threshold": 1
+      },
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+        ],
+        "threshold": 1
+      }
+    ]
+    "#,
+                signatures_1_2.clone(),
+                complete,
+            ),
+            //------------------------------------------------------------
+            // Multiple 1-of-1 groups.
+            // When the threshold of one group is not reached, the signature is not complete.
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+        ],
+        "threshold": 1
+      },
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+        ],
+        "threshold": 1
+      }
+    ]
+    "#,
+                signatures_1_2.clone(),
+                incomplete,
+            ),
+            //------------------------------------------------------------
+            // Two 2-of-2 groups, complete
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      },
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      }
+    ]
+    "#,
+                signatures_1_2_3_4.clone(),
+                complete,
+            ),
+            //------------------------------------------------------------
+            // Two 2-of-2 groups, first group incomplete
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      },
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      }
+    ]
+    "#,
+                signatures_1_3_4.clone(),
+                incomplete,
+            ),
+            //------------------------------------------------------------
+            // Two 2-of-2 groups, second group incomplete
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      },
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      }
+    ]
+    "#,
+                signatures_1_2_4.clone(),
+                incomplete,
+            ),
+            //------------------------------------------------------------
+            // Two 2-of-2 groups, all groups incomplete
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      },
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      }
+    ]
+    "#,
+                signatures_1_3.clone(),
+                incomplete,
+            ),
+        ];
+
+        // ------------------------------------------------------------
+        // Run all defined tests
+        // ------------------------------------------------------------
+        test_groups
+            .iter()
+            .for_each(|g| check_validity(g.0.to_string(), &g.1, g.2));
     }
 }
