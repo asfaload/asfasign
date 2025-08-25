@@ -89,11 +89,10 @@ where
 
     pub fn is_admin_complete(&self, signers_config: &SignersConfig<P>) -> bool {
         // Check admin_keys groups if present
-        if let Some(admin_keys) = &signers_config.admin_keys {
-            Self::check_groups(admin_keys, &self.signatures)
-        } else {
-            false
-        }
+        signers_config
+            .admin_keys
+            .as_ref()
+            .is_some_and(|keys| Self::check_groups(keys, &self.signatures))
     }
 
     /// Check if all groups in a category meet their thresholds
@@ -374,6 +373,12 @@ mod tests {
         // Should be complete with mixed configuration
         assert!(agg_sig.is_artifact_complete(&signers_config_mixed));
         assert!(agg_sig.is_master_complete(&signers_config_mixed));
+        // Check an null admin group is not comsidered as complete
+        assert!(!agg_sig.is_admin_complete(&signers_config_mixed));
+        // Empty admin_keys array is never complete
+        let mut signers_config_empty_admin = signers_config_mixed.clone();
+        signers_config_empty_admin.admin_keys = None;
+        assert!(!agg_sig.is_admin_complete(&signers_config_mixed));
 
         assert_eq!(agg_sig.origin, "test_origin");
     }
