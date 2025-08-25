@@ -41,15 +41,15 @@ where
     S: AsfaloadSignatureTrait,
 {
     /// Load signatures from a directory where each filename is a base64-encoded public key
-    pub fn load_from_dir(path: &Path) -> Result<Self, AggregateSignatureError> {
+    pub fn load_from_dir(dir_path: &Path) -> Result<Self, AggregateSignatureError> {
         let mut signatures = HashMap::new();
 
-        for entry in std::fs::read_dir(path)? {
+        for entry in std::fs::read_dir(dir_path)? {
             let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
+            let signature_path = entry.path();
+            if signature_path.is_file() {
                 // Decode filename to get public key
-                let filename = path
+                let filename = signature_path
                     .file_name()
                     .ok_or_else(|| {
                         AggregateSignatureError::PublicKey("Invalid filename".to_string())
@@ -63,7 +63,7 @@ where
                     .map_err(|e| AggregateSignatureError::PublicKey(format!("{}", e)))?;
 
                 // Read and parse signature
-                let sig_content = std::fs::read_to_string(&path)?;
+                let sig_content = std::fs::read_to_string(&signature_path)?;
                 let signature = S::from_string(&sig_content)
                     .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
 
@@ -73,7 +73,7 @@ where
 
         Ok(Self {
             signatures,
-            origin: path.to_string_lossy().to_string(),
+            origin: dir_path.to_string_lossy().to_string(),
         })
     }
 
