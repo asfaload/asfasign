@@ -20,8 +20,6 @@ pub enum AggregateSignatureError {
     Utf8Error(#[from] std::string::FromUtf8Error),
     #[error("Public key error: {0}")]
     PublicKey(String),
-    #[error("No signatures found")]
-    NoSignatures,
     #[error("Threshold not met for group")]
     ThresholdNotMet,
 }
@@ -71,10 +69,6 @@ where
 
                 signatures.insert(pubkey, signature);
             }
-        }
-
-        if signatures.is_empty() {
-            return Err(AggregateSignatureError::NoSignatures);
         }
 
         Ok(Self {
