@@ -5,7 +5,7 @@ use signatures::keys::{
 };
 use signers_file::{KeyFormat, SignerGroup, SignerKind, SignersConfig};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -32,7 +32,9 @@ where
     S: AsfaloadSignatureTrait,
 {
     signatures: HashMap<P, S>,
-    path: PathBuf,
+    // The origin is a String. I originally wanted to make it a Url, but
+    // then the path must be absolute, and I didn't want to set that restriction right now
+    origin: String,
 }
 
 impl<P, S> AggregateSignature<P, S>
@@ -77,7 +79,7 @@ where
 
         Ok(Self {
             signatures,
-            path: path.to_path_buf(),
+            origin: path.to_string_lossy().to_string(),
         })
     }
 
@@ -190,6 +192,8 @@ mod tests {
             ..signers_config.clone()
         };
         assert!(!agg_sig.is_artifact_complete(&high_threshold_config));
+
+        assert_eq!(agg_sig.origin, dir_path.to_string_lossy().to_string());
     }
 
     #[test]
