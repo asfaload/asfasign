@@ -82,25 +82,22 @@ where
     }
 
     /// Check if aggregate signature meets all thresholds in signers config
-    pub fn is_complete(&self, signers_config: &SignersConfig<P>) -> bool {
+    pub fn is_artifact_complete(&self, signers_config: &SignersConfig<P>) -> bool {
         // Check artifact_signers groups
-        if !Self::check_groups(&signers_config.artifact_signers, &self.signatures) {
-            return false;
-        }
-
+        Self::check_groups(&signers_config.artifact_signers, &self.signatures)
+    }
+    pub fn is_master_complete(&self, signers_config: &SignersConfig<P>) -> bool {
         // Check master_keys groups
-        if !Self::check_groups(&signers_config.master_keys, &self.signatures) {
-            return false;
-        }
+        Self::check_groups(&signers_config.master_keys, &self.signatures)
+    }
 
+    pub fn is_admin_complete(&self, signers_config: &SignersConfig<P>) -> bool {
         // Check admin_keys groups if present
         if let Some(admin_keys) = &signers_config.admin_keys {
-            if !Self::check_groups(admin_keys, &self.signatures) {
-                return false;
-            }
+            Self::check_groups(admin_keys, &self.signatures)
+        } else {
+            false
         }
-
-        true
     }
 
     /// Check if all groups in a category meet their thresholds
@@ -183,7 +180,7 @@ mod tests {
         };
 
         // Should be complete with threshold 1
-        assert!(agg_sig.is_complete(&signers_config));
+        assert!(agg_sig.is_artifact_complete(&signers_config));
 
         // Should be incomplete with threshold 2
         let mut high_threshold_group = group.clone();
@@ -192,7 +189,7 @@ mod tests {
             artifact_signers: vec![high_threshold_group],
             ..signers_config.clone()
         };
-        assert!(!agg_sig.is_complete(&high_threshold_config));
+        assert!(!agg_sig.is_artifact_complete(&high_threshold_config));
     }
 
     #[test]
@@ -266,7 +263,7 @@ mod tests {
         };
 
         // Should be complete
-        assert!(agg_sig.is_complete(&signers_config));
+        assert!(agg_sig.is_artifact_complete(&signers_config));
 
         // Config with one group in artifact_signers and one in master_keys
         let signers_config_mixed = SignersConfig {
@@ -274,6 +271,6 @@ mod tests {
             master_keys: vec![group2],
             ..signers_config.clone()
         };
-        assert!(agg_sig.is_complete(&signers_config_mixed));
+        assert!(agg_sig.is_artifact_complete(&signers_config_mixed));
     }
 }
