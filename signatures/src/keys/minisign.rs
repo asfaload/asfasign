@@ -1,4 +1,4 @@
-use base64::{Engine, prelude::BASE64_STANDARD};
+use base64::{Engine, prelude::BASE64_STANDARD, prelude::BASE64_URL_SAFE_NO_PAD};
 pub use minisign::KeyPair;
 use std::{
     ffi::OsString,
@@ -423,8 +423,6 @@ mod asfaload_index_tests {
         pk.verify(&sig_from_str, data)?;
 
         // Base64 serialisation
-        let sig_b64 = sig.to_base64();
-        let sig_from_b64 = AsfaloadSignature::from_base64(&sig_b64)?;
         let sig_b64 = sig.to_base64();
         let sig_from_b64 = AsfaloadSignature::from_base64(&sig_b64)?;
         pk.verify(&sig_from_b64, data)?;

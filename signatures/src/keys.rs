@@ -67,6 +67,16 @@ pub trait AsfaloadPublicKeyTrait {
     type KeyError: std::fmt::Display;
     fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError>;
     fn to_base64(&self) -> String;
+    fn to_filename(&self) -> String {
+        self.to_base64().replace("+", "-").replace("/", "_")
+    }
+    fn from_filename(n: String) -> Result<Self, Self::KeyError>
+    where
+        Self: Sized,
+    {
+        let b64 = n.replace("-", "+").replace("_", "/");
+        Self::from_base64(b64)
+    }
     fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError>
     where
         Self: Sized;
@@ -103,9 +113,9 @@ pub trait AsfaloadSignatureTrait {
 
     // As we need to serialise to json, and json does not support multiline strings, we ssupport
     // the serialisation to base64 format.
-    fn from_b64(s: &str) -> Result<Self, Self::SignatureError>
+    fn from_base64(s: &str) -> Result<Self, Self::SignatureError>
     where
         Self: Sized;
 
-    fn to_b64(&self) -> String;
+    fn to_base64(&self) -> String;
 }

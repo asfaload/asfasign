@@ -1,4 +1,4 @@
-use base64::{Engine as _, prelude::BASE64_STANDARD};
+use base64::{Engine as _, prelude::BASE64_URL_SAFE_NO_PAD};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
@@ -54,9 +54,7 @@ where
                     .to_string_lossy()
                     .into_owned();
 
-                let pubkey_bytes = BASE64_STANDARD.decode(filename)?;
-                let pubkey_str = String::from_utf8(pubkey_bytes)?;
-                let pubkey = P::from_base64(pubkey_str)
+                let pubkey = P::from_filename(filename)
                     .map_err(|e| AggregateSignatureError::PublicKey(format!("{}", e)))?;
 
                 // Read and parse signature
@@ -211,7 +209,7 @@ mod tests {
         let signature = seckey.sign(data).unwrap();
 
         // Write signature file (base64-encoded pubkey filename)
-        let pubkey_b64 = BASE64_STANDARD.encode(pubkey.to_base64());
+        let pubkey_b64 = pubkey.to_filename();
         let sig_file_path = dir_path.join(pubkey_b64);
         std::fs::write(&sig_file_path, signature.to_string()).unwrap();
 
