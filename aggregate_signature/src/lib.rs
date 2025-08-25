@@ -268,14 +268,10 @@ mod tests {
 
     #[test]
     fn test_multiple_groups() {
-        let temp_dir = TempDir::new().unwrap();
-        let dir_path = temp_dir.path();
-
         // Generate two keypairs
         let keypair1 = AsfaloadKeyPair::new("password").unwrap();
         let pubkey1 = keypair1.public_key();
         let seckey1 = keypair1.secret_key("password").unwrap();
-
         let keypair2 = AsfaloadKeyPair::new("password").unwrap();
         let pubkey2 = keypair2.public_key();
         let seckey2 = keypair2.secret_key("password").unwrap();
@@ -285,66 +281,100 @@ mod tests {
         let sig1 = seckey1.sign(data).unwrap();
         let sig2 = seckey2.sign(data).unwrap();
 
-        // Write signature files
-        let pubkey1_b64 = BASE64_STANDARD.encode(pubkey1.to_base64());
-        std::fs::write(dir_path.join(pubkey1_b64), sig1.to_string()).unwrap();
+        // Create signatures map manually
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey1.clone(), sig1);
+        signatures.insert(pubkey2.clone(), sig2);
 
-        let pubkey2_b64 = BASE64_STANDARD.encode(pubkey2.to_base64());
-        std::fs::write(dir_path.join(pubkey2_b64), sig2.to_string()).unwrap();
-
-        // Load aggregate signature
+        // Create aggregate signature manually
         let agg_sig: AggregateSignature<
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
-        > = AggregateSignature::load_from_dir(dir_path).unwrap();
-
-        // Create signers
-        let signer1 = signers_file::Signer {
-            kind: SignerKind::Key,
-            data: signers_file::SignerData {
-                format: KeyFormat::Minisign,
-                pubkey: pubkey1.clone(),
-            },
-        };
-        let signer2 = signers_file::Signer {
-            kind: SignerKind::Key,
-            data: signers_file::SignerData {
-                format: KeyFormat::Minisign,
-                pubkey: pubkey2.clone(),
-            },
+        > = AggregateSignature {
+            signatures,
+            origin: "test_origin".to_string(),
         };
 
-        // Create groups with threshold 1
-        let group1 = SignerGroup {
-            signers: vec![signer1.clone()],
-            threshold: 1,
-        };
-        let group2 = SignerGroup {
-            signers: vec![signer2.clone()],
-            threshold: 1,
-        };
+        // Create signers config JSON string with two groups
+        let json_config = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://example.com",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ],
+          "threshold": 1
+        },
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          ],
+          "threshold": 1
+        }
+      ],
+      "master_keys": [],
+      "admin_keys": null
+    }
+    "#;
 
-        // Config with both groups in artifact_signers
-        let signers_config = SignersConfig {
-            version: 1,
-            initial_version: signers_file::InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
-            artifact_signers: vec![group1.clone(), group2.clone()],
-            master_keys: vec![],
-            admin_keys: None,
-        };
+        // Replace placeholders with actual public keys
+        let json_config = json_config.replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64());
+        let json_config = json_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
 
-        // Should be complete
+        // Parse signers config from JSON
+        let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            signers_file::parse_signers_config(&json_config).unwrap();
+
+        // Should be complete with both groups
         assert!(agg_sig.is_artifact_complete(&signers_config));
 
-        // Config with one group in artifact_signers and one in master_keys
-        let signers_config_mixed = SignersConfig {
-            artifact_signers: vec![group1],
-            master_keys: vec![group2],
-            ..signers_config.clone()
-        };
+        // Test mixed configuration (one group in artifact_signers, one in master_keys)
+        let json_config_mixed = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://example.com",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ],
+          "threshold": 1
+        }
+      ],
+      "master_keys": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          ],
+          "threshold": 1
+        }
+      ],
+      "admin_keys": null
+    }
+    "#;
+
+        // Replace placeholders with actual public keys
+        let json_config_mixed =
+            json_config_mixed.replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64());
+        let json_config_mixed =
+            json_config_mixed.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
+
+        // Parse mixed signers config from JSON
+        let signers_config_mixed: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            signers_file::parse_signers_config(&json_config_mixed).unwrap();
+
+        // Should be complete with mixed configuration
         assert!(agg_sig.is_artifact_complete(&signers_config_mixed));
+        assert!(agg_sig.is_master_complete(&signers_config_mixed));
+
+        assert_eq!(agg_sig.origin, "test_origin");
     }
 }
