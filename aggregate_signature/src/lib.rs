@@ -128,10 +128,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
 
-        // Generate keypair
+        // Generate keypairs
         let keypair = AsfaloadKeyPair::new("password").unwrap();
         let pubkey = keypair.public_key();
         let seckey = keypair.secret_key("password").unwrap();
+
+        let keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey2 = keypair2.public_key();
+        let _seckey2 = keypair2.secret_key("password").unwrap();
 
         // Create signature
         let data = b"test data";
@@ -156,8 +160,15 @@ mod tests {
                 pubkey: pubkey.clone(),
             },
         };
+        let signer2 = signers_file::Signer {
+            kind: SignerKind::Key,
+            data: signers_file::SignerData {
+                format: KeyFormat::Minisign,
+                pubkey: pubkey2.clone(),
+            },
+        };
         let group = SignerGroup {
-            signers: vec![signer],
+            signers: vec![signer, signer2],
             threshold: 1,
         };
         let signers_config = SignersConfig {
