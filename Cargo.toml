@@ -1,0 +1,2 @@
+[workspace]
+members = ["signatures", "signers_file", "aggregate_signature"]

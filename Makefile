@@ -3,9 +3,7 @@ SHELL:=/bin/bash
 
 ## Run tests of all components
 test:
-	for d in */; do \
-		(cd "$$d" ; cargo test; ); \
-	done
+	cargo test
 
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"
