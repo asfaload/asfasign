@@ -261,8 +261,8 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         // Update or create the index.json file
         let index_path = dir_path.join("index.json");
         let mut index: std::collections::HashMap<String, String> = if index_path.exists() {
-            let index_content = std::fs::read_to_string(&index_path)?;
-            serde_json::from_str(&index_content)?
+            let file = File::open(&index_path)?;
+            serde_json::from_reader(file)?
         } else {
             std::collections::HashMap::new()
         };
