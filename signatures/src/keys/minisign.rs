@@ -3,7 +3,9 @@ pub use minisign::KeyPair;
 use std::{
     ffi::OsString,
     fs,
+    fs::{File, OpenOptions},
     io::Cursor,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -42,6 +44,10 @@ pub mod errs {
         Base64DecodeFailed(#[from] base64::DecodeError),
         #[error("Invalid Utf8 string")]
         Utf8DecodeFailed(#[from] std::str::Utf8Error),
+        #[error("IO error: {0}")]
+        IoError(#[from] std::io::Error),
+        #[error("JSON error: {0}")]
+        JsonError(#[from] serde_json::Error),
     }
 }
 
@@ -229,6 +235,46 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
     fn to_base64(&self) -> String {
         let s = self.signature.to_string();
         BASE64_STANDARD.encode(s)
+    }
+    fn add_to_aggregate<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
+        &self,
+        dir: P,
+        pub_key: &PK,
+    ) -> Result<(), Self::SignatureError>
+    where
+        Self: Sized,
+    {
+        let dir_path = dir.as_ref();
+
+        // Ensure the directory exists
+        std::fs::create_dir_all(dir_path)?;
+
+        // Create the filename from the public key's base64url representation
+        let filename = pub_key.to_filename();
+        let sig_file_path = dir_path.join(filename);
+
+        // Write the signature to the file
+        let mut file = File::create(&sig_file_path)?;
+        file.write_all(self.to_string().as_bytes())?;
+
+        // Update or create the index.json file
+        let index_path = dir_path.join("index.json");
+        let mut index: std::collections::HashMap<String, String> = if index_path.exists() {
+            let file = File::open(&index_path)?;
+            serde_json::from_reader(file)?
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        // Add the signature to the index
+        let pubkey_b64 = pub_key.to_base64();
+        index.insert(pubkey_b64, self.to_base64());
+
+        // Write the updated index back to the file
+        let index_file = File::create(&index_path)?;
+        serde_json::to_writer_pretty(index_file, &index)?;
+
+        Ok(())
     }
 }
 
@@ -425,6 +471,91 @@ mod asfaload_index_tests {
         let sig_from_b64 = AsfaloadSignature::from_base64(&sig_b64)?;
         pk.verify(&sig_from_b64, data)?;
 
+        Ok(())
+    }
+    #[test]
+    fn test_add_to_aggregate() -> Result<()> {
+        // Create a temporary directory
+        let temp_dir = tempfile::tempdir()?;
+        let dir_path = temp_dir.path();
+
+        // Generate a keypair and create a signature
+        let keypair = AsfaloadKeyPair::new("password")?;
+        let pubkey = keypair.public_key();
+        let seckey = keypair.secret_key("password")?;
+
+        let keypair2 = AsfaloadKeyPair::new("password")?;
+        let pubkey2 = keypair2.public_key();
+        let seckey2 = keypair2.secret_key("password")?;
+
+        let data = b"test data";
+        let signature = seckey.sign(data)?;
+        let signature2 = seckey2.sign(data)?;
+
+        // Add the signature to the aggregate
+        signature.add_to_aggregate(dir_path, &pubkey)?;
+
+        // Verify that the signature file was created with the correct name
+        let expected_filename = pubkey.to_filename();
+        let sig_file_path = dir_path.join(expected_filename);
+        assert!(sig_file_path.exists(), "Signature file should exist");
+
+        // Verify that the index.json file was created
+        let index_path = dir_path.join("index.json");
+        assert!(index_path.exists(), "Index file should exist");
+
+        // Verify the content of the index.json file
+        let index_content = std::fs::read_to_string(&index_path)?;
+        let index: std::collections::HashMap<String, String> =
+            serde_json::from_str(&index_content)?;
+
+        let pubkey_b64 = pubkey.to_base64();
+        let pubkey2_b64 = pubkey2.to_base64();
+        assert!(
+            index.contains_key(&pubkey_b64),
+            "Index should contain an entry for the public key"
+        );
+
+        assert!(
+            !index.contains_key(&pubkey2_b64),
+            "Index should NOT contain an entry for the second public key"
+        );
+
+        assert_eq!(
+            index.get(&pubkey_b64).unwrap(),
+            &signature.to_base64(),
+            "Index should contain the correct signature"
+        );
+
+        // Add second signature to aggregate
+        signature2.add_to_aggregate(dir_path, &pubkey2)?;
+        // Re-read the index file as it should have been modified
+        let index_content = std::fs::read_to_string(&index_path)?;
+        let index: std::collections::HashMap<String, String> =
+            serde_json::from_str(&index_content)?;
+
+        // First signature is still there
+        assert!(
+            index.contains_key(&pubkey_b64),
+            "Index should contain an entry for the public key"
+        );
+        assert_eq!(
+            index.get(&pubkey_b64).unwrap(),
+            &signature.to_base64(),
+            "Index should contain the correct signature"
+        );
+
+        // Second signature is added
+        assert!(
+            index.contains_key(&pubkey2_b64),
+            "Index should contain an entry for the second public key"
+        );
+
+        assert_eq!(
+            index.get(&pubkey2_b64).unwrap(),
+            &signature2.to_base64(),
+            "Index should contain the correct signature"
+        );
         Ok(())
     }
 }

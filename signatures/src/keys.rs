@@ -118,4 +118,13 @@ pub trait AsfaloadSignatureTrait {
         Self: Sized;
 
     fn to_base64(&self) -> String;
+    /// Save the signature in a file named as the base64url of the public key,
+    /// and add it to the index.json in the specified directory.
+    fn add_to_aggregate<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
+        &self,
+        dir: P,
+        pub_key: &PK,
+    ) -> Result<(), Self::SignatureError>
+    where
+        Self: Sized;
 }
