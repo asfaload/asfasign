@@ -3,7 +3,9 @@ pub use minisign::KeyPair;
 use std::{
     ffi::OsString,
     fs,
+    fs::{File, OpenOptions},
     io::Cursor,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -242,9 +244,6 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
     where
         Self: Sized,
     {
-        use std::fs::{File, OpenOptions};
-        use std::io::Write;
-
         let dir_path = dir.as_ref();
 
         // Ensure the directory exists
