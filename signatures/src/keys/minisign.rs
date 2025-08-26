@@ -271,12 +271,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         index.insert(pubkey_b64, self.to_base64());
 
         // Write the updated index back to the file
-        let index_file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&index_path)?;
-
+        let index_file = File::create(&index_path)?;
         serde_json::to_writer_pretty(index_file, &index)?;
 
         Ok(())
