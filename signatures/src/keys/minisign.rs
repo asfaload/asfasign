@@ -13,7 +13,6 @@ use crate::keys::{
 };
 
 pub mod errs {
-    use base64::DecodeError;
     use thiserror::Error;
     #[derive(Error, Debug)]
     pub enum KeyError {
@@ -219,7 +218,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         let s = minisign::SignatureBox::from_file(path)?;
         Ok(AsfaloadSignature { signature: s })
     }
-    fn from_b64(s: &str) -> Result<Self, Self::SignatureError>
+    fn from_base64(s: &str) -> Result<Self, Self::SignatureError>
     where
         Self: Sized,
     {
@@ -227,9 +226,25 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         Self::from_string(std::str::from_utf8(&s)?)
     }
 
-    fn to_b64(&self) -> String {
+    fn to_base64(&self) -> String {
         let s = self.signature.to_string();
         BASE64_STANDARD.encode(s)
+    }
+}
+
+use std::hash::{Hash, Hasher};
+
+impl PartialEq for AsfaloadPublicKey<minisign::PublicKey> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key.to_base64() == other.key.to_base64()
+    }
+}
+
+impl Eq for AsfaloadPublicKey<minisign::PublicKey> {}
+
+impl Hash for AsfaloadPublicKey<minisign::PublicKey> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.key.to_base64().hash(state);
     }
 }
 #[cfg(test)]
@@ -406,8 +421,8 @@ mod asfaload_index_tests {
         pk.verify(&sig_from_str, data)?;
 
         // Base64 serialisation
-        let sig_b64 = sig.to_b64();
-        let sig_from_b64 = AsfaloadSignature::from_b64(&sig_b64)?;
+        let sig_b64 = sig.to_base64();
+        let sig_from_b64 = AsfaloadSignature::from_base64(&sig_b64)?;
         pk.verify(&sig_from_b64, data)?;
 
         Ok(())
