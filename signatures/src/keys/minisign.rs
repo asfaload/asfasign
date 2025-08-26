@@ -506,24 +506,24 @@ mod asfaload_index_tests {
 
         // Verify the content of the index.json file
         let index_content = std::fs::read_to_string(&index_path)?;
-        let index: serde_json::Value = serde_json::from_str(&index_content)?;
+        let index: std::collections::HashMap<String, String> =
+            serde_json::from_str(&index_content)?;
 
         let pubkey_b64 = pubkey.to_base64();
         let pubkey2_b64 = pubkey2.to_base64();
         assert!(
-            index.get(&pubkey_b64).is_some(),
+            index.contains_key(&pubkey_b64),
             "Index should contain an entry for the public key"
         );
 
         assert!(
-            index.get(&pubkey2_b64).is_none(),
+            !index.contains_key(&pubkey2_b64),
             "Index should NOT contain an entry for the second public key"
         );
 
-        let sig_b64 = index[&pubkey_b64].as_str().unwrap();
         assert_eq!(
-            sig_b64,
-            signature.to_base64(),
+            index.get(&pubkey_b64).unwrap(),
+            &signature.to_base64(),
             "Index should contain the correct signature"
         );
 
@@ -531,30 +531,29 @@ mod asfaload_index_tests {
         signature2.add_to_aggregate(dir_path, &pubkey2)?;
         // Re-read the index file as it should have been modified
         let index_content = std::fs::read_to_string(&index_path)?;
-        let index: serde_json::Value = serde_json::from_str(&index_content)?;
+        let index: std::collections::HashMap<String, String> =
+            serde_json::from_str(&index_content)?;
 
         // First signature is still there
         assert!(
-            index.get(&pubkey_b64).is_some(),
+            index.contains_key(&pubkey_b64),
             "Index should contain an entry for the public key"
         );
-        let sig_b64 = index[&pubkey_b64].as_str().unwrap();
         assert_eq!(
-            sig_b64,
-            signature.to_base64(),
+            index.get(&pubkey_b64).unwrap(),
+            &signature.to_base64(),
             "Index should contain the correct signature"
         );
 
         // Second signature is added
         assert!(
-            index.get(&pubkey2_b64).is_some(),
+            index.contains_key(&pubkey2_b64),
             "Index should contain an entry for the second public key"
         );
 
-        let sig2_b64 = index[&pubkey2_b64].as_str().unwrap();
         assert_eq!(
-            sig2_b64,
-            signature2.to_base64(),
+            index.get(&pubkey2_b64).unwrap(),
+            &signature2.to_base64(),
             "Index should contain the correct signature"
         );
         Ok(())
