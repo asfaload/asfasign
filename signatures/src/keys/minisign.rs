@@ -1,8 +1,7 @@
-use base64::{Engine, prelude::BASE64_STANDARD, prelude::BASE64_URL_SAFE_NO_PAD};
+use base64::{Engine, prelude::BASE64_STANDARD};
 pub use minisign::KeyPair;
 use std::{
     ffi::OsString,
-    fmt::Display,
     fs,
     io::Cursor,
     path::{Path, PathBuf},
@@ -14,7 +13,6 @@ use crate::keys::{
 };
 
 pub mod errs {
-    use base64::DecodeError;
     use thiserror::Error;
     #[derive(Error, Debug)]
     pub enum KeyError {

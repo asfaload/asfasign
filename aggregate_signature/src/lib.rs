@@ -1,4 +1,3 @@
-use base64::{Engine as _, prelude::BASE64_URL_SAFE_NO_PAD};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
