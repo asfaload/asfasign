@@ -242,7 +242,6 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
     where
         Self: Sized,
     {
-        use serde_json::{Value, json};
         use std::fs::{File, OpenOptions};
         use std::io::Write;
 
@@ -261,16 +260,16 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
 
         // Update or create the index.json file
         let index_path = dir_path.join("index.json");
-        let mut index: Value = if index_path.exists() {
+        let mut index: std::collections::HashMap<String, String> = if index_path.exists() {
             let index_content = std::fs::read_to_string(&index_path)?;
             serde_json::from_str(&index_content)?
         } else {
-            json!({})
+            std::collections::HashMap::new()
         };
 
         // Add the signature to the index
         let pubkey_b64 = pub_key.to_base64();
-        index[pubkey_b64] = json!(self.to_base64());
+        index.insert(pubkey_b64, self.to_base64());
 
         // Write the updated index back to the file
         let index_file = OpenOptions::new()
