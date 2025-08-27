@@ -188,7 +188,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     type VerifyError = errs::VerifyError;
     type KeyError = errs::KeyError;
 
-    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError> {
+    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError> {
         let data_reader = Cursor::new(data);
         minisign::verify(
             &self.key,
