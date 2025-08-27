@@ -38,8 +38,8 @@ pub mod errs {
 
     #[derive(Error, Debug)]
     pub enum SignatureError {
-        #[error("Signature verification failed")]
-        VerificationFailed(#[from] minisign::PError),
+        #[error("Signature format error")]
+        FormatError(#[from] minisign::PError),
         #[error("base64 decoding of signature failed")]
         Base64DecodeFailed(#[from] base64::DecodeError),
         #[error("Invalid Utf8 string")]
