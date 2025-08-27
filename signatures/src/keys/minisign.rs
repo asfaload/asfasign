@@ -36,10 +36,11 @@ pub mod errs {
         VerificationFailed(#[from] minisign::PError),
     }
 
+    // AsfaloadSignatureTrait errors.
     #[derive(Error, Debug)]
     pub enum SignatureError {
-        #[error("Signature format error")]
-        FormatError(#[from] minisign::PError),
+        #[error("Error reading signature: {0}")]
+        FormatError(minisign::PError),
         #[error("base64 decoding of signature failed")]
         Base64DecodeFailed(#[from] base64::DecodeError),
         #[error("Invalid Utf8 string")]
@@ -48,6 +49,22 @@ pub mod errs {
         IoError(#[from] std::io::Error),
         #[error("JSON error: {0}")]
         JsonError(#[from] serde_json::Error),
+    }
+    // This is added to not map all PErrors to FormatError. We manually map
+    // the PError IO kind to our IO error, and others are mapped to FormatError.
+    impl From<minisign::PError> for SignatureError {
+        fn from(e: minisign::PError) -> Self {
+            match e.kind() {
+                minisign::ErrorKind::Io =>
+                // Fallback to a generic IO error
+                {
+                    SignatureError::IoError(std::io::Error::other(e))
+                }
+                // Seems operations of AsfaloadSignatureTrait do not generate this
+                // case at the time this comment is written.
+                _ => SignatureError::FormatError(e),
+            }
+        }
     }
 }
 
@@ -554,6 +571,24 @@ mod asfaload_index_tests {
             &signature2.to_base64(),
             "Index should contain the correct signature"
         );
+        Ok(())
+    }
+    #[test]
+    fn test_signature_trait_error_mapping() -> Result<()> {
+        // Check underlying IO errors are mapped correctly to our IO error.
+        let r = AsfaloadSignature::<minisign::SignatureBox>::from_file("/tmp/inexisting_path");
+        assert!(matches!(r, Err(errs::SignatureError::IoError(_))));
+
+        let r = AsfaloadSignature::from_base64("invalid");
+        assert!(matches!(
+            r,
+            Err(errs::SignatureError::Base64DecodeFailed(_))
+        ));
+
+        // This seems to be reported as IO error by minisign
+        let r = AsfaloadSignature::from_string("invalid");
+        assert!(matches!(r, Err(errs::SignatureError::IoError(_))));
+        println!("{}", r.err().unwrap());
         Ok(())
     }
 }
