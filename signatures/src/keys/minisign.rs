@@ -213,14 +213,12 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         self.signature.to_string()
     }
 
-    fn from_string(
-        data: &str,
-    ) -> Result<AsfaloadSignature<minisign::SignatureBox>, errs::SignatureError> {
+    fn from_string(data: &str) -> Result<Self, Self::SignatureError> {
         let s = minisign::SignatureBox::from_string(data)?;
         Ok(AsfaloadSignature { signature: s })
     }
 
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError> {
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::SignatureError> {
         let s = minisign::SignatureBox::from_file(path)?;
         Ok(AsfaloadSignature { signature: s })
     }
