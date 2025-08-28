@@ -1,5 +1,6 @@
 use base64::{Engine, prelude::BASE64_STANDARD};
 pub use minisign::KeyPair;
+use serde_json;
 use std::{
     ffi::OsString,
     fs,
@@ -50,6 +51,7 @@ pub mod errs {
         #[error("JSON error: {0}")]
         JsonError(#[from] serde_json::Error),
     }
+
     // This is added to not map all PErrors to FormatError. We manually map
     // the PError IO kind to our IO error, and others are mapped to FormatError.
     impl From<minisign::PError> for SignatureError {
@@ -94,12 +96,10 @@ fn save_to_file_path<T: AsRef<Path>>(
     // Secret key to disk
     let sk_string = keypair.key_pair.sk.to_box(None)?.into_string();
     let () = fs::write(path, &sk_string)?;
-
     // Pub key to disk
     let pk_string = keypair.key_pair.pk.to_box()?.into_string();
     let pub_path_buf = append_pub_extension(&p);
     let () = fs::write(pub_path_buf.as_path(), &pk_string)?;
-
     Ok(keypair)
 }
 impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
@@ -260,34 +260,29 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         Self: Sized,
     {
         let dir_path = dir.as_ref();
-
         // Ensure the directory exists
         std::fs::create_dir_all(dir_path)?;
 
-        // Create the filename from the public key's base64url representation
-        let filename = pub_key.to_filename();
-        let sig_file_path = dir_path.join(filename);
+        // The path to the signatures JSON file
+        let sig_file_path = dir_path.join("asfaload.signatures.json");
 
-        // Write the signature to the file
-        let mut file = File::create(&sig_file_path)?;
-        file.write_all(self.to_string().as_bytes())?;
+        // Read existing signatures, or create a new map if the file doesn't exist.
+        let mut signatures_map: std::collections::HashMap<String, String> =
+            match File::open(&sig_file_path) {
+                Ok(file) => serde_json::from_reader(file)?,
+                Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    std::collections::HashMap::new()
+                }
+                Err(e) => return Err(e.into()),
+            };
 
-        // Update or create the index.json file
-        let index_path = dir_path.join("index.json");
-        let mut index: std::collections::HashMap<String, String> = if index_path.exists() {
-            let file = File::open(&index_path)?;
-            serde_json::from_reader(file)?
-        } else {
-            std::collections::HashMap::new()
-        };
-
-        // Add the signature to the index
+        // Add the signature to the map
         let pubkey_b64 = pub_key.to_base64();
-        index.insert(pubkey_b64, self.to_base64());
+        signatures_map.insert(pubkey_b64, self.to_base64());
 
-        // Write the updated index back to the file
-        let index_file = File::create(&index_path)?;
-        serde_json::to_writer_pretty(index_file, &index)?;
+        // Write the updated map back to the file
+        let file = File::create(&sig_file_path)?;
+        serde_json::to_writer_pretty(file, &signatures_map)?;
 
         Ok(())
     }
@@ -510,66 +505,56 @@ mod asfaload_index_tests {
         // Add the signature to the aggregate
         signature.add_to_aggregate(dir_path, &pubkey)?;
 
-        // Verify that the signature file was created with the correct name
-        let expected_filename = pubkey.to_filename();
-        let sig_file_path = dir_path.join(expected_filename);
+        // Verify that the asfaload.signatures.json file was created
+        let sig_file_path = dir_path.join("asfaload.signatures.json");
         assert!(sig_file_path.exists(), "Signature file should exist");
 
-        // Verify that the index.json file was created
-        let index_path = dir_path.join("index.json");
-        assert!(index_path.exists(), "Index file should exist");
-
-        // Verify the content of the index.json file
-        let index_content = std::fs::read_to_string(&index_path)?;
-        let index: std::collections::HashMap<String, String> =
-            serde_json::from_str(&index_content)?;
-
+        // Verify the content of the signatures file
+        let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
+        let sig_file: std::collections::HashMap<String, String> =
+            serde_json::from_str(&sig_file_content)?;
         let pubkey_b64 = pubkey.to_base64();
         let pubkey2_b64 = pubkey2.to_base64();
         assert!(
-            index.contains_key(&pubkey_b64),
-            "Index should contain an entry for the public key"
+            sig_file.contains_key(&pubkey_b64),
+            "Signatures file should contain an entry for the public key"
         );
-
         assert!(
-            !index.contains_key(&pubkey2_b64),
-            "Index should NOT contain an entry for the second public key"
+            !sig_file.contains_key(&pubkey2_b64),
+            "Signatures file should NOT contain an entry for the second public key"
         );
-
         assert_eq!(
-            index.get(&pubkey_b64).unwrap(),
+            sig_file.get(&pubkey_b64).unwrap(),
             &signature.to_base64(),
-            "Index should contain the correct signature"
+            "Signatures file should contain the correct signature"
         );
 
         // Add second signature to aggregate
         signature2.add_to_aggregate(dir_path, &pubkey2)?;
-        // Re-read the index file as it should have been modified
-        let index_content = std::fs::read_to_string(&index_path)?;
-        let index: std::collections::HashMap<String, String> =
-            serde_json::from_str(&index_content)?;
 
+        // Re-read the signatures file as it should have been modified
+        let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
+        let sig_file: std::collections::HashMap<String, String> =
+            serde_json::from_str(&sig_file_content)?;
         // First signature is still there
         assert!(
-            index.contains_key(&pubkey_b64),
-            "Index should contain an entry for the public key"
+            sig_file.contains_key(&pubkey_b64),
+            "Signatures file should contain an entry for the public key"
         );
         assert_eq!(
-            index.get(&pubkey_b64).unwrap(),
+            sig_file.get(&pubkey_b64).unwrap(),
             &signature.to_base64(),
-            "Index should contain the correct signature"
+            "Signatures file should contain the correct signature"
         );
-
         // Second signature is added
         assert!(
-            index.contains_key(&pubkey2_b64),
-            "Index should contain an entry for the second public key"
+            sig_file.contains_key(&pubkey2_b64),
+            "Signatures file should contain an entry for the second public key"
         );
-
         assert_eq!(
-            index.get(&pubkey2_b64).unwrap(),
+            sig_file.get(&pubkey2_b64).unwrap(),
             &signature2.to_base64(),
-            "Index should contain the correct signature"
+            "Signatures file should contain the correct second signature"
         );
         Ok(())
     }
