@@ -36,7 +36,7 @@ where
 
 impl<P, S> AggregateSignature<P, S>
 where
-    P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
     /// Load signatures from a directory containing an asfaload.signatures.json file
@@ -70,32 +70,57 @@ where
         })
     }
 
-    /// Check if aggregate signature meets all thresholds in signers config
-    pub fn is_artifact_complete(&self, signers_config: &SignersConfig<P>) -> bool {
+    /// Check if aggregate signature meets all thresholds in signers config for artifacts
+    pub fn is_artifact_complete(
+        &self,
+        signers_config: &SignersConfig<P>,
+        artifact_data: &[u8],
+    ) -> bool {
         // Check artifact_signers groups
-        Self::check_groups(&signers_config.artifact_signers, &self.signatures)
-    }
-    pub fn is_master_complete(&self, signers_config: &SignersConfig<P>) -> bool {
-        // Check master_keys groups
-        Self::check_groups(&signers_config.master_keys, &self.signatures)
+        Self::check_groups(
+            &signers_config.artifact_signers,
+            &self.signatures,
+            artifact_data,
+        )
     }
 
-    pub fn is_admin_complete(&self, signers_config: &SignersConfig<P>) -> bool {
+    /// Check if aggregate signature meets all thresholds in signers config for master keys
+    pub fn is_master_complete(
+        &self,
+        signers_config: &SignersConfig<P>,
+        master_data: &[u8],
+    ) -> bool {
+        // Check master_keys groups
+        Self::check_groups(&signers_config.master_keys, &self.signatures, master_data)
+    }
+
+    /// Check if aggregate signature meets all thresholds in signers config for admin keys
+    pub fn is_admin_complete(&self, signers_config: &SignersConfig<P>, admin_data: &[u8]) -> bool {
         // Check admin_keys groups if present
         signers_config
             .admin_keys
             .as_ref()
-            .is_some_and(|keys| Self::check_groups(keys, &self.signatures))
+            .is_some_and(|keys| Self::check_groups(keys, &self.signatures, admin_data))
     }
-
-    /// Check if all groups in a category meet their thresholds
-    pub fn check_groups(groups: &[SignerGroup<P>], signatures: &HashMap<P, S>) -> bool {
+    /// Check if all groups in a category meet their thresholds with valid signatures
+    /// Note that invalid signatures are ignored, they are not reported as errors.
+    pub fn check_groups(
+        groups: &[SignerGroup<P>],
+        signatures: &HashMap<P, S>,
+        data: &[u8],
+    ) -> bool {
         !groups.is_empty()
             && groups.iter().all(|group| {
                 let count = group
                     .signers
                     .iter()
-                    .filter(|signer| signatures.contains_key(&signer.data.pubkey))
+                    .filter(|signer| {
+                        signatures
+                            .get(&signer.data.pubkey)
+                            .is_some_and(|signature| {
+                                signer.data.pubkey.verify(signature, data).is_ok()
+                            })
+                    })
                     .count();
                 count >= group.threshold as usize
             })
@@ -170,7 +195,7 @@ mod tests {
             signers_file::parse_signers_config(&json_config).unwrap();
 
         // Should be complete with threshold 1
-        assert!(agg_sig.is_artifact_complete(&signers_config));
+        assert!(agg_sig.is_artifact_complete(&signers_config, data));
 
         // Should be incomplete with threshold 2
         let high_threshold_config =
@@ -180,7 +205,7 @@ mod tests {
         let high_threshold_config = high_threshold_config.replace("THRESHOLD_PLACEHOLDER", "2");
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             signers_file::parse_signers_config(&high_threshold_config).unwrap();
-        assert!(!agg_sig.is_artifact_complete(&signers_config));
+        assert!(!agg_sig.is_artifact_complete(&signers_config, data));
 
         assert_eq!(agg_sig.origin, "test_origin");
     }
@@ -250,7 +275,7 @@ mod tests {
         };
 
         // Should be complete with threshold 1
-        assert!(agg_sig.is_artifact_complete(&signers_config));
+        assert!(agg_sig.is_artifact_complete(&signers_config, data));
 
         // Should be incomplete with threshold 2
         let mut high_threshold_group = group.clone();
@@ -259,7 +284,7 @@ mod tests {
             artifact_signers: vec![high_threshold_group],
             ..signers_config.clone()
         };
-        assert!(!agg_sig.is_artifact_complete(&high_threshold_config));
+        assert!(!agg_sig.is_artifact_complete(&high_threshold_config, data));
 
         assert_eq!(agg_sig.origin, dir_path.to_string_lossy().to_string());
     }
@@ -329,7 +354,7 @@ mod tests {
             signers_file::parse_signers_config(&json_config).unwrap();
 
         // Should be complete with both groups
-        assert!(agg_sig.is_artifact_complete(&signers_config));
+        assert!(agg_sig.is_artifact_complete(&signers_config, data));
 
         // Test mixed configuration (one group in artifact_signers, one in master_keys)
         let json_config_mixed = r#"
@@ -370,14 +395,14 @@ mod tests {
             signers_file::parse_signers_config(&json_config_mixed).unwrap();
 
         // Should be complete with mixed configuration
-        assert!(agg_sig.is_artifact_complete(&signers_config_mixed));
-        assert!(agg_sig.is_master_complete(&signers_config_mixed));
+        assert!(agg_sig.is_artifact_complete(&signers_config_mixed, data));
+        assert!(agg_sig.is_master_complete(&signers_config_mixed, data));
         // Check an null admin group is not comsidered as complete
-        assert!(!agg_sig.is_admin_complete(&signers_config_mixed));
+        assert!(!agg_sig.is_admin_complete(&signers_config_mixed, data));
         // Empty admin_keys array is never complete
         let mut signers_config_empty_admin = signers_config_mixed.clone();
         signers_config_empty_admin.admin_keys = Some([].to_vec());
-        assert!(!agg_sig.is_admin_complete(&signers_config_empty_admin));
+        assert!(!agg_sig.is_admin_complete(&signers_config_empty_admin, data));
 
         assert_eq!(agg_sig.origin, "test_origin");
     }
@@ -397,6 +422,8 @@ mod tests {
         let keypair4 = AsfaloadKeyPair::new("password").unwrap();
         let pubkey4 = keypair4.public_key();
         let seckey4 = keypair4.secret_key("password").unwrap();
+
+        let data = b"test data";
 
         let substitute_keys = |tpl: String| {
             let res = tpl.replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64());
@@ -422,20 +449,26 @@ mod tests {
             let groups = build_groups(tpl);
             if expected_valid {
                 assert!(AggregateSignature::<_, _>::check_groups(
-                    &groups, signatures
+                    &groups, signatures, data
                 ))
             } else {
                 assert!(!AggregateSignature::<_, _>::check_groups(
-                    &groups, signatures
+                    &groups, signatures, data
                 ))
             }
         };
-        // Create signatures for pubkey1 and pubkey2 only
-        let data = b"test data";
+        // Create signatures
         let sig1 = seckey1.sign(data).unwrap();
         let sig2 = seckey2.sign(data).unwrap();
         let sig3 = seckey3.sign(data).unwrap();
         let sig4 = seckey4.sign(data).unwrap();
+
+        // Create also signature for other data
+        let other_data = b"my other data";
+        let other_sig1 = seckey1.sign(other_data).unwrap();
+        let other_sig2 = seckey2.sign(other_data).unwrap();
+        let other_sig3 = seckey3.sign(other_data).unwrap();
+        let other_sig4 = seckey4.sign(other_data).unwrap();
 
         // Create signatures maps
         // The name of the variable indicates which signatures is contains
@@ -463,6 +496,14 @@ mod tests {
         signatures_1_2_3_4.insert(pubkey2.clone(), sig2.clone());
         signatures_1_2_3_4.insert(pubkey3.clone(), sig3.clone());
         signatures_1_2_3_4.insert(pubkey4.clone(), sig4.clone());
+
+        // Signature by key 3 signed other data, which should make
+        // it invalid, hence the i indicator.
+        let mut signatures_1_2_i3_4 = HashMap::new();
+        signatures_1_2_i3_4.insert(pubkey1.clone(), sig1.clone());
+        signatures_1_2_i3_4.insert(pubkey2.clone(), sig2.clone());
+        signatures_1_2_i3_4.insert(pubkey3.clone(), other_sig3.clone());
+        signatures_1_2_i3_4.insert(pubkey4.clone(), sig4.clone());
 
         // Aliases for explicit meaning of argument passed
         let complete = true;
@@ -664,6 +705,49 @@ mod tests {
                 complete,
             ),
             //------------------------------------------------------------
+            // Two 2-of-2 groups, but sig3 covers other data
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      },
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+        ],
+        "threshold": 2
+      }
+    ]
+    "#,
+                signatures_1_2_i3_4.clone(),
+                incomplete,
+            ),
+            //------------------------------------------------------------
+            // Two 4-of-4 groups, but sig3 covers other data
+            (
+                r#"
+    [
+      {
+        "signers": [
+          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+        ],
+        "threshold": 4
+      }
+    ]
+    "#,
+                signatures_1_2_i3_4.clone(),
+                incomplete,
+            ),
+            //------------------------------------------------------------
             // Two 2-of-2 groups, first group incomplete
             (
                 r#"
@@ -747,11 +831,12 @@ mod tests {
         // Empty groups are always incomplete
         assert!(!AggregateSignature::<_, _>::check_groups(
             &[],
-            &HashMap::<AsfaloadPublicKey<minisign::PublicKey>, AsfaloadSignature<SignatureBox>>::new(),
+            &HashMap::<AsfaloadPublicKey<minisign::PublicKey>, AsfaloadSignature<SignatureBox>>::new(),data
         ));
         assert!(!AggregateSignature::<_, _>::check_groups(
             &[],
-            &signatures_1_2_3_4
+            &signatures_1_2_3_4,
+            data
         ));
     }
 }
