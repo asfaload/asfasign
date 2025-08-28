@@ -588,7 +588,6 @@ mod asfaload_index_tests {
         // This seems to be reported as IO error by minisign
         let r = AsfaloadSignature::from_string("invalid");
         assert!(matches!(r, Err(errs::SignatureError::IoError(_))));
-        println!("{}", r.err().unwrap());
         Ok(())
     }
 }
