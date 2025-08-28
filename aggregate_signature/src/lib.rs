@@ -1,3 +1,4 @@
+use serde_json;
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
@@ -18,6 +19,8 @@ pub enum AggregateSignatureError {
     PublicKey(String),
     #[error("Threshold not met for group")]
     ThresholdNotMet,
+    #[error("JSON error: {0}")]
+    JsonError(#[from] serde_json::Error),
 }
 
 pub struct AggregateSignature<P, S>
@@ -36,35 +39,31 @@ where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    /// Load signatures from a directory where each filename is a base64-encoded public key
+    /// Load signatures from a directory containing an asfaload.signatures.json file
     pub fn load_from_dir(dir_path: &Path) -> Result<Self, AggregateSignatureError> {
         let mut signatures = HashMap::new();
+        let sig_file_path = dir_path.join("asfaload.signatures.json");
 
-        for entry in std::fs::read_dir(dir_path)? {
-            let entry = entry?;
-            let signature_path = entry.path();
-            if signature_path.is_file() {
-                // Decode filename to get public key
-                let filename = signature_path
-                    .file_name()
-                    .ok_or_else(|| {
-                        AggregateSignatureError::PublicKey("Invalid filename".to_string())
-                    })?
-                    .to_string_lossy()
-                    .into_owned();
-
-                let pubkey = P::from_filename(filename)
-                    .map_err(|e| AggregateSignatureError::PublicKey(format!("{}", e)))?;
-
-                // Read and parse signature
-                let sig_content = std::fs::read_to_string(&signature_path)?;
-                let signature = S::from_string(&sig_content)
-                    .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
-
-                signatures.insert(pubkey, signature);
+        // Attempt to read the signatures file, returning an empty set if not found.
+        let signatures_map: HashMap<String, String> = match std::fs::File::open(&sig_file_path) {
+            Ok(file) => serde_json::from_reader(file)?,
+            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // File not found is not an error, it just means no signatures.
+                return Ok(Self {
+                    signatures,
+                    origin: dir_path.to_string_lossy().to_string(),
+                });
             }
+            Err(e) => return Err(e.into()),
+        };
+        // Parse each entry
+        for (pubkey_b64, sig_b64) in signatures_map {
+            let pubkey = P::from_base64(pubkey_b64)
+                .map_err(|e| AggregateSignatureError::PublicKey(format!("{}", e)))?;
+            let signature = S::from_base64(&sig_b64)
+                .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
+            signatures.insert(pubkey, signature);
         }
-
         Ok(Self {
             signatures,
             origin: dir_path.to_string_lossy().to_string(),
@@ -207,10 +206,12 @@ mod tests {
         let data = b"test data";
         let signature = seckey.sign(data).unwrap();
 
-        // Write signature file (base64-encoded pubkey filename)
-        let pubkey_b64 = pubkey.to_filename();
-        let sig_file_path = dir_path.join(pubkey_b64);
-        std::fs::write(&sig_file_path, signature.to_string()).unwrap();
+        // Write the asfaload.signatures.json file
+        let sig_file_path = dir_path.join("asfaload.signatures.json");
+        let mut signatures_map = std::collections::HashMap::new();
+        signatures_map.insert(pubkey.to_base64(), signature.to_base64());
+        let json_content = serde_json::to_string_pretty(&signatures_map).unwrap();
+        std::fs::write(&sig_file_path, json_content).unwrap();
 
         // Load aggregate signature
         let agg_sig: AggregateSignature<
