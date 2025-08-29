@@ -2,7 +2,6 @@ use minisign;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use signatures::keys::{AsfaloadPublicKey, AsfaloadPublicKeyTrait};
 use std::fmt; // Required for minisign::PublicKey::from_base64 and its Error type
-
 // We set a bound in the serde annotation. Here why, as explained by AI:
 // Without this bound, we get the error `E0277` "the trait bound `P: _::_serde::Deserialize<'_>` is
 // not satisfied" occurs because when `#[derive(Deserialize)]` is used on generic structs like
@@ -12,7 +11,6 @@ use std::fmt; // Required for minisign::PublicKey::from_base64 and its Error typ
 // represents the public key) is handled manually within the `SignerData<P>`'s custom `impl
 // Serialize` and `impl Deserialize` blocks, which only require `P: AsfaloadPublicKeyTrait`. `P`
 // itself does not need to implement `serde::Deserialize` or `serde::Serialize` directly.
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(bound(
     serialize = "P: AsfaloadPublicKeyTrait",
@@ -34,7 +32,7 @@ pub struct InitialVersion {
     pub mirrors: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(bound(
     serialize = "P: AsfaloadPublicKeyTrait",
     deserialize = "P: AsfaloadPublicKeyTrait"
@@ -42,6 +40,50 @@ pub struct InitialVersion {
 pub struct SignerGroup<P: AsfaloadPublicKeyTrait> {
     pub signers: Vec<Signer<P>>,
     pub threshold: u32,
+}
+
+// Custom deserializer for SignerGroup that validates threshold <= signers.len()
+impl<'de, P> Deserialize<'de> for SignerGroup<P>
+where
+    P: AsfaloadPublicKeyTrait,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Create a helper struct that mirrors SignerGroup but without the custom Deserialize
+        #[derive(Deserialize)]
+        #[serde(bound(deserialize = "P: AsfaloadPublicKeyTrait"))]
+        struct SignerGroupHelper<P: AsfaloadPublicKeyTrait> {
+            signers: Vec<Signer<P>>,
+            threshold: u32,
+        }
+
+        // Deserialize into the helper struct
+        let helper = SignerGroupHelper::deserialize(deserializer)?;
+
+        // Validate that threshold > 0
+        if helper.threshold == 0 {
+            return Err(serde::de::Error::custom(format!(
+                "Threshold ({}) must be strictly greater than 0",
+                helper.threshold,
+            )));
+        }
+        // Validate that threshold <= signers.len()
+        if helper.threshold > helper.signers.len() as u32 {
+            return Err(serde::de::Error::custom(format!(
+                "Threshold ({}) cannot be greater than the number of signers ({})",
+                helper.threshold,
+                helper.signers.len()
+            )));
+        }
+
+        // If validation passes, create the actual SignerGroup
+        Ok(SignerGroup {
+            signers: helper.signers,
+            threshold: helper.threshold,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,7 +117,6 @@ where
         S: Serializer,
     {
         use serde::ser::SerializeStruct;
-
         let mut state = serializer.serialize_struct("SignerData", 2)?;
         state.serialize_field("format", &self.format)?;
         // Convert the public key to its string representation using the trait method
@@ -99,12 +140,10 @@ where
         }
 
         let helper = SignerDataHelper::deserialize(deserializer)?;
-
         // Parse the public key from string using the trait method
         let pubkey = P::from_base64(helper.pubkey.clone()).map_err(|_e| {
             serde::de::Error::custom(format!("Problem parsing pubkey base64: {}", helper.pubkey))
         })?;
-
         Ok(SignerData {
             format: helper.format,
             pubkey,
@@ -169,7 +208,6 @@ mod tests {
       ]
     }
     "#;
-
         let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(json_str).expect("Failed to parse JSON");
         assert_eq!(config.version, 1);
@@ -184,13 +222,14 @@ mod tests {
             config.artifact_signers[0].signers[0].data.format,
             KeyFormat::Minisign
         );
-
         assert_eq!(config.master_keys.len(), 1);
         assert_eq!(config.master_keys[0].threshold, 2);
         assert_eq!(config.master_keys[0].signers[0].kind, SignerKind::Key);
-
         assert!(config.admin_keys.is_some());
-        let admin_keys = config.admin_keys.as_ref().expect("admin_keys should be present");
+        let admin_keys = config
+            .admin_keys
+            .as_ref()
+            .expect("admin_keys should be present");
         assert_eq!(admin_keys[0].threshold, 2);
         assert_eq!(admin_keys[0].signers[0].kind, SignerKind::Key);
 
@@ -227,12 +266,89 @@ mod tests {
             SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
             serde_json::Error,
         > = parse_signers_config(json_str_with_invalid_b64_keys);
-
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert_eq!(
             error.to_string(),
             "Problem parsing pubkey base64: RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyvinvalid at line 12 column 139"
+        );
+
+        // Test the threshold validation
+        let json_str_with_invalid_threshold = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+          ],
+          "threshold": 4
+        }
+      ],
+      "master_keys": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+          ],
+          "threshold": 2
+        }
+      ]
+    }
+    "#;
+        let config: Result<
+            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
+            serde_json::Error,
+        > = parse_signers_config(json_str_with_invalid_threshold);
+        assert!(config.is_err());
+        let error = config.err().unwrap();
+        assert!(
+            error
+                .to_string()
+                .starts_with("Threshold (4) cannot be greater than the number of signers (3)")
+        );
+        let json_str_with_zero_threshold = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+          ],
+          "threshold": 0
+        }
+      ],
+      "master_keys": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+          ],
+          "threshold": 2
+        }
+      ]
+    }
+    "#;
+        let config: Result<
+            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
+            serde_json::Error,
+        > = parse_signers_config(json_str_with_zero_threshold);
+        assert!(config.is_err());
+        let error = config.err().unwrap();
+        assert!(
+            error
+                .to_string()
+                .starts_with("Threshold (0) must be strictly greater than 0")
         );
     }
 }
