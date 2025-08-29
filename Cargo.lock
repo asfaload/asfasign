@@ -213,8 +213,7 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 [[package]]
 name = "minisign"
 version = "0.7.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26541387415a1e829df5d532aad019fb11bc723e2b5bc99edefa4cf5bfad0de7"
+source = "git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf#fe7afafbce85ab052f0616107812d7c2da612231"
 dependencies = [
  "ct-codecs",
  "getrandom 0.2.16",
@@ -385,6 +384,8 @@ dependencies = [
  "serde",
  "serde_json",
  "signatures",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]

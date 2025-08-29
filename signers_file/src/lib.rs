@@ -2,6 +2,11 @@ use minisign;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use signatures::keys::{AsfaloadPublicKey, AsfaloadPublicKeyTrait};
 use std::fmt; // Required for minisign::PublicKey::from_base64 and its Error type
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+use thiserror::Error;
+//
 // We set a bound in the serde annotation. Here why, as explained by AI:
 // Without this bound, we get the error `E0277` "the trait bound `P: _::_serde::Deserialize<'_>` is
 // not satisfied" occurs because when `#[derive(Deserialize)]` is used on generic structs like
@@ -162,10 +167,48 @@ pub fn parse_signers_config<P: AsfaloadPublicKeyTrait>(
 ) -> Result<SignersConfig<P>, serde_json::Error> {
     serde_json::from_str(json_str)
 }
+#[derive(Debug, Error)]
+pub enum SignersFileError {
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("JSON error: {0}")]
+    JsonError(#[from] serde_json::Error),
+}
+
+/// Initialize a signers file in a specific directory.
+///
+/// This function validates the provided JSON content by deserializing it into a SignersConfig,
+/// then creates a pending signers file named "asfaload.signers.json.pending" in the specified directory.
+///
+/// # Arguments
+/// * `dir_path` - The directory where the signers file should be created
+/// * `json_content` - The JSON content of the signers configuration
+///
+/// # Returns
+/// * `Ok(())` if the pending file was successfully created
+/// * `Err(SignersFileError)` if there was an error validating the JSON or writing the file
+pub fn initialize_signers_file<P: AsRef<Path>>(
+    dir_path: P,
+    json_content: &str,
+) -> Result<(), SignersFileError> {
+    // First, validate the JSON by parsing it
+    let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        parse_signers_config(json_content)?;
+
+    // Create the pending file path
+    let pending_file_path = dir_path.as_ref().join("asfaload.signers.json.pending");
+
+    // Write the JSON content to the pending file
+    let mut file = fs::File::create(&pending_file_path)?;
+    file.write_all(json_content.as_bytes())?;
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_parsing() {
@@ -350,5 +393,103 @@ mod tests {
                 .to_string()
                 .starts_with("Threshold (0) must be strictly greater than 0")
         );
+    }
+    #[test]
+    fn test_initialize_signers_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+
+        // Example JSON content (from the existing test)
+        let json_content = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} }
+      ],
+      "threshold": 1
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+
+        // Call the function
+        initialize_signers_file(dir_path, json_content).unwrap();
+
+        // Check that the pending file exists
+        let pending_file_path = dir_path.join("asfaload.signers.json.pending");
+        assert!(pending_file_path.exists());
+
+        // Check the content
+        let content = fs::read_to_string(pending_file_path).unwrap();
+        // We don't compare exactly because of formatting, but we can parse it again to validate
+        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&content).unwrap();
+    }
+
+    #[test]
+    fn test_initialize_signers_file_invalid_json() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+
+        let invalid_json_content = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "INVALID_BASE64" } }
+      ],
+      "threshold": 1
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+
+        // Call the function - should fail due to invalid base64
+        let result = initialize_signers_file(dir_path, invalid_json_content);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(SignersFileError::JsonError(_))));
+
+        // Ensure the pending file was not created
+        let pending_file_path = dir_path.join("asfaload.signers.json.pending");
+        assert!(!pending_file_path.exists());
+
+        // Test valid json but invalid destination directory
+        let valid_json_content = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} }
+      ],
+      "threshold": 1
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+        let result = initialize_signers_file("/tmp/inexisting_path_fsdfd", valid_json_content);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(SignersFileError::IoError(_))));
     }
 }
