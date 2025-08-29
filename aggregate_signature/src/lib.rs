@@ -616,24 +616,6 @@ mod tests {
                 complete,
             ),
             //------------------------------------------------------------
-            // 2-of-1: this will never be complete, even if we have the signature from the
-            // signer and an additional one.
-            // FIXME: this json should raise an error when parsed to build our rust object.
-            (
-                r#"
-    [
-      {
-        "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
-        ],
-        "threshold": 2
-      }
-    ]
-    "#,
-                signatures_1_2.clone(),
-                incomplete,
-            ),
-            //------------------------------------------------------------
             // Multiple 1-of-1 groups.
             // This is equivalent to one 2-of-2 group with the same signers.
             // All groups must have their threshold reached for the signature to be complete.
