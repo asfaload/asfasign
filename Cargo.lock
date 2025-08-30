@@ -380,9 +380,11 @@ dependencies = [
 name = "signers_file"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "minisign",
  "serde",
  "serde_json",
+ "sha2",
  "signatures",
  "tempfile",
  "thiserror",
