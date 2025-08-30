@@ -131,10 +131,59 @@ where
 mod tests {
     use super::*;
     use minisign::SignatureBox;
+    use signatures::keys::AsfaloadSecretKey;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
     use signers_file::{KeyFormat, SignerKind};
     use tempfile::TempDir;
+
+    // FIXME: this code is duplicated from signers_file. As crates structure is expected
+    // to change, it doesn't seem the most efficient to extract this is a asfaload_test_helpers crate right now.
+    // Ultimately we would need to remove this duplication though.
+    struct TestKeys {
+        key_pairs: Vec<AsfaloadKeyPair<minisign::KeyPair>>,
+        pub_keys: Vec<AsfaloadPublicKey<minisign::PublicKey>>,
+        sec_keys: Vec<AsfaloadSecretKey<minisign::SecretKey>>,
+    }
+
+    impl TestKeys {
+        fn new(n: i8) -> Self {
+            let mut r = TestKeys {
+                key_pairs: vec![],
+                pub_keys: vec![],
+                sec_keys: vec![],
+            };
+            for _ in 1..(n + 1) {
+                let key_pair = AsfaloadKeyPair::new("password").unwrap();
+                let pub_key = key_pair.public_key();
+                let sec_key = key_pair.secret_key("password").unwrap();
+                r.key_pairs.push(key_pair);
+                r.sec_keys.push(sec_key);
+                r.pub_keys.push(pub_key);
+            }
+
+            r
+        }
+
+        fn pub_key(&self, n: usize) -> Option<&AsfaloadPublicKey<minisign::PublicKey>> {
+            self.pub_keys.get(n)
+        }
+        fn sec_key(&self, n: usize) -> Option<&AsfaloadSecretKey<minisign::SecretKey>> {
+            self.sec_keys.get(n)
+        }
+        fn key_pair(&self, n: usize) -> Option<&AsfaloadKeyPair<minisign::KeyPair>> {
+            self.key_pairs.get(n)
+        }
+
+        fn substitute_keys(&self, tpl: String) -> String {
+            self.pub_keys.iter().enumerate().fold(tpl, |t, (i, k)| {
+                t.replace(
+                    format!("PUBKEY{}_PLACEHOLDER", i).as_str(),
+                    k.to_base64().as_str(),
+                )
+            })
+        }
+    }
 
     #[test]
     fn test_load_and_complete() {
@@ -410,30 +459,26 @@ mod tests {
     #[test]
     fn test_check_groups_from_json_minimal() {
         // Generate keypairs
-        let keypair1 = AsfaloadKeyPair::new("password").unwrap();
-        let pubkey1 = keypair1.public_key();
-        let seckey1 = keypair1.secret_key("password").unwrap();
-        let keypair2 = AsfaloadKeyPair::new("password").unwrap();
-        let pubkey2 = keypair2.public_key();
-        let seckey2 = keypair2.secret_key("password").unwrap();
-        let keypair3 = AsfaloadKeyPair::new("password").unwrap();
-        let pubkey3 = keypair3.public_key();
-        let seckey3 = keypair3.secret_key("password").unwrap();
-        let keypair4 = AsfaloadKeyPair::new("password").unwrap();
-        let pubkey4 = keypair4.public_key();
-        let seckey4 = keypair4.secret_key("password").unwrap();
+        let test_keys = TestKeys::new(5);
+        // Keys 0 are not used because in a previous version of the code
+        // before switching to the use of TestKeys, the keys were generated
+        // manually with index starting at 1 and refactoring it is a lot of work
+        // for no benefit...
+        let _pubkey0 = test_keys.pub_key(0).unwrap();
+        let _seckey0 = test_keys.sec_key(0).unwrap();
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let pubkey2 = test_keys.pub_key(2).unwrap();
+        let seckey2 = test_keys.sec_key(2).unwrap();
+        let pubkey3 = test_keys.pub_key(3).unwrap();
+        let seckey3 = test_keys.sec_key(3).unwrap();
+        let pubkey4 = test_keys.pub_key(4).unwrap();
+        let seckey4 = test_keys.sec_key(4).unwrap();
 
         let data = b"test data";
 
-        let substitute_keys = |tpl: String| {
-            let res = tpl.replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64());
-            let res = res.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
-            let res = res.replace("PUBKEY3_PLACEHOLDER", &pubkey3.to_base64());
-            res.replace("PUBKEY4_PLACEHOLDER", &pubkey4.to_base64())
-        };
-
         let build_groups = |tpl: String| {
-            let json = substitute_keys(tpl);
+            let json = test_keys.substitute_keys(tpl);
 
             let groups: Vec<SignerGroup<AsfaloadPublicKey<minisign::PublicKey>>> =
                 serde_json::from_str(&json).unwrap();
