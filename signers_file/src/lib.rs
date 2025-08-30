@@ -252,6 +252,11 @@ where
 
     // Add the signature to the aggregate signatures file
     signature.add_to_aggregate(dir_path, pubkey).map_err(|e| {
+        // FIXME: We could be more precise and map to the JsonError case when needed as
+        // suggested in https://github.com/asfaload/asfasign/pull/13#discussion_r2311949399
+        // However, we would then introduce a dependency on minisign here, which I'd rather
+        // avoid. So to improve the code here, we would firstneed to move the SignatureError
+        // to keys.rs from minisign.rs.
         SignersFileError::IoError(std::io::Error::other(format!(
             "Failed to add signature to aggregate: {}",
             e
