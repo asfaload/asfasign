@@ -12,3 +12,5 @@ thiserror = "2.0.16"
 tempfile = "3.21.0"
 sha2 = "0.10.9"
 anyhow = "1.0.99"
+[dev-dependencies]
+test_helpers = { path = "../test_helpers/" }

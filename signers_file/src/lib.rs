@@ -269,56 +269,10 @@ where
 mod tests {
     use super::*;
     use anyhow::Result;
-    use signatures::keys::{
-        AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKey, AsfaloadSecretKeyTrait,
-    };
-    use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
+    use signatures::keys::AsfaloadPublicKey;
+    use signatures::keys::AsfaloadSecretKeyTrait;
     use tempfile::TempDir;
-
-    struct TestKeys {
-        key_pairs: Vec<AsfaloadKeyPair<minisign::KeyPair>>,
-        pub_keys: Vec<AsfaloadPublicKey<minisign::PublicKey>>,
-        sec_keys: Vec<AsfaloadSecretKey<minisign::SecretKey>>,
-    }
-
-    impl TestKeys {
-        fn new(n: i8) -> Self {
-            let mut r = TestKeys {
-                key_pairs: vec![],
-                pub_keys: vec![],
-                sec_keys: vec![],
-            };
-            for _ in 1..(n + 1) {
-                let key_pair = AsfaloadKeyPair::new("password").unwrap();
-                let pub_key = key_pair.public_key();
-                let sec_key = key_pair.secret_key("password").unwrap();
-                r.key_pairs.push(key_pair);
-                r.sec_keys.push(sec_key);
-                r.pub_keys.push(pub_key);
-            }
-
-            r
-        }
-
-        fn pub_key(&self, n: usize) -> Option<&AsfaloadPublicKey<minisign::PublicKey>> {
-            self.pub_keys.get(n)
-        }
-        fn sec_key(&self, n: usize) -> Option<&AsfaloadSecretKey<minisign::SecretKey>> {
-            self.sec_keys.get(n)
-        }
-        fn key_pair(&self, n: usize) -> Option<&AsfaloadKeyPair<minisign::KeyPair>> {
-            self.key_pairs.get(n)
-        }
-
-        fn substitute_keys(&self, tpl: String) -> String {
-            self.pub_keys.iter().enumerate().fold(tpl, |t, (i, k)| {
-                t.replace(
-                    format!("PUBKEY{}_PLACEHOLDER", i).as_str(),
-                    k.to_base64().as_str(),
-                )
-            })
-        }
-    }
+    use test_helpers::TestKeys;
 
     #[test]
     fn test_parsing() {
