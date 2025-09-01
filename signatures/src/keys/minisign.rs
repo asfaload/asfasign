@@ -264,7 +264,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         std::fs::create_dir_all(dir_path)?;
 
         // The path to the signatures JSON file
-        let sig_file_path = dir_path.join("asfaload.signatures.json");
+        let sig_file_path = dir_path.join("asfaload.signatures.json.pending");
 
         // Read existing signatures, or create a new map if the file doesn't exist.
         let mut signatures_map: std::collections::HashMap<String, String> =
@@ -506,7 +506,7 @@ mod asfaload_index_tests {
         signature.add_to_aggregate(dir_path, &pubkey)?;
 
         // Verify that the asfaload.signatures.json file was created
-        let sig_file_path = dir_path.join("asfaload.signatures.json");
+        let sig_file_path = dir_path.join("asfaload.signatures.json.pending");
         assert!(sig_file_path.exists(), "Signature file should exist");
 
         // Verify the content of the signatures file
