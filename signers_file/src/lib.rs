@@ -459,7 +459,7 @@ mod tests {
         );
     }
     #[test]
-    fn test_initialize_signers_file() -> Result<()> {
+    fn test_initialize_signers_file1() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
 
@@ -476,9 +476,10 @@ mod tests {
   "artifact_signers": [
     {
       "signers": [
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER"} }
       ],
-      "threshold": 1
+      "threshold": 2
     }
   ],
   "master_keys": [],
@@ -514,17 +515,20 @@ mod tests {
         assert!(pending_file_path.exists());
 
         // Check the content
-        let content = fs::read_to_string(pending_file_path).unwrap();
+        let content = fs::read_to_string(&pending_file_path).unwrap();
         // We don't compare exactly because of formatting, but we can parse it again to validate
         let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(&content).unwrap();
 
-        // Check that the signature file exists
+        // Check that the signature does not exist as the aggregate
+        // signature is not complete
         let sig_file_path = dir_path.join("asfaload.signatures.json");
-        assert!(sig_file_path.exists());
+        assert!(!sig_file_path.exists());
+        let pending_sig_file_path = dir_path.join("asfaload.signatures.json.pending");
+        assert!(pending_sig_file_path.exists());
 
         // Check the signature file content
-        let sig_content = fs::read_to_string(sig_file_path).unwrap();
+        let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
         let sig_map: std::collections::HashMap<String, String> =
             serde_json::from_str(&sig_content).unwrap();
         assert_eq!(sig_map.len(), 1);
@@ -661,9 +665,10 @@ mod tests {
       "admin_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER"} }
           ],
-          "threshold": 1
+          "threshold": 2
         }
       ]
     }
@@ -708,7 +713,8 @@ mod tests {
         // Check that the pending file exists
         assert!(pending_file_path.exists());
 
-        // Check that the signature file exists
-        assert!(sig_file_path.exists());
+        // Check that the signature file does not exist as not all
+        // required admin signatures where collected.
+        assert!(!sig_file_path.exists());
     }
 }
