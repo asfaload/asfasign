@@ -10,13 +10,13 @@ pub struct TestKeys {
 }
 
 impl TestKeys {
-    pub fn new(n: i8) -> Self {
+    pub fn new(n: usize) -> Self {
         let mut r = TestKeys {
-            key_pairs: vec![],
-            pub_keys: vec![],
-            sec_keys: vec![],
+            key_pairs: Vec::with_capacity(n),
+            pub_keys: Vec::with_capacity(n),
+            sec_keys: Vec::with_capacity(n),
         };
-        for _ in 1..(n + 1) {
+        for _ in 0..n {
             let key_pair = AsfaloadKeyPair::new("password").unwrap();
             let pub_key = key_pair.public_key();
             let sec_key = key_pair.secret_key("password").unwrap();
