@@ -178,6 +178,10 @@ pub enum SignersFileError {
     InvalidSigner(String),
     #[error("Signature verification failed: {0}")]
     SignatureVerificationFailed(String),
+    #[error("Signature operation failed: {0}")]
+    SignatureOperationFailed(String),
+    #[error("Signers file initialisation failed: {0}")]
+    InitialisationError(String),
 }
 /// Initialize a signers file in a specific directory.
 ///
@@ -204,7 +208,7 @@ pub fn initialize_signers_file<P: AsRef<Path>, S, K>(
     pubkey: &K,
 ) -> Result<(), SignersFileError>
 where
-    S: AsfaloadSignatureTrait,
+    S: AsfaloadSignatureTrait<SignatureError = signatures::keys::errs::SignatureError>,
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::PartialEq,
     <K as signatures::keys::AsfaloadPublicKeyTrait>::VerifyError: std::fmt::Display,
 {
@@ -245,6 +249,12 @@ where
 
     // Create the pending file path for the signers config
     let pending_file_path = dir_path.as_ref().join("asfaload.signers.json.pending");
+    if pending_file_path.exists() {
+        return Err(SignersFileError::InitialisationError(format!(
+            "File exists: {}",
+            pending_file_path.to_string_lossy()
+        )));
+    }
 
     // Write the JSON content to the pending file
     let mut file = fs::File::create(&pending_file_path)?;
@@ -252,17 +262,14 @@ where
 
     // Add the signature to the aggregate signatures file
     signature.add_to_aggregate(dir_path, pubkey).map_err(|e| {
-        // FIXME: We could be more precise and map to the JsonError case when needed as
-        // suggested in https://github.com/asfaload/asfasign/pull/13#discussion_r2311949399
-        // However, we would then introduce a dependency on minisign here, which I'd rather
-        // avoid. So to improve the code here, we would firstneed to move the SignatureError
-        // to keys.rs from minisign.rs.
-        SignersFileError::IoError(std::io::Error::other(format!(
-            "Failed to add signature to aggregate: {}",
-            e
-        )))
+        use signatures::keys::errs::SignatureError;
+        match e {
+            // As we write a new file here, no need to handle the JSonError as
+            // it should not happen.
+            SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
+            other => SignersFileError::SignatureOperationFailed(other.to_string()),
+        }
     })?;
-
     Ok(())
 }
 #[cfg(test)]
@@ -716,5 +723,77 @@ mod tests {
         // Check that the signature file does not exist as not all
         // required admin signatures where collected.
         assert!(!sig_file_path.exists());
+    }
+    #[test]
+    fn test_errors_in_initialize_signers_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(1);
+
+        // Create a valid JSON content
+        let json_content_template = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
+      ],
+      "threshold": 1
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
+
+        // Compute the SHA-512 hash of the JSON content
+        let mut hasher = Sha512::new();
+        hasher.update(json_content.as_bytes());
+        let hash_result = hasher.finalize();
+
+        // Get keys and sign the hash
+        let pub_key = test_keys.pub_key(0).unwrap();
+        let sec_key = test_keys.sec_key(0).unwrap();
+        let signature = sec_key.sign(&hash_result).unwrap();
+
+        // Test for IO error: Make the directory read-only
+        let mut perms = fs::metadata(dir_path).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(dir_path, perms).unwrap();
+
+        // Try to initialize the signers file, which should fail with an IO error
+        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+
+        // Check that we got an IO error
+        assert!(result.is_err());
+        match result.as_ref().unwrap_err() {
+            SignersFileError::IoError(_) => {} // Expected
+            _ => panic!(
+                "Expected IoError, got something else: {:?}",
+                result.unwrap_err()
+            ),
+        }
+        // Check no overwrite happens
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+        assert!(result.is_ok());
+        let pending_file_path = dir_path.join("asfaload.signers.json.pending");
+        assert!(pending_file_path.exists());
+        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+        assert!(result.is_err());
+        match result.as_ref().unwrap_err() {
+            SignersFileError::InitialisationError(_) => {} // Expected
+            _ => panic!(
+                "Expected InitisalistionError, got something else: {:?}",
+                result.unwrap_err()
+            ),
+        }
     }
 }
