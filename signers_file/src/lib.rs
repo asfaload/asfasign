@@ -178,6 +178,8 @@ pub enum SignersFileError {
     InvalidSigner(String),
     #[error("Signature verification failed: {0}")]
     SignatureVerificationFailed(String),
+    #[error("Signature operation failed: {0}")]
+    SignatureOperationFailed(String),
 }
 /// Initialize a signers file in a specific directory.
 ///
@@ -204,7 +206,7 @@ pub fn initialize_signers_file<P: AsRef<Path>, S, K>(
     pubkey: &K,
 ) -> Result<(), SignersFileError>
 where
-    S: AsfaloadSignatureTrait,
+    S: AsfaloadSignatureTrait<SignatureError = signatures::keys::errs::SignatureError>,
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::PartialEq,
     <K as signatures::keys::AsfaloadPublicKeyTrait>::VerifyError: std::fmt::Display,
 {
@@ -252,17 +254,13 @@ where
 
     // Add the signature to the aggregate signatures file
     signature.add_to_aggregate(dir_path, pubkey).map_err(|e| {
-        // FIXME: We could be more precise and map to the JsonError case when needed as
-        // suggested in https://github.com/asfaload/asfasign/pull/13#discussion_r2311949399
-        // However, we would then introduce a dependency on minisign here, which I'd rather
-        // avoid. So to improve the code here, we would firstneed to move the SignatureError
-        // to keys.rs from minisign.rs.
-        SignersFileError::IoError(std::io::Error::other(format!(
-            "Failed to add signature to aggregate: {}",
-            e
-        )))
+        use signatures::keys::errs::SignatureError;
+        match e {
+            SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
+            SignatureError::JsonError(json_err) => SignersFileError::JsonError(json_err),
+            other => SignersFileError::SignatureOperationFailed(other.to_string()),
+        }
     })?;
-
     Ok(())
 }
 #[cfg(test)]
