@@ -724,4 +724,76 @@ mod tests {
         // required admin signatures where collected.
         assert!(!sig_file_path.exists());
     }
+    #[test]
+    fn test_errors_in_initialize_signers_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(1);
+
+        // Create a valid JSON content
+        let json_content_template = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
+      ],
+      "threshold": 1
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
+
+        // Compute the SHA-512 hash of the JSON content
+        let mut hasher = Sha512::new();
+        hasher.update(json_content.as_bytes());
+        let hash_result = hasher.finalize();
+
+        // Get keys and sign the hash
+        let pub_key = test_keys.pub_key(0).unwrap();
+        let sec_key = test_keys.sec_key(0).unwrap();
+        let signature = sec_key.sign(&hash_result).unwrap();
+
+        // Test for IO error: Make the directory read-only
+        let mut perms = fs::metadata(dir_path).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(dir_path, perms).unwrap();
+
+        // Try to initialize the signers file, which should fail with an IO error
+        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+
+        // Check that we got an IO error
+        assert!(result.is_err());
+        match result.as_ref().unwrap_err() {
+            SignersFileError::IoError(_) => {} // Expected
+            _ => panic!(
+                "Expected IoError, got something else: {:?}",
+                result.unwrap_err()
+            ),
+        }
+        // Check no overwrite happens
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+        assert!(result.is_ok());
+        let pending_file_path = dir_path.join("asfaload.signers.json.pending");
+        assert!(pending_file_path.exists());
+        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+        assert!(result.is_err());
+        match result.as_ref().unwrap_err() {
+            SignersFileError::InitialisationError(_) => {} // Expected
+            _ => panic!(
+                "Expected InitisalistionError, got something else: {:?}",
+                result.unwrap_err()
+            ),
+        }
+    }
 }
