@@ -180,6 +180,8 @@ pub enum SignersFileError {
     SignatureVerificationFailed(String),
     #[error("Signature operation failed: {0}")]
     SignatureOperationFailed(String),
+    #[error("Signers file initialisation failed: {0}")]
+    InitialisationError(String),
 }
 /// Initialize a signers file in a specific directory.
 ///
@@ -247,6 +249,12 @@ where
 
     // Create the pending file path for the signers config
     let pending_file_path = dir_path.as_ref().join("asfaload.signers.json.pending");
+    if pending_file_path.exists() {
+        return Err(SignersFileError::InitialisationError(format!(
+            "File exists: {}",
+            pending_file_path.to_string_lossy()
+        )));
+    }
 
     // Write the JSON content to the pending file
     let mut file = fs::File::create(&pending_file_path)?;
@@ -256,8 +264,9 @@ where
     signature.add_to_aggregate(dir_path, pubkey).map_err(|e| {
         use signatures::keys::errs::SignatureError;
         match e {
+            // As we write a new file here, no need to handle the JSonError as
+            // it should not happen.
             SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
-            SignatureError::JsonError(json_err) => SignersFileError::JsonError(json_err),
             other => SignersFileError::SignatureOperationFailed(other.to_string()),
         }
     })?;
