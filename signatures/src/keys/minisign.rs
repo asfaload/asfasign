@@ -1,71 +1,45 @@
+use crate::keys::{
+    AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
+    AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait, errs,
+};
 use base64::{Engine, prelude::BASE64_STANDARD};
 pub use minisign::KeyPair;
 use serde_json;
 use std::{
     ffi::OsString,
     fs,
-    fs::{File, OpenOptions},
+    fs::File,
     io::Cursor,
-    io::Write,
     path::{Path, PathBuf},
 };
 
-use crate::keys::{
-    AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
-    AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-};
+// Convert minisign errors to our generic errors
+impl From<minisign::PError> for errs::KeyError {
+    fn from(e: minisign::PError) -> Self {
+        match e.kind() {
+            minisign::ErrorKind::Io => errs::KeyError::IOError(std::io::Error::other(e)),
+            _ => errs::KeyError::CreationFailed(e.to_string()),
+        }
+    }
+}
 
-pub mod errs {
-    use thiserror::Error;
-    #[derive(Error, Debug)]
-    pub enum KeyError {
-        #[error("Key creation failed")]
-        CreationFailed(#[from] minisign::PError),
-        #[error("Keypair fs io error")]
-        IOError(#[from] std::io::Error),
-        #[error("Refusing to overwrite existing files")]
-        NotOverwriting(String),
+impl From<minisign::PError> for errs::SignError {
+    fn from(e: minisign::PError) -> Self {
+        errs::SignError::SignatureFailed(e.to_string())
     }
-    #[derive(Error, Debug)]
-    pub enum SignError {
-        #[error("Signature failed")]
-        SignatureFailed(#[from] minisign::PError),
-    }
-    #[derive(Error, Debug)]
-    pub enum VerifyError {
-        #[error("Verification failed")]
-        VerificationFailed(#[from] minisign::PError),
-    }
+}
 
-    // AsfaloadSignatureTrait errors.
-    #[derive(Error, Debug)]
-    pub enum SignatureError {
-        #[error("Error reading signature: {0}")]
-        FormatError(minisign::PError),
-        #[error("base64 decoding of signature failed")]
-        Base64DecodeFailed(#[from] base64::DecodeError),
-        #[error("Invalid Utf8 string")]
-        Utf8DecodeFailed(#[from] std::str::Utf8Error),
-        #[error("IO error: {0}")]
-        IoError(#[from] std::io::Error),
-        #[error("JSON error: {0}")]
-        JsonError(#[from] serde_json::Error),
+impl From<minisign::PError> for errs::VerifyError {
+    fn from(e: minisign::PError) -> Self {
+        errs::VerifyError::VerificationFailed(e.to_string())
     }
+}
 
-    // This is added to not map all PErrors to FormatError. We manually map
-    // the PError IO kind to our IO error, and others are mapped to FormatError.
-    impl From<minisign::PError> for SignatureError {
-        fn from(e: minisign::PError) -> Self {
-            match e.kind() {
-                minisign::ErrorKind::Io =>
-                // Fallback to a generic IO error
-                {
-                    SignatureError::IoError(std::io::Error::other(e))
-                }
-                // Seems operations of AsfaloadSignatureTrait do not generate this
-                // case at the time this comment is written.
-                _ => SignatureError::FormatError(e),
-            }
+impl From<minisign::PError> for errs::SignatureError {
+    fn from(e: minisign::PError) -> Self {
+        match e.kind() {
+            minisign::ErrorKind::Io => errs::SignatureError::IoError(std::io::Error::other(e)),
+            _ => errs::SignatureError::FormatError(e.to_string()),
         }
     }
 }

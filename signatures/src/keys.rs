@@ -1,15 +1,54 @@
 pub mod minisign;
-use std::path::Path;
+use std::{fmt::Display, path::Path};
 
 pub enum AsfaloadKeyPairs {
     Minisign(minisign::KeyPair),
+}
+pub mod errs {
+    use thiserror::Error;
+
+    #[derive(Error, Debug)]
+    pub enum KeyError {
+        #[error("Key creation failed: {0}")]
+        CreationFailed(String),
+        #[error("Keypair fs io error")]
+        IOError(#[from] std::io::Error),
+        #[error("Refusing to overwrite existing files")]
+        NotOverwriting(String),
+    }
+
+    #[derive(Error, Debug)]
+    pub enum SignError {
+        #[error("Signature failed: {0}")]
+        SignatureFailed(String),
+    }
+
+    #[derive(Error, Debug)]
+    pub enum VerifyError {
+        #[error("Verification failed: {0}")]
+        VerificationFailed(String),
+    }
+
+    #[derive(Error, Debug)]
+    pub enum SignatureError {
+        #[error("Error reading signature: {0}")]
+        FormatError(String),
+        #[error("base64 decoding of signature failed")]
+        Base64DecodeFailed(#[from] base64::DecodeError),
+        #[error("Invalid Utf8 string")]
+        Utf8DecodeFailed(#[from] std::str::Utf8Error),
+        #[error("IO error: {0}")]
+        IoError(#[from] std::io::Error),
+        #[error("JSON error: {0}")]
+        JsonError(#[from] serde_json::Error),
+    }
 }
 
 // Trait that we will implement for keypairs we support. Inintially only minisign::KeyPair
 pub trait AsfaloadKeyPairTrait<'a> {
     type PublicKey;
     type SecretKey;
-    type KeyErr;
+    type KeyErr: Display;
     fn new(pw: &str) -> Result<Self, Self::KeyErr>
     where
         Self: Sized;
@@ -38,8 +77,8 @@ pub struct AsfaloadKeyPair<T> {
 pub trait AsfaloadSecretKeyTrait {
     type SecretKey;
     type Signature;
-    type SignError;
-    type KeyError;
+    type SignError: Display;
+    type KeyError: Display;
     fn sign(&self, data: &[u8]) -> Result<Self::Signature, Self::SignError>;
     fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError>
     where
@@ -63,8 +102,9 @@ pub struct AsfaloadSecretKey<K> {
 }
 pub trait AsfaloadPublicKeyTrait {
     type Signature;
-    type VerifyError;
-    type KeyError: std::fmt::Display;
+    type VerifyError: Display;
+    type KeyError: Display;
+
     fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError>;
     fn to_base64(&self) -> String;
     fn to_filename(&self) -> String {
@@ -102,7 +142,7 @@ pub struct AsfaloadSignature<S> {
 }
 
 pub trait AsfaloadSignatureTrait {
-    type SignatureError: std::fmt::Display;
+    type SignatureError: Display;
     fn to_string(&self) -> String;
     fn from_string(s: &str) -> Result<Self, Self::SignatureError>
     where
@@ -118,8 +158,6 @@ pub trait AsfaloadSignatureTrait {
         Self: Sized;
 
     fn to_base64(&self) -> String;
-    /// Save the signature in a file named as the base64url of the public key,
-    /// and add it to the index.json in the specified directory.
     fn add_to_aggregate<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
         &self,
         dir: P,
