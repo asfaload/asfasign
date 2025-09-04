@@ -212,6 +212,14 @@ where
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::PartialEq,
     <K as signatures::keys::AsfaloadPublicKeyTrait>::VerifyError: std::fmt::Display,
 {
+    // If a complete signatures file exists, we refuse to create a penging one.
+    let signature_file_path = dir_path.as_ref().join("asfaload.signatures.json");
+    if signature_file_path.exists() {
+        return Err(SignersFileError::InitialisationError(format!(
+            "Complete signature file exists: {}",
+            signature_file_path.to_string_lossy()
+        )));
+    }
     // First, validate the JSON by parsing it
     let config: SignersConfig<K> = parse_signers_config(json_content)?;
 
@@ -795,5 +803,63 @@ mod tests {
                 result.unwrap_err()
             ),
         }
+    }
+    #[test]
+    fn test_refuse_initialize_signers_file_when_complete_signature_exists() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(1);
+
+        // Create a valid JSON content
+        let json_content_template = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
+      ],
+      "threshold": 1
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
+
+        // Compute the SHA-512 hash of the JSON content
+        let mut hasher = Sha512::new();
+        hasher.update(json_content.as_bytes());
+        let hash_result = hasher.finalize();
+
+        // Get keys and sign the hash
+        let pub_key = test_keys.pub_key(0).unwrap();
+        let sec_key = test_keys.sec_key(0).unwrap();
+        let signature = sec_key.sign(&hash_result).unwrap();
+
+        // Create complete signature file, content does not matter, only existence.
+        let complete_signature_path = dir_path.join("asfaload.signatures.json");
+        std::fs::File::create(complete_signature_path)?;
+
+        // Try to initialize the signers file, which should fail with an Initialisation error
+        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+
+        // Check that we got an IO error
+        assert!(result.is_err());
+        match result.as_ref().unwrap_err() {
+            SignersFileError::InitialisationError(_) => {} // Expected
+            _ => panic!(
+                "Expected InitialisationError, got something else: {:?}",
+                result.unwrap_err()
+            ),
+        }
+        let pending_file_path = dir_path.join("asfaload.signers.json.pending");
+        assert!(!pending_file_path.exists());
+        Ok(())
     }
 }
