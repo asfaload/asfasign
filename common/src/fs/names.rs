@@ -10,12 +10,16 @@ pub const PENDING_SIGNATURES_SUFFIX: &str = "signatures.json.pending";
 pub const SIGNERS_DIR: &str = "asfaload.signers";
 pub const PENDING_SIGNERS_DIR: &str = "asfaload.signers.pending";
 pub const SIGNERS_FILE: &str = "index.json";
+pub const PENDING_SIGNERS_FILE: &str = "index.json.pending";
 
 pub fn signatures_path_for(file_path: PathBuf) -> Result<PathBuf, std::io::Error> {
     if !file_path.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Input path is not a file",
+            format!(
+                "Input path is not a file: {}",
+                file_path.into_os_string().to_string_lossy()
+            ),
         ));
     }
 
@@ -64,7 +68,7 @@ mod asfaload_index_tests {
         let res = signatures_path_for(input_path);
         assert!(res.is_err());
         let error = res.err().unwrap();
-        assert_eq!(error.to_string(), "Input path is not a file");
+        assert!(error.to_string().starts_with("Input path is not a file"));
 
         Ok(())
     }
