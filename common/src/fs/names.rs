@@ -12,7 +12,18 @@ pub const PENDING_SIGNERS_DIR: &str = "asfaload.signers.pending";
 pub const SIGNERS_FILE: &str = "index.json";
 pub const PENDING_SIGNERS_FILE: &str = "index.json.pending";
 
-pub fn signatures_path_for(file_path: PathBuf) -> Result<PathBuf, std::io::Error> {
+// Get the signatures file path for a file path.
+// It doesn't check on disk that the path received is effectively a file.
+pub fn signatures_path_for(file_path: PathBuf) -> PathBuf {
+    file_path.with_file_name(format!(
+        "{}.{}",
+        file_path.to_string_lossy(),
+        SIGNATURES_SUFFIX
+    ))
+}
+// Get the signatures file path for a file on disk. This chekcs on disk if the file
+// exists.
+pub fn signatures_path_on_disk_for(file_path: PathBuf) -> Result<PathBuf, std::io::Error> {
     if !file_path.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -38,7 +49,6 @@ pub fn signatures_path_for(file_path: PathBuf) -> Result<PathBuf, std::io::Error
     ));
     Ok(signatures_path)
 }
-
 #[cfg(test)]
 mod asfaload_index_tests {
 
@@ -51,7 +61,7 @@ mod asfaload_index_tests {
     use super::*;
 
     #[test]
-    fn test_signature_path_for() -> Result<()> {
+    fn test_signature_path_on_disk_for() -> Result<()> {
         let mut file = NamedTempFile::new()?;
         writeln!(file, "My data")?;
         let input_path = file.path().to_path_buf();
@@ -61,14 +71,34 @@ mod asfaload_index_tests {
             SIGNATURES_SUFFIX
         );
         let expected_path = PathBuf::from_str(&expected_str)?;
-        let signatures_path = signatures_path_for(input_path)?;
+        let signatures_path = signatures_path_on_disk_for(input_path)?;
         assert_eq!(signatures_path, expected_path);
 
         let input_path = TempDir::new().unwrap().path().to_path_buf();
-        let res = signatures_path_for(input_path);
+        let res = signatures_path_on_disk_for(input_path);
         assert!(res.is_err());
         let error = res.err().unwrap();
         assert!(error.to_string().starts_with("Input path is not a file"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_simple_signature_path_for() -> Result<()> {
+        let input = PathBuf::from_str("/my/path/to/file")?;
+        let output = signatures_path_for(input);
+        assert_eq!(
+            output,
+            PathBuf::from_str("/my/path/to/file.signatures.json")?
+        );
+
+        // FIXME: this should cause an error as it is clearly a path to a directory
+        let input = PathBuf::from_str("/my/path/to/file/")?;
+        let output = signatures_path_for(input);
+        assert_eq!(
+            output,
+            PathBuf::from_str("/my/path/to/file/.signatures.json")?
+        );
 
         Ok(())
     }
