@@ -5,7 +5,7 @@ use crate::keys::{
 use base64::{Engine, prelude::BASE64_STANDARD};
 use common::fs::names::{
     PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_FILE,
-    signatures_path_for,
+    pending_signatures_path_for, signatures_path_for,
 };
 pub use minisign::KeyPair;
 use serde_json;
@@ -244,13 +244,22 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
             )));
         }
         let signed_file_path = signed_file.as_ref();
+        let signatures_path = signatures_path_for(signed_file_path.to_path_buf());
+
+        // Refuse to add signatures to already completed signature.
+        if signatures_path.exists() {
+            return Err(errs::SignatureError::IoError(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "Aggregate signature is already complete",
+            )));
+        }
 
         // The path to the signatures JSON file
-        let sig_file_path = signatures_path_for(signed_file_path.to_path_buf());
+        let pending_sig_file_path = pending_signatures_path_for(signed_file_path.to_path_buf());
 
         // Read existing signatures, or create a new map if the file doesn't exist.
         let mut signatures_map: std::collections::HashMap<String, String> =
-            match File::open(&sig_file_path) {
+            match File::open(&pending_sig_file_path) {
                 Ok(file) => serde_json::from_reader(file)?,
                 Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
                     std::collections::HashMap::new()
@@ -263,7 +272,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         signatures_map.insert(pubkey_b64, self.to_base64());
 
         // Write the updated map back to the file
-        let file = File::create(&sig_file_path)?;
+        let file = File::create(&pending_sig_file_path)?;
         serde_json::to_writer_pretty(file, &signatures_map)?;
 
         Ok(())
@@ -288,7 +297,7 @@ impl Hash for AsfaloadPublicKey<minisign::PublicKey> {
 #[cfg(test)]
 mod asfaload_index_tests {
 
-    use std::fs::File;
+    use std::{fs::File, path::PathBuf};
 
     use anyhow::{Context, Result};
 
@@ -303,6 +312,17 @@ mod asfaload_index_tests {
     )> {
         let kp = AsfaloadKeyPair::new("mypass")?;
         Ok((kp.public_key(), kp.secret_key("mypass")?))
+    }
+
+    // FIXME: this function is duplicated. It can currently not be added to
+    // test_helpers because test_helper depends on the crate signatures, and the crate
+    // signature needs this function but depending on test_helpers would create a
+    // cyclic dependency.
+    // Will rework test helper later.
+    pub fn create_file_to_sign(dir: PathBuf) -> Result<PathBuf, std::io::Error> {
+        let to_signed_file_name = "my_signed_file";
+        let to_signed_file_path = dir.as_path().join(to_signed_file_name);
+        std::fs::write(&to_signed_file_path, "data").map(|_| to_signed_file_path)
     }
     #[test]
     fn test_new() -> Result<()> {
@@ -470,8 +490,7 @@ mod asfaload_index_tests {
         // Create a temporary directory
         let temp_dir = tempfile::tempdir()?;
         let dir_path = temp_dir.path();
-        let signed_file_name = "my_signed_file";
-        let signed_file_path = temp_dir.path().join(signed_file_name);
+        let signed_file_path = create_file_to_sign(dir_path.to_path_buf())?;
         std::fs::write(&signed_file_path, "data")?;
 
         // Generate a keypair and create a signature
