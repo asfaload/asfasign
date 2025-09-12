@@ -47,3 +47,9 @@ impl TestKeys {
         })
     }
 }
+
+pub fn pause() {
+    let mut s = "".to_string();
+    println!("Pausing test, press enter when done");
+    let _ = std::io::stdin().read_line(&mut s);
+}
