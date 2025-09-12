@@ -3,6 +3,10 @@ use crate::keys::{
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait, errs,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
+use common::fs::names::{
+    PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_FILE,
+    signatures_path_for,
+};
 pub use minisign::KeyPair;
 use serde_json;
 use std::{
@@ -225,20 +229,24 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         let s = self.signature.to_string();
         BASE64_STANDARD.encode(s)
     }
-    fn add_to_aggregate<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
+    fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
         &self,
-        dir: P,
+        signed_file: P,
         pub_key: &PK,
     ) -> Result<(), Self::SignatureError>
     where
         Self: Sized,
     {
-        let dir_path = dir.as_ref();
-        // Ensure the directory exists
-        std::fs::create_dir_all(dir_path)?;
+        if signed_file.as_ref().is_dir() {
+            return Err(errs::SignatureError::IoError(std::io::Error::new(
+                std::io::ErrorKind::IsADirectory,
+                "Requires a file, cannot sign a directory",
+            )));
+        }
+        let signed_file_path = signed_file.as_ref();
 
         // The path to the signatures JSON file
-        let sig_file_path = dir_path.join("asfaload.signatures.json.pending");
+        let sig_file_path = signatures_path_for(signed_file_path.to_path_buf());
 
         // Read existing signatures, or create a new map if the file doesn't exist.
         let mut signatures_map: std::collections::HashMap<String, String> =
@@ -462,6 +470,9 @@ mod asfaload_index_tests {
         // Create a temporary directory
         let temp_dir = tempfile::tempdir()?;
         let dir_path = temp_dir.path();
+        let signed_file_name = "my_signed_file";
+        let signed_file_path = temp_dir.path().join(signed_file_name);
+        std::fs::write(&signed_file_path, "data")?;
 
         // Generate a keypair and create a signature
         let keypair = AsfaloadKeyPair::new("password")?;
@@ -476,12 +487,38 @@ mod asfaload_index_tests {
         let signature = seckey.sign(data)?;
         let signature2 = seckey2.sign(data)?;
 
-        // Add the signature to the aggregate
-        signature.add_to_aggregate(dir_path, &pubkey)?;
+        // Signing a directory causes an error
+        let result = signature.add_to_aggregate_for_file(dir_path, &pubkey);
+        assert!(result.is_err());
+        match result.as_ref().unwrap_err() {
+            errs::SignatureError::IoError(io_err) => {
+                let err: &std::io::Error = io_err; // Explicit type annotation
+                if err.kind() != std::io::ErrorKind::IsADirectory {
+                    panic!(
+                        "Expected IoError with IsADirectory kind, got something else: {:?}",
+                        err
+                    )
+                }
+            }
+            _ => panic!(
+                "Expected InitisalisationError, got something else: {:?}",
+                result.unwrap_err()
+            ),
+        }
 
-        // Verify that the asfaload.signatures.json file was created
-        let sig_file_path = dir_path.join("asfaload.signatures.json.pending");
-        assert!(sig_file_path.exists(), "Signature file should exist");
+        // Add the signature to the aggregate
+        signature.add_to_aggregate_for_file(&signed_file_path, &pubkey)?;
+
+        // Verify that the signature file was created
+        let sig_file_path = signed_file_path.with_file_name(format!(
+            "{}.{}",
+            signed_file_path.to_string_lossy(),
+            PENDING_SIGNATURES_SUFFIX
+        ));
+        assert!(
+            sig_file_path.exists(),
+            "Pending signature file should exist"
+        );
 
         // Verify the content of the signatures file
         let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
@@ -504,7 +541,7 @@ mod asfaload_index_tests {
         );
 
         // Add second signature to aggregate
-        signature2.add_to_aggregate(dir_path, &pubkey2)?;
+        signature2.add_to_aggregate_for_file(signed_file_path, &pubkey2)?;
 
         // Re-read the signatures file as it should have been modified
         let sig_file_content = std::fs::read_to_string(&sig_file_path)?;

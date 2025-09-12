@@ -158,7 +158,7 @@ pub trait AsfaloadSignatureTrait {
         Self: Sized;
 
     fn to_base64(&self) -> String;
-    fn add_to_aggregate<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
+    fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
         &self,
         dir: P,
         pub_key: &PK,
