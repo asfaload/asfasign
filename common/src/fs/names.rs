@@ -21,6 +21,13 @@ pub fn signatures_path_for(file_path: PathBuf) -> PathBuf {
         SIGNATURES_SUFFIX
     ))
 }
+pub fn pending_signatures_path_for(file_path: PathBuf) -> PathBuf {
+    file_path.with_file_name(format!(
+        "{}.{}",
+        file_path.to_string_lossy(),
+        PENDING_SIGNATURES_SUFFIX
+    ))
+}
 // Get the signatures file path for a file on disk. This chekcs on disk if the file
 // exists.
 pub fn signatures_path_on_disk_for(file_path: PathBuf) -> Result<PathBuf, std::io::Error> {
