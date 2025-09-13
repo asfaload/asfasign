@@ -1,4 +1,4 @@
-use common::fs::names::SIGNATURES_SUFFIX;
+use common::fs::names::{SIGNATURES_SUFFIX, signatures_path_for};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
@@ -40,21 +40,12 @@ where
     S: AsfaloadSignatureTrait,
 {
     /// Load signatures for a file from the corresponding signatures file
-    pub fn load_for_file(file_path: &Path) -> Result<Self, AggregateSignatureError> {
+    pub fn load_for_file<PP: AsRef<Path>>(path_in: PP) -> Result<Self, AggregateSignatureError> {
+        let file_path = path_in.as_ref();
         let mut signatures = HashMap::new();
 
-        // Construct the signatures file path: same as file_path but with ".signatures" appended
-        let file_name = file_path.file_name().ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Input path has no file name",
-            )
-        })?;
-        let sig_file_path = file_path.with_file_name(format!(
-            "{}.{}",
-            file_name.to_string_lossy(),
-            SIGNATURES_SUFFIX
-        ));
+        // Construct the signatures file path: same as file_path but with suffix appended
+        let sig_file_path = signatures_path_for(file_path)?;
 
         // Attempt to read the signatures file, returning an empty set if not found.
         let signatures_map: HashMap<String, String> = match std::fs::File::open(&sig_file_path) {
