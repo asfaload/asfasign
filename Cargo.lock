@@ -70,6 +70,10 @@ dependencies = [
 [[package]]
 name = "common"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
+]
 
 [[package]]
 name = "cpufeatures"
@@ -376,9 +380,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
+ "common",
  "minisign",
  "serde_json",
  "tempfile",
+ "test_helpers",
  "thiserror",
 ]
 
@@ -387,6 +393,7 @@ name = "signers_file"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "common",
  "minisign",
  "serde",
  "serde_json",
