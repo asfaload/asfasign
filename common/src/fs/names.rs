@@ -47,7 +47,7 @@ pub fn signatures_path_on_disk_for<P: AsRef<Path>>(path_in: P) -> Result<PathBuf
         ));
     }
 
-    // FIXME: how could this happen?
+    // This happens for a path "/" for example.
     let _file_name = file_path.file_name().ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -113,6 +113,18 @@ mod asfaload_index_tests {
             PathBuf::from_str("/my/path/to/file/.signatures.json")?
         );
 
+        let input = Path::new("/");
+        let result = signatures_path_for(input);
+        assert!(result.is_err());
+        match result.as_ref().unwrap_err().kind() {
+            std::io::ErrorKind::InvalidInput => {}
+            err => {
+                panic!(
+                    "Expected IoError with InvalidInput kind, got something else: {:?}",
+                    err
+                )
+            }
+        }
         Ok(())
     }
 }
