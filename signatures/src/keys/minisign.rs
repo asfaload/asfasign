@@ -83,7 +83,6 @@ fn save_to_file_path<T: AsRef<Path>>(
 impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
     type PublicKey = AsfaloadPublicKey<minisign::PublicKey>;
     type SecretKey = AsfaloadSecretKey<minisign::SecretKey>;
-    type KeyErr = errs::KeyError;
     fn new(password: &str) -> Result<Self, errs::KeyError> {
         let kp = KeyPair::generate_encrypted_keypair(Some(password.to_string()))?;
         Ok(AsfaloadKeyPair { key_pair: kp })
@@ -122,7 +121,7 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
             key: self.key_pair.pk.clone(),
         }
     }
-    fn secret_key(&self, password: &str) -> Result<Self::SecretKey, Self::KeyErr> {
+    fn secret_key(&self, password: &str) -> Result<Self::SecretKey, errs::KeyError> {
         let r = AsfaloadSecretKey {
             key: self
                 .key_pair
@@ -138,8 +137,6 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
 impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
     type SecretKey = minisign::SecretKey;
     type Signature = AsfaloadSignature<minisign::SignatureBox>;
-    type SignError = errs::SignError;
-    type KeyError = errs::KeyError;
 
     fn sign(&self, data: &[u8]) -> Result<Self::Signature, errs::SignError> {
         let data_reader = Cursor::new(data);
@@ -163,10 +160,8 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
 
 impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     type Signature = AsfaloadSignature<minisign::SignatureBox>;
-    type VerifyError = errs::VerifyError;
-    type KeyError = errs::KeyError;
 
-    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError> {
+    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError> {
         let data_reader = Cursor::new(data);
         minisign::verify(
             &self.key,
@@ -183,44 +178,39 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         self.key.to_base64()
     }
 
-    fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError> {
+    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
         let k = minisign::PublicKey::from_bytes(data)?;
         Ok(AsfaloadPublicKey { key: k })
     }
     // When saving to a file, we store a PublicKeyBox as encouraged by minisign for storage.
     // Other methods manipulate the PublickKey directly
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::KeyError> {
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError> {
         let k = minisign::PublicKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
             .into_public_key()?;
         Ok(AsfaloadPublicKey { key: k })
     }
 
-    fn from_base64(s: String) -> Result<Self, Self::KeyError> {
+    fn from_base64(s: String) -> Result<Self, errs::KeyError> {
         let k = minisign::PublicKey::from_base64(s.as_str())?;
         Ok(AsfaloadPublicKey { key: k })
     }
 }
 
 impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
-    type SignatureError = errs::SignatureError;
-
     fn to_string(&self) -> String {
         self.signature.to_string()
     }
 
-    fn from_string(data: &str) -> Result<Self, Self::SignatureError> {
+    fn from_string(data: &str) -> Result<Self, errs::SignatureError> {
         let s = minisign::SignatureBox::from_string(data)?;
         Ok(AsfaloadSignature { signature: s })
     }
 
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::SignatureError> {
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError> {
         let s = minisign::SignatureBox::from_file(path)?;
         Ok(AsfaloadSignature { signature: s })
     }
-    fn from_base64(s: &str) -> Result<Self, Self::SignatureError>
-    where
-        Self: Sized,
-    {
+    fn from_base64(s: &str) -> Result<Self, errs::SignatureError> {
         let s = BASE64_STANDARD.decode(s)?;
         Self::from_string(std::str::from_utf8(&s)?)
     }
@@ -233,10 +223,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         &self,
         signed_file: P,
         pub_key: &PK,
-    ) -> Result<(), Self::SignatureError>
-    where
-        Self: Sized,
-    {
+    ) -> Result<(), errs::SignatureError> {
         if signed_file.as_ref().is_dir() {
             return Err(errs::SignatureError::IoError(std::io::Error::new(
                 std::io::ErrorKind::IsADirectory,

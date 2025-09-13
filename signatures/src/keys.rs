@@ -45,25 +45,22 @@ pub mod errs {
 }
 
 // Trait that we will implement for keypairs we support. Inintially only minisign::KeyPair
-pub trait AsfaloadKeyPairTrait<'a> {
+pub trait AsfaloadKeyPairTrait<'a>: Sized {
     type PublicKey;
     type SecretKey;
-    type KeyErr: Display;
-    fn new(pw: &str) -> Result<Self, Self::KeyErr>
-    where
-        Self: Sized;
+    fn new(pw: &str) -> Result<Self, errs::KeyError>;
     // If the path is an existing directory, save the secret key in this directory in
     // file named 'key', and public key in 'key.pub'.
     // If the path is an inexisting file in an existing directory, save secret key
     // in this newly created filr, and save the public key in the same filename with added suffx
     // '.pub'
-    fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, Self::KeyErr>;
+    fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, errs::KeyError>;
     // As we use minisign as the first (and initially only) signing scheme, our proposed API is
     // modelled after it. When we generate a minisign key pai, the private key is encrypted and
     // needs to be decrypted for use.
     // This method returns the decrypted secret key, and thus requires the decryption password as
     // argument.
-    fn secret_key(&self, password: &str) -> Result<Self::SecretKey, Self::KeyErr>;
+    fn secret_key(&self, password: &str) -> Result<Self::SecretKey, errs::KeyError>;
     fn public_key(&self) -> Self::PublicKey;
 }
 
@@ -74,24 +71,15 @@ pub struct AsfaloadKeyPair<T> {
 
 // This trait should never give access to the private key it manages, as it is non-encrypted (for
 // minisign)
-pub trait AsfaloadSecretKeyTrait {
+pub trait AsfaloadSecretKeyTrait: Sized {
     type SecretKey;
     type Signature;
-    type SignError: Display;
-    type KeyError: Display;
-    fn sign(&self, data: &[u8]) -> Result<Self::Signature, Self::SignError>;
-    fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError>
-    where
-        Self: Sized;
-    fn from_string(s: String) -> Result<Self, Self::KeyError>
-    where
-        Self: Sized,
-    {
+    fn sign(&self, data: &[u8]) -> Result<Self::Signature, errs::SignError>;
+    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError>;
+    fn from_string(s: String) -> Result<Self, errs::KeyError> {
         Self::from_bytes(&s.into_bytes())
     }
-    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, Self::KeyError>
-    where
-        Self: Sized;
+    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, errs::KeyError>;
 }
 
 // Struct to store a secret key immediately usable.
@@ -100,35 +88,23 @@ pub struct AsfaloadSecretKey<K> {
     // Keep it private as for minisign it is the decrypted key, i.e. non password protected.
     key: K,
 }
-pub trait AsfaloadPublicKeyTrait {
+pub trait AsfaloadPublicKeyTrait: Sized {
     type Signature;
-    type VerifyError: Display;
-    type KeyError: Display;
 
-    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError>;
+    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError>;
     fn to_base64(&self) -> String;
     fn to_filename(&self) -> String {
         self.to_base64().replace("+", "-").replace("/", "_")
     }
-    fn from_filename(n: String) -> Result<Self, Self::KeyError>
-    where
-        Self: Sized,
-    {
+    fn from_filename(n: String) -> Result<Self, errs::KeyError> {
         let b64 = n.replace("-", "+").replace("_", "/");
         Self::from_base64(b64)
     }
-    fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError>
-    where
-        Self: Sized;
-    fn from_base64(s: String) -> Result<Self, Self::KeyError>
-    where
-        Self: Sized,
-    {
+    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError>;
+    fn from_base64(s: String) -> Result<Self, errs::KeyError> {
         Self::from_bytes(&s.into_bytes())
     }
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::KeyError>
-    where
-        Self: Sized;
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError>;
 }
 
 #[derive(Debug, Clone)]
@@ -141,28 +117,19 @@ pub struct AsfaloadSignature<S> {
     signature: S,
 }
 
-pub trait AsfaloadSignatureTrait {
-    type SignatureError: Display;
+pub trait AsfaloadSignatureTrait: Sized {
     fn to_string(&self) -> String;
-    fn from_string(s: &str) -> Result<Self, Self::SignatureError>
-    where
-        Self: Sized;
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::SignatureError>
-    where
-        Self: Sized;
+    fn from_string(s: &str) -> Result<Self, errs::SignatureError>;
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError>;
 
     // As we need to serialise to json, and json does not support multiline strings, we ssupport
     // the serialisation to base64 format.
-    fn from_base64(s: &str) -> Result<Self, Self::SignatureError>
-    where
-        Self: Sized;
+    fn from_base64(s: &str) -> Result<Self, errs::SignatureError>;
 
     fn to_base64(&self) -> String;
     fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
         &self,
         dir: P,
         pub_key: &PK,
-    ) -> Result<(), Self::SignatureError>
-    where
-        Self: Sized;
+    ) -> Result<(), errs::SignatureError>;
 }

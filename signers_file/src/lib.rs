@@ -205,16 +205,14 @@ pub enum SignersFileError {
 /// # Returns
 /// * `Ok(())` if the pending file was successfully created
 /// * `Err(SignersFileError)` if there was an error validating the JSON, signature, or writing the file
-pub fn initialize_signers_file<P: AsRef<Path>, S, K>(
+pub fn initialize_signers_file<P: AsRef<Path>, S: signatures::keys::AsfaloadSignatureTrait, K>(
     dir_path_in: P,
     json_content: &str,
     signature: &S,
     pubkey: &K,
 ) -> Result<(), SignersFileError>
 where
-    S: AsfaloadSignatureTrait<SignatureError = signatures::keys::errs::SignatureError>,
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::PartialEq,
-    <K as signatures::keys::AsfaloadPublicKeyTrait>::VerifyError: std::fmt::Display,
 {
     // Ensure we work in the right directory
     let dir_path = {
