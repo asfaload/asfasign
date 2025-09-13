@@ -1,3 +1,7 @@
+use common::fs::names::signatures_path_for;
+use common::fs::names::{
+    PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_FILE, pending_signatures_path_for,
+};
 use minisign;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha512};
@@ -214,29 +218,41 @@ where
 {
     // Ensure we work in the right directory
     let dir_path = {
-        let path = if dir_path_in.as_ref().ends_with("asfaload.signers.pending") {
+        let path = if dir_path_in.as_ref().ends_with(PENDING_SIGNERS_DIR) {
             dir_path_in.as_ref().to_path_buf()
         } else {
-            dir_path_in.as_ref().join("asfaload.signers.pending")
+            dir_path_in.as_ref().join(PENDING_SIGNERS_DIR)
         };
         // Ensure directory exists
         std::fs::create_dir_all(&path)?;
         path
     };
     // If a signers file exists, we refuse to overwrite it
-    let signers_file_path = dir_path.join("asfaload.signers.json");
+    let signers_file_path = dir_path.join(SIGNERS_FILE);
     if signers_file_path.exists() {
         return Err(SignersFileError::InitialisationError(format!(
             "Signers file exists: {}",
             signers_file_path.to_string_lossy()
         )));
     }
-    // If a complete signatures file exists, we refuse to create a pending signers file.
-    let signature_file_path = dir_path.join("asfaload.signatures.json");
-    if signature_file_path.exists() {
+    // If a pending signatures file already exists, we refuse to create a pending signers file.
+    // We use the function not looking to disk content here, and check on disk ourselves.
+    let pending_signature_file_path = pending_signatures_path_for(signers_file_path.clone());
+
+    if pending_signature_file_path.exists() {
+        return Err(SignersFileError::InitialisationError(format!(
+            "Pending signature file exists, refusing to initialise over it: {}",
+            pending_signature_file_path.to_string_lossy()
+        )));
+    }
+    // If a complete signatures file already exists, we refuse to create a pending signers file.
+    // We use the function not looking to disk content here, and check on disk ourselves.
+    let complete_signature_file_path = signatures_path_for(&signers_file_path)?;
+
+    if complete_signature_file_path.exists() {
         return Err(SignersFileError::InitialisationError(format!(
             "Complete signature file exists: {}",
-            signature_file_path.to_string_lossy()
+            complete_signature_file_path.to_string_lossy()
         )));
     }
     // First, validate the JSON by parsing it
@@ -279,23 +295,28 @@ where
     file.write_all(json_content.as_bytes())?;
 
     // Add the signature to the aggregate signatures file
-    signature.add_to_aggregate(dir_path, pubkey).map_err(|e| {
-        use signatures::keys::errs::SignatureError;
-        match e {
-            // As we write a new file here, no need to handle the JSonError as
-            // it should not happen.
-            SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
-            other => SignersFileError::SignatureOperationFailed(other.to_string()),
-        }
-    })?;
+    signature
+        .add_to_aggregate_for_file(signers_file_path, pubkey)
+        .map_err(|e| {
+            use signatures::keys::errs::SignatureError;
+            match e {
+                // As we write a new file here, no need to handle the JSonError as
+                // it should not happen.
+                SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
+                other => SignersFileError::SignatureOperationFailed(other.to_string()),
+            }
+        })?;
     Ok(())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::Result;
+    use common::fs::names::PENDING_SIGNATURES_SUFFIX;
+    use common::fs::names::PENDING_SIGNERS_FILE;
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
+    use std::path::PathBuf;
     use tempfile::TempDir;
     use test_helpers::TestKeys;
 
@@ -536,7 +557,7 @@ mod tests {
         .unwrap();
 
         // Check that the pending file exists
-        let pending_file_path = dir_path.join("asfaload.signers.pending/asfaload.signers.json");
+        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(pending_file_path.exists());
 
         // Check the content
@@ -547,10 +568,15 @@ mod tests {
 
         // Check that the signature does not exist as the aggregate
         // signature is not complete
-        let sig_file_path = dir_path.join("asfaload.signers.pending/asfaload.signatures.json");
+        let sig_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
         assert!(!sig_file_path.exists());
-        let pending_sig_file_path =
-            dir_path.join("asfaload.signers.pending/asfaload.signatures.json.pending");
+        let pending_sig_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
         assert!(pending_sig_file_path.exists());
 
         // Check the signature file content
@@ -613,7 +639,7 @@ mod tests {
         assert!(matches!(result, Err(SignersFileError::InvalidSigner(_))));
 
         // Ensure the pending file was not created
-        let pending_file_path = dir_path.join("asfaload.signers.pending/asfaload.signers.json");
+        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(!pending_file_path.exists());
     }
 
@@ -661,7 +687,7 @@ mod tests {
         ));
 
         // Ensure the pending file was not created
-        let pending_file_path = dir_path.join("asfaload.signers.pending/asfaload.signers.json");
+        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(!pending_file_path.exists());
     }
 
@@ -725,7 +751,7 @@ mod tests {
             non_admin_pubkey,
         );
         let sig_file_path = dir_path.join("asfaload.signatures.json");
-        let pending_file_path = dir_path.join("asfaload.signers.pending/asfaload.signers.json");
+        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(!sig_file_path.exists());
         assert!(!pending_file_path.exists());
         assert!(result.is_err());
@@ -799,12 +825,14 @@ mod tests {
             ),
         }
         // Check no overwrite happens
+        // first create a signers file in an empty directory
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
         let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
         assert!(result.is_ok());
-        let pending_file_path = dir_path.join("asfaload.signers.pending/asfaload.signers.json");
-        assert!(pending_file_path.exists());
+        let pending_signers_file_path =
+            dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_signers_file_path.exists());
         let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
         assert!(result.is_err());
         match result.as_ref().unwrap_err() {
@@ -854,10 +882,12 @@ mod tests {
         let signature = sec_key.sign(&hash_result).unwrap();
 
         // Create complete signature file, content does not matter, only existence.
-        let complete_signature_path =
-            dir_path.join("asfaload.signers.pending/asfaload.signatures.json");
-        std::fs::create_dir(complete_signature_path.parent().unwrap())?;
-        std::fs::File::create(complete_signature_path)?;
+        let aggregate_signature_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        std::fs::create_dir(aggregate_signature_path.parent().unwrap())?;
+        std::fs::File::create(&aggregate_signature_path)?;
 
         // Try to initialize the signers file, which should fail with an Initialisation error
         let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
@@ -871,7 +901,7 @@ mod tests {
                 result.unwrap_err()
             ),
         }
-        let pending_file_path = dir_path.join("asfaload.signers.pending/asfaload.signers.json");
+        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(!pending_file_path.exists());
         Ok(())
     }
@@ -914,7 +944,8 @@ mod tests {
         let signature = sec_key.sign(&hash_result).unwrap();
 
         // Create complete signature file, content does not matter, only existence.
-        let existing_signers_path = dir_path.join("asfaload.signers.pending/asfaload.signers.json");
+        let existing_signers_path =
+            dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         std::fs::create_dir(existing_signers_path.parent().unwrap())?;
         std::fs::File::create(existing_signers_path)?;
 
@@ -930,7 +961,7 @@ mod tests {
                 result.unwrap_err()
             ),
         }
-        let pending_file_path = dir_path.join("asfaload.signers.pending/asfaload.signers.json");
+        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         // Check the file is still there
         assert!(pending_file_path.exists());
         // And check it wasn't changed, i.e. it is still and empty file

@@ -1,2 +1,2 @@
 [workspace]
-members = ["signatures", "signers_file", "aggregate_signature", "test_helpers"]
+members = ["signatures", "signers_file", "aggregate_signature", "test_helpers", "common"]

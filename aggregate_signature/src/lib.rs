@@ -1,4 +1,4 @@
-use serde_json;
+use common::fs::names::{SIGNATURES_SUFFIX, signatures_path_for};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
@@ -39,10 +39,13 @@ where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    /// Load signatures from a directory containing an asfaload.signatures.json file
-    pub fn load_from_dir(dir_path: &Path) -> Result<Self, AggregateSignatureError> {
+    /// Load signatures for a file from the corresponding signatures file
+    pub fn load_for_file<PP: AsRef<Path>>(path_in: PP) -> Result<Self, AggregateSignatureError> {
+        let file_path = path_in.as_ref();
         let mut signatures = HashMap::new();
-        let sig_file_path = dir_path.join("asfaload.signatures.json");
+
+        // Construct the signatures file path: same as file_path but with suffix appended
+        let sig_file_path = signatures_path_for(file_path)?;
 
         // Attempt to read the signatures file, returning an empty set if not found.
         let signatures_map: HashMap<String, String> = match std::fs::File::open(&sig_file_path) {
@@ -51,7 +54,7 @@ where
                 // File not found is not an error, it just means no signatures.
                 return Ok(Self {
                     signatures,
-                    origin: dir_path.to_string_lossy().to_string(),
+                    origin: file_path.to_string_lossy().to_string(),
                 });
             }
             Err(e) => return Err(e.into()),
@@ -66,7 +69,7 @@ where
         }
         Ok(Self {
             signatures,
-            origin: dir_path.to_string_lossy().to_string(),
+            origin: file_path.to_path_buf().to_string_lossy().to_string(),
         })
     }
 
@@ -134,6 +137,7 @@ mod tests {
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
     use signers_file::{KeyFormat, SignerKind};
+    use std::path::PathBuf;
     use tempfile::TempDir;
     use test_helpers::TestKeys;
 
@@ -155,13 +159,16 @@ mod tests {
         let mut signatures = HashMap::new();
         signatures.insert(pubkey.clone(), signature);
 
+        // Create a dummy file path to represent the signed file
+        let signed_file_path = PathBuf::from("test_file.txt");
+
         // Create aggregate signature manually
         let agg_sig: AggregateSignature<
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
         > = AggregateSignature {
             signatures,
-            origin: "test_origin".to_string(),
+            origin: signed_file_path.to_string_lossy().to_string(),
         };
 
         // Create signers config JSON string
@@ -207,8 +214,7 @@ mod tests {
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             signers_file::parse_signers_config(&high_threshold_config).unwrap();
         assert!(!agg_sig.is_artifact_complete(&signers_config, data));
-
-        assert_eq!(agg_sig.origin, "test_origin");
+        assert_eq!(agg_sig.origin, "test_file.txt");
     }
 
     // This test illustrates how a signers config can be defined programmatically. This
@@ -232,18 +238,27 @@ mod tests {
         let data = b"test data";
         let signature = seckey.sign(data).unwrap();
 
-        // Write the asfaload.signatures.json file
-        let sig_file_path = dir_path.join("asfaload.signatures.json");
+        // Create a dummy file to represent the signed file
+        let signed_file_path = dir_path.join("data.txt");
+        std::fs::write(&signed_file_path, data).unwrap();
+        // Write the signatures file for the signed file
         let mut signatures_map = std::collections::HashMap::new();
         signatures_map.insert(pubkey.to_base64(), signature.to_base64());
         let json_content = serde_json::to_string_pretty(&signatures_map).unwrap();
+
+        let sig_file_path = signed_file_path.with_file_name(format!(
+            "{}.{}",
+            signed_file_path.file_name().unwrap().to_string_lossy(),
+            SIGNATURES_SUFFIX
+        ));
+
         std::fs::write(&sig_file_path, json_content).unwrap();
 
-        // Load aggregate signature
+        // Load aggregate signature for the signed file
         let agg_sig: AggregateSignature<
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
-        > = AggregateSignature::load_from_dir(dir_path).unwrap();
+        > = AggregateSignature::load_for_file(&signed_file_path).unwrap();
 
         // Create signers config with threshold 1
         let signer = signers_file::Signer {
@@ -287,7 +302,10 @@ mod tests {
         };
         assert!(!agg_sig.is_artifact_complete(&high_threshold_config, data));
 
-        assert_eq!(agg_sig.origin, dir_path.to_string_lossy().to_string());
+        assert_eq!(
+            agg_sig.origin,
+            signed_file_path.to_string_lossy().to_string()
+        );
     }
 
     #[test]
