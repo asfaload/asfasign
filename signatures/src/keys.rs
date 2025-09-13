@@ -76,19 +76,17 @@ pub struct AsfaloadKeyPair<T> {
 pub trait AsfaloadSecretKeyTrait {
     type SecretKey;
     type Signature;
-    type SignError: Display;
-    type KeyError: Display;
-    fn sign(&self, data: &[u8]) -> Result<Self::Signature, Self::SignError>;
-    fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError>
+    fn sign(&self, data: &[u8]) -> Result<Self::Signature, errs::SignError>;
+    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError>
     where
         Self: Sized;
-    fn from_string(s: String) -> Result<Self, Self::KeyError>
+    fn from_string(s: String) -> Result<Self, errs::KeyError>
     where
         Self: Sized,
     {
         Self::from_bytes(&s.into_bytes())
     }
-    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, Self::KeyError>
+    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, errs::KeyError>
     where
         Self: Sized;
 }

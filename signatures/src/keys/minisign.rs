@@ -137,8 +137,6 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
 impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
     type SecretKey = minisign::SecretKey;
     type Signature = AsfaloadSignature<minisign::SignatureBox>;
-    type SignError = errs::SignError;
-    type KeyError = errs::KeyError;
 
     fn sign(&self, data: &[u8]) -> Result<Self::Signature, errs::SignError> {
         let data_reader = Cursor::new(data);
