@@ -210,10 +210,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         let s = minisign::SignatureBox::from_file(path)?;
         Ok(AsfaloadSignature { signature: s })
     }
-    fn from_base64(s: &str) -> Result<Self, errs::SignatureError>
-    where
-        Self: Sized,
-    {
+    fn from_base64(s: &str) -> Result<Self, errs::SignatureError> {
         let s = BASE64_STANDARD.decode(s)?;
         Self::from_string(std::str::from_utf8(&s)?)
     }
@@ -226,10 +223,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         &self,
         signed_file: P,
         pub_key: &PK,
-    ) -> Result<(), errs::SignatureError>
-    where
-        Self: Sized,
-    {
+    ) -> Result<(), errs::SignatureError> {
         if signed_file.as_ref().is_dir() {
             return Err(errs::SignatureError::IoError(std::io::Error::new(
                 std::io::ErrorKind::IsADirectory,

@@ -45,12 +45,10 @@ pub mod errs {
 }
 
 // Trait that we will implement for keypairs we support. Inintially only minisign::KeyPair
-pub trait AsfaloadKeyPairTrait<'a> {
+pub trait AsfaloadKeyPairTrait<'a>: Sized {
     type PublicKey;
     type SecretKey;
-    fn new(pw: &str) -> Result<Self, errs::KeyError>
-    where
-        Self: Sized;
+    fn new(pw: &str) -> Result<Self, errs::KeyError>;
     // If the path is an existing directory, save the secret key in this directory in
     // file named 'key', and public key in 'key.pub'.
     // If the path is an inexisting file in an existing directory, save secret key
@@ -73,22 +71,15 @@ pub struct AsfaloadKeyPair<T> {
 
 // This trait should never give access to the private key it manages, as it is non-encrypted (for
 // minisign)
-pub trait AsfaloadSecretKeyTrait {
+pub trait AsfaloadSecretKeyTrait: Sized {
     type SecretKey;
     type Signature;
     fn sign(&self, data: &[u8]) -> Result<Self::Signature, errs::SignError>;
-    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError>
-    where
-        Self: Sized;
-    fn from_string(s: String) -> Result<Self, errs::KeyError>
-    where
-        Self: Sized,
-    {
+    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError>;
+    fn from_string(s: String) -> Result<Self, errs::KeyError> {
         Self::from_bytes(&s.into_bytes())
     }
-    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, errs::KeyError>
-    where
-        Self: Sized;
+    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, errs::KeyError>;
 }
 
 // Struct to store a secret key immediately usable.
@@ -97,7 +88,7 @@ pub struct AsfaloadSecretKey<K> {
     // Keep it private as for minisign it is the decrypted key, i.e. non password protected.
     key: K,
 }
-pub trait AsfaloadPublicKeyTrait {
+pub trait AsfaloadPublicKeyTrait: Sized {
     type Signature;
 
     fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError>;
@@ -105,25 +96,15 @@ pub trait AsfaloadPublicKeyTrait {
     fn to_filename(&self) -> String {
         self.to_base64().replace("+", "-").replace("/", "_")
     }
-    fn from_filename(n: String) -> Result<Self, errs::KeyError>
-    where
-        Self: Sized,
-    {
+    fn from_filename(n: String) -> Result<Self, errs::KeyError> {
         let b64 = n.replace("-", "+").replace("_", "/");
         Self::from_base64(b64)
     }
-    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError>
-    where
-        Self: Sized;
-    fn from_base64(s: String) -> Result<Self, errs::KeyError>
-    where
-        Self: Sized,
-    {
+    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError>;
+    fn from_base64(s: String) -> Result<Self, errs::KeyError> {
         Self::from_bytes(&s.into_bytes())
     }
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError>
-    where
-        Self: Sized;
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError>;
 }
 
 #[derive(Debug, Clone)]
@@ -136,27 +117,19 @@ pub struct AsfaloadSignature<S> {
     signature: S,
 }
 
-pub trait AsfaloadSignatureTrait {
+pub trait AsfaloadSignatureTrait: Sized {
     fn to_string(&self) -> String;
-    fn from_string(s: &str) -> Result<Self, errs::SignatureError>
-    where
-        Self: Sized;
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError>
-    where
-        Self: Sized;
+    fn from_string(s: &str) -> Result<Self, errs::SignatureError>;
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError>;
 
     // As we need to serialise to json, and json does not support multiline strings, we ssupport
     // the serialisation to base64 format.
-    fn from_base64(s: &str) -> Result<Self, errs::SignatureError>
-    where
-        Self: Sized;
+    fn from_base64(s: &str) -> Result<Self, errs::SignatureError>;
 
     fn to_base64(&self) -> String;
     fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
         &self,
         dir: P,
         pub_key: &PK,
-    ) -> Result<(), errs::SignatureError>
-    where
-        Self: Sized;
+    ) -> Result<(), errs::SignatureError>;
 }
