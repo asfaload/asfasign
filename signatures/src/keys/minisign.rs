@@ -244,7 +244,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
             )));
         }
         let signed_file_path = signed_file.as_ref();
-        let signatures_path = signatures_path_for(signed_file_path.to_path_buf());
+        let signatures_path = signatures_path_for(signed_file_path)?;
 
         // Refuse to add signatures to already completed signature.
         if signatures_path.exists() {
@@ -255,7 +255,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         }
 
         // The path to the signatures JSON file
-        let pending_sig_file_path = pending_signatures_path_for(signed_file_path.to_path_buf());
+        let pending_sig_file_path = pending_signatures_path_for(signed_file_path);
 
         // Read existing signatures, or create a new map if the file doesn't exist.
         let mut signatures_map: std::collections::HashMap<String, String> =

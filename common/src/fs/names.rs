@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // FIXME: we could improve this by reusing defined const in furture consts,
 // but it seems too much of a burden at this time.
@@ -14,14 +14,22 @@ pub const PENDING_SIGNERS_FILE: &str = "index.json.pending";
 
 // Get the signatures file path for a file path.
 // It doesn't check on disk that the path received is effectively a file.
-pub fn signatures_path_for(file_path: PathBuf) -> PathBuf {
-    file_path.with_file_name(format!(
+pub fn signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    let file_path = path_in.as_ref();
+    let _file_name = file_path.file_name().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Input path has no file name",
+        )
+    })?;
+    Ok(file_path.with_file_name(format!(
         "{}.{}",
         file_path.to_string_lossy(),
         SIGNATURES_SUFFIX
-    ))
+    )))
 }
-pub fn pending_signatures_path_for(file_path: PathBuf) -> PathBuf {
+pub fn pending_signatures_path_for<P: AsRef<Path>>(path_in: P) -> PathBuf {
+    let file_path = path_in.as_ref();
     file_path.with_file_name(format!(
         "{}.{}",
         file_path.to_string_lossy(),
@@ -30,14 +38,12 @@ pub fn pending_signatures_path_for(file_path: PathBuf) -> PathBuf {
 }
 // Get the signatures file path for a file on disk. This chekcs on disk if the file
 // exists.
-pub fn signatures_path_on_disk_for(file_path: PathBuf) -> Result<PathBuf, std::io::Error> {
+pub fn signatures_path_on_disk_for<P: AsRef<Path>>(path_in: P) -> Result<PathBuf, std::io::Error> {
+    let file_path = path_in.as_ref();
     if !file_path.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!(
-                "Input path is not a file: {}",
-                file_path.into_os_string().to_string_lossy()
-            ),
+            format!("Input path is not a file: {}", file_path.to_string_lossy()),
         ));
     }
 
@@ -92,16 +98,16 @@ mod asfaload_index_tests {
 
     #[test]
     fn test_simple_signature_path_for() -> Result<()> {
-        let input = PathBuf::from_str("/my/path/to/file")?;
-        let output = signatures_path_for(input);
+        let input = Path::new("/my/path/to/file");
+        let output = signatures_path_for(input)?;
         assert_eq!(
             output,
             PathBuf::from_str("/my/path/to/file.signatures.json")?
         );
 
         // FIXME: this should cause an error as it is clearly a path to a directory
-        let input = PathBuf::from_str("/my/path/to/file/")?;
-        let output = signatures_path_for(input);
+        let input = Path::new("/my/path/to/file/");
+        let output = signatures_path_for(input)?;
         assert_eq!(
             output,
             PathBuf::from_str("/my/path/to/file/.signatures.json")?
