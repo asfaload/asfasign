@@ -137,18 +137,17 @@ pub struct AsfaloadSignature<S> {
 }
 
 pub trait AsfaloadSignatureTrait {
-    type SignatureError: Display;
     fn to_string(&self) -> String;
-    fn from_string(s: &str) -> Result<Self, Self::SignatureError>
+    fn from_string(s: &str) -> Result<Self, errs::SignatureError>
     where
         Self: Sized;
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::SignatureError>
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError>
     where
         Self: Sized;
 
     // As we need to serialise to json, and json does not support multiline strings, we ssupport
     // the serialisation to base64 format.
-    fn from_base64(s: &str) -> Result<Self, Self::SignatureError>
+    fn from_base64(s: &str) -> Result<Self, errs::SignatureError>
     where
         Self: Sized;
 
@@ -157,7 +156,7 @@ pub trait AsfaloadSignatureTrait {
         &self,
         dir: P,
         pub_key: &PK,
-    ) -> Result<(), Self::SignatureError>
+    ) -> Result<(), errs::SignatureError>
     where
         Self: Sized;
 }

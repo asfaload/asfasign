@@ -197,22 +197,20 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
 }
 
 impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
-    type SignatureError = errs::SignatureError;
-
     fn to_string(&self) -> String {
         self.signature.to_string()
     }
 
-    fn from_string(data: &str) -> Result<Self, Self::SignatureError> {
+    fn from_string(data: &str) -> Result<Self, errs::SignatureError> {
         let s = minisign::SignatureBox::from_string(data)?;
         Ok(AsfaloadSignature { signature: s })
     }
 
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::SignatureError> {
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError> {
         let s = minisign::SignatureBox::from_file(path)?;
         Ok(AsfaloadSignature { signature: s })
     }
-    fn from_base64(s: &str) -> Result<Self, Self::SignatureError>
+    fn from_base64(s: &str) -> Result<Self, errs::SignatureError>
     where
         Self: Sized,
     {
@@ -228,7 +226,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         &self,
         signed_file: P,
         pub_key: &PK,
-    ) -> Result<(), Self::SignatureError>
+    ) -> Result<(), errs::SignatureError>
     where
         Self: Sized,
     {
