@@ -520,7 +520,7 @@ mod asfaload_index_tests {
                 }
             }
             _ => panic!(
-                "Expected InitisalisationError, got something else: {:?}",
+                "Expected SignatureError, got something else: {:?}",
                 result.unwrap_err()
             ),
         }
