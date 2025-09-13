@@ -48,8 +48,7 @@ pub mod errs {
 pub trait AsfaloadKeyPairTrait<'a> {
     type PublicKey;
     type SecretKey;
-    type KeyErr: Display;
-    fn new(pw: &str) -> Result<Self, Self::KeyErr>
+    fn new(pw: &str) -> Result<Self, errs::KeyError>
     where
         Self: Sized;
     // If the path is an existing directory, save the secret key in this directory in
@@ -57,13 +56,13 @@ pub trait AsfaloadKeyPairTrait<'a> {
     // If the path is an inexisting file in an existing directory, save secret key
     // in this newly created filr, and save the public key in the same filename with added suffx
     // '.pub'
-    fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, Self::KeyErr>;
+    fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, errs::KeyError>;
     // As we use minisign as the first (and initially only) signing scheme, our proposed API is
     // modelled after it. When we generate a minisign key pai, the private key is encrypted and
     // needs to be decrypted for use.
     // This method returns the decrypted secret key, and thus requires the decryption password as
     // argument.
-    fn secret_key(&self, password: &str) -> Result<Self::SecretKey, Self::KeyErr>;
+    fn secret_key(&self, password: &str) -> Result<Self::SecretKey, errs::KeyError>;
     fn public_key(&self) -> Self::PublicKey;
 }
 
