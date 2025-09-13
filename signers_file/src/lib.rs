@@ -214,7 +214,6 @@ pub fn initialize_signers_file<P: AsRef<Path>, S, K>(
 where
     S: AsfaloadSignatureTrait<SignatureError = signatures::keys::errs::SignatureError>,
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::PartialEq,
-    <K as signatures::keys::AsfaloadPublicKeyTrait>::VerifyError: std::fmt::Display,
 {
     // Ensure we work in the right directory
     let dir_path = {

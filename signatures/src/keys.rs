@@ -99,31 +99,29 @@ pub struct AsfaloadSecretKey<K> {
 }
 pub trait AsfaloadPublicKeyTrait {
     type Signature;
-    type VerifyError: Display;
-    type KeyError: Display;
 
-    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError>;
+    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError>;
     fn to_base64(&self) -> String;
     fn to_filename(&self) -> String {
         self.to_base64().replace("+", "-").replace("/", "_")
     }
-    fn from_filename(n: String) -> Result<Self, Self::KeyError>
+    fn from_filename(n: String) -> Result<Self, errs::KeyError>
     where
         Self: Sized,
     {
         let b64 = n.replace("-", "+").replace("_", "/");
         Self::from_base64(b64)
     }
-    fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError>
+    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError>
     where
         Self: Sized;
-    fn from_base64(s: String) -> Result<Self, Self::KeyError>
+    fn from_base64(s: String) -> Result<Self, errs::KeyError>
     where
         Self: Sized,
     {
         Self::from_bytes(&s.into_bytes())
     }
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::KeyError>
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError>
     where
         Self: Sized;
 }

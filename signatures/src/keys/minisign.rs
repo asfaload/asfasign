@@ -160,10 +160,8 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
 
 impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     type Signature = AsfaloadSignature<minisign::SignatureBox>;
-    type VerifyError = errs::VerifyError;
-    type KeyError = errs::KeyError;
 
-    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), Self::VerifyError> {
+    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError> {
         let data_reader = Cursor::new(data);
         minisign::verify(
             &self.key,
@@ -180,19 +178,19 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         self.key.to_base64()
     }
 
-    fn from_bytes(data: &[u8]) -> Result<Self, Self::KeyError> {
+    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
         let k = minisign::PublicKey::from_bytes(data)?;
         Ok(AsfaloadPublicKey { key: k })
     }
     // When saving to a file, we store a PublicKeyBox as encouraged by minisign for storage.
     // Other methods manipulate the PublickKey directly
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Self::KeyError> {
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError> {
         let k = minisign::PublicKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
             .into_public_key()?;
         Ok(AsfaloadPublicKey { key: k })
     }
 
-    fn from_base64(s: String) -> Result<Self, Self::KeyError> {
+    fn from_base64(s: String) -> Result<Self, errs::KeyError> {
         let k = minisign::PublicKey::from_base64(s.as_str())?;
         Ok(AsfaloadPublicKey { key: k })
     }
