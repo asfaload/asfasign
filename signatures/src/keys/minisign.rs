@@ -242,7 +242,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         }
 
         // The path to the signatures JSON file
-        let pending_sig_file_path = pending_signatures_path_for(signed_file_path);
+        let pending_sig_file_path = pending_signatures_path_for(signed_file_path)?;
 
         // Read existing signatures, or create a new map if the file doesn't exist.
         let mut signatures_map: std::collections::HashMap<String, String> =
