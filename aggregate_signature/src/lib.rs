@@ -1,8 +1,11 @@
-use common::fs::names::{SIGNATURES_SUFFIX, signatures_path_for};
+use common::fs::names::{
+    SIGNERS_DIR, SIGNERS_FILE, pending_signatures_path_for, signatures_path_for,
+};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
-use std::path::Path;
+use std::marker::PhantomData;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -23,7 +26,70 @@ pub enum AggregateSignatureError {
     JsonError(#[from] serde_json::Error),
 }
 
-pub struct AggregateSignature<P, S>
+pub struct PendingSignature;
+pub struct CompleteSignature;
+
+pub enum SignatureWithState<P, S>
+where
+    P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
+    Pending(AggregateSignature<P, S, PendingSignature>),
+    Complete(AggregateSignature<P, S, CompleteSignature>),
+}
+
+impl<P, S> SignatureWithState<P, S>
+where
+    P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
+    pub fn get_complete(&self) -> Option<&AggregateSignature<P, S, CompleteSignature>> {
+        match self {
+            Self::Pending(_s) => None,
+            Self::Complete(s) => Some(s),
+        }
+    }
+    pub fn get_pending(&self) -> Option<&AggregateSignature<P, S, PendingSignature>> {
+        match self {
+            Self::Complete(_s) => None,
+            Self::Pending(s) => Some(s),
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileType {
+    Artifact,
+    Signers,
+}
+pub struct SignedFile {
+    pub kind: FileType,
+    pub path: PathBuf,
+}
+
+impl SignedFile {
+    fn determine_signed_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
+        let path = file_path.as_ref();
+        // Signers file if {SIGNERS_DIR}/{SIGNERSFILE}
+        if path
+            .parent()
+            .and_then(|dir| dir.file_name())
+            .is_some_and(|name| name == SIGNERS_DIR)
+            && path.file_name().is_some_and(|fname| fname == SIGNERS_FILE)
+        {
+            FileType::Signers
+        } else {
+            FileType::Artifact
+        }
+    }
+    pub fn new<P: AsRef<Path>>(path: P) -> Self {
+        let file_type = Self::determine_signed_file_type(&path);
+        Self {
+            kind: file_type,
+            path: path.as_ref().to_path_buf(),
+        }
+    }
+}
+pub struct AggregateSignature<P, S, SS>
 where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
@@ -32,47 +98,114 @@ where
     // The origin is a String. I originally wanted to make it a Url, but
     // then the path must be absolute, and I didn't want to set that restriction right now
     origin: String,
+    subject: SignedFile,
+    marker: PhantomData<SS>,
 }
 
-impl<P, S> AggregateSignature<P, S>
+/// Check if all groups in a category meet their thresholds with valid signatures
+/// Note that invalid signatures are ignored, they are not reported as errors.
+pub fn check_groups<P, S>(
+    groups: &[SignerGroup<P>],
+    signatures: &HashMap<P, S>,
+    data: &[u8],
+) -> bool
 where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    /// Load signatures for a file from the corresponding signatures file
-    pub fn load_for_file<PP: AsRef<Path>>(path_in: PP) -> Result<Self, AggregateSignatureError> {
-        let file_path = path_in.as_ref();
-        let mut signatures = HashMap::new();
+    !groups.is_empty()
+        && groups.iter().all(|group| {
+            let count = group
+                .signers
+                .iter()
+                .filter(|signer| {
+                    signatures
+                        .get(&signer.data.pubkey)
+                        .is_some_and(|signature| signer.data.pubkey.verify(signature, data).is_ok())
+                })
+                .count();
+            count >= group.threshold as usize
+        })
+}
 
-        // Construct the signatures file path: same as file_path but with suffix appended
-        let sig_file_path = signatures_path_for(file_path)?;
+// Load individual signatures from the file.
+// If the file does not exist, act as if no signature was collected yet.
+fn get_individual_signatures<P, S, PP: AsRef<Path>>(
+    sig_file_path: PP,
+) -> Result<HashMap<P, S>, AggregateSignatureError>
+where
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
+    let mut signatures: HashMap<P, S> = HashMap::new();
+    // Attempt to read the signatures file, returning an empty set if not found.
+    let signatures_map: HashMap<String, String> = match std::fs::File::open(&sig_file_path) {
+        Ok(file) => serde_json::from_reader(file)?,
+        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+        Err(e) => return Err(e.into()),
+    };
 
-        // Attempt to read the signatures file, returning an empty set if not found.
-        let signatures_map: HashMap<String, String> = match std::fs::File::open(&sig_file_path) {
-            Ok(file) => serde_json::from_reader(file)?,
-            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // File not found is not an error, it just means no signatures.
-                return Ok(Self {
-                    signatures,
-                    origin: file_path.to_string_lossy().to_string(),
-                });
-            }
-            Err(e) => return Err(e.into()),
-        };
-        // Parse each entry
-        for (pubkey_b64, sig_b64) in signatures_map {
-            let pubkey = P::from_base64(pubkey_b64)
-                .map_err(|e| AggregateSignatureError::PublicKey(format!("{}", e)))?;
-            let signature = S::from_base64(&sig_b64)
-                .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
-            signatures.insert(pubkey, signature);
-        }
-        Ok(Self {
+    // Parse each entry
+    for (pubkey_b64, sig_b64) in signatures_map {
+        let pubkey = P::from_base64(pubkey_b64)
+            .map_err(|e| AggregateSignatureError::PublicKey(format!("{}", e)))?;
+        let signature = S::from_base64(&sig_b64)
+            .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
+        signatures.insert(pubkey, signature);
+    }
+    Ok(signatures)
+}
+/// Load signatures for a file from the corresponding signatures file
+// This function cannot be placed in the implemetation of AggregateSignature<P,S,SS> because
+// in that case, it would have to be called like this: AggregateSignature<_,_,_>::load_for_file(...)
+// which requires to determine the phantom type on AggregateSignature before load can be called.
+// This is annoying but also makes no sense as a call like this one
+//   AggregateSignature<_,_,CompleteSignature>::load_for_file(...)
+// could still return a pending signature.
+pub fn load_for_file<P, S, PP: AsRef<Path>>(
+    path_in: PP,
+) -> Result<SignatureWithState<P, S>, AggregateSignatureError>
+where
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
+    let signed_file = SignedFile::new(&path_in);
+    let file_path = path_in.as_ref();
+
+    // Construct the signatures file path: same as file_path but with suffix appended
+    let sig_file_path = signatures_path_for(file_path)?;
+    let pending_sig_file_path = pending_signatures_path_for(file_path)?;
+
+    if sig_file_path.exists() {
+        // If the file for a complete aggregate signature exists, use it
+        // FIXME: validate the completeness here.
+        let signatures = get_individual_signatures(sig_file_path)?;
+
+        Ok(SignatureWithState::Complete(AggregateSignature {
             signatures,
             origin: file_path.to_path_buf().to_string_lossy().to_string(),
-        })
-    }
+            subject: signed_file,
+            marker: PhantomData,
+        }))
+    } else {
+        // otherwise use the pending one, and if it is not there, we get an empty set
+        // of individual signatures.
+        let signatures = get_individual_signatures(pending_sig_file_path)?;
 
+        Ok(SignatureWithState::Pending(AggregateSignature {
+            signatures,
+            origin: file_path.to_path_buf().to_string_lossy().to_string(),
+            subject: signed_file,
+            marker: PhantomData,
+        }))
+    }
+}
+
+impl<P, S, SS> AggregateSignature<P, S, SS>
+where
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
     /// Check if aggregate signature meets all thresholds in signers config for artifacts
     pub fn is_artifact_complete(
         &self,
@@ -80,7 +213,7 @@ where
         artifact_data: &[u8],
     ) -> bool {
         // Check artifact_signers groups
-        Self::check_groups(
+        check_groups(
             &signers_config.artifact_signers,
             &self.signatures,
             artifact_data,
@@ -94,7 +227,7 @@ where
         master_data: &[u8],
     ) -> bool {
         // Check master_keys groups
-        Self::check_groups(&signers_config.master_keys, &self.signatures, master_data)
+        check_groups(&signers_config.master_keys, &self.signatures, master_data)
     }
 
     /// Check if aggregate signature meets all thresholds in signers config for admin keys
@@ -103,41 +236,21 @@ where
         signers_config
             .admin_keys
             .as_ref()
-            .is_some_and(|keys| Self::check_groups(keys, &self.signatures, admin_data))
-    }
-    /// Check if all groups in a category meet their thresholds with valid signatures
-    /// Note that invalid signatures are ignored, they are not reported as errors.
-    pub fn check_groups(
-        groups: &[SignerGroup<P>],
-        signatures: &HashMap<P, S>,
-        data: &[u8],
-    ) -> bool {
-        !groups.is_empty()
-            && groups.iter().all(|group| {
-                let count = group
-                    .signers
-                    .iter()
-                    .filter(|signer| {
-                        signatures
-                            .get(&signer.data.pubkey)
-                            .is_some_and(|signature| {
-                                signer.data.pubkey.verify(signature, data).is_ok()
-                            })
-                    })
-                    .count();
-                count >= group.threshold as usize
-            })
+            .is_some_and(|keys| check_groups(keys, &self.signatures, admin_data))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
+    use common::fs::names::SIGNATURES_SUFFIX;
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
     use signers_file::{KeyFormat, SignerKind};
     use std::path::PathBuf;
+    use std::str::FromStr;
     use tempfile::TempDir;
     use test_helpers::TestKeys;
 
@@ -162,13 +275,16 @@ mod tests {
         // Create a dummy file path to represent the signed file
         let signed_file_path = PathBuf::from("test_file.txt");
 
-        // Create aggregate signature manually
+        // Create pending aggregate signature manually
         let agg_sig: AggregateSignature<
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
+            PendingSignature,
         > = AggregateSignature {
             signatures,
             origin: signed_file_path.to_string_lossy().to_string(),
+            marker: PhantomData,
+            subject: SignedFile::new(signed_file_path),
         };
 
         // Create signers config JSON string
@@ -220,7 +336,7 @@ mod tests {
     // This test illustrates how a signers config can be defined programmatically. This
     // will not be the usual case, but could be handy.
     #[test]
-    fn test_load_and_complete_programmatically() {
+    fn test_load_and_complete_programmatically() -> Result<()> {
         // Create temp directory
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
@@ -255,11 +371,11 @@ mod tests {
         std::fs::write(&sig_file_path, json_content).unwrap();
 
         // Load aggregate signature for the signed file
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-        > = AggregateSignature::load_for_file(&signed_file_path).unwrap();
+        let agg_sig: SignatureWithState<_, _> = load_for_file(&signed_file_path)?;
 
+        let agg_sig = agg_sig
+            .get_complete()
+            .ok_or(anyhow::anyhow!("Signature should have been complete"))?;
         // Create signers config with threshold 1
         let signer = signers_file::Signer {
             kind: SignerKind::Key,
@@ -306,6 +422,7 @@ mod tests {
             agg_sig.origin,
             signed_file_path.to_string_lossy().to_string()
         );
+        Ok(())
     }
 
     #[test]
@@ -329,12 +446,14 @@ mod tests {
         signatures.insert(pubkey2.clone(), sig2);
 
         // Create aggregate signature manually
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-        > = AggregateSignature {
+        let agg_sig: AggregateSignature<_, _, CompleteSignature> = AggregateSignature {
             signatures,
             origin: "test_origin".to_string(),
+            marker: PhantomData,
+            subject: SignedFile {
+                kind: FileType::Artifact,
+                path: PathBuf::from_str("/data/file").unwrap(),
+            },
         };
 
         // Create signers config JSON string with two groups
@@ -416,6 +535,8 @@ mod tests {
         // Should be complete with mixed configuration
         assert!(agg_sig.is_artifact_complete(&signers_config_mixed, data));
         assert!(agg_sig.is_master_complete(&signers_config_mixed, data));
+        // FIXME: an non-existing admin group is implicitely set to the artifact group,
+        // so this should pass.
         // Check an null admin group is not comsidered as complete
         assert!(!agg_sig.is_admin_complete(&signers_config_mixed, data));
         // Empty admin_keys array is never complete
@@ -463,13 +584,9 @@ mod tests {
                               expected_valid: bool| {
             let groups = build_groups(tpl);
             if expected_valid {
-                assert!(AggregateSignature::<_, _>::check_groups(
-                    &groups, signatures, data
-                ))
+                assert!(check_groups(&groups, signatures, data))
             } else {
-                assert!(!AggregateSignature::<_, _>::check_groups(
-                    &groups, signatures, data
-                ))
+                assert!(!check_groups(&groups, signatures, data))
             }
         };
         // Create signatures
@@ -826,14 +943,11 @@ mod tests {
             .for_each(|g| check_validity(g.0.to_string(), &g.1, g.2));
 
         // Empty groups are always incomplete
-        assert!(!AggregateSignature::<_, _>::check_groups(
+        assert!(!check_groups(
             &[],
-            &HashMap::<AsfaloadPublicKey<minisign::PublicKey>, AsfaloadSignature<SignatureBox>>::new(),data
-        ));
-        assert!(!AggregateSignature::<_, _>::check_groups(
-            &[],
-            &signatures_1_2_3_4,
+            &HashMap::<AsfaloadPublicKey<_>, AsfaloadSignature<_>>::new(),
             data
         ));
+        assert!(!check_groups(&[], &signatures_1_2_3_4, data));
     }
 }
