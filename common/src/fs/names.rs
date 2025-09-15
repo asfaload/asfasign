@@ -7,6 +7,7 @@ pub const PENDING_SUFFIX: &str = "pending";
 
 pub const SIGNATURES_SUFFIX: &str = "signatures.json";
 pub const PENDING_SIGNATURES_SUFFIX: &str = "signatures.json.pending";
+pub const SIGNERS_SUFFIX: &str = "signers.json";
 pub const SIGNERS_DIR: &str = "asfaload.signers";
 pub const PENDING_SIGNERS_DIR: &str = "asfaload.signers.pending";
 pub const SIGNERS_FILE: &str = "index.json";
@@ -29,6 +30,12 @@ pub fn signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBu
 }
 pub fn pending_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     file_path_with_suffix(path_in, PENDING_SIGNATURES_SUFFIX)
+}
+
+// Return the copy of the signers file taken when initialising the signature
+// procedure for the file at path_in.
+pub fn local_signers_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    file_path_with_suffix(path_in, SIGNERS_SUFFIX)
 }
 // Get the signatures file path for a file on disk. This chekcs on disk if the file
 // exists.
