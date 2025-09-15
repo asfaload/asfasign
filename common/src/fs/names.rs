@@ -7,14 +7,13 @@ pub const PENDING_SUFFIX: &str = "pending";
 
 pub const SIGNATURES_SUFFIX: &str = "signatures.json";
 pub const PENDING_SIGNATURES_SUFFIX: &str = "signatures.json.pending";
+pub const SIGNERS_SUFFIX: &str = "signers.json";
 pub const SIGNERS_DIR: &str = "asfaload.signers";
 pub const PENDING_SIGNERS_DIR: &str = "asfaload.signers.pending";
 pub const SIGNERS_FILE: &str = "index.json";
 pub const PENDING_SIGNERS_FILE: &str = "index.json.pending";
 
-// Get the signatures file path for a file path.
-// It doesn't check on disk that the path received is effectively a file.
-pub fn signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+fn file_path_with_suffix<P: AsRef<Path>>(path_in: P, suffix: &str) -> std::io::Result<PathBuf> {
     let file_path = path_in.as_ref();
     let _file_name = file_path.file_name().ok_or_else(|| {
         std::io::Error::new(
@@ -22,45 +21,34 @@ pub fn signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBu
             "Input path has no file name",
         )
     })?;
-    Ok(file_path.with_file_name(format!(
-        "{}.{}",
-        file_path.to_string_lossy(),
-        SIGNATURES_SUFFIX
-    )))
+    Ok(file_path.with_file_name(format!("{}.{}", file_path.to_string_lossy(), suffix)))
 }
-pub fn pending_signatures_path_for<P: AsRef<Path>>(path_in: P) -> PathBuf {
-    let file_path = path_in.as_ref();
-    file_path.with_file_name(format!(
-        "{}.{}",
-        file_path.to_string_lossy(),
-        PENDING_SIGNATURES_SUFFIX
-    ))
+// Get the signatures file path for a file path.
+// It doesn't check on disk that the path received is effectively a file.
+pub fn signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    file_path_with_suffix(path_in, SIGNATURES_SUFFIX)
+}
+pub fn pending_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    file_path_with_suffix(path_in, PENDING_SIGNATURES_SUFFIX)
+}
+
+// Return the copy of the signers file taken when initialising the signature
+// procedure for the file at path_in.
+pub fn local_signers_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    file_path_with_suffix(path_in, SIGNERS_SUFFIX)
 }
 // Get the signatures file path for a file on disk. This chekcs on disk if the file
 // exists.
 pub fn signatures_path_on_disk_for<P: AsRef<Path>>(path_in: P) -> Result<PathBuf, std::io::Error> {
     let file_path = path_in.as_ref();
+    // This checks on disk
     if !file_path.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!("Input path is not a file: {}", file_path.to_string_lossy()),
         ));
     }
-
-    // This happens for a path "/" for example.
-    let _file_name = file_path.file_name().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Input path has no file name",
-        )
-    })?;
-
-    let signatures_path = file_path.with_file_name(format!(
-        "{}.{}",
-        file_path.to_string_lossy(),
-        SIGNATURES_SUFFIX
-    ));
-    Ok(signatures_path)
+    file_path_with_suffix(path_in, SIGNATURES_SUFFIX)
 }
 #[cfg(test)]
 mod asfaload_index_tests {

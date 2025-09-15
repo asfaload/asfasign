@@ -235,7 +235,7 @@ where
     }
     // If a pending signatures file already exists, we refuse to create a pending signers file.
     // We use the function not looking to disk content here, and check on disk ourselves.
-    let pending_signature_file_path = pending_signatures_path_for(signers_file_path.clone());
+    let pending_signature_file_path = pending_signatures_path_for(signers_file_path.clone())?;
 
     if pending_signature_file_path.exists() {
         return Err(SignersFileError::InitialisationError(format!(
