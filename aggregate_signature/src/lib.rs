@@ -925,6 +925,17 @@ mod tests {
                 signatures_1_3.clone(),
                 incomplete,
             ),
+            //------------------------------------------------------------
+            // Empty group never complete
+            (
+                r#"
+    [
+
+    ]
+    "#,
+                signatures_1_3.clone(),
+                incomplete,
+            ),
         ];
 
         // ------------------------------------------------------------

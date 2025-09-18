@@ -85,6 +85,10 @@ where
         // Deserialize into the helper struct
         let helper = SignerGroupHelper::deserialize(deserializer)?;
 
+        // Validate that we have at least one signer
+        if helper.signers.is_empty() {
+            return Err(serde::de::Error::custom("Group size must be at least 1"));
+        }
         // Validate that threshold > 0
         if helper.threshold == 0 {
             return Err(serde::de::Error::custom(format!(
@@ -520,6 +524,48 @@ mod tests {
                 .to_string()
                 .starts_with("Threshold (4) cannot be greater than the number of signers (3)")
         );
+        // Reject empty groups
+        let json_str_with_empty_master_signers_group = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+          ],
+          "threshold": 3
+        }
+      ],
+      "admin_keys": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+          ],
+          "threshold": 2
+        }
+      ],
+      "master_keys" : [ { "signers" : [] , "threshold" : 0}]
+    }
+    "#;
+        let config: Result<
+            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
+            serde_json::Error,
+        > = parse_signers_config(json_str_with_empty_master_signers_group);
+        assert!(config.is_err());
+        let error = config.err().unwrap();
+        assert!(
+            error
+                .to_string()
+                .starts_with("Group size must be at least 1")
+        );
         let json_str_with_zero_threshold = r#"
     {
       "version": 1,
@@ -530,6 +576,7 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} }
           ],
           "threshold": 0
         }
