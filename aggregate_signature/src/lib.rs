@@ -233,10 +233,8 @@ where
     /// Check if aggregate signature meets all thresholds in signers config for admin keys
     pub fn is_admin_complete(&self, signers_config: &SignersConfig<P>, admin_data: &[u8]) -> bool {
         // Check admin_keys groups if present
-        signers_config
-            .admin_keys
-            .as_ref()
-            .is_some_and(|keys| check_groups(keys, &self.signatures, admin_data))
+        let keys = signers_config.admin_keys();
+        check_groups(keys, &self.signatures, admin_data)
     }
 }
 
@@ -535,14 +533,8 @@ mod tests {
         // Should be complete with mixed configuration
         assert!(agg_sig.is_artifact_complete(&signers_config_mixed, data));
         assert!(agg_sig.is_master_complete(&signers_config_mixed, data));
-        // FIXME: an non-existing admin group is implicitely set to the artifact group,
-        // so this should pass.
-        // Check an null admin group is not comsidered as complete
-        assert!(!agg_sig.is_admin_complete(&signers_config_mixed, data));
-        // Empty admin_keys array is never complete
-        let mut signers_config_empty_admin = signers_config_mixed.clone();
-        signers_config_empty_admin.admin_keys = Some([].to_vec());
-        assert!(!agg_sig.is_admin_complete(&signers_config_empty_admin, data));
+        // The admin group is implicitly made equal to the artifacti signers group here
+        assert!(agg_sig.is_admin_complete(&signers_config_mixed, data));
 
         assert_eq!(agg_sig.origin, "test_origin");
     }
@@ -928,6 +920,17 @@ mod tests {
         ],
         "threshold": 2
       }
+    ]
+    "#,
+                signatures_1_3.clone(),
+                incomplete,
+            ),
+            //------------------------------------------------------------
+            // Empty group never complete
+            (
+                r#"
+    [
+
     ]
     "#,
                 signatures_1_3.clone(),
