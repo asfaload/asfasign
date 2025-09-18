@@ -566,6 +566,87 @@ mod tests {
                 .to_string()
                 .starts_with("Group size must be at least 1")
         );
+
+        // Test empty master
+        // Empty groups are never complete, so this is the same as an absent master_keys field
+        let json_str_with_empty_master_array = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+          ],
+          "threshold": 3
+        }
+      ],
+      "admin_keys": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+          ],
+          "threshold": 2
+        }
+      ],
+      "master_keys" : []}
+    "#;
+        let config: Result<
+            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
+            serde_json::Error,
+        > = parse_signers_config(json_str_with_empty_master_array);
+        assert!(config.is_ok());
+
+        // Test empty admin array
+        // If the json holds an empty array for admins, it returns the artifact signers just as
+        // when it is not present at all
+        let json_str_with_empty_admin_array = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+          ],
+          "threshold": 3
+        }
+      ],
+      "master_keys": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+          ],
+          "threshold": 2
+        }
+      ],
+      "admin_keys" : []}
+    "#;
+        let result: Result<
+            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
+            serde_json::Error,
+        > = parse_signers_config(json_str_with_empty_admin_array);
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        // Check admin_keys holds an one element array
+        assert_eq!(1, config.admin_keys().len());
+        // And that element's signers field has 3 keys
+        assert_eq!(3, config.admin_keys()[0].signers.len());
+
         let json_str_with_zero_threshold = r#"
     {
       "version": 1,
