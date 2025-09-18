@@ -60,6 +60,7 @@ pub struct InitialVersion {
     serialize = "P: AsfaloadPublicKeyTrait",
     deserialize = "P: AsfaloadPublicKeyTrait"
 ))]
+#[derive(Eq, PartialEq)]
 pub struct SignerGroup<P: AsfaloadPublicKeyTrait> {
     pub signers: Vec<Signer<P>>,
     pub threshold: u32,
@@ -118,6 +119,7 @@ where
     serialize = "P: AsfaloadPublicKeyTrait",
     deserialize = "P: AsfaloadPublicKeyTrait"
 ))]
+#[derive(Eq, PartialEq)]
 pub struct Signer<P: AsfaloadPublicKeyTrait> {
     pub kind: SignerKind,
     pub data: SignerData<P>, // Specify the concrete type here
@@ -439,9 +441,7 @@ mod tests {
             config.artifact_signers[0].signers[0].data.format,
             KeyFormat::Minisign
         );
-        let admin_keys = config.admin_keys();
-        assert_eq!(admin_keys[0].threshold, 3);
-        assert_eq!(admin_keys[0].signers[0].kind, SignerKind::Key);
+        assert_eq!(config.admin_keys(), &config.artifact_signers);
 
         let json_str_with_invalid_b64_keys = r#"
     {
@@ -643,9 +643,7 @@ mod tests {
         assert!(result.is_ok());
         let config = result.unwrap();
         // Check admin_keys holds an one element array
-        assert_eq!(1, config.admin_keys().len());
-        // And that element's signers field has 3 keys
-        assert_eq!(3, config.admin_keys()[0].signers.len());
+        assert_eq!(config.admin_keys(), &config.artifact_signers);
 
         let json_str_with_zero_threshold = r#"
     {
