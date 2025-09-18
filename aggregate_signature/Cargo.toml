@@ -16,3 +16,4 @@ common = { path = "../common/" }
 tempfile = "3.21.0"
 minisign = { git = "https://github.com/jedisct1/rust-minisign", rev = "fe7afaf" }
 test_helpers = { path = "../test_helpers/" }
+anyhow = "1.0.99"
