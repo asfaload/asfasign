@@ -32,7 +32,20 @@ pub struct SignersConfig<P: AsfaloadPublicKeyTrait> {
     pub artifact_signers: Vec<SignerGroup<P>>,
     pub master_keys: Vec<SignerGroup<P>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    // FIXME: make private, but causes trouble in tests of aggregate signature definitions
     pub admin_keys: Option<Vec<SignerGroup<P>>>,
+}
+
+impl<P> SignersConfig<P>
+where
+    P: AsfaloadPublicKeyTrait,
+{
+    pub fn admin_keys(&self) -> &Vec<SignerGroup<P>> {
+        match &self.admin_keys {
+            Some(v) if !v.is_empty() => v,
+            _ => &self.artifact_signers,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,12 +269,9 @@ where
     // First, validate the JSON by parsing it
     let config: SignersConfig<K> = parse_signers_config(json_content)?;
 
-    // Check that the signer is in the admin_signers group (if present) or in the artifact_signers group
-    let groups_to_check = config
-        .admin_keys
-        .as_deref()
-        .unwrap_or(&config.artifact_signers);
-    let is_valid_signer = groups_to_check.iter().any(|group| {
+    // Check that the signer is in the admin_signers group (equal to artifact signers of
+    // admin group is not present in file)
+    let is_valid_signer = config.admin_keys().iter().any(|group| {
         group
             .signers
             .iter()
@@ -354,7 +364,7 @@ mod tests {
             { "kind": "key", "data": { "format": "minisign", "pubkey": "R4DM1NL285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
             { "kind": "key", "data": { "format": "minisign", "pubkey": "R4DM1NN3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
           ],
-          "threshold": 2
+          "threshold": 3
         }
       ]
     }
@@ -377,11 +387,56 @@ mod tests {
         assert_eq!(config.master_keys[0].threshold, 2);
         assert_eq!(config.master_keys[0].signers[0].kind, SignerKind::Key);
         assert!(config.admin_keys.is_some());
-        let admin_keys = config
-            .admin_keys
-            .as_ref()
-            .expect("admin_keys should be present");
-        assert_eq!(admin_keys[0].threshold, 2);
+        let admin_keys = config.admin_keys();
+        assert_eq!(admin_keys[0].threshold, 3);
+        assert_eq!(admin_keys[0].signers[0].kind, SignerKind::Key);
+
+        // Check admin key are equal to artifact_signers if not set explicitly
+        let json_str = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+          ],
+          "threshold": 3
+        }
+      ],
+      "master_keys": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+          ],
+          "threshold": 2
+        }
+      ]
+    }
+    "#;
+        let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(json_str).expect("Failed to parse JSON");
+        assert_eq!(config.version, 1);
+        assert_eq!(
+            config.initial_version.permalink,
+            "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json"
+        );
+        assert_eq!(config.artifact_signers.len(), 1);
+        assert_eq!(config.artifact_signers[0].threshold, 3);
+        assert_eq!(config.artifact_signers[0].signers[0].kind, SignerKind::Key);
+        assert_eq!(
+            config.artifact_signers[0].signers[0].data.format,
+            KeyFormat::Minisign
+        );
+        let admin_keys = config.admin_keys();
+        assert_eq!(admin_keys[0].threshold, 3);
         assert_eq!(admin_keys[0].signers[0].kind, SignerKind::Key);
 
         let json_str_with_invalid_b64_keys = r#"
