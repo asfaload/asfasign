@@ -1,5 +1,6 @@
 use common::fs::names::{
-    SIGNERS_DIR, SIGNERS_FILE, pending_signatures_path_for, signatures_path_for,
+    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, pending_signatures_path_for,
+    signatures_path_for,
 };
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file::{SignerGroup, SignersConfig};
@@ -67,13 +68,13 @@ pub struct SignedFile {
 }
 
 impl SignedFile {
-    fn determine_signed_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
+    fn determine_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
         let path = file_path.as_ref();
         // Signers file if {SIGNERS_DIR}/{SIGNERSFILE}
         if path
             .parent()
             .and_then(|dir| dir.file_name())
-            .is_some_and(|name| name == SIGNERS_DIR)
+            .is_some_and(|name| name == SIGNERS_DIR || name == PENDING_SIGNERS_DIR)
             && path.file_name().is_some_and(|fname| fname == SIGNERS_FILE)
         {
             FileType::Signers
@@ -82,7 +83,7 @@ impl SignedFile {
         }
     }
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
-        let file_type = Self::determine_signed_file_type(&path);
+        let file_type = Self::determine_file_type(&path);
         Self {
             kind: file_type,
             path: path.as_ref().to_path_buf(),
@@ -155,6 +156,7 @@ where
     }
     Ok(signatures)
 }
+
 /// Load signatures for a file from the corresponding signatures file
 // This function cannot be placed in the implemetation of AggregateSignature<P,S,SS> because
 // in that case, it would have to be called like this: AggregateSignature<_,_,_>::load_for_file(...)
@@ -247,6 +249,7 @@ mod tests {
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
     use signers_file::{KeyFormat, SignerKind};
+    use std::fs;
     use std::path::PathBuf;
     use std::str::FromStr;
     use tempfile::TempDir;
@@ -952,5 +955,94 @@ mod tests {
             data
         ));
         assert!(!check_groups(&[], &signatures_1_2_3_4, data));
+    }
+
+    #[test]
+    fn test_determine_file_type() {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        //  Regular file (should be Artifact)
+        let regular_file = temp_path.join("regular_file.txt");
+        fs::write(&regular_file, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&regular_file),
+            FileType::Artifact
+        );
+
+        //  File in a regular directory (should be Artifact)
+        let regular_dir = temp_path.join("regular_dir");
+        fs::create_dir(&regular_dir).unwrap();
+        let file_in_regular_dir = regular_dir.join("some_file.json");
+        fs::write(&file_in_regular_dir, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&file_in_regular_dir),
+            FileType::Artifact
+        );
+
+        //  File in "asfaload.signers.pending" but not named "index.json" (should be Artifact)
+        let signers_dir = temp_path.join(PENDING_SIGNERS_DIR);
+        fs::create_dir(&signers_dir).unwrap();
+        let other_file = signers_dir.join("other_file.json");
+        fs::write(&other_file, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&other_file),
+            FileType::Artifact
+        );
+
+        //  File named "index.json" but not in "asfaload.signers.pending" (should be Artifact)
+        let index_in_regular_dir = regular_dir.join(SIGNERS_FILE);
+        fs::write(&index_in_regular_dir, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&index_in_regular_dir),
+            FileType::Artifact
+        );
+
+        //  File named "index.json" in "asfaload.signers.pending" (should be Signers)
+        let index_file = signers_dir.join(SIGNERS_FILE);
+        fs::write(&index_file, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&index_file),
+            FileType::Signers
+        );
+
+        //  Nested "asfaload.signers.pending" directory (should still work)
+        let nested_dir = temp_path.join("nested").join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&nested_dir).unwrap();
+        let nested_index = nested_dir.join(SIGNERS_FILE);
+        fs::write(&nested_index, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&nested_index),
+            FileType::Signers
+        );
+
+        //  Directory named similarly but not exactly "asfaload.signers.pending" (should be Artifact)
+        let similar_dir = temp_path.join(format!("{}.{}", PENDING_SIGNERS_DIR, "backup"));
+        fs::create_dir(&similar_dir).unwrap();
+        let similar_index = similar_dir.join(SIGNERS_FILE);
+        fs::write(&similar_index, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&similar_index),
+            FileType::Artifact
+        );
+
+        //  Case sensitivity check (should be Artifact since exact match is required)
+        let case_dir = temp_path.join(PENDING_SIGNERS_DIR.to_uppercase());
+        fs::create_dir(&case_dir).unwrap();
+        let case_index = case_dir.join(SIGNERS_FILE);
+        fs::write(&case_index, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&case_index),
+            FileType::Artifact
+        );
+
+        //  File named "INDEX.JSON" (uppercase) in "asfaload.signers.pending" (should be Artifact)
+        let upper_index = signers_dir.join("INDEX.JSON");
+        fs::write(&upper_index, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&upper_index),
+            FileType::Artifact
+        );
     }
 }
