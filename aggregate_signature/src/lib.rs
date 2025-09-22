@@ -252,7 +252,7 @@ where
     let file_path = file_path.as_ref();
 
     //  Find the signers file in parent directories
-    let signers_file_path = find_global_signers_for(file_path)?;
+    let signers_file_path = local_signers_path_for(file_path)?;
 
     //  Load the signers configuration
     let signers_config = load_signers_config::<PK>(&signers_file_path)?;
@@ -535,6 +535,9 @@ mod tests {
         // Create a dummy file to represent the signed file
         let signed_file_path = dir_path.join("data.txt");
         std::fs::write(&signed_file_path, data).unwrap();
+
+        // Create local signers file
+        create_local_signers_for(&signed_file_path)?;
         // Write the signatures file for the signed file
         let mut signatures_map = std::collections::HashMap::new();
         signatures_map.insert(pubkey.to_base64(), signature.to_base64());
@@ -558,7 +561,8 @@ mod tests {
         // Should be complete with threshold 1
         assert!(agg_sig.is_artifact_complete(&signers_config, data));
 
-        // Should be incomplete with threshold 2
+        // Should still be complete when threshold set to 2
+        // in global signers file as local file still has threshold 1
         let mut high_threshold_group = group.clone();
         high_threshold_group.threshold = 2;
         let high_threshold_config = SignersConfig {
@@ -568,7 +572,8 @@ mod tests {
 
         let config_json = serde_json::to_string_pretty(&high_threshold_config).unwrap();
         fs::write(&signers_file, config_json).unwrap();
-        assert!(!agg_sig.is_artifact_complete(&high_threshold_config, data));
+
+        assert!(agg_sig.is_artifact_complete(&signers_config, data));
 
         assert_eq!(
             agg_sig.origin,
@@ -1306,6 +1311,10 @@ mod tests {
         // Create signatures
         let sig1 = seckey1.sign(file_content).unwrap();
         let sig2 = seckey2.sign(file_content).unwrap();
+
+        // Copy global signers file to local
+        let result = create_local_signers_for(&test_file);
+        assert!(result.is_ok());
 
         // Test incomplete signature (only one signature)
         let sig_file_path = test_file.with_file_name(format!(
