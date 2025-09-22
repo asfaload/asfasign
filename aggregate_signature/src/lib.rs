@@ -444,7 +444,7 @@ where
 mod tests {
     use super::*;
     use anyhow::Result;
-    use common::fs::names::{SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
+    use common::fs::names::{PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
@@ -1832,5 +1832,144 @@ mod tests {
         // Verify the complete file is unchanged
         let content = fs::read_to_string(&complete_sig_path).unwrap();
         assert_eq!(content, r#"{"existing": "content"}"#);
+    }
+    #[test]
+    fn test_is_aggregate_signature_complete_pending() {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create directory structure:
+        // root/
+        //   asfaload.signers/
+        //     index.json
+        //   file.txt
+        //   file.txt.pending_signatures.json
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).unwrap();
+
+        // Create a test file
+        let test_file = root.join("file.txt");
+        let file_content = b"test content";
+        fs::write(&test_file, file_content).unwrap();
+
+        // Generate keys for testing
+        let test_keys = TestKeys::new(2);
+        let pubkey1 = test_keys.pub_key(0).unwrap();
+        let seckey1 = test_keys.sec_key(0).unwrap();
+        let pubkey2 = test_keys.pub_key(1).unwrap();
+        let seckey2 = test_keys.sec_key(1).unwrap();
+
+        // Create signers configuration with threshold 2
+        let signers_config = SignersConfig {
+            version: 1,
+            initial_version: InitialVersion {
+                permalink: "https://example.com".to_string(),
+                mirrors: vec![],
+            },
+            artifact_signers: vec![SignerGroup {
+                signers: vec![
+                    Signer {
+                        kind: SignerKind::Key,
+                        data: SignerData {
+                            format: KeyFormat::Minisign,
+                            pubkey: pubkey1.clone(),
+                        },
+                    },
+                    Signer {
+                        kind: SignerKind::Key,
+                        data: SignerData {
+                            format: KeyFormat::Minisign,
+                            pubkey: pubkey2.clone(),
+                        },
+                    },
+                ],
+                threshold: 2,
+            }],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        // Write signers configuration
+        let signers_file = signers_dir.join(SIGNERS_FILE);
+        let config_json = serde_json::to_string_pretty(&signers_config).unwrap();
+        fs::write(&signers_file, config_json).unwrap();
+
+        // Create signatures
+        let sig1 = seckey1.sign(file_content).unwrap();
+        let sig2 = seckey2.sign(file_content).unwrap();
+
+        // Copy global signers file to local
+        let result = create_local_signers_for(&test_file);
+        assert!(result.is_ok());
+
+        // Test when pending signature file doesn't exist
+        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
+        assert!(res.is_ok());
+        assert!(!res.unwrap()); // Should be incomplete when no pending file exists
+
+        // Create pending signature file path
+        let pending_sig_file_path = test_file.with_file_name(format!(
+            "{}.{}",
+            test_file.file_name().unwrap().to_string_lossy(),
+            PENDING_SIGNATURES_SUFFIX
+        ));
+
+        // Test incomplete signature (only one signature)
+        let mut incomplete_sigs = HashMap::new();
+        incomplete_sigs.insert(pubkey1.clone().to_base64(), sig1.to_base64());
+        let incomplete_json = serde_json::to_string_pretty(&incomplete_sigs).unwrap();
+        fs::write(&pending_sig_file_path, &incomplete_json).unwrap();
+
+        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
+        assert!(res.is_ok());
+        assert!(!res.unwrap()); // Should be incomplete with only one signature
+
+        // Test complete signature (both signatures)
+        let mut complete_sigs = HashMap::new();
+        complete_sigs.insert(pubkey1.to_base64(), sig1.to_base64());
+        complete_sigs.insert(pubkey2.to_base64(), sig2.to_base64());
+        let complete_json = serde_json::to_string_pretty(&complete_sigs).unwrap();
+        fs::write(&pending_sig_file_path, complete_json).unwrap();
+
+        assert!(
+            is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true).unwrap()
+        ); // Should be complete with both signatures
+
+        // Test invalid signature (wrong content)
+        let mut invalid_sigs = HashMap::new();
+        invalid_sigs.insert(
+            pubkey1.to_base64(),
+            seckey1.sign(b"wrong content").unwrap().to_base64(),
+        );
+        invalid_sigs.insert(pubkey2.to_base64(), sig2.to_base64());
+        let invalid_json = serde_json::to_string_pretty(&invalid_sigs).unwrap();
+        fs::write(&pending_sig_file_path, invalid_json).unwrap();
+
+        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
+        assert!(res.is_ok());
+        assert!(!res.unwrap()); // Should be incomplete with invalid signature
+
+        // Test with threshold 1 (should be complete with just one valid signature)
+        let mut low_threshold_config = signers_config.clone();
+        low_threshold_config.artifact_signers[0].threshold = 1;
+
+        let config_json = serde_json::to_string_pretty(&low_threshold_config).unwrap();
+        fs::write(local_signers_path_for(&test_file).unwrap(), config_json).unwrap();
+
+        // Reset to pending signatures with one valid signature
+        fs::write(&pending_sig_file_path, incomplete_json).unwrap();
+
+        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
+        assert!(res.is_ok());
+        assert!(res.unwrap()); // Should be complete with threshold 1 and one valid signature
+
+        // Test with empty signatures file
+        let empty_sigs: HashMap<String, String> = HashMap::new();
+        let empty_json = serde_json::to_string_pretty(&empty_sigs).unwrap();
+        fs::write(&pending_sig_file_path, empty_json).unwrap();
+
+        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
+        assert!(!res.unwrap()); // Should be incomplete with empty signatures
     }
 }
