@@ -639,6 +639,10 @@ mod tests {
         let config_json = serde_json::to_string_pretty(&high_threshold_config).unwrap();
         fs::write(&signers_file, config_json).unwrap();
 
+        let agg_sig: SignatureWithState<_, _> = load_for_file(&signed_file_path)?;
+        let agg_sig = agg_sig
+            .get_complete()
+            .ok_or(anyhow::anyhow!("Signature should have been complete"))?;
         assert!(agg_sig.is_artifact_complete(&signers_config, data));
 
         assert_eq!(
