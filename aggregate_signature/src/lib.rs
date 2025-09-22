@@ -62,6 +62,7 @@ pub enum FileType {
     Artifact,
     Signers,
 }
+#[derive(Clone)]
 pub struct SignedFile {
     pub kind: FileType,
     pub path: PathBuf,
@@ -90,6 +91,7 @@ impl SignedFile {
         }
     }
 }
+#[derive(Clone)]
 pub struct AggregateSignature<P, S, SS>
 where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
@@ -157,6 +159,107 @@ where
     Ok(signatures)
 }
 
+/// Find the active signers file by traversing parent directories
+fn find_global_signers_for(file_path: &Path) -> Result<PathBuf, AggregateSignatureError> {
+    if file_path.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Not looking for global signers for a directory.",
+        )
+        .into());
+    }
+    let mut current_dir = file_path.parent().ok_or_else(|| {
+        AggregateSignatureError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "File has no parent directory",
+        ))
+    })?;
+
+    loop {
+        let candidate = current_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+
+        // Move up to the parent directory
+        current_dir = match current_dir.parent() {
+            Some(parent) => parent,
+            None => {
+                return Err(AggregateSignatureError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "No signers file found in parent directories",
+                )));
+            }
+        };
+    }
+}
+
+/// Load signers configuration from a file
+fn load_signers_config<P>(
+    signers_file_path: &Path,
+) -> Result<SignersConfig<P>, AggregateSignatureError>
+where
+    P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
+{
+    let content = std::fs::read_to_string(signers_file_path)?;
+    let config = signers_file::parse_signers_config(&content)
+        .map_err(|e| AggregateSignatureError::JsonError(e))?;
+    Ok(config)
+}
+
+/// Check if an aggregate signature for a file is complete
+pub fn is_aggregate_signature_complete<P: AsRef<Path>, PK>(
+    file_path: P,
+) -> Result<bool, AggregateSignatureError>
+where
+    PK: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
+    <PK as signatures::keys::AsfaloadPublicKeyTrait>::Signature:
+        signatures::keys::AsfaloadSignatureTrait,
+{
+    let file_path = file_path.as_ref();
+
+    //  Find the signers file in parent directories
+    let signers_file_path = find_global_signers_for(file_path)?;
+
+    //  Load the signers configuration
+    let signers_config = load_signers_config::<PK>(&signers_file_path)?;
+
+    //  Determine the file type
+    let signed_file = SignedFile::new(file_path);
+
+    //  Get the path to the complete signature file
+    let sig_file_path = signatures_path_for(file_path)?;
+
+    //  Load individual signatures if the complete signature file exists
+    let signatures = if sig_file_path.exists() {
+        get_individual_signatures(&sig_file_path)?
+    } else {
+        HashMap::new()
+    };
+
+    //  Read the content of the file being verified
+    let file_content = std::fs::read(file_path)?;
+
+    //  Create a temporary AggregateSignature for verification
+    let agg_sig = AggregateSignature {
+        signatures,
+        origin: file_path.to_string_lossy().to_string(),
+        subject: signed_file.clone(),
+        // FIXME: we should determine if it is complete without building the AggSig...
+        marker: PhantomData::<CompleteSignature>,
+    };
+
+    //  Check completeness based on file type
+    let is_complete = match signed_file.kind {
+        FileType::Artifact => agg_sig.is_artifact_complete(&signers_config, &file_content),
+        FileType::Signers => {
+            agg_sig.is_admin_complete(&signers_config, &file_content)
+                || agg_sig.is_master_complete(&signers_config, &file_content)
+        }
+    };
+
+    Ok(is_complete)
+}
 /// Load signatures for a file from the corresponding signatures file
 // This function cannot be placed in the implemetation of AggregateSignature<P,S,SS> because
 // in that case, it would have to be called like this: AggregateSignature<_,_,_>::load_for_file(...)
@@ -174,35 +277,33 @@ where
     let signed_file = SignedFile::new(&path_in);
     let file_path = path_in.as_ref();
 
-    // Construct the signatures file path: same as file_path but with suffix appended
-    let sig_file_path = signatures_path_for(file_path)?;
-    let pending_sig_file_path = pending_signatures_path_for(file_path)?;
+    // Check if the aggregate signature is complete
+    let is_complete = is_aggregate_signature_complete::<_, P>(file_path)?;
 
-    if sig_file_path.exists() {
-        // If the file for a complete aggregate signature exists, use it
-        // FIXME: validate the completeness here.
+    if is_complete {
+        // Load the complete signature file
+        let sig_file_path = signatures_path_for(file_path)?;
         let signatures = get_individual_signatures(sig_file_path)?;
 
         Ok(SignatureWithState::Complete(AggregateSignature {
             signatures,
-            origin: file_path.to_path_buf().to_string_lossy().to_string(),
+            origin: file_path.to_string_lossy().to_string(),
             subject: signed_file,
             marker: PhantomData,
         }))
     } else {
-        // otherwise use the pending one, and if it is not there, we get an empty set
-        // of individual signatures.
+        // Load the pending signature file
+        let pending_sig_file_path = pending_signatures_path_for(file_path)?;
         let signatures = get_individual_signatures(pending_sig_file_path)?;
 
         Ok(SignatureWithState::Pending(AggregateSignature {
             signatures,
-            origin: file_path.to_path_buf().to_string_lossy().to_string(),
+            origin: file_path.to_string_lossy().to_string(),
             subject: signed_file,
             marker: PhantomData,
         }))
     }
 }
-
 impl<P, S, SS> AggregateSignature<P, S, SS>
 where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
@@ -248,7 +349,9 @@ mod tests {
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
-    use signers_file::{KeyFormat, SignerKind};
+    use signers_file::{
+        InitialVersion, KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig,
+    };
     use std::fs;
     use std::path::PathBuf;
     use std::str::FromStr;
@@ -340,7 +443,10 @@ mod tests {
     fn test_load_and_complete_programmatically() -> Result<()> {
         // Create temp directory
         let temp_dir = TempDir::new().unwrap();
-        let dir_path = temp_dir.path();
+        // Crete a work_dir so we can place the  asfaload_signers dir
+        // in its parent directory temp_dir
+        let dir_path = temp_dir.path().join("work_dir");
+        fs::create_dir_all(&dir_path).unwrap();
 
         // Generate keypairs
         let keypair = AsfaloadKeyPair::new("password").unwrap();
@@ -351,32 +457,8 @@ mod tests {
         let pubkey2 = keypair2.public_key();
         let _seckey2 = keypair2.secret_key("password").unwrap();
 
-        // Create signature
-        let data = b"test data";
-        let signature = seckey.sign(data).unwrap();
+        // Create signers configuration with threshold 2
 
-        // Create a dummy file to represent the signed file
-        let signed_file_path = dir_path.join("data.txt");
-        std::fs::write(&signed_file_path, data).unwrap();
-        // Write the signatures file for the signed file
-        let mut signatures_map = std::collections::HashMap::new();
-        signatures_map.insert(pubkey.to_base64(), signature.to_base64());
-        let json_content = serde_json::to_string_pretty(&signatures_map).unwrap();
-
-        let sig_file_path = signed_file_path.with_file_name(format!(
-            "{}.{}",
-            signed_file_path.file_name().unwrap().to_string_lossy(),
-            SIGNATURES_SUFFIX
-        ));
-
-        std::fs::write(&sig_file_path, json_content).unwrap();
-
-        // Load aggregate signature for the signed file
-        let agg_sig: SignatureWithState<_, _> = load_for_file(&signed_file_path)?;
-
-        let agg_sig = agg_sig
-            .get_complete()
-            .ok_or(anyhow::anyhow!("Signature should have been complete"))?;
         // Create signers config with threshold 1
         let signer = signers_file::Signer {
             kind: SignerKind::Key,
@@ -406,6 +488,39 @@ mod tests {
             master_keys: vec![],
             admin_keys: None,
         };
+        // Write signers configuration
+        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).unwrap();
+        let signers_file = signers_dir.join(SIGNERS_FILE);
+        let config_json = serde_json::to_string_pretty(&signers_config).unwrap();
+        fs::write(&signers_file, config_json).unwrap();
+
+        // Create signature
+        let data = b"test data";
+        let signature = seckey.sign(data).unwrap();
+
+        // Create a dummy file to represent the signed file
+        let signed_file_path = dir_path.join("data.txt");
+        std::fs::write(&signed_file_path, data).unwrap();
+        // Write the signatures file for the signed file
+        let mut signatures_map = std::collections::HashMap::new();
+        signatures_map.insert(pubkey.to_base64(), signature.to_base64());
+        let json_content = serde_json::to_string_pretty(&signatures_map).unwrap();
+
+        let sig_file_path = signed_file_path.with_file_name(format!(
+            "{}.{}",
+            signed_file_path.file_name().unwrap().to_string_lossy(),
+            SIGNATURES_SUFFIX
+        ));
+
+        std::fs::write(&sig_file_path, json_content).unwrap();
+
+        // Load aggregate signature for the signed file
+        let agg_sig: SignatureWithState<_, _> = load_for_file(&signed_file_path)?;
+
+        let agg_sig = agg_sig
+            .get_complete()
+            .ok_or(anyhow::anyhow!("Signature should have been complete"))?;
 
         // Should be complete with threshold 1
         assert!(agg_sig.is_artifact_complete(&signers_config, data));
@@ -417,6 +532,9 @@ mod tests {
             artifact_signers: vec![high_threshold_group],
             ..signers_config.clone()
         };
+
+        let config_json = serde_json::to_string_pretty(&high_threshold_config).unwrap();
+        fs::write(&signers_file, config_json).unwrap();
         assert!(!agg_sig.is_artifact_complete(&high_threshold_config, data));
 
         assert_eq!(
@@ -1044,5 +1162,155 @@ mod tests {
             SignedFile::determine_file_type(&upper_index),
             FileType::Artifact
         );
+    }
+
+    #[test]
+    fn test_find_signers_file() {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create directory structure:
+        // root/
+        //   project/
+        //     asfaload.signers/
+        //       index.json
+        //     src/
+        //       file.txt
+        let project_dir = root.join("project");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let signers_dir = project_dir.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).unwrap();
+
+        let signers_file = signers_dir.join(SIGNERS_FILE);
+        fs::write(&signers_file, "{}").unwrap();
+
+        let src_dir = project_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+
+        let test_file = src_dir.join("file.txt");
+        fs::write(&test_file, "content").unwrap();
+
+        // Test finding signers file from the file
+        let found = find_global_signers_for(&test_file).unwrap();
+        assert_eq!(found, signers_file);
+
+        // We only look for signers for a file, not a directory
+        let result = find_global_signers_for(&project_dir);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(AggregateSignatureError::Io(_))));
+
+        // Test when no signers file exists
+        let no_signers_dir = root.join("no_signers");
+        fs::create_dir_all(&no_signers_dir).unwrap();
+        let result = find_global_signers_for(&no_signers_dir);
+        assert!(matches!(result, Err(AggregateSignatureError::Io(_))));
+    }
+
+    #[test]
+    fn test_is_aggregate_signature_complete() {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create directory structure:
+        // root/
+        //   asfaload.signers/
+        //     index.json
+        //   file.txt
+        //   file.txt.signatures.json
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).unwrap();
+
+        // Create a test file
+        let test_file = root.join("file.txt");
+        let file_content = b"test content";
+        fs::write(&test_file, file_content).unwrap();
+
+        // Generate keys for testing
+        let test_keys = TestKeys::new(2);
+        let pubkey1 = test_keys.pub_key(0).unwrap();
+        let seckey1 = test_keys.sec_key(0).unwrap();
+        let pubkey2 = test_keys.pub_key(1).unwrap();
+        let seckey2 = test_keys.sec_key(1).unwrap();
+
+        // Create signers configuration with threshold 2
+        let signers_config = SignersConfig {
+            version: 1,
+            initial_version: InitialVersion {
+                permalink: "https://example.com".to_string(),
+                mirrors: vec![],
+            },
+            artifact_signers: vec![SignerGroup {
+                signers: vec![
+                    Signer {
+                        kind: SignerKind::Key,
+                        data: SignerData {
+                            format: KeyFormat::Minisign,
+                            pubkey: pubkey1.clone(),
+                        },
+                    },
+                    Signer {
+                        kind: SignerKind::Key,
+                        data: SignerData {
+                            format: KeyFormat::Minisign,
+                            pubkey: pubkey2.clone(),
+                        },
+                    },
+                ],
+                threshold: 2,
+            }],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        // Write signers configuration
+        let signers_file = signers_dir.join(SIGNERS_FILE);
+        let config_json = serde_json::to_string_pretty(&signers_config).unwrap();
+        fs::write(&signers_file, config_json).unwrap();
+
+        // Create signatures
+        let sig1 = seckey1.sign(file_content).unwrap();
+        let sig2 = seckey2.sign(file_content).unwrap();
+
+        // Test incomplete signature (only one signature)
+        let sig_file_path = test_file.with_file_name(format!(
+            "{}.{}",
+            test_file.file_name().unwrap().to_string_lossy(),
+            SIGNATURES_SUFFIX
+        ));
+
+        let mut incomplete_sigs = HashMap::new();
+        incomplete_sigs.insert(pubkey1.clone().to_base64(), sig1.to_base64());
+        let incomplete_json = serde_json::to_string_pretty(&incomplete_sigs).unwrap();
+        fs::write(&sig_file_path, incomplete_json).unwrap();
+
+        assert!(!is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file).unwrap());
+
+        // Test complete signature (both signatures)
+        let mut complete_sigs = HashMap::new();
+        complete_sigs.insert(pubkey1.to_base64(), sig1.to_base64());
+        complete_sigs.insert(pubkey2.to_base64(), sig2.to_base64());
+        let complete_json = serde_json::to_string_pretty(&complete_sigs).unwrap();
+        fs::write(&sig_file_path, complete_json).unwrap();
+
+        assert!(is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file).unwrap());
+
+        // Test when signature file doesn't exist
+        fs::remove_file(&sig_file_path).unwrap();
+        assert!(!is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file).unwrap());
+
+        // Test invalid signature (wrong content)
+        let mut invalid_sigs = HashMap::new();
+        invalid_sigs.insert(
+            pubkey1.to_base64(),
+            seckey1.sign(b"wrong content").unwrap().to_base64(),
+        );
+        invalid_sigs.insert(pubkey2.to_base64(), sig2.to_base64());
+        let invalid_json = serde_json::to_string_pretty(&invalid_sigs).unwrap();
+        fs::write(&sig_file_path, invalid_json).unwrap();
+
+        assert!(!is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file).unwrap());
     }
 }
