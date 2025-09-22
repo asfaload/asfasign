@@ -1,6 +1,6 @@
 use common::fs::names::{
-    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, pending_signatures_path_for,
-    signatures_path_for,
+    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, local_signers_path_for,
+    pending_signatures_path_for, signatures_path_for,
 };
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file::{SignerGroup, SignersConfig};
@@ -194,6 +194,39 @@ fn find_global_signers_for(file_path: &Path) -> Result<PathBuf, AggregateSignatu
     }
 }
 
+fn create_local_signers_for<P: AsRef<Path>>(
+    file_path_in: P,
+) -> Result<PathBuf, AggregateSignatureError> {
+    let file_path = file_path_in.as_ref();
+
+    // Not working on directories
+    if file_path.is_dir() {
+        return Err(AggregateSignatureError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Not creating local signers for a directory.",
+        )));
+    }
+
+    let local_signers_path = local_signers_path_for(file_path)?;
+
+    // Not overwriting existing files
+    if local_signers_path.exists() {
+        return Err({
+            AggregateSignatureError::Io(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!(
+                    "Not overwriting existing local signers file at {}",
+                    local_signers_path.to_string_lossy()
+                ),
+            ))
+        });
+    }
+
+    let global_signers = find_global_signers_for(file_path)?;
+    std::fs::copy(global_signers, &local_signers_path)?;
+    Ok(local_signers_path)
+}
+
 /// Load signers configuration from a file
 fn load_signers_config<P>(
     signers_file_path: &Path,
@@ -345,7 +378,7 @@ where
 mod tests {
     use super::*;
     use anyhow::Result;
-    use common::fs::names::SIGNATURES_SUFFIX;
+    use common::fs::names::{SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
@@ -1312,5 +1345,216 @@ mod tests {
         fs::write(&sig_file_path, invalid_json).unwrap();
 
         assert!(!is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file).unwrap());
+    }
+
+    #[test]
+    fn test_create_local_signers_for_success() {
+        // Create a temporary directory structure
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create directory structure:
+        // root/
+        //   asfaload.signers/
+        //     index.json
+        //   project/
+        //     src/
+        //       file.txt
+        let project_dir = root.join("project");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).unwrap();
+
+        // Create global signers file
+        let global_signers_file = signers_dir.join(SIGNERS_FILE);
+        let global_content = r#"{
+            "version": 1,
+            "initial_version": {
+                "permalink": "https://example.com",
+                "mirrors": []
+            },
+            "artifact_signers": [],
+            "master_keys": [],
+            "admin_keys": null
+        }"#;
+        fs::write(&global_signers_file, global_content).unwrap();
+
+        // Create a test file
+        let src_dir = project_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("file.txt");
+        fs::write(&test_file, "test content").unwrap();
+
+        // Call the function to create local signers
+        let local_signers_path = create_local_signers_for(&test_file).unwrap();
+
+        // Verify the local signers file was created in the correct location
+        let expected_local_path = test_file.with_file_name(format!("file.txt.{}", SIGNERS_SUFFIX));
+        assert_eq!(local_signers_path, expected_local_path);
+        assert!(local_signers_path.exists());
+
+        // Verify the content matches the global signers file
+        let local_content = fs::read_to_string(&local_signers_path).unwrap();
+        assert_eq!(local_content, global_content);
+    }
+
+    #[test]
+    fn test_create_local_signers_for_directory_input() {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+
+        // Try to create local signers for a directory - should fail
+        let result = create_local_signers_for(dir_path);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AggregateSignatureError::Io(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput);
+                assert!(
+                    e.to_string()
+                        .contains("Not creating local signers for a directory")
+                );
+            }
+            _ => panic!("Expected IO error 'Not creating local signers for a directory'"),
+        }
+    }
+
+    #[test]
+    fn test_create_local_signers_for_existing_local_signers() {
+        // Create a temporary directory structure
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+        // Create directory structure:
+        // root/
+        //   asfaload.signers/
+        //     index.json
+        //   project/
+        //     src/
+        //       file.txt
+        let project_dir = root.join("project");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).unwrap();
+
+        // Create global signers file
+        let global_signers_file = signers_dir.join(SIGNERS_FILE);
+        let global_content = r#"{
+            "version": 1,
+            "initial_version": {
+                "permalink": "https://example.com",
+                "mirrors": []
+            },
+            "artifact_signers": [],
+            "master_keys": [],
+            "admin_keys": null
+        }"#;
+        fs::write(&global_signers_file, global_content).unwrap();
+
+        // Create a test file
+        let src_dir = project_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("file.txt");
+        fs::write(&test_file, "test content").unwrap();
+
+        let existing_local_signers = src_dir.join(format!("file.txt.{}", SIGNERS_SUFFIX));
+        fs::write(
+            &existing_local_signers,
+            "content does not matter, only existence",
+        )
+        .unwrap();
+
+        // Try to create local signers - should fail because local file already exists
+        let result = create_local_signers_for(&test_file);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AggregateSignatureError::Io(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+                assert!(
+                    e.to_string()
+                        .contains("Not overwriting existing local signers file")
+                );
+            }
+            _ => panic!("Expected IO error"),
+        }
+    }
+
+    #[test]
+    fn test_create_local_signers_for_no_global_signers() {
+        // Create a temporary directory structure without global signers
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create directory structure:
+        // root/
+        //   project/
+        //     src/
+        //       file.txt
+        let project_dir = root.join("project");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        // Create a test file
+        let src_dir = project_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("file.txt");
+        fs::write(&test_file, "test content").unwrap();
+
+        // Try to create local signers - should fail because no global signers found
+        let result = create_local_signers_for(&test_file);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AggregateSignatureError::Io(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
+                assert!(
+                    e.to_string()
+                        .contains("No signers file found in parent directories")
+                );
+            }
+            _ => panic!("Expected IO error"),
+        }
+    }
+
+    #[test]
+    fn test_create_local_signers_for_nested_project() {
+        // Create a temporary directory structure with nested projects
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create directory structure:
+        // root/
+        //   asfaload.signers/
+        //     index.json
+        //   project/
+        //     submodule/
+        //       src/
+        //         file.txt
+        let project_dir = root.join("project").join("submodule");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        // Create global signers file at root
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).unwrap();
+        let global_signers_file = signers_dir.join(SIGNERS_FILE);
+        let global_content = r#"{"version": 1, "initial_version": {"permalink": "https://example.com", "mirrors": []}}"#;
+        fs::write(&global_signers_file, global_content).unwrap();
+
+        // Create a test file in the nested project
+        let src_dir = project_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        let test_file = src_dir.join("file.txt");
+        fs::write(&test_file, "test content").unwrap();
+
+        // Call the function to create local signers
+        let local_signers_path = create_local_signers_for(&test_file).unwrap();
+
+        // Verify the local signers file was created in the nested project directory
+        let expected_local_path = src_dir.join(format!("file.txt.{}", SIGNERS_SUFFIX));
+        assert_eq!(local_signers_path, expected_local_path);
+        assert!(local_signers_path.exists());
+
+        // Verify the content matches the global signers file
+        let local_content = fs::read_to_string(&local_signers_path).unwrap();
+        assert_eq!(local_content, global_content);
     }
 }
