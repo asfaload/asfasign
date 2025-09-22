@@ -288,24 +288,16 @@ where
     //  Read the content of the file being verified
     let file_content = std::fs::read(file_path)?;
 
-    //  Create a temporary AggregateSignature for verification
-    let agg_sig = AggregateSignature {
-        signatures,
-        origin: file_path.to_string_lossy().to_string(),
-        subject: signed_file.clone(),
-        // FIXME: we should determine if it is complete without building the AggSig...
-        marker: PhantomData::<CompleteSignature>,
-    };
-
     //  Check completeness based on file type
     let is_complete = match signed_file.kind {
-        FileType::Artifact => agg_sig.is_artifact_complete(&signers_config, &file_content),
+        FileType::Artifact => {
+            check_groups(&signers_config.artifact_signers, &signatures, &file_content)
+        }
         FileType::Signers => {
-            agg_sig.is_admin_complete(&signers_config, &file_content)
-                || agg_sig.is_master_complete(&signers_config, &file_content)
+            check_groups(signers_config.admin_keys(), &signatures, &file_content)
+                || check_groups(&signers_config.master_keys, &signatures, &file_content)
         }
     };
-
     if !look_at_pending && !is_complete {
         Err(AggregateSignatureError::MissingSignaturesInCompleteSignature)
     } else {
