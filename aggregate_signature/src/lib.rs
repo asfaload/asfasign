@@ -23,6 +23,8 @@ pub enum AggregateSignatureError {
     PublicKey(String),
     #[error("Threshold not met for group")]
     ThresholdNotMet,
+    #[error("Cannot transition incomplete signature to complete")]
+    IsIncomplete,
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
 }
@@ -103,6 +105,12 @@ where
     origin: String,
     subject: SignedFile,
     marker: PhantomData<SS>,
+}
+
+impl AsRef<Path> for SignedFile {
+    fn as_ref(&self) -> &Path {
+        self.path.as_ref()
+    }
 }
 
 /// Check if all groups in a category meet their thresholds with valid signatures
@@ -243,6 +251,7 @@ where
 /// Check if an aggregate signature for a file is complete
 pub fn is_aggregate_signature_complete<P: AsRef<Path>, PK>(
     file_path: P,
+    look_at_pending: bool,
 ) -> Result<bool, AggregateSignatureError>
 where
     PK: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
@@ -261,7 +270,11 @@ where
     let signed_file = SignedFile::new(file_path);
 
     //  Get the path to the complete signature file
-    let sig_file_path = signatures_path_for(file_path)?;
+    let sig_file_path = if look_at_pending {
+        pending_signatures_path_for(file_path)?
+    } else {
+        signatures_path_for(file_path)?
+    };
 
     //  Load individual signatures if the complete signature file exists
     let signatures = if sig_file_path.exists() {
@@ -311,7 +324,7 @@ where
     let file_path = path_in.as_ref();
 
     // Check if the aggregate signature is complete
-    let is_complete = is_aggregate_signature_complete::<_, P>(file_path)?;
+    let is_complete = is_aggregate_signature_complete::<_, P>(file_path, false)?;
 
     if is_complete {
         // Load the complete signature file
@@ -374,6 +387,51 @@ where
     }
 }
 
+impl<P, S, PendingSignature> AggregateSignature<P, S, PendingSignature>
+where
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait + Clone,
+{
+    pub fn transition_to_complete(
+        &self,
+    ) -> Result<AggregateSignature<P, S, CompleteSignature>, AggregateSignatureError> {
+        let pending_sig_path = pending_signatures_path_for(&self.subject)?;
+        if !pending_sig_path.exists() {
+            return Err({
+                AggregateSignatureError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!(
+                        "Pending signatures not found for moving to complete ({})",
+                        pending_sig_path.to_string_lossy()
+                    ),
+                ))
+            });
+        }
+        let complete_sig_path = signatures_path_for(&self.subject)?;
+        if complete_sig_path.exists() {
+            return Err({
+                AggregateSignatureError::Io(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!(
+                        "Not overwriting existing complete aggregate signature {}",
+                        complete_sig_path.to_string_lossy()
+                    ),
+                ))
+            });
+        }
+        if is_aggregate_signature_complete::<_, P>(&self.subject, true)? {
+            std::fs::rename(pending_sig_path, complete_sig_path)?;
+            Ok(AggregateSignature::<P, S, CompleteSignature> {
+                origin: self.origin.clone(),
+                subject: self.subject.clone(),
+                signatures: self.signatures.clone(),
+                marker: PhantomData,
+            })
+        } else {
+            Err(AggregateSignatureError::IsIncomplete)
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1328,7 +1386,9 @@ mod tests {
         let incomplete_json = serde_json::to_string_pretty(&incomplete_sigs).unwrap();
         fs::write(&sig_file_path, incomplete_json).unwrap();
 
-        assert!(!is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file).unwrap());
+        assert!(
+            !is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false).unwrap()
+        );
 
         // Test complete signature (both signatures)
         let mut complete_sigs = HashMap::new();
@@ -1337,11 +1397,15 @@ mod tests {
         let complete_json = serde_json::to_string_pretty(&complete_sigs).unwrap();
         fs::write(&sig_file_path, complete_json).unwrap();
 
-        assert!(is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file).unwrap());
+        assert!(
+            is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false).unwrap()
+        );
 
         // Test when signature file doesn't exist
         fs::remove_file(&sig_file_path).unwrap();
-        assert!(!is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file).unwrap());
+        assert!(
+            !is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false).unwrap()
+        );
 
         // Test invalid signature (wrong content)
         let mut invalid_sigs = HashMap::new();
@@ -1353,7 +1417,9 @@ mod tests {
         let invalid_json = serde_json::to_string_pretty(&invalid_sigs).unwrap();
         fs::write(&sig_file_path, invalid_json).unwrap();
 
-        assert!(!is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file).unwrap());
+        assert!(
+            !is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false).unwrap()
+        );
     }
 
     #[test]
@@ -1565,5 +1631,189 @@ mod tests {
         // Verify the content matches the global signers file
         let local_content = fs::read_to_string(&local_signers_path).unwrap();
         assert_eq!(local_content, global_content);
+    }
+
+    #[test]
+    fn test_transition_to_complete_success() {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create a test file with content
+        let test_file = root.join("test_file.txt");
+        let file_content = b"test content for signing";
+        fs::write(&test_file, file_content).unwrap();
+
+        // Generate a keypair for signing
+        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey = keypair.public_key();
+        let seckey = keypair.secret_key("password").unwrap();
+
+        // Create a signature for the file content
+        let signature = seckey.sign(file_content).unwrap();
+
+        // Create a signers configuration with threshold 1
+        let signers_config = SignersConfig {
+            version: 1,
+            initial_version: InitialVersion {
+                permalink: "https://example.com".to_string(),
+                mirrors: vec![],
+            },
+            artifact_signers: vec![SignerGroup {
+                signers: vec![Signer {
+                    kind: SignerKind::Key,
+                    data: SignerData {
+                        format: KeyFormat::Minisign,
+                        pubkey: pubkey.clone(),
+                    },
+                }],
+                threshold: 1,
+            }],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        // Create global signers directory and file
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).unwrap();
+        let signers_file = signers_dir.join(SIGNERS_FILE);
+        let config_json = serde_json::to_string_pretty(&signers_config).unwrap();
+        fs::write(&signers_file, config_json).unwrap();
+
+        // Create local signers file
+        create_local_signers_for(&test_file).unwrap();
+
+        // Create a pending signatures file with the signature
+        let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
+        let mut signatures_map = HashMap::new();
+        signatures_map.insert(pubkey.to_base64(), signature.to_base64());
+        let signatures_json = serde_json::to_string_pretty(&signatures_map).unwrap();
+        fs::write(&pending_sig_path, signatures_json).unwrap();
+
+        // Create an AggregateSignature in Pending state
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey.clone(), signature.clone());
+        let agg_sig: AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+            PendingSignature,
+        > = AggregateSignature {
+            signatures,
+            origin: test_file.to_string_lossy().to_string(),
+            subject: SignedFile::new(&test_file),
+            marker: PhantomData,
+        };
+
+        // Transition to complete
+        let complete_sig = agg_sig.transition_to_complete().unwrap();
+
+        // Verify the pending file is gone
+        assert!(!pending_sig_path.exists());
+
+        // Verify the complete file exists
+        let complete_sig_path = signatures_path_for(&test_file).unwrap();
+        assert!(complete_sig_path.exists());
+
+        // Verify the content is preserved
+        let content = fs::read_to_string(&complete_sig_path).unwrap();
+        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.len(), 1);
+        assert!(parsed_content.contains_key(&pubkey.to_base64()));
+        assert_eq!(parsed_content[&pubkey.to_base64()], signature.to_base64());
+
+        // Verify the returned signature is in Complete state
+        assert_eq!(complete_sig.signatures.len(), 1);
+        assert_eq!(complete_sig.origin, test_file.to_string_lossy().to_string());
+        assert_eq!(complete_sig.subject.kind, FileType::Artifact);
+        assert_eq!(complete_sig.subject.path, test_file);
+    }
+
+    #[test]
+    fn test_transition_to_complete_no_pending_file() {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create a test file but no pending signature file
+        let test_file = root.join("test_file.txt");
+        fs::write(&test_file, "test content").unwrap();
+
+        // Create an AggregateSignature in Pending state
+        let agg_sig: AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+            PendingSignature,
+        > = AggregateSignature {
+            signatures: HashMap::new(),
+            origin: test_file.to_string_lossy().to_string(),
+            subject: SignedFile::new(&test_file),
+            marker: PhantomData,
+        };
+
+        // Attempt to transition to complete
+        let result = agg_sig.transition_to_complete();
+
+        // Verify the error
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AggregateSignatureError::Io(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
+                assert!(e.to_string().contains("Pending signatures not found"));
+            }
+            _ => panic!("Expected IO error of kind NotFound"),
+        }
+    }
+
+    #[test]
+    fn test_transition_to_complete_complete_file_exists() {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create a test file
+        let test_file = root.join("test_file.txt");
+        fs::write(&test_file, "test content").unwrap();
+
+        // Create both pending and complete signature files
+        let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
+        fs::write(&pending_sig_path, r#"{"key": "value"}"#).unwrap();
+
+        let complete_sig_path = signatures_path_for(&test_file).unwrap();
+        fs::write(&complete_sig_path, r#"{"existing": "content"}"#).unwrap();
+
+        // Create an AggregateSignature in Pending state
+        let agg_sig: AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+            PendingSignature,
+        > = AggregateSignature {
+            signatures: HashMap::new(),
+            origin: test_file.to_string_lossy().to_string(),
+            subject: SignedFile::new(&test_file),
+            marker: PhantomData,
+        };
+
+        // Attempt to transition to complete
+        let result = agg_sig.transition_to_complete();
+
+        // Verify the error
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AggregateSignatureError::Io(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+                assert!(
+                    e.to_string()
+                        .contains("Not overwriting existing complete aggregate signature")
+                );
+            }
+            _ => panic!("Expected IO error of kind AlreadyExists"),
+        }
+
+        // Verify the pending file still exists
+        assert!(pending_sig_path.exists());
+
+        // Verify the complete file is unchanged
+        let content = fs::read_to_string(&complete_sig_path).unwrap();
+        assert_eq!(content, r#"{"existing": "content"}"#);
     }
 }
