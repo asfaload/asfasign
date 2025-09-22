@@ -25,6 +25,8 @@ pub enum AggregateSignatureError {
     ThresholdNotMet,
     #[error("Cannot transition incomplete signature to complete")]
     IsIncomplete,
+    #[error("Complete signature file according to name is not complete according to signatures")]
+    MissingSignaturesInCompleteSignature,
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
 }
@@ -304,7 +306,11 @@ where
         }
     };
 
-    Ok(is_complete)
+    if !look_at_pending && !is_complete {
+        Err(AggregateSignatureError::MissingSignaturesInCompleteSignature)
+    } else {
+        Ok(is_complete)
+    }
 }
 /// Load signatures for a file from the corresponding signatures file
 // This function cannot be placed in the implemetation of AggregateSignature<P,S,SS> because
@@ -324,13 +330,15 @@ where
     let file_path = path_in.as_ref();
 
     // Check if the aggregate signature is complete
-    let is_complete = is_aggregate_signature_complete::<_, P>(file_path, false)?;
+    let complete_sig_path = signatures_path_for(file_path)?;
 
-    if is_complete {
+    if complete_sig_path.exists() {
         // Load the complete signature file
-        let sig_file_path = signatures_path_for(file_path)?;
-        let signatures = get_individual_signatures(sig_file_path)?;
-
+        // We double check the signature is complete. If it is not, it
+        // will return an error. If it is complete, we don't care about
+        // its true return value
+        is_aggregate_signature_complete::<_, P>(file_path, false)?;
+        let signatures = get_individual_signatures(&complete_sig_path)?;
         Ok(SignatureWithState::Complete(AggregateSignature {
             signatures,
             origin: file_path.to_string_lossy().to_string(),
@@ -1386,8 +1394,11 @@ mod tests {
         let incomplete_json = serde_json::to_string_pretty(&incomplete_sigs).unwrap();
         fs::write(&sig_file_path, incomplete_json).unwrap();
 
-        assert!(
-            !is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false).unwrap()
+        let result = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false);
+        assert!(result.is_err());
+        assert_eq!(
+            result.err().unwrap().to_string(),
+            AggregateSignatureError::MissingSignaturesInCompleteSignature.to_string()
         );
 
         // Test complete signature (both signatures)
@@ -1403,8 +1414,11 @@ mod tests {
 
         // Test when signature file doesn't exist
         fs::remove_file(&sig_file_path).unwrap();
-        assert!(
-            !is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false).unwrap()
+        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false);
+        assert!(res.is_err());
+        assert_eq!(
+            res.err().unwrap().to_string(),
+            AggregateSignatureError::MissingSignaturesInCompleteSignature.to_string()
         );
 
         // Test invalid signature (wrong content)
@@ -1417,8 +1431,11 @@ mod tests {
         let invalid_json = serde_json::to_string_pretty(&invalid_sigs).unwrap();
         fs::write(&sig_file_path, invalid_json).unwrap();
 
-        assert!(
-            !is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false).unwrap()
+        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false);
+        assert!(res.is_err());
+        assert_eq!(
+            res.err().unwrap().to_string(),
+            AggregateSignatureError::MissingSignaturesInCompleteSignature.to_string()
         );
     }
 
