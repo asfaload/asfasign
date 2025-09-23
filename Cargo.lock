@@ -9,11 +9,11 @@ dependencies = [
  "anyhow",
  "base64",
  "common",
- "minisign",
+ "minisign 0.7.9 (git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf)",
  "serde",
  "serde_json",
  "signatures",
- "signers_file",
+ "signers_file_types",
  "tempfile",
  "test_helpers",
  "thiserror",
@@ -224,6 +224,18 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 [[package]]
 name = "minisign"
 version = "0.7.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26541387415a1e829df5d532aad019fb11bc723e2b5bc99edefa4cf5bfad0de7"
+dependencies = [
+ "ct-codecs",
+ "getrandom 0.2.16",
+ "rpassword",
+ "scrypt",
+]
+
+[[package]]
+name = "minisign"
+version = "0.7.9"
 source = "git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf#fe7afafbce85ab052f0616107812d7c2da612231"
 dependencies = [
  "ct-codecs",
@@ -334,18 +346,28 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.219"
+version = "1.0.226"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f0e2c6ed6606019b4e29e69dbaba95b11854410e5347d525002456dbbb786b6"
+checksum = "0dca6411025b24b60bfa7ec1fe1f8e710ac09782dca409ee8237ba74b51295fd"
+dependencies = [
+ "serde_core",
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_core"
+version = "1.0.226"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba2ba63999edb9dac981fb34b3e5c0d111a69b0924e253ed29d83f7c99e966a4"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.219"
+version = "1.0.226"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b0276cf7f2c73365f7157c8123c21cd9a50fbbd844757af28ca1f5925fc2a00"
+checksum = "8db53ae22f34573731bafa1db20f04027b2d25e02d8205921b569171699cdb33"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -354,14 +376,15 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.143"
+version = "1.0.145"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d401abef1d108fbd9cbaebc3e46611f4b1021f714a0597a71f41ee463f5f4a5a"
+checksum = "402a6f66d8c709116cf22f558eab210f5a50187f702eb4d7e5ef38d9a7f1c79c"
 dependencies = [
  "itoa",
  "memchr",
  "ryu",
  "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -382,7 +405,7 @@ dependencies = [
  "anyhow",
  "base64",
  "common",
- "minisign",
+ "minisign 0.7.9 (git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf)",
  "serde_json",
  "tempfile",
  "test_helpers",
@@ -393,16 +416,29 @@ dependencies = [
 name = "signers_file"
 version = "0.1.0"
 dependencies = [
+ "aggregate_signature",
  "anyhow",
  "common",
- "minisign",
+ "minisign 0.7.9 (git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf)",
  "serde",
  "serde_json",
  "sha2",
  "signatures",
+ "signers_file_types",
  "tempfile",
  "test_helpers",
  "thiserror",
+]
+
+[[package]]
+name = "signers_file_types"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "minisign 0.7.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde",
+ "serde_json",
+ "signatures",
 ]
 
 [[package]]
@@ -439,7 +475,7 @@ dependencies = [
 name = "test_helpers"
 version = "0.1.0"
 dependencies = [
- "minisign",
+ "minisign 0.7.9 (git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf)",
  "signatures",
 ]
 

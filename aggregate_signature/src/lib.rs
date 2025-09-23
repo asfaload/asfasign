@@ -3,7 +3,7 @@ use common::fs::names::{
     pending_signatures_path_for, signatures_path_for,
 };
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
-use signers_file::{SignerGroup, SignersConfig};
+use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -274,8 +274,8 @@ where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
 {
     let content = std::fs::read_to_string(signers_file_path)?;
-    let config = signers_file::parse_signers_config(&content)
-        .map_err(|e| AggregateSignatureError::JsonError(e))?;
+    let config = signers_file_types::parse_signers_config(&content)
+        .map_err(AggregateSignatureError::JsonError)?;
     Ok(config)
 }
 
@@ -469,7 +469,7 @@ mod tests {
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
-    use signers_file::{
+    use signers_file_types::{
         InitialVersion, KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig,
     };
     use std::fs;
@@ -540,7 +540,7 @@ mod tests {
 
         // Parse signers config from JSON
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            signers_file::parse_signers_config(&json_config).unwrap();
+            signers_file_types::parse_signers_config(&json_config).unwrap();
 
         // Should be complete with threshold 1
         assert!(agg_sig.is_artifact_complete(&signers_config, data));
@@ -552,7 +552,7 @@ mod tests {
             high_threshold_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
         let high_threshold_config = high_threshold_config.replace("THRESHOLD_PLACEHOLDER", "2");
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            signers_file::parse_signers_config(&high_threshold_config).unwrap();
+            signers_file_types::parse_signers_config(&high_threshold_config).unwrap();
         assert!(!agg_sig.is_artifact_complete(&signers_config, data));
         assert_eq!(agg_sig.origin, "test_file.txt");
     }
@@ -580,16 +580,16 @@ mod tests {
         // Create signers configuration with threshold 2
 
         // Create signers config with threshold 1
-        let signer = signers_file::Signer {
+        let signer = signers_file_types::Signer {
             kind: SignerKind::Key,
-            data: signers_file::SignerData {
+            data: signers_file_types::SignerData {
                 format: KeyFormat::Minisign,
                 pubkey: pubkey.clone(),
             },
         };
-        let signer2 = signers_file::Signer {
+        let signer2 = signers_file_types::Signer {
             kind: SignerKind::Key,
-            data: signers_file::SignerData {
+            data: signers_file_types::SignerData {
                 format: KeyFormat::Minisign,
                 pubkey: pubkey2.clone(),
             },
@@ -600,7 +600,7 @@ mod tests {
         };
         let signers_config = SignersConfig {
             version: 1,
-            initial_version: signers_file::InitialVersion {
+            initial_version: signers_file_types::InitialVersion {
                 permalink: "https://example.com".to_string(),
                 mirrors: vec![],
             },
@@ -737,7 +737,7 @@ mod tests {
 
         // Parse signers config from JSON
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            signers_file::parse_signers_config(&json_config).unwrap();
+            signers_file_types::parse_signers_config(&json_config).unwrap();
 
         // Should be complete with both groups
         assert!(agg_sig.is_artifact_complete(&signers_config, data));
@@ -778,7 +778,7 @@ mod tests {
 
         // Parse mixed signers config from JSON
         let signers_config_mixed: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            signers_file::parse_signers_config(&json_config_mixed).unwrap();
+            signers_file_types::parse_signers_config(&json_config_mixed).unwrap();
 
         // Should be complete with mixed configuration
         assert!(agg_sig.is_artifact_complete(&signers_config_mixed, data));

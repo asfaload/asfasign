@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 signatures = { path = "../signatures" }
-signers_file = { path = "../signers_file" }
+signers_file_types = { path = "../signers_file_types/" }
 thiserror = "2.0"
 base64 = "0.22"
 serde = { version = "1.0", features = ["derive"] }
