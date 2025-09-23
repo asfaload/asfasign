@@ -141,6 +141,35 @@ where
         })
 }
 
+// Check that all signers in signers config have signed.
+// This does not take the thresholds in account.
+pub fn check_all_signers<P, S>(
+    signatures: &HashMap<P, S>,
+    signers_config: &SignersConfig<P>,
+    admin_data: &[u8],
+) -> bool
+where
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
+    let mut keys_iter = signers_config
+        .admin_keys()
+        .iter()
+        .chain(signers_config.master_keys.iter())
+        .chain(signers_config.artifact_signers.iter())
+        .peekable();
+
+    keys_iter.peek().is_some()
+        && keys_iter.all(|group| {
+            group.signers.iter().all(|signer| {
+                signatures
+                    .get(&signer.data.pubkey)
+                    .is_some_and(|signature| {
+                        signer.data.pubkey.verify(signature, admin_data).is_ok()
+                    })
+            })
+        })
+}
 // Load individual signatures from the file.
 // If the file does not exist, act as if no signature was collected yet.
 fn get_individual_signatures<P, S, PP: AsRef<Path>>(
@@ -1967,5 +1996,286 @@ mod tests {
 
         let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
         assert!(!res.unwrap()); // Should be incomplete with empty signatures
+    }
+    #[test]
+    fn test_check_all_signers() {
+        // Create test keys and data
+        let test_keys = TestKeys::new(5);
+        let data = b"test data";
+
+        // Get public and secret keys
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let pubkey2 = test_keys.pub_key(2).unwrap();
+        let seckey2 = test_keys.sec_key(2).unwrap();
+        let pubkey3 = test_keys.pub_key(3).unwrap();
+        let seckey3 = test_keys.sec_key(3).unwrap();
+        let pubkey4 = test_keys.pub_key(4).unwrap();
+        let seckey4 = test_keys.sec_key(4).unwrap();
+
+        // Create signatures
+        let sig0 = seckey0.sign(data).unwrap();
+        let sig1 = seckey1.sign(data).unwrap();
+        let sig2 = seckey2.sign(data).unwrap();
+        let sig3 = seckey3.sign(data).unwrap();
+        let sig4 = seckey4.sign(data).unwrap();
+
+        // Helper function to create a Signer
+        let create_signer = |pubkey: AsfaloadPublicKey<minisign::PublicKey>| Signer {
+            kind: SignerKind::Key,
+            data: SignerData {
+                format: KeyFormat::Minisign,
+                pubkey,
+            },
+        };
+
+        // Helper function to create a SignerGroup
+        let create_group =
+            |signers: Vec<Signer<_>>, threshold: u32| SignerGroup { signers, threshold };
+
+        // Scenario 1: Only artifact_signers group
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
+                master_keys: vec![],
+                admin_keys: None,
+            };
+
+            // Test with valid signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with irrelevant signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey4.clone(), sig4.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+
+            // Test with missing signature
+            let signatures = HashMap::new();
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 2: Artifact_signers with 2 subgroups
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![
+                    create_group(vec![create_signer(pubkey0.clone())], 1),
+                    create_group(vec![create_signer(pubkey1.clone())], 1),
+                ],
+                master_keys: vec![],
+                admin_keys: None,
+            };
+
+            // Test with valid signatures for both groups
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with signature missing for one group
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 3: Admin_keys present
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
+                master_keys: vec![],
+                admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
+            };
+
+            // Test with valid signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with missing signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 4: Master_keys present
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
+                master_keys: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
+                admin_keys: None,
+            };
+
+            // Test with valid signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with missing signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 5: Key in both artifact_signers and admin_keys
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
+                master_keys: vec![],
+                admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
+            };
+
+            // Test with valid signature (should satisfy both groups)
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with missing signature
+            let signatures = HashMap::new();
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 6: Complex scenario with all key types and overlapping keys
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![
+                    create_group(vec![create_signer(pubkey0.clone())], 1),
+                    create_group(vec![create_signer(pubkey1.clone())], 1),
+                ],
+                master_keys: vec![create_group(vec![create_signer(pubkey2.clone())], 1)],
+                admin_keys: Some(vec![
+                    create_group(vec![create_signer(pubkey0.clone())], 1),
+                    create_group(vec![create_signer(pubkey3.clone())], 1),
+                ]),
+            };
+
+            // Test with overlapping key (pubkey0) satisfying both artifact and admin groups
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone()); // Covers both artifact group 1 and admin group 1
+            signatures.insert(pubkey1.clone(), sig1.clone()); // Covers artifact group 2
+            signatures.insert(pubkey2.clone(), sig2.clone()); // Covers master_keys
+            signatures.insert(pubkey3.clone(), sig3.clone()); // Covers admin group 2
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with missing signature for one group
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            signatures.insert(pubkey2.clone(), sig2.clone());
+            // Missing signature for pubkey3 (admin_keys group)
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 7: Test with threshold > 1
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(
+                    vec![
+                        create_signer(pubkey0.clone()),
+                        create_signer(pubkey1.clone()),
+                    ],
+                    2,
+                )],
+                master_keys: vec![],
+                admin_keys: None,
+            };
+
+            // Test with both signatures
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with only one signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 8: Test with empty configuration
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![],
+                master_keys: vec![],
+                admin_keys: None,
+            };
+
+            // Even with signatures, should return false for empty config
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 9: Test with invalid signature
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(
+                    vec![
+                        create_signer(pubkey0.clone()),
+                        create_signer(pubkey1.clone()),
+                    ],
+                    1,
+                )],
+                master_keys: vec![],
+                admin_keys: None,
+            };
+
+            // Test with invalid signature (signed for different data)
+            let other_data = b"other data";
+            let invalid_sig = seckey0.sign(other_data).unwrap();
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), invalid_sig);
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
     }
 }
