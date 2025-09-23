@@ -1,16 +1,21 @@
+use aggregate_signature::{SignatureWithState, check_all_signers};
 use common::fs::names::signatures_path_for;
 use common::fs::names::{
     PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_FILE, pending_signatures_path_for,
 };
+use core::hash;
 use sha2::{Digest, Sha512};
+use signatures::keys::{
+    AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
+};
 use signers_file_types::{SignersConfig, parse_signers_config};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use thiserror::Error;
 //
 
-}
 #[derive(Debug, Error)]
 pub enum SignersFileError {
     #[error("IO error: {0}")]
@@ -25,6 +30,8 @@ pub enum SignersFileError {
     SignatureOperationFailed(String),
     #[error("Signers file initialisation failed: {0}")]
     InitialisationError(String),
+    #[error("Aggregate signature error: {0}")]
+    AggregateSignatureError(#[from] aggregate_signature::AggregateSignatureError),
 }
 /// Initialize a signers file in a specific directory.
 ///
@@ -44,14 +51,15 @@ pub enum SignersFileError {
 /// # Returns
 /// * `Ok(())` if the pending file was successfully created
 /// * `Err(SignersFileError)` if there was an error validating the JSON, signature, or writing the file
-pub fn initialize_signers_file<P: AsRef<Path>, S: signatures::keys::AsfaloadSignatureTrait, K>(
+pub fn initialize_signers_file<P: AsRef<Path>, S, K>(
     dir_path_in: P,
     json_content: &str,
     signature: &S,
     pubkey: &K,
 ) -> Result<(), SignersFileError>
 where
-    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::PartialEq,
+    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
+    S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
     // Ensure we work in the right directory
     let dir_path = {
@@ -93,11 +101,11 @@ where
         )));
     }
     // First, validate the JSON by parsing it
-    let config: SignersConfig<K> = parse_signers_config(json_content)?;
+    let signers_config: SignersConfig<K> = parse_signers_config(json_content)?;
 
     // Check that the signer is in the admin_signers group (equal to artifact signers of
     // admin group is not present in file)
-    let is_valid_signer = config.admin_keys().iter().any(|group| {
+    let is_valid_signer = signers_config.admin_keys().iter().any(|group| {
         group
             .signers
             .iter()
@@ -130,7 +138,7 @@ where
 
     // Add the signature to the aggregate signatures file
     signature
-        .add_to_aggregate_for_file(signers_file_path, pubkey)
+        .add_to_aggregate_for_file(&signers_file_path, pubkey)
         .map_err(|e| {
             use signatures::keys::errs::SignatureError;
             match e {
@@ -140,6 +148,14 @@ where
                 other => SignersFileError::SignatureOperationFailed(other.to_string()),
             }
         })?;
+    let mut signatures: HashMap<K, S> = HashMap::new();
+    signatures.insert(pubkey.clone(), signature.clone());
+    if check_all_signers::<K, S>(&signatures, &signers_config, &hash_result) {
+        let agg_sig: SignatureWithState<AsfaloadPublicKey<_>, AsfaloadSignature<_>> =
+            aggregate_signature::load_for_file::<_, _, _>(signers_file_path)?;
+        let pending_sig = agg_sig.get_pending().unwrap();
+        pending_sig.transition_to_complete()?;
+    }
     Ok(())
 }
 #[cfg(test)]
@@ -751,14 +767,20 @@ mod tests {
             &non_admin_signature,
             non_admin_pubkey,
         );
-        let sig_file_path = dir_path.join("asfaload.signatures.json");
-        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        let sig_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        let pending_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
         assert!(!sig_file_path.exists());
         assert!(!pending_file_path.exists());
         assert!(result.is_err());
         assert!(matches!(result, Err(SignersFileError::InvalidSigner(_))));
 
-        // Now sign proposal with admin key which shuld be ok
+        // Now sign proposal with admin key which should be ok
         // --------------------------------------------------
         let admin_signature = admin_seckey.sign(&hash_result).unwrap();
         let result =
@@ -770,6 +792,64 @@ mod tests {
         // required admin signatures where collected.
         assert!(!sig_file_path.exists());
     }
+    #[test]
+    fn test_initialize_signers_file_with_one_signer() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(4);
+
+        // JSON content with admin_signers
+        let json_content_template = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://example.com",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
+          ],
+          "threshold": 1
+        }
+      ],
+      "master_keys": []
+    }
+    "#;
+
+        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
+        // Get keys we work with here
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let seckey = test_keys.sec_key(0).unwrap();
+
+        // Compute the SHA-512 hash of the JSON content
+        let mut hasher = Sha512::new();
+        hasher.update(json_content.as_bytes());
+        let hash_result = hasher.finalize();
+
+        let sig_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        let pending_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
+
+        // Now sign proposal with unique artifact key which should be complete
+        // ---------------------------------------------------------------
+        let signature = seckey.sign(&hash_result).unwrap();
+        let result = initialize_signers_file(dir_path, json_content, &signature, pubkey);
+        result.expect("initialize_signers_file should have succeeded");
+        // Check that the pending file does not exist, as we have the complete
+        assert!(!pending_file_path.exists());
+
+        // Check that the signature file exists as all
+        // required admin signatures where collected.
+        assert!(sig_file_path.exists());
+    }
+
     #[test]
     fn test_errors_in_initialize_signers_file() {
         let temp_dir = TempDir::new().unwrap();
