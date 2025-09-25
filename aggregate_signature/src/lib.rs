@@ -453,19 +453,17 @@ where
                 ))
             });
         }
-        // FIXME: completeness validation is commented here, as we have another check
-        //to be done for initial signers (check_all_signers).
-        //if is_aggregate_signature_complete::<_, P>(&self.subject, true)? {
-        std::fs::rename(pending_sig_path, complete_sig_path)?;
-        Ok(AggregateSignature::<P, S, CompleteSignature> {
-            origin: self.origin.clone(),
-            subject: self.subject.clone(),
-            signatures: self.signatures.clone(),
-            marker: PhantomData,
-        })
-        //} else {
-        //    Err(AggregateSignatureError::IsIncomplete)
-        //}
+        if is_aggregate_signature_complete::<_, P>(&self.subject, true)? {
+            std::fs::rename(pending_sig_path, complete_sig_path)?;
+            Ok(AggregateSignature::<P, S, CompleteSignature> {
+                origin: self.origin.clone(),
+                subject: self.subject.clone(),
+                signatures: self.signatures.clone(),
+                marker: PhantomData,
+            })
+        } else {
+            Err(AggregateSignatureError::IsIncomplete)
+        }
     }
 }
 #[cfg(test)]
