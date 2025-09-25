@@ -12,6 +12,7 @@ dependencies = [
  "minisign 0.7.9 (git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf)",
  "serde",
  "serde_json",
+ "sha2",
  "signatures",
  "signers_file_types",
  "tempfile",
@@ -73,6 +74,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "sha2",
  "tempfile",
 ]
 
