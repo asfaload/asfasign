@@ -3,9 +3,12 @@ use crate::keys::{
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait, errs,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
-use common::fs::names::{
-    PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_FILE,
-    pending_signatures_path_for, signatures_path_for,
+use common::{
+    AsfaloadHashes,
+    fs::names::{
+        PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_FILE,
+        pending_signatures_path_for, signatures_path_for,
+    },
 };
 pub use minisign::KeyPair;
 use serde_json;
@@ -138,8 +141,10 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
     type SecretKey = minisign::SecretKey;
     type Signature = AsfaloadSignature<minisign::SignatureBox>;
 
-    fn sign(&self, data: &[u8]) -> Result<Self::Signature, errs::SignError> {
-        let data_reader = Cursor::new(data);
+    fn sign(&self, data: &AsfaloadHashes) -> Result<Self::Signature, errs::SignError> {
+        let data_reader = match data {
+            AsfaloadHashes::Sha512(data) => Cursor::new(data),
+        };
         // Intermediate assignment for error conversion
         // https://doc.rust-lang.org/rust-by-example/std/result/question_mark.html
         let sig = minisign::sign(None, &self.key, data_reader, None, None)?;
@@ -161,8 +166,14 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
 impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     type Signature = AsfaloadSignature<minisign::SignatureBox>;
 
-    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError> {
-        let data_reader = Cursor::new(data);
+    fn verify(
+        &self,
+        signature: &Self::Signature,
+        data: &AsfaloadHashes,
+    ) -> Result<(), errs::VerifyError> {
+        let data_reader = match data {
+            AsfaloadHashes::Sha512(data) => Cursor::new(data),
+        };
         minisign::verify(
             &self.key,
             &signature.signature,
@@ -331,9 +342,9 @@ mod asfaload_index_tests {
         assert_eq!(sk.key, decrypted_sk);
         assert_eq!(pk.key, kpr.key_pair.pk);
         // Check we can sign and verify with these keys
-        let data = b"lorem ipsum";
-        let sig = sk.sign(data)?;
-        pk.verify(&sig, data)?;
+        let data = common::sha512_for_content(b"lorem ipsum".to_vec());
+        let sig = sk.sign(&data)?;
+        pk.verify(&sig, &data)?;
 
         // Assign keypair then save it on disk, passing a file name
         let kp = AsfaloadKeyPair::new("mypass")?;
@@ -425,15 +436,15 @@ mod asfaload_index_tests {
         let secret_key = AsfaloadSecretKey::from_file(secret_key_path, "mypass")?;
 
         // Generate signature
-        let bytes_to_sign = &"My string to sign".to_string().into_bytes();
-        let signature = secret_key.sign(bytes_to_sign)?;
+        let bytes_to_sign = common::sha512_for_content(b"My string to sign".to_vec());
+        let signature = secret_key.sign(&bytes_to_sign)?;
 
         // Load public key from disk
         let public_key_path = temp_dir.as_ref().to_path_buf().join("key.pub");
         let public_key = AsfaloadPublicKey::from_file(&public_key_path)?;
 
         // Verify signature
-        public_key.verify(&signature, bytes_to_sign)?;
+        public_key.verify(&signature, &bytes_to_sign)?;
 
         // Load key from base64 and validate
         let value_read = fs::read_to_string(&public_key_path)?;
@@ -446,7 +457,7 @@ mod asfaload_index_tests {
             ))
         })?;
         let public_key_from_string = AsfaloadPublicKey::from_base64(public_key_string.to_string())?;
-        public_key_from_string.verify(&signature, bytes_to_sign)?;
+        public_key_from_string.verify(&signature, &bytes_to_sign)?;
 
         // Test AsfaloadPublicKey::from_base64
         let b64 = public_key_from_string.to_base64();
@@ -457,18 +468,18 @@ mod asfaload_index_tests {
     #[test]
     fn test_signature_from_string_formats() -> Result<()> {
         let (pk, sk) = get_key_pair()?;
-        let data = b"lorem ipsum";
-        let sig = sk.sign(data)?;
+        let data = common::sha512_for_content(b"lorem ipsum".to_vec());
+        let sig = sk.sign(&data)?;
 
         // String serialisation
         let sig_str = sig.to_string();
         let sig_from_str = AsfaloadSignature::from_string(sig_str.as_str())?;
-        pk.verify(&sig_from_str, data)?;
+        pk.verify(&sig_from_str, &data)?;
 
         // Base64 serialisation
         let sig_b64 = sig.to_base64();
         let sig_from_b64 = AsfaloadSignature::from_base64(&sig_b64)?;
-        pk.verify(&sig_from_b64, data)?;
+        pk.verify(&sig_from_b64, &data)?;
 
         Ok(())
     }
@@ -489,9 +500,9 @@ mod asfaload_index_tests {
         let pubkey2 = keypair2.public_key();
         let seckey2 = keypair2.secret_key("password")?;
 
-        let data = b"test data";
-        let signature = seckey.sign(data)?;
-        let signature2 = seckey2.sign(data)?;
+        let data = common::sha512_for_content(b"test data".to_vec());
+        let signature = seckey.sign(&data)?;
+        let signature2 = seckey2.sign(&data)?;
 
         // Signing a directory causes an error
         let result = signature.add_to_aggregate_for_file(dir_path, &pubkey);

@@ -1,6 +1,8 @@
 pub mod minisign;
 use std::{fmt::Display, path::Path};
 
+use common::AsfaloadHashes;
+
 pub enum AsfaloadKeyPairs {
     Minisign(minisign::KeyPair),
 }
@@ -74,7 +76,7 @@ pub struct AsfaloadKeyPair<T> {
 pub trait AsfaloadSecretKeyTrait: Sized {
     type SecretKey;
     type Signature;
-    fn sign(&self, data: &[u8]) -> Result<Self::Signature, errs::SignError>;
+    fn sign(&self, data: &common::AsfaloadHashes) -> Result<Self::Signature, errs::SignError>;
     fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError>;
     fn from_string(s: String) -> Result<Self, errs::KeyError> {
         Self::from_bytes(&s.into_bytes())
@@ -91,7 +93,11 @@ pub struct AsfaloadSecretKey<K> {
 pub trait AsfaloadPublicKeyTrait: Sized {
     type Signature;
 
-    fn verify(&self, signature: &Self::Signature, data: &[u8]) -> Result<(), errs::VerifyError>;
+    fn verify(
+        &self,
+        signature: &Self::Signature,
+        data: &AsfaloadHashes,
+    ) -> Result<(), errs::VerifyError>;
     fn to_base64(&self) -> String;
     fn to_filename(&self) -> String {
         self.to_base64().replace("+", "-").replace("/", "_")

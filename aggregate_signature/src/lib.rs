@@ -1,3 +1,4 @@
+use common::AsfaloadHashes;
 use common::fs::names::{
     PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, local_signers_path_for,
     pending_signatures_path_for, signatures_path_for,
@@ -124,7 +125,7 @@ impl AsRef<Path> for SignedFile {
 pub fn check_groups<P, S>(
     groups: &[SignerGroup<P>],
     signatures: &HashMap<P, S>,
-    data: &[u8],
+    data: &AsfaloadHashes,
 ) -> bool
 where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
@@ -150,7 +151,7 @@ where
 pub fn check_all_signers<P, S>(
     signatures: &HashMap<P, S>,
     signers_config: &SignersConfig<P>,
-    admin_data: &[u8],
+    admin_data: &AsfaloadHashes,
 ) -> bool
 where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
@@ -404,7 +405,7 @@ where
     pub fn is_artifact_complete(
         &self,
         signers_config: &SignersConfig<P>,
-        artifact_data: &[u8],
+        artifact_data: &AsfaloadHashes,
     ) -> bool {
         // Check artifact_signers groups
         check_groups(
@@ -418,14 +419,18 @@ where
     pub fn is_master_complete(
         &self,
         signers_config: &SignersConfig<P>,
-        master_data: &[u8],
+        master_data: &AsfaloadHashes,
     ) -> bool {
         // Check master_keys groups
         check_groups(&signers_config.master_keys, &self.signatures, master_data)
     }
 
     /// Check if aggregate signature meets all thresholds in signers config for admin keys
-    pub fn is_admin_complete(&self, signers_config: &SignersConfig<P>, admin_data: &[u8]) -> bool {
+    pub fn is_admin_complete(
+        &self,
+        signers_config: &SignersConfig<P>,
+        admin_data: &AsfaloadHashes,
+    ) -> bool {
         // Check admin_keys groups if present
         let keys = signers_config.admin_keys();
         check_groups(keys, &self.signatures, admin_data)
@@ -506,8 +511,8 @@ mod tests {
         let _seckey2 = keypair2.secret_key("password").unwrap();
 
         // Create signature
-        let data = b"test data";
-        let signature = seckey.sign(data).unwrap();
+        let data = common::sha512_for_content(b"test data".to_vec());
+        let signature = seckey.sign(&data).unwrap();
 
         // Create signatures map manually
         let mut signatures = HashMap::new();
@@ -560,7 +565,7 @@ mod tests {
             signers_file_types::parse_signers_config(&json_config).unwrap();
 
         // Should be complete with threshold 1
-        assert!(agg_sig.is_artifact_complete(&signers_config, data));
+        assert!(agg_sig.is_artifact_complete(&signers_config, &data));
 
         // Should be incomplete with threshold 2
         let high_threshold_config =
@@ -570,7 +575,7 @@ mod tests {
         let high_threshold_config = high_threshold_config.replace("THRESHOLD_PLACEHOLDER", "2");
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             signers_file_types::parse_signers_config(&high_threshold_config).unwrap();
-        assert!(!agg_sig.is_artifact_complete(&signers_config, data));
+        assert!(!agg_sig.is_artifact_complete(&signers_config, &data));
         assert_eq!(agg_sig.origin, "test_file.txt");
     }
 
@@ -702,9 +707,9 @@ mod tests {
         let seckey2 = keypair2.secret_key("password").unwrap();
 
         // Create signatures
-        let data = b"test data";
-        let sig1 = seckey1.sign(data).unwrap();
-        let sig2 = seckey2.sign(data).unwrap();
+        let data = common::sha512_for_content(b"test data".to_vec());
+        let sig1 = seckey1.sign(&data).unwrap();
+        let sig2 = seckey2.sign(&data).unwrap();
 
         // Create signatures map manually
         let mut signatures = HashMap::new();
@@ -758,7 +763,7 @@ mod tests {
             signers_file_types::parse_signers_config(&json_config).unwrap();
 
         // Should be complete with both groups
-        assert!(agg_sig.is_artifact_complete(&signers_config, data));
+        assert!(agg_sig.is_artifact_complete(&signers_config, &data));
 
         // Test mixed configuration (one group in artifact_signers, one in master_keys)
         let json_config_mixed = r#"
@@ -799,10 +804,10 @@ mod tests {
             signers_file_types::parse_signers_config(&json_config_mixed).unwrap();
 
         // Should be complete with mixed configuration
-        assert!(agg_sig.is_artifact_complete(&signers_config_mixed, data));
-        assert!(agg_sig.is_master_complete(&signers_config_mixed, data));
+        assert!(agg_sig.is_artifact_complete(&signers_config_mixed, &data));
+        assert!(agg_sig.is_master_complete(&signers_config_mixed, &data));
         // The admin group is implicitly made equal to the artifacti signers group here
-        assert!(agg_sig.is_admin_complete(&signers_config_mixed, data));
+        assert!(agg_sig.is_admin_complete(&signers_config_mixed, &data));
 
         assert_eq!(agg_sig.origin, "test_origin");
     }
@@ -826,7 +831,7 @@ mod tests {
         let pubkey4 = test_keys.pub_key(4).unwrap();
         let seckey4 = test_keys.sec_key(4).unwrap();
 
-        let data = b"test data";
+        let data = common::sha512_for_content(b"test data".to_vec());
 
         let build_groups = |tpl: String| {
             let json = test_keys.substitute_keys(tpl);
@@ -844,23 +849,23 @@ mod tests {
                               expected_valid: bool| {
             let groups = build_groups(tpl);
             if expected_valid {
-                assert!(check_groups(&groups, signatures, data))
+                assert!(check_groups(&groups, signatures, &data))
             } else {
-                assert!(!check_groups(&groups, signatures, data))
+                assert!(!check_groups(&groups, signatures, &data))
             }
         };
         // Create signatures
-        let sig1 = seckey1.sign(data).unwrap();
-        let sig2 = seckey2.sign(data).unwrap();
-        let sig3 = seckey3.sign(data).unwrap();
-        let sig4 = seckey4.sign(data).unwrap();
+        let sig1 = seckey1.sign(&data).unwrap();
+        let sig2 = seckey2.sign(&data).unwrap();
+        let sig3 = seckey3.sign(&data).unwrap();
+        let sig4 = seckey4.sign(&data).unwrap();
 
         // Create also signature for other data
-        let other_data = b"my other data";
-        let other_sig1 = seckey1.sign(other_data).unwrap();
-        let other_sig2 = seckey2.sign(other_data).unwrap();
-        let other_sig3 = seckey3.sign(other_data).unwrap();
-        let other_sig4 = seckey4.sign(other_data).unwrap();
+        let other_data = common::sha512_for_content(b"my other data".to_vec());
+        let other_sig1 = seckey1.sign(&other_data).unwrap();
+        let other_sig2 = seckey2.sign(&other_data).unwrap();
+        let other_sig3 = seckey3.sign(&other_data).unwrap();
+        let other_sig4 = seckey4.sign(&other_data).unwrap();
 
         // Create signatures maps
         // The name of the variable indicates which signatures is contains
@@ -1217,9 +1222,9 @@ mod tests {
         assert!(!check_groups(
             &[],
             &HashMap::<AsfaloadPublicKey<_>, AsfaloadSignature<_>>::new(),
-            data
+            &data
         ));
-        assert!(!check_groups(&[], &signatures_1_2_3_4, data));
+        assert!(!check_groups(&[], &signatures_1_2_3_4, &data));
     }
 
     #[test]
@@ -1498,7 +1503,10 @@ mod tests {
         let mut invalid_sigs = HashMap::new();
         invalid_sigs.insert(
             pubkey1.to_base64(),
-            seckey1.sign(b"wrong content").unwrap().to_base64(),
+            seckey1
+                .sign(&common::sha512_for_content(b"wrong content".to_vec()))
+                .unwrap()
+                .to_base64(),
         );
         invalid_sigs.insert(pubkey2.to_base64(), sig2.to_base64());
         let invalid_json = serde_json::to_string_pretty(&invalid_sigs).unwrap();
@@ -2015,7 +2023,10 @@ mod tests {
         let mut invalid_sigs = HashMap::new();
         invalid_sigs.insert(
             pubkey1.to_base64(),
-            seckey1.sign(b"wrong content").unwrap().to_base64(),
+            seckey1
+                .sign(&common::sha512_for_content(b"wrong content".to_vec()))
+                .unwrap()
+                .to_base64(),
         );
         invalid_sigs.insert(pubkey2.to_base64(), sig2.to_base64());
         let invalid_json = serde_json::to_string_pretty(&invalid_sigs).unwrap();
@@ -2051,7 +2062,7 @@ mod tests {
     fn test_check_all_signers() {
         // Create test keys and data
         let test_keys = TestKeys::new(5);
-        let data = b"test data";
+        let data = common::sha512_for_content(b"test data".to_vec());
 
         // Get public and secret keys
         let pubkey0 = test_keys.pub_key(0).unwrap();
@@ -2066,11 +2077,11 @@ mod tests {
         let seckey4 = test_keys.sec_key(4).unwrap();
 
         // Create signatures
-        let sig0 = seckey0.sign(data).unwrap();
-        let sig1 = seckey1.sign(data).unwrap();
-        let sig2 = seckey2.sign(data).unwrap();
-        let sig3 = seckey3.sign(data).unwrap();
-        let sig4 = seckey4.sign(data).unwrap();
+        let sig0 = seckey0.sign(&data).unwrap();
+        let sig1 = seckey1.sign(&data).unwrap();
+        let sig2 = seckey2.sign(&data).unwrap();
+        let sig3 = seckey3.sign(&data).unwrap();
+        let sig4 = seckey4.sign(&data).unwrap();
 
         // Helper function to create a Signer
         let create_signer = |pubkey: AsfaloadPublicKey<minisign::PublicKey>| Signer {
@@ -2101,16 +2112,16 @@ mod tests {
             // Test with valid signature
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
-            assert!(check_all_signers(&signatures, &config, data));
+            assert!(check_all_signers(&signatures, &config, &data));
 
             // Test with irrelevant signature
             let mut signatures = HashMap::new();
             signatures.insert(pubkey4.clone(), sig4.clone());
-            assert!(!check_all_signers(&signatures, &config, data));
+            assert!(!check_all_signers(&signatures, &config, &data));
 
             // Test with missing signature
             let signatures = HashMap::new();
-            assert!(!check_all_signers(&signatures, &config, data));
+            assert!(!check_all_signers(&signatures, &config, &data));
         }
 
         // Scenario 2: Artifact_signers with 2 subgroups
@@ -2133,12 +2144,12 @@ mod tests {
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
             signatures.insert(pubkey1.clone(), sig1.clone());
-            assert!(check_all_signers(&signatures, &config, data));
+            assert!(check_all_signers(&signatures, &config, &data));
 
             // Test with signature missing for one group
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
-            assert!(!check_all_signers(&signatures, &config, data));
+            assert!(!check_all_signers(&signatures, &config, &data));
         }
 
         // Scenario 3: Admin_keys present
@@ -2158,12 +2169,12 @@ mod tests {
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
             signatures.insert(pubkey1.clone(), sig1.clone());
-            assert!(check_all_signers(&signatures, &config, data));
+            assert!(check_all_signers(&signatures, &config, &data));
 
             // Test with missing signature
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
-            assert!(!check_all_signers(&signatures, &config, data));
+            assert!(!check_all_signers(&signatures, &config, &data));
         }
 
         // Scenario 4: Master_keys present
@@ -2183,12 +2194,12 @@ mod tests {
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
             signatures.insert(pubkey1.clone(), sig1.clone());
-            assert!(check_all_signers(&signatures, &config, data));
+            assert!(check_all_signers(&signatures, &config, &data));
 
             // Test with missing signature
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
-            assert!(!check_all_signers(&signatures, &config, data));
+            assert!(!check_all_signers(&signatures, &config, &data));
         }
 
         // Scenario 5: Key in both artifact_signers and admin_keys
@@ -2207,11 +2218,11 @@ mod tests {
             // Test with valid signature (should satisfy both groups)
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
-            assert!(check_all_signers(&signatures, &config, data));
+            assert!(check_all_signers(&signatures, &config, &data));
 
             // Test with missing signature
             let signatures = HashMap::new();
-            assert!(!check_all_signers(&signatures, &config, data));
+            assert!(!check_all_signers(&signatures, &config, &data));
         }
 
         // Scenario 6: Complex scenario with all key types and overlapping keys
@@ -2239,7 +2250,7 @@ mod tests {
             signatures.insert(pubkey1.clone(), sig1.clone()); // Covers artifact group 2
             signatures.insert(pubkey2.clone(), sig2.clone()); // Covers master_keys
             signatures.insert(pubkey3.clone(), sig3.clone()); // Covers admin group 2
-            assert!(check_all_signers(&signatures, &config, data));
+            assert!(check_all_signers(&signatures, &config, &data));
 
             // Test with missing signature for one group
             let mut signatures = HashMap::new();
@@ -2247,7 +2258,7 @@ mod tests {
             signatures.insert(pubkey1.clone(), sig1.clone());
             signatures.insert(pubkey2.clone(), sig2.clone());
             // Missing signature for pubkey3 (admin_keys group)
-            assert!(!check_all_signers(&signatures, &config, data));
+            assert!(!check_all_signers(&signatures, &config, &data));
         }
 
         // Scenario 7: Test with threshold > 1
@@ -2273,12 +2284,12 @@ mod tests {
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
             signatures.insert(pubkey1.clone(), sig1.clone());
-            assert!(check_all_signers(&signatures, &config, data));
+            assert!(check_all_signers(&signatures, &config, &data));
 
             // Test with only one signature
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
-            assert!(!check_all_signers(&signatures, &config, data));
+            assert!(!check_all_signers(&signatures, &config, &data));
         }
 
         // Scenario 8: Test with empty configuration
@@ -2297,7 +2308,7 @@ mod tests {
             // Even with signatures, should return false for empty config
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), sig0.clone());
-            assert!(!check_all_signers(&signatures, &config, data));
+            assert!(!check_all_signers(&signatures, &config, &data));
         }
 
         // Scenario 9: Test with invalid signature
@@ -2320,12 +2331,12 @@ mod tests {
             };
 
             // Test with invalid signature (signed for different data)
-            let other_data = b"other data";
-            let invalid_sig = seckey0.sign(other_data).unwrap();
+            let other_data = common::sha512_for_content(b"other data".to_vec());
+            let invalid_sig = seckey0.sign(&other_data).unwrap();
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), invalid_sig);
             signatures.insert(pubkey1.clone(), sig1.clone());
-            assert!(!check_all_signers(&signatures, &config, data));
+            assert!(!check_all_signers(&signatures, &config, &data));
         }
     }
 }
