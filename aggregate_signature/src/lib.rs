@@ -2,6 +2,7 @@ use common::fs::names::{
     PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, local_signers_path_for,
     pending_signatures_path_for, signatures_path_for,
 };
+use sha2::{Digest, Sha512};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
@@ -311,8 +312,11 @@ where
         HashMap::new()
     };
 
-    //  Read the content of the file being verified
+    //  Compute the file's hash, as this is what is signed.
     let file_content = std::fs::read(file_path)?;
+    let mut hasher = Sha512::new();
+    hasher.update(file_content);
+    let file_hash = hasher.finalize();
 
     //  Check completeness based on file type
     let is_complete = match signed_file.kind {
@@ -321,7 +325,7 @@ where
             // the new artifact signature was initialised.
             let signers_file_path = local_signers_path_for(file_path)?;
             let signers_config = load_signers_config::<PK>(&signers_file_path)?;
-            check_groups(&signers_config.artifact_signers, &signatures, &file_content)
+            check_groups(&signers_config.artifact_signers, &signatures, &file_hash)
         }
         FileType::Signers => {
             // For signers updates, we need to
@@ -331,13 +335,15 @@ where
             // FIXME: implement the criteria above
             let signers_file_path = local_signers_path_for(file_path)?;
             let signers_config = load_signers_config::<PK>(&signers_file_path)?;
-            check_groups(signers_config.admin_keys(), &signatures, &file_content)
-                || check_groups(&signers_config.master_keys, &signatures, &file_content)
+            check_groups(signers_config.admin_keys(), &signatures, &file_hash)
+                || check_groups(&signers_config.master_keys, &signatures, &file_hash)
         }
 
         FileType::InitialSigners => {
+            // For initial signers, the config is the signers file itself,
+            // and we require all signers in the file to sign it
             let signers_config = load_signers_config::<PK>(file_path)?;
-            check_all_signers(&signatures, &signers_config, &file_content)
+            check_all_signers(&signatures, &signers_config, &file_hash)
         }
     };
     if !look_at_pending && !is_complete {
