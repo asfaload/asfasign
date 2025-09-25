@@ -150,12 +150,24 @@ where
         })?;
     let mut signatures: HashMap<K, S> = HashMap::new();
     signatures.insert(pubkey.clone(), signature.clone());
-    if check_all_signers::<K, S>(&signatures, &signers_config, &hash_result) {
-        let agg_sig: SignatureWithState<AsfaloadPublicKey<_>, AsfaloadSignature<_>> =
-            aggregate_signature::load_for_file::<_, _, _>(signers_file_path)?;
-        let pending_sig = agg_sig.get_pending().unwrap();
-        pending_sig.transition_to_complete()?;
+
+    // Now everything is set up, try the transition to a complete signature.
+    // This will succeed only if the signature is complete, and it is fine
+    // if it returns an error reporting an incomplete signature for which the
+    // transition cannot occur.
+    let agg_sig: SignatureWithState<AsfaloadPublicKey<_>, AsfaloadSignature<_>> =
+        aggregate_signature::load_for_file::<_, _, _>(signers_file_path)?;
+    if let Some(pending_sig) = agg_sig.get_pending() {
+        if let Err(e) = pending_sig.try_transition_to_complete() {
+            if !matches!(
+                e,
+                aggregate_signature::AggregateSignatureError::IsIncomplete
+            ) {
+                return Err(e.into());
+            }
+        }
     }
+
     Ok(())
 }
 #[cfg(test)]

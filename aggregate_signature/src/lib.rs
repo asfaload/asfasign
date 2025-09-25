@@ -426,7 +426,7 @@ where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait + Clone,
 {
-    pub fn transition_to_complete(
+    pub fn try_transition_to_complete(
         &self,
     ) -> Result<AggregateSignature<P, S, CompleteSignature>, AggregateSignatureError> {
         let pending_sig_path = pending_signatures_path_for(&self.subject)?;
@@ -1781,7 +1781,7 @@ mod tests {
         };
 
         // Transition to complete
-        let complete_sig = agg_sig.transition_to_complete().unwrap();
+        let complete_sig = agg_sig.try_transition_to_complete().unwrap();
 
         // Verify the pending file is gone
         assert!(!pending_sig_path.exists());
@@ -1827,7 +1827,7 @@ mod tests {
         };
 
         // Attempt to transition to complete
-        let result = agg_sig.transition_to_complete();
+        let result = agg_sig.try_transition_to_complete();
 
         // Verify the error
         assert!(result.is_err());
@@ -1870,7 +1870,7 @@ mod tests {
         };
 
         // Attempt to transition to complete
-        let result = agg_sig.transition_to_complete();
+        let result = agg_sig.try_transition_to_complete();
 
         // Verify the error
         assert!(result.is_err());
