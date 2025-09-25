@@ -695,7 +695,9 @@ mod tests {
         let seckey = test_keys.sec_key(0).unwrap();
 
         // Sign different data (not the hash of the JSON)
-        let signature = seckey.sign(b"wrong data").unwrap();
+        let signature = seckey
+            .sign(&common::sha512_for_content(b"wrong data".to_vec()))
+            .unwrap();
 
         // Call the function - should fail due to invalid signature
         let result = initialize_signers_file(dir_path, json_content, &signature, pubkey);
