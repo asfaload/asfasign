@@ -921,8 +921,7 @@ mod tests {
         // first create a signers file in an empty directory
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
-        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
-        assert!(result.is_ok());
+        initialize_signers_file(dir_path, json_content, &signature, pub_key).unwrap();
         let pending_signers_file_path =
             dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(pending_signers_file_path.exists());
