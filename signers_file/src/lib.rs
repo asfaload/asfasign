@@ -120,9 +120,7 @@ where
     }
 
     // Compute the SHA-512 hash of the JSON content
-    let mut hasher = Sha512::new();
-    hasher.update(json_content.as_bytes());
-    let hash_result = hasher.finalize();
+    let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
     // Verify the signature against the hash
     pubkey.verify(signature, &hash_result).map_err(|e| {
@@ -563,11 +561,7 @@ mod tests {
 "#;
 
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-
-        // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Get keys we work with here
         let pub_key = test_keys.pub_key(0).unwrap();
@@ -653,11 +647,7 @@ mod tests {
         // Get keys we work with here
         let pubkey = test_keys.pub_key(0).unwrap();
         let seckey = test_keys.sec_key(0).unwrap();
-
-        // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Sign the hash
         let signature = seckey.sign(&hash_result).unwrap();
@@ -761,11 +751,7 @@ mod tests {
         let non_admin_seckey = test_keys.sec_key(0).unwrap();
         let admin_pubkey = test_keys.pub_key(2).unwrap();
         let admin_seckey = test_keys.sec_key(2).unwrap();
-
-        // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Reject new signers files signed by non admin keys
         // -------------------------------------------------
@@ -834,11 +820,7 @@ mod tests {
         // Get keys we work with here
         let pubkey = test_keys.pub_key(0).unwrap();
         let seckey = test_keys.sec_key(0).unwrap();
-
-        // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         let sig_file_path = dir_path.join(format!(
             "{}/{}.{}",
@@ -889,11 +871,7 @@ mod tests {
 }
 "#;
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-
-        // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
@@ -964,9 +942,7 @@ mod tests {
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
 
         // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
@@ -1026,9 +1002,7 @@ mod tests {
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
 
         // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();

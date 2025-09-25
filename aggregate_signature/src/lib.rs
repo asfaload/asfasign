@@ -313,10 +313,7 @@ where
     };
 
     //  Compute the file's hash, as this is what is signed.
-    let file_content = std::fs::read(file_path)?;
-    let mut hasher = Sha512::new();
-    hasher.update(file_content);
-    let file_hash = hasher.finalize();
+    let file_hash = common::sha512_for_file(file_path)?;
 
     //  Check completeness based on file type
     let is_complete = match signed_file.kind {
@@ -485,6 +482,7 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use common::fs::names::{PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
+    use core::hash;
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
@@ -636,7 +634,8 @@ mod tests {
 
         // Create signature
         let data = b"test data";
-        let signature = seckey.sign(data).unwrap();
+        let hash_for_content = common::sha512_for_content(data.to_vec());
+        let signature = seckey.sign(&hash_for_content).unwrap();
 
         // Create a dummy file to represent the signed file
         let signed_file_path = dir_path.join("data.txt");
@@ -665,7 +664,7 @@ mod tests {
             .ok_or(anyhow::anyhow!("Signature should have been complete"))?;
 
         // Should be complete with threshold 1
-        assert!(agg_sig.is_artifact_complete(&signers_config, data));
+        assert!(agg_sig.is_artifact_complete(&signers_config, &hash_for_content));
 
         // Should still be complete when threshold set to 2
         // in global signers file as local file still has threshold 1
@@ -683,7 +682,7 @@ mod tests {
         let agg_sig = agg_sig
             .get_complete()
             .ok_or(anyhow::anyhow!("Signature should have been complete"))?;
-        assert!(agg_sig.is_artifact_complete(&signers_config, data));
+        assert!(agg_sig.is_artifact_complete(&signers_config, &hash_for_content));
 
         assert_eq!(
             agg_sig.origin,
@@ -1404,6 +1403,7 @@ mod tests {
         let test_file = root.join("file.txt");
         let file_content = b"test content";
         fs::write(&test_file, file_content).unwrap();
+        let hash_for_content = common::sha512_for_content(file_content.to_vec());
 
         // Generate keys for testing
         let test_keys = TestKeys::new(2);
@@ -1448,8 +1448,8 @@ mod tests {
         fs::write(&signers_file, config_json).unwrap();
 
         // Create signatures
-        let sig1 = seckey1.sign(file_content).unwrap();
-        let sig2 = seckey2.sign(file_content).unwrap();
+        let sig1 = seckey1.sign(&hash_for_content).unwrap();
+        let sig2 = seckey2.sign(&hash_for_content).unwrap();
 
         // Copy global signers file to local
         let result = create_local_signers_for(&test_file);
@@ -1732,6 +1732,7 @@ mod tests {
         // Create a test file with content
         let test_file = root.join("test_file.txt");
         let file_content = b"test content for signing";
+        let hash_for_content = common::sha512_for_content(file_content.to_vec());
         fs::write(&test_file, file_content).unwrap();
 
         // Generate a keypair for signing
@@ -1740,7 +1741,7 @@ mod tests {
         let seckey = keypair.secret_key("password").unwrap();
 
         // Create a signature for the file content
-        let signature = seckey.sign(file_content).unwrap();
+        let signature = seckey.sign(&hash_for_content).unwrap();
 
         // Create a signers configuration with threshold 1
         let signers_config = SignersConfig {
@@ -1925,6 +1926,7 @@ mod tests {
         let test_file = root.join("file.txt");
         let file_content = b"test content";
         fs::write(&test_file, file_content).unwrap();
+        let hash_for_content = common::sha512_for_content(file_content.to_vec());
 
         // Generate keys for testing
         let test_keys = TestKeys::new(2);
@@ -1969,8 +1971,8 @@ mod tests {
         fs::write(&signers_file, config_json).unwrap();
 
         // Create signatures
-        let sig1 = seckey1.sign(file_content).unwrap();
-        let sig2 = seckey2.sign(file_content).unwrap();
+        let sig1 = seckey1.sign(&hash_for_content).unwrap();
+        let sig2 = seckey2.sign(&hash_for_content).unwrap();
 
         // Copy global signers file to local
         let result = create_local_signers_for(&test_file);
