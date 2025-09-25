@@ -294,12 +294,6 @@ where
 {
     let file_path = file_path.as_ref();
 
-    //  Find the signers file in parent directories
-    let signers_file_path = local_signers_path_for(file_path)?;
-
-    //  Load the signers configuration
-    let signers_config = load_signers_config::<PK>(&signers_file_path)?;
-
     //  Determine the file type
     let signed_file = SignedFile::new(file_path);
 
@@ -323,14 +317,28 @@ where
     //  Check completeness based on file type
     let is_complete = match signed_file.kind {
         FileType::Artifact => {
+            // For artifact, look at the local signers file created when
+            // the new artifact signature was initialised.
+            let signers_file_path = local_signers_path_for(file_path)?;
+            let signers_config = load_signers_config::<PK>(&signers_file_path)?;
             check_groups(&signers_config.artifact_signers, &signatures, &file_content)
         }
         FileType::Signers => {
+            // For signers updates, we need to
+            // - Respect the current signers file
+            // - Respect the new signers file
+            // - Collect signatures from all new signers
+            // FIXME: implement the criteria above
+            let signers_file_path = local_signers_path_for(file_path)?;
+            let signers_config = load_signers_config::<PK>(&signers_file_path)?;
             check_groups(signers_config.admin_keys(), &signatures, &file_content)
                 || check_groups(&signers_config.master_keys, &signatures, &file_content)
         }
 
-        FileType::InitialSigners => check_all_signers(&signatures, &signers_config, &file_content),
+        FileType::InitialSigners => {
+            let signers_config = load_signers_config::<PK>(file_path)?;
+            check_all_signers(&signatures, &signers_config, &file_content)
+        }
     };
     if !look_at_pending && !is_complete {
         Err(AggregateSignatureError::MissingSignaturesInCompleteSignature)
