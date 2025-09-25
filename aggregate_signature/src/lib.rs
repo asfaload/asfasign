@@ -2,8 +2,9 @@ use common::fs::names::{
     PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, local_signers_path_for,
     pending_signatures_path_for, signatures_path_for,
 };
+use sha2::{Digest, Sha512};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
-use signers_file::{SignerGroup, SignersConfig};
+use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -65,6 +66,7 @@ where
 pub enum FileType {
     Artifact,
     Signers,
+    InitialSigners,
 }
 #[derive(Clone)]
 pub struct SignedFile {
@@ -75,16 +77,18 @@ pub struct SignedFile {
 impl SignedFile {
     fn determine_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
         let path = file_path.as_ref();
-        // Signers file if {SIGNERS_DIR}/{SIGNERSFILE}
-        if path
+        let global_signers = find_global_signers_for(file_path.as_ref());
+        let is_in_signers_dir = path
             .parent()
             .and_then(|dir| dir.file_name())
-            .is_some_and(|name| name == SIGNERS_DIR || name == PENDING_SIGNERS_DIR)
-            && path.file_name().is_some_and(|fname| fname == SIGNERS_FILE)
-        {
-            FileType::Signers
-        } else {
-            FileType::Artifact
+            .is_some_and(|name| name == SIGNERS_DIR || name == PENDING_SIGNERS_DIR);
+        let is_signers_file = path.file_name().is_some_and(|fname| fname == SIGNERS_FILE);
+
+        // Signers file if {SIGNERS_DIR}/{SIGNERSFILE}
+        match (is_in_signers_dir, is_signers_file, global_signers) {
+            (true, true, Err(_)) => FileType::InitialSigners,
+            (true, true, Ok(_)) => FileType::Signers,
+            (_, _, _) => FileType::Artifact,
         }
     }
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
@@ -141,6 +145,35 @@ where
         })
 }
 
+// Check that all signers in signers config have signed.
+// This does not take the thresholds in account.
+pub fn check_all_signers<P, S>(
+    signatures: &HashMap<P, S>,
+    signers_config: &SignersConfig<P>,
+    admin_data: &[u8],
+) -> bool
+where
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
+    let mut keys_iter = signers_config
+        .admin_keys()
+        .iter()
+        .chain(signers_config.master_keys.iter())
+        .chain(signers_config.artifact_signers.iter())
+        .peekable();
+
+    keys_iter.peek().is_some()
+        && keys_iter.all(|group| {
+            group.signers.iter().all(|signer| {
+                signatures
+                    .get(&signer.data.pubkey)
+                    .is_some_and(|signature| {
+                        signer.data.pubkey.verify(signature, admin_data).is_ok()
+                    })
+            })
+        })
+}
 // Load individual signatures from the file.
 // If the file does not exist, act as if no signature was collected yet.
 fn get_individual_signatures<P, S, PP: AsRef<Path>>(
@@ -245,8 +278,8 @@ where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
 {
     let content = std::fs::read_to_string(signers_file_path)?;
-    let config = signers_file::parse_signers_config(&content)
-        .map_err(|e| AggregateSignatureError::JsonError(e))?;
+    let config = signers_file_types::parse_signers_config(&content)
+        .map_err(AggregateSignatureError::JsonError)?;
     Ok(config)
 }
 
@@ -261,12 +294,6 @@ where
         signatures::keys::AsfaloadSignatureTrait,
 {
     let file_path = file_path.as_ref();
-
-    //  Find the signers file in parent directories
-    let signers_file_path = local_signers_path_for(file_path)?;
-
-    //  Load the signers configuration
-    let signers_config = load_signers_config::<PK>(&signers_file_path)?;
 
     //  Determine the file type
     let signed_file = SignedFile::new(file_path);
@@ -285,17 +312,35 @@ where
         HashMap::new()
     };
 
-    //  Read the content of the file being verified
-    let file_content = std::fs::read(file_path)?;
+    //  Compute the file's hash, as this is what is signed.
+    let file_hash = common::sha512_for_file(file_path)?;
 
     //  Check completeness based on file type
     let is_complete = match signed_file.kind {
         FileType::Artifact => {
-            check_groups(&signers_config.artifact_signers, &signatures, &file_content)
+            // For artifact, look at the local signers file created when
+            // the new artifact signature was initialised.
+            let signers_file_path = local_signers_path_for(file_path)?;
+            let signers_config = load_signers_config::<PK>(&signers_file_path)?;
+            check_groups(&signers_config.artifact_signers, &signatures, &file_hash)
         }
         FileType::Signers => {
-            check_groups(signers_config.admin_keys(), &signatures, &file_content)
-                || check_groups(&signers_config.master_keys, &signatures, &file_content)
+            // For signers updates, we need to
+            // - Respect the current signers file
+            // - Respect the new signers file
+            // - Collect signatures from all new signers
+            // FIXME: implement the criteria above
+            let signers_file_path = local_signers_path_for(file_path)?;
+            let signers_config = load_signers_config::<PK>(&signers_file_path)?;
+            check_groups(signers_config.admin_keys(), &signatures, &file_hash)
+                || check_groups(&signers_config.master_keys, &signatures, &file_hash)
+        }
+
+        FileType::InitialSigners => {
+            // For initial signers, the config is the signers file itself,
+            // and we require all signers in the file to sign it
+            let signers_config = load_signers_config::<PK>(file_path)?;
+            check_all_signers(&signatures, &signers_config, &file_hash)
         }
     };
     if !look_at_pending && !is_complete {
@@ -392,7 +437,7 @@ where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait + Clone,
 {
-    pub fn transition_to_complete(
+    pub fn try_transition_to_complete(
         &self,
     ) -> Result<AggregateSignature<P, S, CompleteSignature>, AggregateSignatureError> {
         let pending_sig_path = pending_signatures_path_for(&self.subject)?;
@@ -437,10 +482,11 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use common::fs::names::{PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
+    use core::hash;
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
-    use signers_file::{
+    use signers_file_types::{
         InitialVersion, KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig,
     };
     use std::fs;
@@ -511,7 +557,7 @@ mod tests {
 
         // Parse signers config from JSON
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            signers_file::parse_signers_config(&json_config).unwrap();
+            signers_file_types::parse_signers_config(&json_config).unwrap();
 
         // Should be complete with threshold 1
         assert!(agg_sig.is_artifact_complete(&signers_config, data));
@@ -523,7 +569,7 @@ mod tests {
             high_threshold_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
         let high_threshold_config = high_threshold_config.replace("THRESHOLD_PLACEHOLDER", "2");
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            signers_file::parse_signers_config(&high_threshold_config).unwrap();
+            signers_file_types::parse_signers_config(&high_threshold_config).unwrap();
         assert!(!agg_sig.is_artifact_complete(&signers_config, data));
         assert_eq!(agg_sig.origin, "test_file.txt");
     }
@@ -551,16 +597,16 @@ mod tests {
         // Create signers configuration with threshold 2
 
         // Create signers config with threshold 1
-        let signer = signers_file::Signer {
+        let signer = signers_file_types::Signer {
             kind: SignerKind::Key,
-            data: signers_file::SignerData {
+            data: signers_file_types::SignerData {
                 format: KeyFormat::Minisign,
                 pubkey: pubkey.clone(),
             },
         };
-        let signer2 = signers_file::Signer {
+        let signer2 = signers_file_types::Signer {
             kind: SignerKind::Key,
-            data: signers_file::SignerData {
+            data: signers_file_types::SignerData {
                 format: KeyFormat::Minisign,
                 pubkey: pubkey2.clone(),
             },
@@ -571,7 +617,7 @@ mod tests {
         };
         let signers_config = SignersConfig {
             version: 1,
-            initial_version: signers_file::InitialVersion {
+            initial_version: signers_file_types::InitialVersion {
                 permalink: "https://example.com".to_string(),
                 mirrors: vec![],
             },
@@ -588,7 +634,8 @@ mod tests {
 
         // Create signature
         let data = b"test data";
-        let signature = seckey.sign(data).unwrap();
+        let hash_for_content = common::sha512_for_content(data.to_vec());
+        let signature = seckey.sign(&hash_for_content).unwrap();
 
         // Create a dummy file to represent the signed file
         let signed_file_path = dir_path.join("data.txt");
@@ -617,7 +664,7 @@ mod tests {
             .ok_or(anyhow::anyhow!("Signature should have been complete"))?;
 
         // Should be complete with threshold 1
-        assert!(agg_sig.is_artifact_complete(&signers_config, data));
+        assert!(agg_sig.is_artifact_complete(&signers_config, &hash_for_content));
 
         // Should still be complete when threshold set to 2
         // in global signers file as local file still has threshold 1
@@ -635,7 +682,7 @@ mod tests {
         let agg_sig = agg_sig
             .get_complete()
             .ok_or(anyhow::anyhow!("Signature should have been complete"))?;
-        assert!(agg_sig.is_artifact_complete(&signers_config, data));
+        assert!(agg_sig.is_artifact_complete(&signers_config, &hash_for_content));
 
         assert_eq!(
             agg_sig.origin,
@@ -708,7 +755,7 @@ mod tests {
 
         // Parse signers config from JSON
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            signers_file::parse_signers_config(&json_config).unwrap();
+            signers_file_types::parse_signers_config(&json_config).unwrap();
 
         // Should be complete with both groups
         assert!(agg_sig.is_artifact_complete(&signers_config, data));
@@ -749,7 +796,7 @@ mod tests {
 
         // Parse mixed signers config from JSON
         let signers_config_mixed: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            signers_file::parse_signers_config(&json_config_mixed).unwrap();
+            signers_file_types::parse_signers_config(&json_config_mixed).unwrap();
 
         // Should be complete with mixed configuration
         assert!(agg_sig.is_artifact_complete(&signers_config_mixed, data));
@@ -1200,9 +1247,9 @@ mod tests {
         );
 
         //  File in "asfaload.signers.pending" but not named "index.json" (should be Artifact)
-        let signers_dir = temp_path.join(PENDING_SIGNERS_DIR);
-        fs::create_dir(&signers_dir).unwrap();
-        let other_file = signers_dir.join("other_file.json");
+        let pending_signers_dir = temp_path.join(PENDING_SIGNERS_DIR);
+        fs::create_dir(&pending_signers_dir).unwrap();
+        let other_file = pending_signers_dir.join("other_file.json");
         fs::write(&other_file, "content").unwrap();
         assert_eq!(
             SignedFile::determine_file_type(&other_file),
@@ -1218,11 +1265,11 @@ mod tests {
         );
 
         //  File named "index.json" in "asfaload.signers.pending" (should be Signers)
-        let index_file = signers_dir.join(SIGNERS_FILE);
+        let index_file = pending_signers_dir.join(SIGNERS_FILE);
         fs::write(&index_file, "content").unwrap();
         assert_eq!(
             SignedFile::determine_file_type(&index_file),
-            FileType::Signers
+            FileType::InitialSigners
         );
 
         //  Nested "asfaload.signers.pending" directory (should still work)
@@ -1232,7 +1279,7 @@ mod tests {
         fs::write(&nested_index, "content").unwrap();
         assert_eq!(
             SignedFile::determine_file_type(&nested_index),
-            FileType::Signers
+            FileType::InitialSigners
         );
 
         //  Directory named similarly but not exactly "asfaload.signers.pending" (should be Artifact)
@@ -1256,11 +1303,40 @@ mod tests {
         );
 
         //  File named "INDEX.JSON" (uppercase) in "asfaload.signers.pending" (should be Artifact)
-        let upper_index = signers_dir.join("INDEX.JSON");
+        let upper_index = pending_signers_dir.join("INDEX.JSON");
         fs::write(&upper_index, "content").unwrap();
         assert_eq!(
             SignedFile::determine_file_type(&upper_index),
             FileType::Artifact
+        );
+
+        // Create a current signers file, and validate that tests that
+        // previously returned initial signers now return signers.
+        let current_signers_dir = temp_path.join(SIGNERS_DIR);
+        fs::create_dir(&current_signers_dir).unwrap();
+        let file_in_regular_dir = current_signers_dir.join("index.json");
+        fs::write(
+            &file_in_regular_dir,
+            "dummy signers content ok as only presence is checked",
+        )
+        .unwrap();
+
+        //  File named "index.json" in "asfaload.signers.pending" (should be Signers)
+        let index_file = pending_signers_dir.join(SIGNERS_FILE);
+        fs::write(&index_file, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&index_file),
+            FileType::Signers
+        );
+
+        //  Nested "asfaload.signers.pending" directory (should still work)
+        let nested_dir = temp_path.join("nested").join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&nested_dir).unwrap();
+        let nested_index = nested_dir.join(SIGNERS_FILE);
+        fs::write(&nested_index, "content").unwrap();
+        assert_eq!(
+            SignedFile::determine_file_type(&nested_index),
+            FileType::Signers
         );
     }
 
@@ -1327,6 +1403,7 @@ mod tests {
         let test_file = root.join("file.txt");
         let file_content = b"test content";
         fs::write(&test_file, file_content).unwrap();
+        let hash_for_content = common::sha512_for_content(file_content.to_vec());
 
         // Generate keys for testing
         let test_keys = TestKeys::new(2);
@@ -1371,8 +1448,8 @@ mod tests {
         fs::write(&signers_file, config_json).unwrap();
 
         // Create signatures
-        let sig1 = seckey1.sign(file_content).unwrap();
-        let sig2 = seckey2.sign(file_content).unwrap();
+        let sig1 = seckey1.sign(&hash_for_content).unwrap();
+        let sig2 = seckey2.sign(&hash_for_content).unwrap();
 
         // Copy global signers file to local
         let result = create_local_signers_for(&test_file);
@@ -1655,6 +1732,7 @@ mod tests {
         // Create a test file with content
         let test_file = root.join("test_file.txt");
         let file_content = b"test content for signing";
+        let hash_for_content = common::sha512_for_content(file_content.to_vec());
         fs::write(&test_file, file_content).unwrap();
 
         // Generate a keypair for signing
@@ -1663,7 +1741,7 @@ mod tests {
         let seckey = keypair.secret_key("password").unwrap();
 
         // Create a signature for the file content
-        let signature = seckey.sign(file_content).unwrap();
+        let signature = seckey.sign(&hash_for_content).unwrap();
 
         // Create a signers configuration with threshold 1
         let signers_config = SignersConfig {
@@ -1718,7 +1796,7 @@ mod tests {
         };
 
         // Transition to complete
-        let complete_sig = agg_sig.transition_to_complete().unwrap();
+        let complete_sig = agg_sig.try_transition_to_complete().unwrap();
 
         // Verify the pending file is gone
         assert!(!pending_sig_path.exists());
@@ -1764,7 +1842,7 @@ mod tests {
         };
 
         // Attempt to transition to complete
-        let result = agg_sig.transition_to_complete();
+        let result = agg_sig.try_transition_to_complete();
 
         // Verify the error
         assert!(result.is_err());
@@ -1807,7 +1885,7 @@ mod tests {
         };
 
         // Attempt to transition to complete
-        let result = agg_sig.transition_to_complete();
+        let result = agg_sig.try_transition_to_complete();
 
         // Verify the error
         assert!(result.is_err());
@@ -1848,6 +1926,7 @@ mod tests {
         let test_file = root.join("file.txt");
         let file_content = b"test content";
         fs::write(&test_file, file_content).unwrap();
+        let hash_for_content = common::sha512_for_content(file_content.to_vec());
 
         // Generate keys for testing
         let test_keys = TestKeys::new(2);
@@ -1892,8 +1971,8 @@ mod tests {
         fs::write(&signers_file, config_json).unwrap();
 
         // Create signatures
-        let sig1 = seckey1.sign(file_content).unwrap();
-        let sig2 = seckey2.sign(file_content).unwrap();
+        let sig1 = seckey1.sign(&hash_for_content).unwrap();
+        let sig2 = seckey2.sign(&hash_for_content).unwrap();
 
         // Copy global signers file to local
         let result = create_local_signers_for(&test_file);
@@ -1967,5 +2046,286 @@ mod tests {
 
         let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
         assert!(!res.unwrap()); // Should be incomplete with empty signatures
+    }
+    #[test]
+    fn test_check_all_signers() {
+        // Create test keys and data
+        let test_keys = TestKeys::new(5);
+        let data = b"test data";
+
+        // Get public and secret keys
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let pubkey2 = test_keys.pub_key(2).unwrap();
+        let seckey2 = test_keys.sec_key(2).unwrap();
+        let pubkey3 = test_keys.pub_key(3).unwrap();
+        let seckey3 = test_keys.sec_key(3).unwrap();
+        let pubkey4 = test_keys.pub_key(4).unwrap();
+        let seckey4 = test_keys.sec_key(4).unwrap();
+
+        // Create signatures
+        let sig0 = seckey0.sign(data).unwrap();
+        let sig1 = seckey1.sign(data).unwrap();
+        let sig2 = seckey2.sign(data).unwrap();
+        let sig3 = seckey3.sign(data).unwrap();
+        let sig4 = seckey4.sign(data).unwrap();
+
+        // Helper function to create a Signer
+        let create_signer = |pubkey: AsfaloadPublicKey<minisign::PublicKey>| Signer {
+            kind: SignerKind::Key,
+            data: SignerData {
+                format: KeyFormat::Minisign,
+                pubkey,
+            },
+        };
+
+        // Helper function to create a SignerGroup
+        let create_group =
+            |signers: Vec<Signer<_>>, threshold: u32| SignerGroup { signers, threshold };
+
+        // Scenario 1: Only artifact_signers group
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
+                master_keys: vec![],
+                admin_keys: None,
+            };
+
+            // Test with valid signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with irrelevant signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey4.clone(), sig4.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+
+            // Test with missing signature
+            let signatures = HashMap::new();
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 2: Artifact_signers with 2 subgroups
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![
+                    create_group(vec![create_signer(pubkey0.clone())], 1),
+                    create_group(vec![create_signer(pubkey1.clone())], 1),
+                ],
+                master_keys: vec![],
+                admin_keys: None,
+            };
+
+            // Test with valid signatures for both groups
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with signature missing for one group
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 3: Admin_keys present
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
+                master_keys: vec![],
+                admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
+            };
+
+            // Test with valid signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with missing signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 4: Master_keys present
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
+                master_keys: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
+                admin_keys: None,
+            };
+
+            // Test with valid signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with missing signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 5: Key in both artifact_signers and admin_keys
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
+                master_keys: vec![],
+                admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
+            };
+
+            // Test with valid signature (should satisfy both groups)
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with missing signature
+            let signatures = HashMap::new();
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 6: Complex scenario with all key types and overlapping keys
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![
+                    create_group(vec![create_signer(pubkey0.clone())], 1),
+                    create_group(vec![create_signer(pubkey1.clone())], 1),
+                ],
+                master_keys: vec![create_group(vec![create_signer(pubkey2.clone())], 1)],
+                admin_keys: Some(vec![
+                    create_group(vec![create_signer(pubkey0.clone())], 1),
+                    create_group(vec![create_signer(pubkey3.clone())], 1),
+                ]),
+            };
+
+            // Test with overlapping key (pubkey0) satisfying both artifact and admin groups
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone()); // Covers both artifact group 1 and admin group 1
+            signatures.insert(pubkey1.clone(), sig1.clone()); // Covers artifact group 2
+            signatures.insert(pubkey2.clone(), sig2.clone()); // Covers master_keys
+            signatures.insert(pubkey3.clone(), sig3.clone()); // Covers admin group 2
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with missing signature for one group
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            signatures.insert(pubkey2.clone(), sig2.clone());
+            // Missing signature for pubkey3 (admin_keys group)
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 7: Test with threshold > 1
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(
+                    vec![
+                        create_signer(pubkey0.clone()),
+                        create_signer(pubkey1.clone()),
+                    ],
+                    2,
+                )],
+                master_keys: vec![],
+                admin_keys: None,
+            };
+
+            // Test with both signatures
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(check_all_signers(&signatures, &config, data));
+
+            // Test with only one signature
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 8: Test with empty configuration
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![],
+                master_keys: vec![],
+                admin_keys: None,
+            };
+
+            // Even with signatures, should return false for empty config
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
+
+        // Scenario 9: Test with invalid signature
+        {
+            let config = SignersConfig {
+                version: 1,
+                initial_version: InitialVersion {
+                    permalink: "https://example.com".to_string(),
+                    mirrors: vec![],
+                },
+                artifact_signers: vec![create_group(
+                    vec![
+                        create_signer(pubkey0.clone()),
+                        create_signer(pubkey1.clone()),
+                    ],
+                    1,
+                )],
+                master_keys: vec![],
+                admin_keys: None,
+            };
+
+            // Test with invalid signature (signed for different data)
+            let other_data = b"other data";
+            let invalid_sig = seckey0.sign(other_data).unwrap();
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), invalid_sig);
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(!check_all_signers(&signatures, &config, data));
+        }
     }
 }

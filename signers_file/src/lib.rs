@@ -1,196 +1,21 @@
+use aggregate_signature::{SignatureWithState, check_all_signers};
 use common::fs::names::signatures_path_for;
 use common::fs::names::{
     PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_FILE, pending_signatures_path_for,
 };
-use minisign;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use core::hash;
 use sha2::{Digest, Sha512};
-use signatures::keys::{AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
-use std::fmt; // Required for minisign::PublicKey::from_base64 and its Error type
+use signatures::keys::{
+    AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
+};
+use signers_file_types::{SignersConfig, parse_signers_config};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use thiserror::Error;
 //
-// We set a bound in the serde annotation. Here why, as explained by AI:
-// Without this bound, we get the error `E0277` "the trait bound `P: _::_serde::Deserialize<'_>` is
-// not satisfied" occurs because when `#[derive(Deserialize)]` is used on generic structs like
-// `SignersConfig`, `SignerGroup`, and `Signer`, `serde` implicitly adds `P: Deserialize` and `P:
-// Serialize` bounds to their generic parameter `P`.
-// However, in this design, the actual deserialization and serialization of the generic `P` (which
-// represents the public key) is handled manually within the `SignerData<P>`'s custom `impl
-// Serialize` and `impl Deserialize` blocks, which only require `P: AsfaloadPublicKeyTrait`. `P`
-// itself does not need to implement `serde::Deserialize` or `serde::Serialize` directly.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
-))]
-pub struct SignersConfig<P: AsfaloadPublicKeyTrait> {
-    pub version: u32,
-    pub initial_version: InitialVersion,
-    pub artifact_signers: Vec<SignerGroup<P>>,
-    pub master_keys: Vec<SignerGroup<P>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    // FIXME: make private, but causes trouble in tests of aggregate signature definitions
-    pub admin_keys: Option<Vec<SignerGroup<P>>>,
-}
 
-impl<P> SignersConfig<P>
-where
-    P: AsfaloadPublicKeyTrait,
-{
-    pub fn admin_keys(&self) -> &Vec<SignerGroup<P>> {
-        match &self.admin_keys {
-            Some(v) if !v.is_empty() => v,
-            _ => &self.artifact_signers,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InitialVersion {
-    pub permalink: String,
-    #[serde(default)]
-    pub mirrors: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
-))]
-#[derive(Eq, PartialEq)]
-pub struct SignerGroup<P: AsfaloadPublicKeyTrait> {
-    pub signers: Vec<Signer<P>>,
-    pub threshold: u32,
-}
-
-// Custom deserializer for SignerGroup that validates threshold <= signers.len()
-impl<'de, P> Deserialize<'de> for SignerGroup<P>
-where
-    P: AsfaloadPublicKeyTrait,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // Create a helper struct that mirrors SignerGroup but without the custom Deserialize
-        #[derive(Deserialize)]
-        #[serde(bound(deserialize = "P: AsfaloadPublicKeyTrait"))]
-        struct SignerGroupHelper<P: AsfaloadPublicKeyTrait> {
-            signers: Vec<Signer<P>>,
-            threshold: u32,
-        }
-
-        // Deserialize into the helper struct
-        let helper = SignerGroupHelper::deserialize(deserializer)?;
-
-        // Validate that we have at least one signer
-        if helper.signers.is_empty() {
-            return Err(serde::de::Error::custom("Group size must be at least 1"));
-        }
-        // Validate that threshold > 0
-        if helper.threshold == 0 {
-            return Err(serde::de::Error::custom(format!(
-                "Threshold ({}) must be strictly greater than 0",
-                helper.threshold,
-            )));
-        }
-        // Validate that threshold <= signers.len()
-        if helper.threshold > helper.signers.len() as u32 {
-            return Err(serde::de::Error::custom(format!(
-                "Threshold ({}) cannot be greater than the number of signers ({})",
-                helper.threshold,
-                helper.signers.len()
-            )));
-        }
-
-        // If validation passes, create the actual SignerGroup
-        Ok(SignerGroup {
-            signers: helper.signers,
-            threshold: helper.threshold,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
-))]
-#[derive(Eq, PartialEq)]
-pub struct Signer<P: AsfaloadPublicKeyTrait> {
-    pub kind: SignerKind,
-    pub data: SignerData<P>, // Specify the concrete type here
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum SignerKind {
-    Key,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignerData<P: AsfaloadPublicKeyTrait> {
-    pub format: KeyFormat,
-    pub pubkey: P,
-}
-
-impl<P> Serialize for SignerData<P>
-where
-    P: AsfaloadPublicKeyTrait,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("SignerData", 2)?;
-        state.serialize_field("format", &self.format)?;
-        // Convert the public key to its string representation using the trait method
-        state.serialize_field("pubkey", &self.pubkey.to_base64())?;
-        state.end()
-    }
-}
-
-impl<'de, P> Deserialize<'de> for SignerData<P>
-where
-    P: AsfaloadPublicKeyTrait,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct SignerDataHelper {
-            format: KeyFormat,
-            pubkey: String,
-        }
-
-        let helper = SignerDataHelper::deserialize(deserializer)?;
-        // Parse the public key from string using the trait method
-        let pubkey = P::from_base64(helper.pubkey.clone()).map_err(|_e| {
-            serde::de::Error::custom(format!("Problem parsing pubkey base64: {}", helper.pubkey))
-        })?;
-        Ok(SignerData {
-            format: helper.format,
-            pubkey,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum KeyFormat {
-    Minisign,
-}
-
-pub fn parse_signers_config<P: AsfaloadPublicKeyTrait>(
-    json_str: &str,
-) -> Result<SignersConfig<P>, serde_json::Error> {
-    serde_json::from_str(json_str)
-}
 #[derive(Debug, Error)]
 pub enum SignersFileError {
     #[error("IO error: {0}")]
@@ -205,6 +30,8 @@ pub enum SignersFileError {
     SignatureOperationFailed(String),
     #[error("Signers file initialisation failed: {0}")]
     InitialisationError(String),
+    #[error("Aggregate signature error: {0}")]
+    AggregateSignatureError(#[from] aggregate_signature::AggregateSignatureError),
 }
 /// Initialize a signers file in a specific directory.
 ///
@@ -224,14 +51,15 @@ pub enum SignersFileError {
 /// # Returns
 /// * `Ok(())` if the pending file was successfully created
 /// * `Err(SignersFileError)` if there was an error validating the JSON, signature, or writing the file
-pub fn initialize_signers_file<P: AsRef<Path>, S: signatures::keys::AsfaloadSignatureTrait, K>(
+pub fn initialize_signers_file<P: AsRef<Path>, S, K>(
     dir_path_in: P,
     json_content: &str,
     signature: &S,
     pubkey: &K,
 ) -> Result<(), SignersFileError>
 where
-    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::PartialEq,
+    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
+    S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
     // Ensure we work in the right directory
     let dir_path = {
@@ -273,11 +101,11 @@ where
         )));
     }
     // First, validate the JSON by parsing it
-    let config: SignersConfig<K> = parse_signers_config(json_content)?;
+    let signers_config: SignersConfig<K> = parse_signers_config(json_content)?;
 
     // Check that the signer is in the admin_signers group (equal to artifact signers of
     // admin group is not present in file)
-    let is_valid_signer = config.admin_keys().iter().any(|group| {
+    let is_valid_signer = signers_config.admin_keys().iter().any(|group| {
         group
             .signers
             .iter()
@@ -292,9 +120,7 @@ where
     }
 
     // Compute the SHA-512 hash of the JSON content
-    let mut hasher = Sha512::new();
-    hasher.update(json_content.as_bytes());
-    let hash_result = hasher.finalize();
+    let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
     // Verify the signature against the hash
     pubkey.verify(signature, &hash_result).map_err(|e| {
@@ -310,7 +136,7 @@ where
 
     // Add the signature to the aggregate signatures file
     signature
-        .add_to_aggregate_for_file(signers_file_path, pubkey)
+        .add_to_aggregate_for_file(&signers_file_path, pubkey)
         .map_err(|e| {
             use signatures::keys::errs::SignatureError;
             match e {
@@ -320,6 +146,26 @@ where
                 other => SignersFileError::SignatureOperationFailed(other.to_string()),
             }
         })?;
+    let mut signatures: HashMap<K, S> = HashMap::new();
+    signatures.insert(pubkey.clone(), signature.clone());
+
+    // Now everything is set up, try the transition to a complete signature.
+    // This will succeed only if the signature is complete, and it is fine
+    // if it returns an error reporting an incomplete signature for which the
+    // transition cannot occur.
+    let agg_sig: SignatureWithState<AsfaloadPublicKey<_>, AsfaloadSignature<_>> =
+        aggregate_signature::load_for_file::<_, _, _>(signers_file_path)?;
+    if let Some(pending_sig) = agg_sig.get_pending() {
+        if let Err(e) = pending_sig.try_transition_to_complete() {
+            if !matches!(
+                e,
+                aggregate_signature::AggregateSignatureError::IsIncomplete
+            ) {
+                return Err(e.into());
+            }
+        }
+    }
+
     Ok(())
 }
 #[cfg(test)]
@@ -330,6 +176,8 @@ mod tests {
     use common::fs::names::PENDING_SIGNERS_FILE;
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
+    use signers_file_types::KeyFormat;
+    use signers_file_types::SignerKind;
     use std::path::PathBuf;
     use tempfile::TempDir;
     use test_helpers::TestKeys;
@@ -713,11 +561,7 @@ mod tests {
 "#;
 
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-
-        // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Get keys we work with here
         let pub_key = test_keys.pub_key(0).unwrap();
@@ -803,11 +647,7 @@ mod tests {
         // Get keys we work with here
         let pubkey = test_keys.pub_key(0).unwrap();
         let seckey = test_keys.sec_key(0).unwrap();
-
-        // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Sign the hash
         let signature = seckey.sign(&hash_result).unwrap();
@@ -911,11 +751,7 @@ mod tests {
         let non_admin_seckey = test_keys.sec_key(0).unwrap();
         let admin_pubkey = test_keys.pub_key(2).unwrap();
         let admin_seckey = test_keys.sec_key(2).unwrap();
-
-        // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Reject new signers files signed by non admin keys
         // -------------------------------------------------
@@ -929,14 +765,20 @@ mod tests {
             &non_admin_signature,
             non_admin_pubkey,
         );
-        let sig_file_path = dir_path.join("asfaload.signatures.json");
-        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        let sig_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        let pending_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
         assert!(!sig_file_path.exists());
         assert!(!pending_file_path.exists());
         assert!(result.is_err());
         assert!(matches!(result, Err(SignersFileError::InvalidSigner(_))));
 
-        // Now sign proposal with admin key which shuld be ok
+        // Now sign proposal with admin key which should be ok
         // --------------------------------------------------
         let admin_signature = admin_seckey.sign(&hash_result).unwrap();
         let result =
@@ -948,6 +790,60 @@ mod tests {
         // required admin signatures where collected.
         assert!(!sig_file_path.exists());
     }
+    #[test]
+    fn test_initialize_signers_file_with_one_signer() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(4);
+
+        // JSON content with admin_signers
+        let json_content_template = r#"
+    {
+      "version": 1,
+      "initial_version": {
+        "permalink": "https://example.com",
+        "mirrors": []
+      },
+      "artifact_signers": [
+        {
+          "signers": [
+            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
+          ],
+          "threshold": 1
+        }
+      ],
+      "master_keys": []
+    }
+    "#;
+
+        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
+        // Get keys we work with here
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let seckey = test_keys.sec_key(0).unwrap();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
+
+        let sig_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        let pending_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
+
+        // Now sign proposal with unique artifact key which should be complete
+        // ---------------------------------------------------------------
+        let signature = seckey.sign(&hash_result).unwrap();
+        let result = initialize_signers_file(dir_path, json_content, &signature, pubkey);
+        result.expect("initialize_signers_file should have succeeded");
+        // Check that the pending file does not exist, as we have the complete
+        assert!(!pending_file_path.exists());
+
+        // Check that the signature file exists as all
+        // required admin signatures where collected.
+        assert!(sig_file_path.exists());
+    }
+
     #[test]
     fn test_errors_in_initialize_signers_file() {
         let temp_dir = TempDir::new().unwrap();
@@ -975,11 +871,7 @@ mod tests {
 }
 "#;
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-
-        // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
@@ -1007,8 +899,7 @@ mod tests {
         // first create a signers file in an empty directory
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
-        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
-        assert!(result.is_ok());
+        initialize_signers_file(dir_path, json_content, &signature, pub_key).unwrap();
         let pending_signers_file_path =
             dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(pending_signers_file_path.exists());
@@ -1051,9 +942,7 @@ mod tests {
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
 
         // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
@@ -1113,9 +1002,7 @@ mod tests {
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
 
         // Compute the SHA-512 hash of the JSON content
-        let mut hasher = Sha512::new();
-        hasher.update(json_content.as_bytes());
-        let hash_result = hasher.finalize();
+        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
 
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
