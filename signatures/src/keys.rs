@@ -7,6 +7,8 @@ pub enum AsfaloadKeyPairs {
     Minisign(minisign::KeyPair),
 }
 pub mod errs {
+    use std::path::PathBuf;
+
     use thiserror::Error;
 
     #[derive(Error, Debug)]
@@ -43,6 +45,8 @@ pub mod errs {
         IoError(#[from] std::io::Error),
         #[error("JSON error: {0}")]
         JsonError(#[from] serde_json::Error),
+        #[error("Attempting to add wrong signature to aggregate for file: {0}")]
+        InvalidSignatureForAggregate(PathBuf),
     }
 }
 
@@ -91,7 +95,7 @@ pub struct AsfaloadSecretKey<K> {
     key: K,
 }
 pub trait AsfaloadPublicKeyTrait: Sized {
-    type Signature;
+    type Signature: AsfaloadSignatureTrait;
 
     fn verify(
         &self,
@@ -133,7 +137,7 @@ pub trait AsfaloadSignatureTrait: Sized {
     fn from_base64(s: &str) -> Result<Self, errs::SignatureError>;
 
     fn to_base64(&self) -> String;
-    fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
+    fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait<Signature = Self>>(
         &self,
         dir: P,
         pub_key: &PK,

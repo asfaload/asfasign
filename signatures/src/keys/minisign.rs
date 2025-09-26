@@ -230,7 +230,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         let s = self.signature.to_string();
         BASE64_STANDARD.encode(s)
     }
-    fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait>(
+    fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait<Signature = Self>>(
         &self,
         signed_file: P,
         pub_key: &PK,
@@ -265,15 +265,22 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
                 Err(e) => return Err(e.into()),
             };
 
-        // Add the signature to the map
-        let pubkey_b64 = pub_key.to_base64();
-        signatures_map.insert(pubkey_b64, self.to_base64());
+        let signed_data = common::sha512_for_file(signed_file_path)?;
+        if pub_key.verify(self, &signed_data).is_ok() {
+            // Add the signature to the map
+            let pubkey_b64 = pub_key.to_base64();
+            signatures_map.insert(pubkey_b64, self.to_base64());
 
-        // Write the updated map back to the file
-        let file = File::create(&pending_sig_file_path)?;
-        serde_json::to_writer_pretty(file, &signatures_map)?;
+            // Write the updated map back to the file
+            let file = File::create(&pending_sig_file_path)?;
+            serde_json::to_writer_pretty(file, &signatures_map)?;
 
-        Ok(())
+            Ok(())
+        } else {
+            Err(errs::SignatureError::InvalidSignatureForAggregate(
+                signed_file_path.to_path_buf(),
+            ))
+        }
     }
 }
 
@@ -489,7 +496,7 @@ mod asfaload_index_tests {
         let temp_dir = tempfile::tempdir()?;
         let dir_path = temp_dir.path();
         let signed_file_path = create_file_to_sign(dir_path.to_path_buf())?;
-        std::fs::write(&signed_file_path, "data")?;
+        std::fs::write(&signed_file_path, "test data")?;
 
         // Generate a keypair and create a signature
         let keypair = AsfaloadKeyPair::new("password")?;
@@ -501,8 +508,10 @@ mod asfaload_index_tests {
         let seckey2 = keypair2.secret_key("password")?;
 
         let data = common::sha512_for_content(b"test data".to_vec());
+        let wrong_data = common::sha512_for_content(b"wrong data".to_vec());
         let signature = seckey.sign(&data)?;
         let signature2 = seckey2.sign(&data)?;
+        let wrong_signature = seckey.sign(&wrong_data)?;
 
         // Signing a directory causes an error
         let result = signature.add_to_aggregate_for_file(dir_path, &pubkey);
@@ -519,6 +528,19 @@ mod asfaload_index_tests {
             }
             _ => panic!(
                 "Expected SignatureError, got something else: {:?}",
+                result.unwrap_err()
+            ),
+        }
+
+        // Attempting to add the signature of another data than the signed file's hash to the aggregate should fail.
+        let result = wrong_signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+        assert!(result.is_err());
+        match result.as_ref().unwrap_err() {
+            errs::SignatureError::InvalidSignatureForAggregate(_) => {
+                // Expected
+            }
+            _ => panic!(
+                "Expected InvalidsignatureForAggregate, got something else: {:?}",
                 result.unwrap_err()
             ),
         }
