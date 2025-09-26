@@ -534,11 +534,11 @@ mod asfaload_index_tests {
 
         // Attempting to add the signature of another data than the signed file's hash to the aggregate should fail.
         let result = wrong_signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
-        assert!(result.is_err());
-        match result.as_ref().unwrap_err() {
-            errs::SignatureError::InvalidSignatureForAggregate(_) => {
+        match result {
+            Err(errs::SignatureError::InvalidSignatureForAggregate(_)) => {
                 // Expected
             }
+            Ok(_) => panic!("Expected an error, but got Ok"),
             _ => panic!(
                 "Expected InvalidsignatureForAggregate, got something else: {:?}",
                 result.unwrap_err()
