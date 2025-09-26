@@ -120,7 +120,7 @@ where
     }
 
     // Compute the SHA-512 hash of the JSON content
-    let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
+    let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
     // Verify the signature against the hash
     pubkey.verify(signature, &hash_result).map_err(|e| {
@@ -561,14 +561,14 @@ mod tests {
 "#;
 
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         // Get keys we work with here
         let pub_key = test_keys.pub_key(0).unwrap();
         let sec_key = test_keys.sec_key(0).unwrap();
 
         // Sign the hash
-        let signature = sec_key.sign(&hash_result).unwrap();
+        let signature = sec_key.sign(&hash_value).unwrap();
 
         // Call the function
         initialize_signers_file(
@@ -616,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn test_initialize_signers_file_invalid_signer() {
+    fn test_initialize_signers_file_invalid_signer() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
 
@@ -647,10 +647,10 @@ mod tests {
         // Get keys we work with here
         let pubkey = test_keys.pub_key(0).unwrap();
         let seckey = test_keys.sec_key(0).unwrap();
-        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         // Sign the hash
-        let signature = seckey.sign(&hash_result).unwrap();
+        let signature = seckey.sign(&hash_value).unwrap();
 
         // Call the function - should fail due to invalid signer
         let result = initialize_signers_file(dir_path, json_content, &signature, pubkey);
@@ -660,10 +660,11 @@ mod tests {
         // Ensure the pending file was not created
         let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(!pending_file_path.exists());
+        Ok(())
     }
 
     #[test]
-    fn test_initialize_signers_file_invalid_signature() {
+    fn test_initialize_signers_file_invalid_signature() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(3);
@@ -696,7 +697,7 @@ mod tests {
 
         // Sign different data (not the hash of the JSON)
         let signature = seckey
-            .sign(&common::sha512_for_content(b"wrong data".to_vec()))
+            .sign(&common::sha512_for_content(b"wrong data".to_vec())?)
             .unwrap();
 
         // Call the function - should fail due to invalid signature
@@ -710,10 +711,11 @@ mod tests {
         // Ensure the pending file was not created
         let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(!pending_file_path.exists());
+        Ok(())
     }
 
     #[test]
-    fn test_initialize_signers_file_with_admin_signers() {
+    fn test_initialize_signers_file_with_admin_signers() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(4);
@@ -753,12 +755,12 @@ mod tests {
         let non_admin_seckey = test_keys.sec_key(0).unwrap();
         let admin_pubkey = test_keys.pub_key(2).unwrap();
         let admin_seckey = test_keys.sec_key(2).unwrap();
-        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         // Reject new signers files signed by non admin keys
         // -------------------------------------------------
         // Sign the hash
-        let non_admin_signature = non_admin_seckey.sign(&hash_result).unwrap();
+        let non_admin_signature = non_admin_seckey.sign(&hash_value).unwrap();
 
         // Call the function
         let result = initialize_signers_file(
@@ -782,7 +784,7 @@ mod tests {
 
         // Now sign proposal with admin key which should be ok
         // --------------------------------------------------
-        let admin_signature = admin_seckey.sign(&hash_result).unwrap();
+        let admin_signature = admin_seckey.sign(&hash_value).unwrap();
         let result =
             initialize_signers_file(dir_path, json_content, &admin_signature, admin_pubkey);
         // Check that the pending file exists
@@ -791,9 +793,10 @@ mod tests {
         // Check that the signature file does not exist as not all
         // required admin signatures where collected.
         assert!(!sig_file_path.exists());
+        Ok(())
     }
     #[test]
-    fn test_initialize_signers_file_with_one_signer() {
+    fn test_initialize_signers_file_with_one_signer() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(4);
@@ -822,7 +825,7 @@ mod tests {
         // Get keys we work with here
         let pubkey = test_keys.pub_key(0).unwrap();
         let seckey = test_keys.sec_key(0).unwrap();
-        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         let sig_file_path = dir_path.join(format!(
             "{}/{}.{}",
@@ -835,7 +838,7 @@ mod tests {
 
         // Now sign proposal with unique artifact key which should be complete
         // ---------------------------------------------------------------
-        let signature = seckey.sign(&hash_result).unwrap();
+        let signature = seckey.sign(&hash_value).unwrap();
         let result = initialize_signers_file(dir_path, json_content, &signature, pubkey);
         result.expect("initialize_signers_file should have succeeded");
         // Check that the pending file does not exist, as we have the complete
@@ -844,10 +847,11 @@ mod tests {
         // Check that the signature file exists as all
         // required admin signatures where collected.
         assert!(sig_file_path.exists());
+        Ok(())
     }
 
     #[test]
-    fn test_errors_in_initialize_signers_file() {
+    fn test_errors_in_initialize_signers_file() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(1);
@@ -873,12 +877,12 @@ mod tests {
 }
 "#;
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
         let sec_key = test_keys.sec_key(0).unwrap();
-        let signature = sec_key.sign(&hash_result).unwrap();
+        let signature = sec_key.sign(&hash_value).unwrap();
 
         // Test for IO error: Make the directory read-only
         let mut perms = fs::metadata(dir_path).unwrap().permissions();
@@ -914,6 +918,7 @@ mod tests {
                 result.unwrap_err()
             ),
         }
+        Ok(())
     }
     #[test]
     fn test_refuse_initialize_signers_file_when_complete_signature_exists() -> Result<()> {
@@ -944,12 +949,12 @@ mod tests {
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
 
         // Compute the SHA-512 hash of the JSON content
-        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
         let sec_key = test_keys.sec_key(0).unwrap();
-        let signature = sec_key.sign(&hash_result).unwrap();
+        let signature = sec_key.sign(&hash_value).unwrap();
 
         // Create complete signature file, content does not matter, only existence.
         let aggregate_signature_path = dir_path.join(format!(
@@ -1004,12 +1009,12 @@ mod tests {
         let json_content = &test_keys.substitute_keys(json_content_template.to_string());
 
         // Compute the SHA-512 hash of the JSON content
-        let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec());
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
         let sec_key = test_keys.sec_key(0).unwrap();
-        let signature = sec_key.sign(&hash_result).unwrap();
+        let signature = sec_key.sign(&hash_value).unwrap();
 
         // Create complete signature file, content does not matter, only existence.
         let existing_signers_path =

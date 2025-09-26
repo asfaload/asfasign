@@ -487,7 +487,6 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use common::fs::names::{PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
-    use core::hash;
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
@@ -501,7 +500,7 @@ mod tests {
     use test_helpers::TestKeys;
 
     #[test]
-    fn test_load_and_complete() {
+    fn test_load_and_complete() -> Result<()> {
         // Generate keypairs
         let keypair = AsfaloadKeyPair::new("password").unwrap();
         let pubkey = keypair.public_key();
@@ -511,7 +510,7 @@ mod tests {
         let _seckey2 = keypair2.secret_key("password").unwrap();
 
         // Create signature
-        let data = common::sha512_for_content(b"test data".to_vec());
+        let data = common::sha512_for_content(b"test data".to_vec())?;
         let signature = seckey.sign(&data).unwrap();
 
         // Create signatures map manually
@@ -577,6 +576,7 @@ mod tests {
             signers_file_types::parse_signers_config(&high_threshold_config).unwrap();
         assert!(!agg_sig.is_artifact_complete(&signers_config, &data));
         assert_eq!(agg_sig.origin, "test_file.txt");
+        Ok(())
     }
 
     // This test illustrates how a signers config can be defined programmatically. This
@@ -639,7 +639,7 @@ mod tests {
 
         // Create signature
         let data = b"test data";
-        let hash_for_content = common::sha512_for_content(data.to_vec());
+        let hash_for_content = common::sha512_for_content(data.to_vec())?;
         let signature = seckey.sign(&hash_for_content).unwrap();
 
         // Create a dummy file to represent the signed file
@@ -697,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_groups() {
+    fn test_multiple_groups() -> Result<()> {
         // Generate two keypairs
         let keypair1 = AsfaloadKeyPair::new("password").unwrap();
         let pubkey1 = keypair1.public_key();
@@ -707,7 +707,7 @@ mod tests {
         let seckey2 = keypair2.secret_key("password").unwrap();
 
         // Create signatures
-        let data = common::sha512_for_content(b"test data".to_vec());
+        let data = common::sha512_for_content(b"test data".to_vec())?;
         let sig1 = seckey1.sign(&data).unwrap();
         let sig2 = seckey2.sign(&data).unwrap();
 
@@ -810,10 +810,11 @@ mod tests {
         assert!(agg_sig.is_admin_complete(&signers_config_mixed, &data));
 
         assert_eq!(agg_sig.origin, "test_origin");
+        Ok(())
     }
 
     #[test]
-    fn test_check_groups_from_json_minimal() {
+    fn test_check_groups_from_json_minimal() -> Result<()> {
         // Generate keypairs
         let test_keys = TestKeys::new(5);
         // Keys 0 are not used because in a previous version of the code
@@ -831,7 +832,7 @@ mod tests {
         let pubkey4 = test_keys.pub_key(4).unwrap();
         let seckey4 = test_keys.sec_key(4).unwrap();
 
-        let data = common::sha512_for_content(b"test data".to_vec());
+        let data = common::sha512_for_content(b"test data".to_vec())?;
 
         let build_groups = |tpl: String| {
             let json = test_keys.substitute_keys(tpl);
@@ -861,7 +862,7 @@ mod tests {
         let sig4 = seckey4.sign(&data).unwrap();
 
         // Create also signature for other data
-        let other_data = common::sha512_for_content(b"my other data".to_vec());
+        let other_data = common::sha512_for_content(b"my other data".to_vec())?;
         let other_sig1 = seckey1.sign(&other_data).unwrap();
         let other_sig2 = seckey2.sign(&other_data).unwrap();
         let other_sig3 = seckey3.sign(&other_data).unwrap();
@@ -1225,6 +1226,7 @@ mod tests {
             &data
         ));
         assert!(!check_groups(&[], &signatures_1_2_3_4, &data));
+        Ok(())
     }
 
     #[test]
@@ -1390,7 +1392,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_aggregate_signature_complete() {
+    fn test_is_aggregate_signature_complete() -> Result<()> {
         // Create a temporary directory
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
@@ -1408,7 +1410,7 @@ mod tests {
         let test_file = root.join("file.txt");
         let file_content = b"test content";
         fs::write(&test_file, file_content).unwrap();
-        let hash_for_content = common::sha512_for_content(file_content.to_vec());
+        let hash_for_content = common::sha512_for_content(file_content.to_vec())?;
 
         // Generate keys for testing
         let test_keys = TestKeys::new(2);
@@ -1504,7 +1506,7 @@ mod tests {
         invalid_sigs.insert(
             pubkey1.to_base64(),
             seckey1
-                .sign(&common::sha512_for_content(b"wrong content".to_vec()))
+                .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
                 .unwrap()
                 .to_base64(),
         );
@@ -1518,6 +1520,7 @@ mod tests {
             res.err().unwrap().to_string(),
             AggregateSignatureError::MissingSignaturesInCompleteSignature.to_string()
         );
+        Ok(())
     }
 
     #[test]
@@ -1732,7 +1735,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transition_to_complete_success() {
+    fn test_transition_to_complete_success() -> Result<()> {
         // Create a temporary directory
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
@@ -1740,7 +1743,7 @@ mod tests {
         // Create a test file with content
         let test_file = root.join("test_file.txt");
         let file_content = b"test content for signing";
-        let hash_for_content = common::sha512_for_content(file_content.to_vec());
+        let hash_for_content = common::sha512_for_content(file_content.to_vec())?;
         fs::write(&test_file, file_content).unwrap();
 
         // Generate a keypair for signing
@@ -1825,6 +1828,7 @@ mod tests {
         assert_eq!(complete_sig.origin, test_file.to_string_lossy().to_string());
         assert_eq!(complete_sig.subject.kind, FileType::Artifact);
         assert_eq!(complete_sig.subject.path, test_file);
+        Ok(())
     }
 
     #[test]
@@ -1916,7 +1920,7 @@ mod tests {
         assert_eq!(content, r#"{"existing": "content"}"#);
     }
     #[test]
-    fn test_is_aggregate_signature_complete_pending() {
+    fn test_is_aggregate_signature_complete_pending() -> Result<()> {
         // Create a temporary directory
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
@@ -1934,7 +1938,7 @@ mod tests {
         let test_file = root.join("file.txt");
         let file_content = b"test content";
         fs::write(&test_file, file_content).unwrap();
-        let hash_for_content = common::sha512_for_content(file_content.to_vec());
+        let hash_for_content = common::sha512_for_content(file_content.to_vec())?;
 
         // Generate keys for testing
         let test_keys = TestKeys::new(2);
@@ -2024,7 +2028,7 @@ mod tests {
         invalid_sigs.insert(
             pubkey1.to_base64(),
             seckey1
-                .sign(&common::sha512_for_content(b"wrong content".to_vec()))
+                .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
                 .unwrap()
                 .to_base64(),
         );
@@ -2057,12 +2061,13 @@ mod tests {
 
         let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
         assert!(!res.unwrap()); // Should be incomplete with empty signatures
+        Ok(())
     }
     #[test]
-    fn test_check_all_signers() {
+    fn test_check_all_signers() -> Result<()> {
         // Create test keys and data
         let test_keys = TestKeys::new(5);
-        let data = common::sha512_for_content(b"test data".to_vec());
+        let data = common::sha512_for_content(b"test data".to_vec())?;
 
         // Get public and secret keys
         let pubkey0 = test_keys.pub_key(0).unwrap();
@@ -2331,12 +2336,13 @@ mod tests {
             };
 
             // Test with invalid signature (signed for different data)
-            let other_data = common::sha512_for_content(b"other data".to_vec());
+            let other_data = common::sha512_for_content(b"other data".to_vec())?;
             let invalid_sig = seckey0.sign(&other_data).unwrap();
             let mut signatures = HashMap::new();
             signatures.insert(pubkey0.clone(), invalid_sig);
             signatures.insert(pubkey1.clone(), sig1.clone());
             assert!(!check_all_signers(&signatures, &config, &data));
         }
+        Ok(())
     }
 }
