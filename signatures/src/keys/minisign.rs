@@ -349,7 +349,7 @@ mod asfaload_index_tests {
         assert_eq!(sk.key, decrypted_sk);
         assert_eq!(pk.key, kpr.key_pair.pk);
         // Check we can sign and verify with these keys
-        let data = common::sha512_for_content(b"lorem ipsum".to_vec());
+        let data = common::sha512_for_content(b"lorem ipsum".to_vec())?;
         let sig = sk.sign(&data)?;
         pk.verify(&sig, &data)?;
 
@@ -443,7 +443,7 @@ mod asfaload_index_tests {
         let secret_key = AsfaloadSecretKey::from_file(secret_key_path, "mypass")?;
 
         // Generate signature
-        let bytes_to_sign = common::sha512_for_content(b"My string to sign".to_vec());
+        let bytes_to_sign = common::sha512_for_content(b"My string to sign".to_vec())?;
         let signature = secret_key.sign(&bytes_to_sign)?;
 
         // Load public key from disk
@@ -475,7 +475,7 @@ mod asfaload_index_tests {
     #[test]
     fn test_signature_from_string_formats() -> Result<()> {
         let (pk, sk) = get_key_pair()?;
-        let data = common::sha512_for_content(b"lorem ipsum".to_vec());
+        let data = common::sha512_for_content(b"lorem ipsum".to_vec())?;
         let sig = sk.sign(&data)?;
 
         // String serialisation
@@ -507,8 +507,8 @@ mod asfaload_index_tests {
         let pubkey2 = keypair2.public_key();
         let seckey2 = keypair2.secret_key("password")?;
 
-        let data = common::sha512_for_content(b"test data".to_vec());
-        let wrong_data = common::sha512_for_content(b"wrong data".to_vec());
+        let data = common::sha512_for_content(b"test data".to_vec())?;
+        let wrong_data = common::sha512_for_content(b"wrong data".to_vec())?;
         let signature = seckey.sign(&data)?;
         let signature2 = seckey2.sign(&data)?;
         let wrong_signature = seckey.sign(&wrong_data)?;
