@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 signatures = { path = "../signatures" }
 minisign = { git = "https://github.com/jedisct1/rust-minisign", rev = "fe7afaf" }
+
+[lints]
+workspace = true

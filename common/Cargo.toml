@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 sha2 = "0.10.9"
 
+[lints]
+workspace = true
 
 [dev-dependencies]
 anyhow = "1.0.99"
