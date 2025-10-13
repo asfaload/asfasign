@@ -31,7 +31,7 @@ pub enum SignersFileError {
     InitialisationError(String),
     #[error("Aggregate signature error: {0}")]
     AggregateSignatureError(#[from] aggregate_signature::AggregateSignatureError),
-    #[error("Signers file not in a pensing signers directory: {0}")]
+    #[error("Signers file not in a pending signers directory: {0}")]
     NotInPendingDir(String),
     #[error("Pending signers file filesystem hierarchy error: {0}")]
     FileSystemHierarchyError(String),
@@ -1121,6 +1121,374 @@ mod tests {
         // And check it wasn't changed, i.e. it is still and empty file
         let file_size = std::fs::metadata(pending_file_path)?.len();
         assert_eq!(file_size, 0);
+        Ok(())
+    }
+
+    // Test activate pending signers file
+    // ----------------------------------
+    // Helper function to create a test signers config
+    fn create_test_signers_config(test_keys: &TestKeys) -> String {
+        let json_content_template = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER" } },
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+      ],
+      "threshold": 2
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+        test_keys.substitute_keys(json_content_template.to_string())
+    }
+
+    // Helper function to create a test aggregate signature
+    fn create_test_aggregate_signature(
+        signers_file_path: &Path,
+        test_keys: &TestKeys,
+    ) -> Result<
+        AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+            CompleteSignature,
+        >,
+        SignersFileError,
+    > {
+        // Create the local signers file (required for signature verification)
+        let local_signers_path = common::fs::names::local_signers_path_for(signers_file_path)?;
+        fs::copy(signers_file_path, &local_signers_path)?;
+
+        // Compute the hash of the signers file
+        let hash = common::sha512_for_file(signers_file_path)?;
+
+        // Sign with the first key
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        // Sign with second key
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let signature1 = seckey1.sign(&hash).unwrap();
+
+        // Write the signature to the complete signature file
+        let complete_sig_path = common::fs::names::signatures_path_for(signers_file_path)?;
+        let mut signatures = std::collections::HashMap::new();
+        signatures.insert(pubkey0.to_base64(), signature0.to_base64());
+        signatures.insert(pubkey1.to_base64(), signature1.to_base64());
+        fs::write(
+            &complete_sig_path,
+            serde_json::to_string_pretty(&signatures)?,
+        )?;
+
+        // Load the aggregate signature using the public API
+        let sig_with_state = aggregate_signature::load_for_file::<_, _, _>(signers_file_path)?;
+        match sig_with_state {
+            SignatureWithState::Complete(sig) => Ok(sig),
+            SignatureWithState::Pending(_) => Err(SignersFileError::InitialisationError(
+                "Expected complete signature".to_string(),
+            )),
+        }
+    }
+
+    #[test]
+    fn test_activate_signers_file_success() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create pending directory and signers file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        let signers_content = create_test_signers_config(&test_keys);
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Activate the signers file
+        activate_signers_file(&signers_file_path, agg_sig)?;
+
+        // Verify the pending directory was renamed to active
+        let active_dir = root_dir.join(SIGNERS_DIR);
+        assert!(active_dir.exists());
+        assert!(!pending_dir.exists());
+
+        // Verify the signers file is in the active directory
+        let active_signers_file = active_dir.join(SIGNERS_FILE);
+        assert!(active_signers_file.exists());
+
+        // Verify the content is preserved
+        let active_content = fs::read_to_string(&active_signers_file)?;
+        let expected_content = create_test_signers_config(&test_keys);
+        assert_eq!(active_content, expected_content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_with_existing_active() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create existing active directory and signers file
+        let active_dir = root_dir.join(SIGNERS_DIR);
+        fs::create_dir_all(&active_dir)?;
+        let existing_signers_file = active_dir.join(SIGNERS_FILE);
+        let existing_content = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://old.example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv" } }
+      ],
+      "threshold": 1
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+        fs::write(&existing_signers_file, existing_content)?;
+
+        // Create pending directory and signers file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        let new_content = create_test_signers_config(&test_keys);
+        fs::write(&signers_file_path, &new_content)?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Activate the signers file
+        activate_signers_file(&signers_file_path, agg_sig)?;
+
+        // Verify the history file was created
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+        assert!(history_file_path.exists());
+
+        // Verify the history contains the old configuration
+        let history_content = fs::read_to_string(&history_file_path)?;
+        let history_entries: Vec<serde_json::Value> = serde_json::from_str(&history_content)?;
+        assert_eq!(history_entries.len(), 1);
+
+        // Verify the old configuration is in the history
+        let old_config_in_history = history_entries[0]
+            .get("initial_version")
+            .and_then(|v| v.get("permalink"))
+            .and_then(|v| v.as_str())
+            .unwrap();
+        assert_eq!(old_config_in_history, "https://old.example.com");
+
+        // Verify the new configuration is active
+        let new_active_content = fs::read_to_string(&active_dir.join(SIGNERS_FILE))?;
+        assert_eq!(new_active_content, new_content);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_path_mismatch() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create pending directory and signers file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        let signers_content = create_test_signers_config(&test_keys);
+        fs::write(&signers_file_path, &signers_content)?;
+
+        // Create aggregate signature with a different path
+        let different_path = root_dir.join("different_file.json");
+        fs::write(&different_path, &signers_content)?;
+        let agg_sig = create_test_aggregate_signature(&different_path, &test_keys)?;
+
+        // Try to activate with mismatched paths
+        let result = activate_signers_file(&signers_file_path, agg_sig);
+
+        // Verify the error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InitialisationError(msg) => {
+                assert!(msg.contains("Signers file is not in a pending directory"));
+            }
+            other => panic!(
+                "Expected InitialisationError for path mismatch, got {:?}",
+                other
+            ),
+        }
+
+        // Verify the pending directory still exists
+        assert!(pending_dir.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_not_in_pending_dir() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create a directory that is not named PENDING_SIGNERS_DIR
+        let wrong_dir = root_dir.join("wrong_directory");
+        fs::create_dir_all(&wrong_dir)?;
+        let signers_file_path = wrong_dir.join(SIGNERS_FILE);
+        let signers_content = create_test_signers_config(&test_keys);
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Try to activate
+        let result = activate_signers_file(&signers_file_path, agg_sig);
+
+        // Verify the error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::NotInPendingDir(path) => {
+                assert_eq!(path, wrong_dir.to_string_lossy().to_string());
+            }
+            _ => panic!("Expected NotInPendingDir error"),
+        }
+
+        // Verify the directory still exists
+        assert!(wrong_dir.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_no_parent_directory() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let test_keys = TestKeys::new(2);
+
+        // Create a file at the root level (no parent directory)
+        let signers_file_path = temp_dir.path().join(SIGNERS_FILE);
+        let signers_content = create_test_signers_config(&test_keys);
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Try to activate
+        let result = activate_signers_file(&signers_file_path, agg_sig);
+
+        // Verify the error
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            SignersFileError::NotInPendingDir(path) => {
+                assert_eq!(
+                    path,
+                    signers_file_path
+                        .parent()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string()
+                );
+            }
+            _ => panic!("Expected NotInPendingDir but got {}", err),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_with_signature_files() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create pending directory and signers file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        let signers_content = create_test_signers_config(&test_keys);
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Create signature files
+        let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_file_path)?;
+        let complete_sig_path = common::fs::names::signatures_path_for(&signers_file_path)?;
+        fs::write(&pending_sig_path, "{}")?;
+        fs::write(&complete_sig_path, "{}")?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Activate the signers file
+        activate_signers_file(&signers_file_path, agg_sig)?;
+
+        // Verify the pending directory was renamed to active
+        let active_dir = root_dir.join(SIGNERS_DIR);
+        assert!(active_dir.exists());
+        assert!(!pending_dir.exists());
+
+        // Verify the signature files were removed
+        assert!(!pending_sig_path.exists());
+        assert!(!complete_sig_path.exists());
+
+        // Verify the signers file is in the active directory
+        let active_signers_file = active_dir.join(SIGNERS_FILE);
+        assert!(active_signers_file.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_nested_directory() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let nested_dir = root_dir.join("nested");
+        fs::create_dir_all(&nested_dir)?;
+        let test_keys = TestKeys::new(2);
+
+        // Create pending directory in nested directory
+        let pending_dir = nested_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        let signers_content = create_test_signers_config(&test_keys);
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Activate the signers file
+        activate_signers_file(&signers_file_path, agg_sig)?;
+
+        // Verify the pending directory was renamed to active
+        let active_dir = nested_dir.join(SIGNERS_DIR);
+        assert!(active_dir.exists());
+        assert!(!pending_dir.exists());
+
+        // Verify the signers file is in the active directory
+        let active_signers_file = active_dir.join(SIGNERS_FILE);
+        assert!(active_signers_file.exists());
+
+        // Verify the content is preserved
+        let active_content = fs::read_to_string(&active_signers_file)?;
+        let expected_content = create_test_signers_config(&test_keys);
+        assert_eq!(active_content, expected_content);
+
         Ok(())
     }
 }
