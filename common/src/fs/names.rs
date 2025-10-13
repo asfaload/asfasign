@@ -12,6 +12,8 @@ pub const SIGNERS_DIR: &str = "asfaload.signers";
 pub const PENDING_SIGNERS_DIR: &str = "asfaload.signers.pending";
 pub const SIGNERS_FILE: &str = "index.json";
 pub const PENDING_SIGNERS_FILE: &str = "index.json.pending";
+pub const SIGNERS_HISTORY_SUFFIX: &str = "history.json";
+pub const SIGNERS_HISTORY_FILE: &str = "asfaload.signers.history.json";
 
 fn file_path_with_suffix<P: AsRef<Path>>(path_in: P, suffix: &str) -> std::io::Result<PathBuf> {
     let file_path = path_in.as_ref();

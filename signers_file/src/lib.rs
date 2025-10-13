@@ -1,7 +1,9 @@
-use aggregate_signature::{SignatureWithState, check_all_signers};
-use common::fs::names::signatures_path_for;
+use aggregate_signature::{
+    AggregateSignature, CompleteSignature, SignatureWithState, check_all_signers,
+};
 use common::fs::names::{
-    PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_FILE, pending_signatures_path_for,
+    PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
+    pending_signatures_path_for, signatures_path_for,
 };
 use core::hash;
 use sha2::{Digest, Sha512};
@@ -9,10 +11,7 @@ use signatures::keys::{
     AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
 };
 use signers_file_types::{SignersConfig, parse_signers_config};
-use std::collections::HashMap;
-use std::fs;
-use std::io::Write;
-use std::path::Path;
+use std::{collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
 use thiserror::Error;
 //
 
@@ -32,6 +31,10 @@ pub enum SignersFileError {
     InitialisationError(String),
     #[error("Aggregate signature error: {0}")]
     AggregateSignatureError(#[from] aggregate_signature::AggregateSignatureError),
+    #[error("Signers file not in a pensing signers directory: {0}")]
+    NotInPendingDir(String),
+    #[error("Pending signers file filesystem hierarchy error: {0}")]
+    FileSystemHierarchyError(String),
 }
 /// Initialize a signers file in a specific directory.
 ///
@@ -168,6 +171,74 @@ where
 
     Ok(())
 }
+
+pub fn activate_signers_file<P: AsRef<Path>, K, S>(
+    signers_file: P,
+    agg_sig: AggregateSignature<K, S, CompleteSignature>,
+) -> Result<(), SignersFileError>
+where
+    K: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait + Clone,
+{
+    if signers_file.as_ref() != agg_sig.subject().path {
+        return Err(SignersFileError::InitialisationError(
+            "Signers file is not in a pending directory".to_string(),
+        ));
+    }
+    let signers_file_path = signers_file.as_ref();
+
+    // Verify the signers file is in a pending directory
+    let pending_dir = signers_file_path.parent().ok_or_else(|| {
+        SignersFileError::FileSystemHierarchyError(signers_file_path.to_string_lossy().to_string())
+    })?;
+
+    if pending_dir.file_name() != Some(OsStr::new(PENDING_SIGNERS_DIR)) {
+        return Err(SignersFileError::NotInPendingDir(
+            pending_dir.to_string_lossy().to_string(),
+        ));
+    }
+
+    let root_dir = pending_dir.parent().ok_or_else(|| {
+        SignersFileError::FileSystemHierarchyError(pending_dir.to_string_lossy().to_string())
+    })?;
+
+    // Handle existing active signers file and history
+    let active_signers_dir = root_dir.join(SIGNERS_DIR);
+    let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
+    let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+    if active_signers_file.exists() {
+        // Read existing active signers configuration
+        let existing_content = fs::read_to_string(&active_signers_file)?;
+        let existing_config: SignersConfig<K> = parse_signers_config(&existing_content)?;
+
+        // Read or create history entries
+        let mut history_entries: Vec<serde_json::Value> = if history_file_path.exists() {
+            let history_content = fs::read_to_string(&history_file_path)?;
+            serde_json::from_str(&history_content)?
+        } else {
+            Vec::new()
+        };
+
+        // Add existing config to history
+        history_entries.push(serde_json::to_value(existing_config)?);
+
+        // Write updated history
+        fs::write(
+            &history_file_path,
+            serde_json::to_string_pretty(&history_entries)?,
+        )?;
+
+        // Remove existing active signers directory
+        fs::remove_dir_all(&active_signers_dir)?;
+    }
+
+    // Rename pending directory to active directory
+    fs::rename(pending_dir, &active_signers_dir)?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

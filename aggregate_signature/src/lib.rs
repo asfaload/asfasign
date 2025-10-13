@@ -114,6 +114,17 @@ where
     marker: PhantomData<SS>,
 }
 
+impl<P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone, S: AsfaloadSignatureTrait, SS>
+    AggregateSignature<P, S, SS>
+{
+    pub fn origin(&self) -> &str {
+        self.origin.as_str()
+    }
+    pub fn subject(&self) -> SignedFile {
+        self.subject.clone()
+    }
+}
+
 impl AsRef<Path> for SignedFile {
     fn as_ref(&self) -> &Path {
         self.path.as_ref()
