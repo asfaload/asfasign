@@ -9,3 +9,6 @@ common = { path = "../common/" }
 signatures = { path = "../signatures/" }
 serde = "1.0.226"
 serde_json = "1.0.145"
+
+[lints]
+workspace = true

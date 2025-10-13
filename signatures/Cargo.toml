@@ -14,3 +14,6 @@ common = { path = "../common/" }
 anyhow = "1.0.98"
 tempfile = "3.20.0"
 test_helpers = { path = "../test_helpers/" }
+
+[lints]
+workspace = true

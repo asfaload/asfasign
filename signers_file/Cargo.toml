@@ -19,3 +19,6 @@ aggregate_signature = { path = "../aggregate_signature/" }
 [dev-dependencies]
 test_helpers = { path = "../test_helpers/" }
 tempfile = "3.21.0"
+
+[lints]
+workspace = true
