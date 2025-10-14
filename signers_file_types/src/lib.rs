@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::marker::PhantomData;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use signatures::keys::AsfaloadPublicKeyTrait;
 
@@ -34,6 +37,9 @@ where
             Some(v) if !v.is_empty() => v,
             _ => &self.artifact_signers,
         }
+    }
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
     }
 }
 
