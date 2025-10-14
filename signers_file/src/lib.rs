@@ -1,11 +1,13 @@
 use aggregate_signature::{
     AggregateSignature, CompleteSignature, SignatureWithState, check_all_signers,
 };
+use chrono::Utc;
 use common::fs::names::{
     PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
     pending_signatures_path_for, signatures_path_for,
 };
 use core::hash;
+use serde_json::json;
 use sha2::{Digest, Sha512};
 use signatures::keys::{
     AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
@@ -179,9 +181,30 @@ fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
     let active_signers_dir = root_dir.join(SIGNERS_DIR);
     let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
     let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
     // Read existing active signers configuration
     let existing_content = fs::read_to_string(&active_signers_file)?;
     let existing_config: SignersConfig<K> = parse_signers_config(&existing_content)?;
+
+    // Read the signatures file for the active signers
+    let signatures_file_path = signatures_path_for(&active_signers_file)?;
+    let signatures_content = fs::read_to_string(&signatures_file_path)?;
+    let signatures_json: serde_json::Value = serde_json::from_str(&signatures_content)?;
+
+    // Get current UTC time as ISO8601 string
+    let obsoleted_at = chrono::Utc::now().to_rfc3339();
+
+    // Create the history entry
+    let mut history_entry = serde_json::Map::new();
+    history_entry.insert(
+        "obsoleted_at".to_string(),
+        serde_json::Value::String(obsoleted_at),
+    );
+    history_entry.insert(
+        "signers_file".to_string(),
+        serde_json::to_value(existing_config)?,
+    );
+    history_entry.insert("signatures".to_string(), signatures_json);
 
     // Read or create history entries
     let mut history_entries: Vec<serde_json::Value> = if history_file_path.exists() {
@@ -191,8 +214,8 @@ fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
         Vec::new()
     };
 
-    // Add existing config to history
-    history_entries.push(serde_json::to_value(existing_config)?);
+    // Append the new entry
+    history_entries.push(serde_json::Value::Object(history_entry));
 
     // Write updated history
     fs::write(
@@ -1488,6 +1511,477 @@ mod tests {
         let active_content = fs::read_to_string(&active_signers_file)?;
         let expected_content = create_test_signers_config(&test_keys);
         assert_eq!(active_content, expected_content);
+
+        Ok(())
+    }
+    use chrono::{DateTime, Utc};
+    use std::collections::HashMap;
+
+    // Helper function to create a test signatures file
+    fn create_test_signatures_file(
+        test_keys: &TestKeys,
+        signers_file_path: &Path,
+    ) -> Result<HashMap<String, String>, SignersFileError> {
+        let hash = common::sha512_for_file(signers_file_path)?;
+
+        // Sign with both keys
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let signature1 = seckey1.sign(&hash).unwrap();
+
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.to_base64(), signature0.to_base64());
+        signatures.insert(pubkey1.to_base64(), signature1.to_base64());
+
+        Ok(signatures)
+    }
+
+    // Helper function to create a test active signers setup
+    fn create_test_active_signers(
+        root_dir: &Path,
+        test_keys: &TestKeys,
+    ) -> Result<PathBuf, SignersFileError> {
+        let active_signers_dir = root_dir.join(SIGNERS_DIR);
+        fs::create_dir_all(&active_signers_dir)?;
+
+        let signers_file_path = active_signers_dir.join(SIGNERS_FILE);
+        let signers_content = create_test_signers_config(test_keys);
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Create signatures file
+        let signatures = create_test_signatures_file(test_keys, &signers_file_path)?;
+        let signatures_path = signatures_path_for(&signers_file_path)?;
+        fs::write(&signatures_path, serde_json::to_string_pretty(&signatures)?)?;
+
+        Ok(signers_file_path)
+    }
+
+    #[test]
+    fn test_move_to_history_creates_new_history_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Read the original signers file content
+        let original_signers_content = fs::read_to_string(&signers_file_path)?;
+        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&original_signers_content)?;
+
+        // Read the original signatures file content
+        let signatures_file_path = signatures_path_for(&signers_file_path)?;
+        let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
+        let original_signatures: HashMap<String, String> =
+            serde_json::from_str(&original_signatures_content)?;
+
+        // Ensure history file doesn't exist initially
+        assert!(!history_file_path.exists());
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<_>, _>(root_dir)?;
+
+        // Verify history file was created
+        assert!(history_file_path.exists());
+
+        // Verify active directory was removed
+        assert!(!signers_file_path.exists());
+        assert!(!root_dir.join(SIGNERS_DIR).exists());
+
+        // Verify history content
+        let history_content = fs::read_to_string(&history_file_path)?;
+        let history_entries: Vec<serde_json::Value> = serde_json::from_str(&history_content)?;
+        assert_eq!(history_entries.len(), 1);
+
+        let entry = &history_entries[0];
+        assert!(entry.get("obsoleted_at").unwrap().is_string());
+
+        // Verify signers file content matches original
+        let signers_file_in_history = entry.get("signers_file").unwrap();
+        let parsed_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            serde_json::from_value(signers_file_in_history.clone())?;
+        assert_eq!(parsed_signers_config, original_signers_config);
+
+        // Verify signatures content matches original
+        let signatures_in_history = entry.get("signatures").unwrap();
+        let parsed_signatures: HashMap<String, String> =
+            serde_json::from_value(signatures_in_history.clone())?;
+        assert_eq!(parsed_signatures, original_signatures);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_appends_to_existing_history() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Create existing history file
+        let existing_entry = serde_json::json!({
+            "obsoleted_at": "2023-01-01T00:00:00Z",
+            "signers_file": {
+                "version": 1,
+                "initial_version": {
+                    "permalink": "https://old.example.com",
+                    "mirrors": []
+                },
+                "artifact_signers": ["RWRaOIhiXUjDgCLx2NwuLAVboIDMJZ32WagBSN2wjxlvYvdsvjmMzGy3"],
+                "master_keys": [],
+                "threshold": 1
+            },
+            "signatures": {}
+        });
+
+        let existing_history = serde_json::json!([existing_entry]);
+        fs::write(
+            &history_file_path,
+            serde_json::to_string_pretty(&existing_history)?,
+        )?;
+
+        // Read the existing history content before the move
+        let original_history_content = fs::read_to_string(&history_file_path)?;
+        let original_history_entries: Vec<serde_json::Value> =
+            serde_json::from_str(&original_history_content)?;
+        assert_eq!(original_history_entries.len(), 1);
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+
+        // Read the original signers file content
+        let original_signers_content = fs::read_to_string(&signers_file_path)?;
+        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&original_signers_content)?;
+
+        // Read the original signatures file content
+        let signatures_file_path = signatures_path_for(&signers_file_path)?;
+        let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
+        let original_signatures: HashMap<String, String> =
+            serde_json::from_str(&original_signatures_content)?;
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Verify history content
+        let history_content = fs::read_to_string(&history_file_path)?;
+        let history_entries: Vec<serde_json::Value> = serde_json::from_str(&history_content)?;
+        assert_eq!(history_entries.len(), 2);
+
+        // Verify first entry is unchanged and matches the original
+        let first_entry = &history_entries[0];
+        let original_first_entry = &original_history_entries[0];
+        assert_eq!(first_entry, original_first_entry);
+
+        // Verify second entry is the new one with correct content
+        let second_entry = &history_entries[1];
+        assert!(second_entry.get("obsoleted_at").unwrap().is_string());
+
+        // Verify signers file content matches original
+        let signers_file_in_history = second_entry.get("signers_file").unwrap();
+        let parsed_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            serde_json::from_value(signers_file_in_history.clone())?;
+        assert_eq!(parsed_signers_config, original_signers_config);
+
+        // Verify signatures content matches original
+        let signatures_in_history = second_entry.get("signatures").unwrap();
+        let parsed_signatures: HashMap<String, String> =
+            serde_json::from_value(signatures_in_history.clone())?;
+        assert_eq!(parsed_signatures, original_signatures);
+
+        // Verify entries are sorted chronologically
+        let first_time: DateTime<Utc> =
+            serde_json::from_value(first_entry.get("obsoleted_at").unwrap().clone())?;
+        let second_time: DateTime<Utc> =
+            serde_json::from_value(second_entry.get("obsoleted_at").unwrap().clone())?;
+        assert!(first_time < second_time);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_preserves_all_existing_entries() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Create multiple existing history entries
+        let entry1 = serde_json::json!({
+            "obsoleted_at": "2023-01-01T00:00:00Z",
+            "signers_file": {
+                "version": 1,
+                "initial_version": {
+                    "permalink": "https://old1.example.com",
+                    "mirrors": []
+                },
+                "artifact_signers": [],
+                "master_keys": []
+            },
+            "signatures": {"key1": "sig1"}
+        });
+
+        let entry2 = serde_json::json!({
+            "obsoleted_at": "2023-02-01T00:00:00Z",
+            "signers_file": {
+                "version": 2,
+                "initial_version": {
+                    "permalink": "https://old2.example.com",
+                    "mirrors": []
+                },
+                "artifact_signers": [],
+                "master_keys": []
+            },
+            "signatures": {"key2": "sig2"}
+        });
+
+        let existing_history = serde_json::json!([entry1, entry2]);
+        fs::write(
+            &history_file_path,
+            serde_json::to_string_pretty(&existing_history)?,
+        )?;
+
+        // Read the existing history content before the move
+        let original_history_content = fs::read_to_string(&history_file_path)?;
+        let original_history_entries: Vec<serde_json::Value> =
+            serde_json::from_str(&original_history_content)?;
+        assert_eq!(original_history_entries.len(), 2);
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+
+        // Read the original signers file content
+        let original_signers_content = fs::read_to_string(&signers_file_path)?;
+        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&original_signers_content)?;
+
+        // Read the original signatures file content
+        let signatures_file_path = signatures_path_for(&signers_file_path)?;
+        let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
+        let original_signatures: HashMap<String, String> =
+            serde_json::from_str(&original_signatures_content)?;
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Verify history content
+        let history_content = fs::read_to_string(&history_file_path)?;
+        let history_entries: Vec<serde_json::Value> = serde_json::from_str(&history_content)?;
+        assert_eq!(history_entries.len(), 3);
+
+        // Verify all existing entries are unchanged
+        for i in 0..original_history_entries.len() {
+            assert_eq!(&history_entries[i], &original_history_entries[i]);
+        }
+
+        // Verify the new entry is the last one with correct content
+        let new_entry = &history_entries[2];
+        assert!(new_entry.get("obsoleted_at").unwrap().is_string());
+
+        // Verify signers file content matches original
+        let signers_file_in_history = new_entry.get("signers_file").unwrap();
+        let parsed_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            serde_json::from_value(signers_file_in_history.clone())?;
+        assert_eq!(parsed_signers_config, original_signers_config);
+
+        // Verify signatures content matches original
+        let signatures_in_history = new_entry.get("signatures").unwrap();
+        let parsed_signatures: HashMap<String, String> =
+            serde_json::from_value(signatures_in_history.clone())?;
+        assert_eq!(parsed_signatures, original_signatures);
+
+        // Verify entries are sorted chronologically
+        for i in 0..history_entries.len() - 1 {
+            let current_time: DateTime<Utc> =
+                serde_json::from_value(history_entries[i].get("obsoleted_at").unwrap().clone())?;
+            let next_time: DateTime<Utc> = serde_json::from_value(
+                history_entries[i + 1].get("obsoleted_at").unwrap().clone(),
+            )?;
+            assert!(current_time <= next_time);
+        }
+
+        Ok(())
+    }
+    #[test]
+    fn test_move_to_history_timestamp_format() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Record time before operation
+        let before_time = Utc::now();
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Record time after operation
+        let after_time = Utc::now();
+
+        // Verify history content
+        let history_content = fs::read_to_string(&history_file_path)?;
+        let history_entries: Vec<serde_json::Value> = serde_json::from_str(&history_content)?;
+        assert_eq!(history_entries.len(), 1);
+
+        let entry = &history_entries[0];
+        let timestamp_str = entry.get("obsoleted_at").unwrap().as_str().unwrap();
+
+        // Verify timestamp format is ISO8601
+        let timestamp: DateTime<Utc> = timestamp_str.parse()?;
+
+        // Verify timestamp is recent (between before and after)
+        assert!(timestamp >= before_time);
+        assert!(timestamp <= after_time);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_preserves_signatures_content() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+        let signatures_path = signatures_path_for(&signers_file_path)?;
+
+        // Read original signatures content
+        let original_signatures_content = fs::read_to_string(&signatures_path)?;
+        let original_signatures: HashMap<String, String> =
+            serde_json::from_str(&original_signatures_content)?;
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Verify history content
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+        let history_content = fs::read_to_string(&history_file_path)?;
+        let history_entries: Vec<serde_json::Value> = serde_json::from_str(&history_content)?;
+        assert_eq!(history_entries.len(), 1);
+
+        let entry = &history_entries[0];
+        let signatures_in_history = entry.get("signatures").unwrap();
+        let parsed_signatures: HashMap<String, String> =
+            serde_json::from_value(signatures_in_history.clone())?;
+
+        // Verify signatures content is preserved
+        assert_eq!(parsed_signatures, original_signatures);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_with_multiple_entries_sorted() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Create multiple existing history entries with different timestamps
+        let entry1 = serde_json::json!({
+            "obsoleted_at": "2023-01-01T00:00:00Z",
+            "signers_file": {"version": 1},
+            "signatures": {}
+        });
+
+        let entry2 = serde_json::json!({
+            "obsoleted_at": "2023-02-01T00:00:00Z",
+            "signers_file": {"version": 1},
+            "signatures": {}
+        });
+
+        let existing_history = serde_json::json!([entry1, entry2]);
+        fs::write(
+            &history_file_path,
+            serde_json::to_string_pretty(&existing_history)?,
+        )?;
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+
+        // Record time before operation
+        let before_time = Utc::now();
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Verify history content
+        let history_content = fs::read_to_string(&history_file_path)?;
+        let history_entries: Vec<serde_json::Value> = serde_json::from_str(&history_content)?;
+        assert_eq!(history_entries.len(), 3);
+
+        // Verify entries are sorted chronologically
+        for i in 0..history_entries.len() - 1 {
+            let current_time: DateTime<Utc> =
+                serde_json::from_value(history_entries[i].get("obsoleted_at").unwrap().clone())?;
+            let next_time: DateTime<Utc> = serde_json::from_value(
+                history_entries[i + 1].get("obsoleted_at").unwrap().clone(),
+            )?;
+            assert!(current_time <= next_time);
+        }
+
+        // Verify the new entry is the last one
+        let last_entry = &history_entries[2];
+        let last_timestamp: DateTime<Utc> =
+            serde_json::from_value(last_entry.get("obsoleted_at").unwrap().clone())?;
+        assert!(last_timestamp >= before_time);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_error_when_no_active_signers() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+
+        // Don't create active signers directory
+        let result =
+            move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir);
+
+        // Should fail with IO error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::IoError(_) => {} // Expected
+            _ => panic!("Expected IoError"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_error_when_no_signatures_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers directory and file but no signatures file
+        let active_signers_dir = root_dir.join(SIGNERS_DIR);
+        fs::create_dir_all(&active_signers_dir)?;
+
+        let signers_file_path = active_signers_dir.join(SIGNERS_FILE);
+        let signers_content = create_test_signers_config(&test_keys);
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Try to move to history
+        let result =
+            move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir);
+
+        // Should fail with IO error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::IoError(_) => {} // Expected
+            _ => panic!("Expected IoError"),
+        }
 
         Ok(())
     }

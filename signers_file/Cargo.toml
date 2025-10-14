@@ -15,6 +15,7 @@ anyhow = "1.0.99"
 common = { path = "../common/" }
 signers_file_types = { path = "../signers_file_types/" }
 aggregate_signature = { path = "../aggregate_signature/" }
+chrono = { version = "0.4.42", features = ["serde"] }
 
 [dev-dependencies]
 test_helpers = { path = "../test_helpers/" }
