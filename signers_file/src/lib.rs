@@ -172,6 +172,39 @@ where
     Ok(())
 }
 
+fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
+    dir: Pa,
+) -> Result<(), SignersFileError> {
+    let root_dir = dir.as_ref();
+    let active_signers_dir = root_dir.join(SIGNERS_DIR);
+    let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
+    let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+    // Read existing active signers configuration
+    let existing_content = fs::read_to_string(&active_signers_file)?;
+    let existing_config: SignersConfig<K> = parse_signers_config(&existing_content)?;
+
+    // Read or create history entries
+    let mut history_entries: Vec<serde_json::Value> = if history_file_path.exists() {
+        let history_content = fs::read_to_string(&history_file_path)?;
+        serde_json::from_str(&history_content)?
+    } else {
+        Vec::new()
+    };
+
+    // Add existing config to history
+    history_entries.push(serde_json::to_value(existing_config)?);
+
+    // Write updated history
+    fs::write(
+        &history_file_path,
+        serde_json::to_string_pretty(&history_entries)?,
+    )?;
+
+    // Remove existing active signers directory
+    fs::remove_dir_all(&active_signers_dir)?;
+    Ok(())
+}
+
 pub fn activate_signers_file<P: AsRef<Path>, K, S>(
     signers_file: P,
     agg_sig: AggregateSignature<K, S, CompleteSignature>,
@@ -205,32 +238,9 @@ where
     // Handle existing active signers file and history
     let active_signers_dir = root_dir.join(SIGNERS_DIR);
     let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
-    let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
 
     if active_signers_file.exists() {
-        // Read existing active signers configuration
-        let existing_content = fs::read_to_string(&active_signers_file)?;
-        let existing_config: SignersConfig<K> = parse_signers_config(&existing_content)?;
-
-        // Read or create history entries
-        let mut history_entries: Vec<serde_json::Value> = if history_file_path.exists() {
-            let history_content = fs::read_to_string(&history_file_path)?;
-            serde_json::from_str(&history_content)?
-        } else {
-            Vec::new()
-        };
-
-        // Add existing config to history
-        history_entries.push(serde_json::to_value(existing_config)?);
-
-        // Write updated history
-        fs::write(
-            &history_file_path,
-            serde_json::to_string_pretty(&history_entries)?,
-        )?;
-
-        // Remove existing active signers directory
-        fs::remove_dir_all(&active_signers_dir)?;
+        move_current_signers_to_history::<K, _>(root_dir)?;
     }
 
     // Rename pending directory to active directory
