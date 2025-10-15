@@ -1331,13 +1331,18 @@ mod tests {
     fn test_activate_signers_file_with_existing_active() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let root_dir = temp_dir.path();
-        let test_keys = TestKeys::new(2);
+
+        // Use distinct TestKeys instances for existing and new signers
+        let existing_keys = TestKeys::new(1);
+        let new_keys = TestKeys::new(2);
 
         // Create existing active directory and signers file
         let active_dir = root_dir.join(SIGNERS_DIR);
         fs::create_dir_all(&active_dir)?;
         let existing_signers_file = active_dir.join(SIGNERS_FILE);
-        let existing_content = r#"
+
+        // Create a template for the existing content
+        let existing_content_template = r#"
 {
   "version": 1,
   "initial_version": {
@@ -1347,7 +1352,7 @@ mod tests {
   "artifact_signers": [
     {
       "signers": [
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv" } }
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER" } }
       ],
       "threshold": 1
     }
@@ -1356,17 +1361,38 @@ mod tests {
   "admin_keys": null
 }
 "#;
+
+        // Substitute the placeholder with an actual public key from existing_keys
+        let existing_content = existing_keys.substitute_keys(existing_content_template.to_string());
         fs::write(&existing_signers_file, existing_content)?;
+
+        // Create the signatures file for the existing signers file
+        let hash = common::sha512_for_file(&existing_signers_file)?;
+        let pubkey0 = existing_keys.pub_key(0).unwrap();
+        let seckey0 = existing_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.to_base64(), signature0.to_base64());
+
+        let existing_signatures_path = signatures_path_for(&existing_signers_file)?;
+        fs::write(
+            &existing_signatures_path,
+            serde_json::to_string_pretty(&signatures)?,
+        )?;
 
         // Create pending directory and signers file
         let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
         fs::create_dir_all(&pending_dir)?;
         let signers_file_path = pending_dir.join(SIGNERS_FILE);
-        let new_content = create_test_signers_config(&test_keys);
+
+        // Use new_keys for the new signers config
+        let new_content = create_test_signers_config(&new_keys);
         fs::write(&signers_file_path, &new_content.to_json()?)?;
 
-        // Create aggregate signature
-        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+        // Create aggregate signature using new_keys
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &new_keys)?;
+        agg_sig.save_to_file()?;
 
         // Activate the signers file
         activate_signers_file(&signers_file_path, agg_sig)?;
@@ -1382,14 +1408,15 @@ mod tests {
 
         // Verify the old configuration is in the history
         let old_config_in_history = history_entries[0]
-            .get("initial_version")
+            .get("signers_file")
+            .and_then(|v| v.get("initial_version"))
             .and_then(|v| v.get("permalink"))
             .and_then(|v| v.as_str())
             .unwrap();
         assert_eq!(old_config_in_history, "https://old.example.com");
 
         // Verify the new configuration is active
-        let new_active_content = fs::read_to_string(&active_dir.join(SIGNERS_FILE))?;
+        let new_active_content = fs::read_to_string(active_dir.join(SIGNERS_FILE))?;
         assert_eq!(new_active_content, new_content.to_json()?);
 
         Ok(())
