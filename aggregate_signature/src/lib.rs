@@ -488,7 +488,7 @@ where
     }
 }
 
-impl<P, S, PendingSignature> AggregateSignature<P, S, PendingSignature>
+impl<P, S> AggregateSignature<P, S, PendingSignature>
 where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait + Clone,
