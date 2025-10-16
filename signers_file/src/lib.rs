@@ -242,7 +242,7 @@ where
 {
     if signers_file.as_ref() != agg_sig.subject().path {
         return Err(SignersFileError::InitialisationError(
-            "Signers file is not in a pending directory".to_string(),
+            "Path mismatch: the provided signers file path does not match the path in the aggregate signature.".to_string(),
         ));
     }
     let signers_file_path = signers_file.as_ref();
@@ -1455,7 +1455,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InitialisationError(msg) => {
-                assert!(msg.contains("Signers file is not in a pending directory"));
+                assert!(msg.contains("Path mismatch: the provided signers file path does not match the path in the aggregate signature."));
             }
             other => panic!(
                 "Expected InitialisationError for path mismatch, got {:?}",
