@@ -1378,14 +1378,11 @@ mod tests {
         let seckey0 = existing_keys.sec_key(0).unwrap();
         let signature0 = seckey0.sign(&hash).unwrap();
 
-        let mut signatures = HashMap::new();
-        signatures.insert(pubkey0.to_base64(), signature0.to_base64());
-
-        let existing_signatures_path = signatures_path_for(&existing_signers_file)?;
-        fs::write(
-            &existing_signatures_path,
-            serde_json::to_string_pretty(&signatures)?,
-        )?;
+        // Create signature of current signers file
+        let _ = aggregate_signature::load_for_file(&existing_signers_file)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature0, pubkey0)?;
 
         // Create pending directory and signers file
         let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
@@ -1620,29 +1617,6 @@ mod tests {
     use chrono::{DateTime, Utc};
     use std::collections::HashMap;
 
-    // Helper function to create a test signatures file
-    fn create_test_signatures_file(
-        test_keys: &TestKeys,
-        signers_file_path: &Path,
-    ) -> Result<HashMap<String, String>, SignersFileError> {
-        let hash = common::sha512_for_file(signers_file_path)?;
-
-        // Sign with both keys
-        let pubkey0 = test_keys.pub_key(0).unwrap();
-        let seckey0 = test_keys.sec_key(0).unwrap();
-        let signature0 = seckey0.sign(&hash).unwrap();
-
-        let pubkey1 = test_keys.pub_key(1).unwrap();
-        let seckey1 = test_keys.sec_key(1).unwrap();
-        let signature1 = seckey1.sign(&hash).unwrap();
-
-        let mut signatures = HashMap::new();
-        signatures.insert(pubkey0.to_base64(), signature0.to_base64());
-        signatures.insert(pubkey1.to_base64(), signature1.to_base64());
-
-        Ok(signatures)
-    }
-
     // Helper function to create a test active signers setup
     fn create_test_active_signers(
         root_dir: &Path,
@@ -1656,10 +1630,27 @@ mod tests {
         let signers_content = signers_config.to_json()?;
         fs::write(&signers_file_path, signers_content)?;
 
-        // Create signatures file
-        let signatures = create_test_signatures_file(test_keys, &signers_file_path)?;
-        let signatures_path = signatures_path_for(&signers_file_path)?;
-        fs::write(&signatures_path, serde_json::to_string_pretty(&signatures)?)?;
+        let hash = common::sha512_for_file(&signers_file_path)?;
+
+        // Sign with both keys
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let signature1 = seckey1.sign(&hash).unwrap();
+
+        // Create the aggregate signature
+        aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+            &signers_file_path,
+        )?
+        .get_pending()
+        .unwrap()
+        .add_individual_signature(&signature0, pubkey0)?
+        .get_pending()
+        .unwrap()
+        .add_individual_signature(&signature1, pubkey1)?;
 
         Ok(signers_file_path)
     }
