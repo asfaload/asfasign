@@ -4,7 +4,7 @@ use common::fs::names::{
     pending_signatures_path_for, signatures_path_for,
 };
 use sha2::{Digest, Sha512};
-use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait};
 use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -69,13 +69,17 @@ where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    pub fn get_complete(&self) -> Option<&AggregateSignature<P, S, CompleteSignature>> {
+    // Consumes self to do as get_pending
+    pub fn get_complete(self) -> Option<AggregateSignature<P, S, CompleteSignature>> {
         match self {
             Self::Pending(_s) => None,
             Self::Complete(s) => Some(s),
         }
     }
-    pub fn get_pending(&self) -> Option<&AggregateSignature<P, S, PendingSignature>> {
+    // Consumes self. Made so that after calling get_pending we can call add_individual_signature
+    // that also consumes self, becaus it can update the agg_sig on disk, so using the old value
+    // makes no sense.
+    pub fn get_pending(self) -> Option<AggregateSignature<P, S, PendingSignature>> {
         match self {
             Self::Complete(_s) => None,
             Self::Pending(s) => Some(s),
@@ -532,6 +536,29 @@ where
             Err(AggregateSignatureError::IsIncomplete)
         }
     }
+
+    pub fn add_individual_signature(
+        self,
+        sig: S,
+        pubkey: P,
+    ) -> Result<SignatureWithState<P, S>, AggregateSignatureError> {
+        // Add the signature to the aggregate
+        sig.add_to_aggregate_for_file(self.subject.path.clone(), &pubkey)
+            .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
+        let agg_sig_with_state = load_for_file(self.subject.path.clone());
+        match agg_sig_with_state {
+            Ok(SignatureWithState::Pending(pending_agg_sig)) => {
+                match pending_agg_sig.try_transition_to_complete() {
+                    Err(_) => Ok(SignatureWithState::Pending(pending_agg_sig)),
+                    Ok(agg_sig) => Ok(SignatureWithState::Complete(agg_sig)),
+                }
+            }
+            Ok(SignatureWithState::Complete(_)) => Err(AggregateSignatureError::Signature(
+                "Complete signature loaded from file after adding individual signature, which is supposed to be impossible".to_string(),
+            )),
+            Err(e) => Err(e)
+        }
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -699,21 +726,16 @@ mod tests {
 
         // Create local signers file
         create_local_signers_for(&signed_file_path)?;
-        // Write the signatures file for the signed file
-        let mut signatures_map = std::collections::HashMap::new();
-        signatures_map.insert(pubkey.to_base64(), signature.to_base64());
-        let json_content = serde_json::to_string_pretty(&signatures_map).unwrap();
 
-        let sig_file_path = signed_file_path.with_file_name(format!(
-            "{}.{}",
-            signed_file_path.file_name().unwrap().to_string_lossy(),
-            SIGNATURES_SUFFIX
-        ));
-
-        std::fs::write(&sig_file_path, json_content).unwrap();
-
-        // Load aggregate signature for the signed file
-        let agg_sig: SignatureWithState<_, _> = load_for_file(&signed_file_path)?;
+        // Load aggregate signature from disk, it is empty
+        let agg_sig =
+            load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(&signed_file_path)?
+                // As it is empty, is is pending
+                .get_pending()
+                .unwrap()
+                // As it is pending, we can add an individual signature to it
+                // After adding the signature, it is in this case complete.
+                .add_individual_signature(signature, pubkey)?;
 
         let agg_sig = agg_sig
             .get_complete()
