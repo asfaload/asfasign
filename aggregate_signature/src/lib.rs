@@ -539,11 +539,11 @@ where
 
     pub fn add_individual_signature(
         self,
-        sig: S,
-        pubkey: P,
+        sig: &S,
+        pubkey: &P,
     ) -> Result<SignatureWithState<P, S>, AggregateSignatureError> {
         // Add the signature to the aggregate
-        sig.add_to_aggregate_for_file(self.subject.path.clone(), &pubkey)
+        sig.add_to_aggregate_for_file(self.subject.path.clone(), pubkey)
             .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
         let agg_sig_with_state = load_for_file(self.subject.path.clone());
         match agg_sig_with_state {
@@ -735,7 +735,7 @@ mod tests {
                 .unwrap()
                 // As it is pending, we can add an individual signature to it
                 // After adding the signature, it is in this case complete.
-                .add_individual_signature(signature, pubkey)?;
+                .add_individual_signature(&signature, &pubkey)?;
 
         let agg_sig = agg_sig
             .get_complete()
