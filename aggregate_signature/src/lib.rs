@@ -253,6 +253,28 @@ fn find_global_signers_for(file_path: &Path) -> Result<PathBuf, AggregateSignatu
         ))
     })?;
 
+    // If we work on a signers file, we go up one level, so we do not
+    // consider a signers file for itself
+    current_dir = if file_path
+        .file_name()
+        .is_some_and(|name| name == SIGNERS_FILE)
+        && file_path
+            .parent()
+            .is_some_and(|p| p.file_name().unwrap_or_default() == SIGNERS_DIR)
+    {
+        current_dir
+            .parent()
+            .and_then(|d| d.parent())
+            .ok_or_else(|| {
+                AggregateSignatureError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "File has no parent directory",
+                ))
+            })?
+    } else {
+        current_dir
+    };
+
     loop {
         let candidate = current_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
         if candidate.exists() {
@@ -1462,6 +1484,10 @@ mod tests {
         fs::create_dir_all(&no_signers_dir).unwrap();
         let result = find_global_signers_for(&no_signers_dir);
         assert!(matches!(result, Err(AggregateSignatureError::Io(_))));
+
+        // Test that for the signers file, we don't consider itself
+        let result = find_global_signers_for(&signers_file);
+        assert!(result.is_err());
     }
 
     #[test]
