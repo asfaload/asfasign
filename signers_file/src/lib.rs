@@ -1271,15 +1271,21 @@ mod tests {
         let seckey1 = test_keys.sec_key(1).unwrap();
         let signature1 = seckey1.sign(&hash).unwrap();
 
-        // Write the signature to the complete signature file
-        let complete_sig_path = common::fs::names::signatures_path_for(signers_file_path)?;
-        let mut signatures = std::collections::HashMap::new();
-        signatures.insert(pubkey0.to_base64(), signature0.to_base64());
-        signatures.insert(pubkey1.to_base64(), signature1.to_base64());
-        fs::write(
-            &complete_sig_path,
-            serde_json::to_string_pretty(&signatures)?,
-        )?;
+        // Create the agregate signature's files on disk using our api.
+        // Start by loading the empty signature
+        let _ = aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+            &signers_file_path,
+        )?
+        // As it is empty, is is pending
+        .get_pending()
+        .unwrap()
+        // As it is pending, we can add an individual signature to it
+        // After adding the signature, it is in this case complete.
+        .add_individual_signature(&signature0, pubkey0)?
+        // The threshold is 2 so it is pending here
+        .get_pending()
+        .unwrap()
+        .add_individual_signature(&signature1, pubkey1)?;
 
         // Load the aggregate signature using the public API
         let sig_with_state = aggregate_signature::load_for_file::<_, _, _>(signers_file_path)?;
@@ -1548,12 +1554,6 @@ mod tests {
         let signers_content = signers_config.to_json()?;
         fs::write(&signers_file_path, signers_content)?;
 
-        // Create signature files
-        let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_file_path)?;
-        let complete_sig_path = common::fs::names::signatures_path_for(&signers_file_path)?;
-        fs::write(&pending_sig_path, "{}")?;
-        fs::write(&complete_sig_path, "{}")?;
-
         // Create aggregate signature
         let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
 
@@ -1566,6 +1566,8 @@ mod tests {
         assert!(!pending_dir.exists());
 
         // Verify the signature files were removed
+        let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_file_path)?;
+        let complete_sig_path = common::fs::names::signatures_path_for(&signers_file_path)?;
         assert!(!pending_sig_path.exists());
         assert!(!complete_sig_path.exists());
 
