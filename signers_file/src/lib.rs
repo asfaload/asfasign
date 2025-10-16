@@ -209,7 +209,11 @@ fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
     // Read or create history entries
     let mut history_entries: Vec<serde_json::Value> = if history_file_path.exists() {
         let history_content = fs::read_to_string(&history_file_path)?;
-        serde_json::from_str(&history_content)?
+        if history_content.trim().is_empty() {
+            Vec::new()
+        } else {
+            serde_json::from_str(&history_content)?
+        }
     } else {
         Vec::new()
     };
@@ -2081,7 +2085,64 @@ mod tests {
 
         Ok(())
     }
+    #[test]
+    fn test_move_to_history_with_empty_history_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
 
+        // Create an empty history file
+        fs::write(&history_file_path, "")?;
+
+        // Verify the history file exists but is empty
+        assert!(history_file_path.exists());
+        let initial_content = fs::read_to_string(&history_file_path)?;
+        assert!(initial_content.is_empty());
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+
+        // Read the original signers file content
+        let original_signers_content = fs::read_to_string(&signers_file_path)?;
+        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&original_signers_content)?;
+
+        // Read the original signatures file content
+        let signatures_file_path = signatures_path_for(&signers_file_path)?;
+        let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
+        let original_signatures: HashMap<String, String> =
+            serde_json::from_str(&original_signatures_content)?;
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Verify history content
+        let history_content = fs::read_to_string(&history_file_path)?;
+        let history_entries: Vec<serde_json::Value> = serde_json::from_str(&history_content)?;
+        assert_eq!(history_entries.len(), 1);
+
+        let entry = &history_entries[0];
+        assert!(entry.get("obsoleted_at").unwrap().is_string());
+
+        // Verify signers file content matches original
+        let signers_file_in_history = entry.get("signers_file").unwrap();
+        let parsed_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            serde_json::from_value(signers_file_in_history.clone())?;
+        assert_eq!(parsed_signers_config, original_signers_config);
+
+        // Verify signatures content matches original
+        let signatures_in_history = entry.get("signatures").unwrap();
+        let parsed_signatures: HashMap<String, String> =
+            serde_json::from_value(signatures_in_history.clone())?;
+        assert_eq!(parsed_signatures, original_signatures);
+
+        // Verify active directory was removed
+        assert!(!signers_file_path.exists());
+        assert!(!root_dir.join(SIGNERS_DIR).exists());
+
+        Ok(())
+    }
     // History file serialisation tests
     // --------------------------------
 
