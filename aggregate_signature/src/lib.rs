@@ -426,7 +426,7 @@ where
     // Check if the aggregate signature is complete
     let complete_sig_path = signatures_path_for(file_path)?;
 
-    if complete_sig_path.exists() {
+    if complete_sig_path.exists() && complete_sig_path.is_file() {
         // Load the complete signature file
         // We double check the signature is complete. If it is not, it
         // will return an error. If it is complete, we don't care about
@@ -536,15 +536,27 @@ where
         }
         let complete_sig_path = signatures_path_for(&self.subject)?;
         if complete_sig_path.exists() {
-            return Err({
-                AggregateSignatureError::Io(std::io::Error::new(
-                    std::io::ErrorKind::AlreadyExists,
-                    format!(
-                        "Not overwriting existing complete aggregate signature {}",
-                        complete_sig_path.to_string_lossy()
-                    ),
-                ))
-            });
+            if complete_sig_path.is_file() {
+                return Err({
+                    AggregateSignatureError::Io(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        format!(
+                            "Not overwriting existing complete aggregate signature {}",
+                            complete_sig_path.to_string_lossy()
+                        ),
+                    ))
+                });
+            } else {
+                return Err({
+                    AggregateSignatureError::Io(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        format!(
+                            "The move to a complete signature cannot take place as a directory with the destination name exists: {}",
+                            complete_sig_path.to_string_lossy()
+                        ),
+                    ))
+                });
+            }
         }
         if is_aggregate_signature_complete::<_, P>(&self.subject, true)? {
             std::fs::rename(pending_sig_path, complete_sig_path)?;
@@ -3144,7 +3156,9 @@ mod tests {
         // Verify the result is a JsonError
         assert!(result.is_err());
         match result.err().unwrap() {
-            AggregateSignatureError::JsonError(_) => {} // Expected
+            AggregateSignatureError::Signature(msg) => {
+                assert_eq!(msg, "JSON error: expected value at line 1 column 1")
+            }
             other => panic!("Expected JsonError, got {:?}", other),
         }
 
@@ -3197,7 +3211,11 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             AggregateSignatureError::Io(e) => {
-                assert_eq!(e.kind(), std::io::ErrorKind::IsADirectory);
+                assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+                assert!(
+                    e.to_string()
+                        .contains("a directory with the destination name exists",)
+                );
             }
             other => panic!("Expected IO error, got {:?}", other),
         }

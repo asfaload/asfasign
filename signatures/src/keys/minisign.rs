@@ -245,7 +245,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         let signatures_path = signatures_path_for(signed_file_path)?;
 
         // Refuse to add signatures to already completed signature.
-        if signatures_path.exists() {
+        if signatures_path.exists() && signatures_path.is_file() {
             return Err(errs::SignatureError::IoError(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
                 "Aggregate signature is already complete",
