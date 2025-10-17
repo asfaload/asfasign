@@ -600,7 +600,7 @@ mod tests {
     use std::path::PathBuf;
     use std::str::FromStr;
     use tempfile::TempDir;
-    use test_helpers::TestKeys;
+    use test_helpers::{TestKeys, pause};
 
     #[test]
     fn test_load_and_complete() -> Result<()> {
@@ -3040,10 +3040,10 @@ mod tests {
         // Verify the result is an IO error
         assert!(result.is_err());
         match result.err().unwrap() {
-            AggregateSignatureError::Io(e) => {
-                assert_eq!(e.kind(), std::io::ErrorKind::PermissionDenied);
+            AggregateSignatureError::Signature(e) => {
+                assert_eq!(e, "IO error: Permission denied (os error 13)");
             }
-            _ => panic!("Expected IO error"),
+            other => panic!("Expected IO error, got {:?}", other),
         }
 
         // Restore permissions for cleanup
@@ -3145,7 +3145,7 @@ mod tests {
         assert!(result.is_err());
         match result.err().unwrap() {
             AggregateSignatureError::JsonError(_) => {} // Expected
-            _ => panic!("Expected JsonError"),
+            other => panic!("Expected JsonError, got {:?}", other),
         }
 
         Ok(())
@@ -3164,7 +3164,7 @@ mod tests {
         let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
 
         // Create a signers configuration
-        let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
+        let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 2);
 
         // Setup the test hierarchy
         let (test_file, _signers_file) =
@@ -3199,7 +3199,7 @@ mod tests {
             AggregateSignatureError::Io(e) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::IsADirectory);
             }
-            _ => panic!("Expected IO error"),
+            other => panic!("Expected IO error, got {:?}", other),
         }
 
         Ok(())
