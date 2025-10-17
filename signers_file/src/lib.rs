@@ -1,7 +1,7 @@
 use aggregate_signature::{
     AggregateSignature, CompleteSignature, SignatureWithState, check_all_signers,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use common::fs::names::{
     PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
     pending_signatures_path_for, signatures_path_for,
@@ -192,7 +192,7 @@ fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
     let signatures: HashMap<String, String> = serde_json::from_str(&signatures_content)?;
 
     // Get current UTC time as ISO8601 string
-    let obsoleted_at = chrono::Utc::now().to_rfc3339();
+    let obsoleted_at = chrono::Utc::now();
 
     // Create the history entry using the dedicated struct
     let history_entry = HistoryEntry {
@@ -276,7 +276,7 @@ use serde::{Deserialize, Serialize};
 ))]
 pub struct HistoryEntry<P: AsfaloadPublicKeyTrait> {
     /// ISO8601 formatted UTC date and time
-    pub obsoleted_at: String,
+    pub obsoleted_at: DateTime<Utc>,
     /// Content of the signers file
     pub signers_file: SignersConfig<P>,
     /// Content of the signatures file (map from public key string to signature string)
@@ -364,6 +364,7 @@ pub fn parse_history_file<P: AsfaloadPublicKeyTrait>(
 mod tests {
     use super::*;
     use anyhow::Result;
+    use chrono::Date;
     use common::fs::names::PENDING_SIGNATURES_SUFFIX;
     use common::fs::names::PENDING_SIGNERS_FILE;
     use signatures::keys::AsfaloadPublicKey;
@@ -1897,7 +1898,7 @@ mod tests {
         let test_keys = TestKeys::new(2);
 
         // Create active signers setup
-        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+        let _signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
         let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
 
         // Record time before operation
@@ -1915,10 +1916,7 @@ mod tests {
         assert_eq!(history.entries.len(), 1);
 
         let entry = &history.entries[0];
-        let timestamp_str = entry.obsoleted_at.clone();
-
-        // Verify timestamp format is ISO8601
-        let timestamp: DateTime<Utc> = timestamp_str.parse()?;
+        let timestamp = entry.obsoleted_at;
 
         // Verify timestamp is recent (between before and after)
         assert!(timestamp >= before_time);
@@ -1968,8 +1966,8 @@ mod tests {
         let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
 
         // Create multiple existing history entries with different timestamps
-        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z");
-        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z");
+        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
+        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z".parse().unwrap());
 
         let mut existing_history: HistoryFile<AsfaloadPublicKey<_>> = HistoryFile::new();
         existing_history.add_entry(entry1);
@@ -1992,14 +1990,14 @@ mod tests {
 
         // Verify entries are sorted chronologically
         for i in 0..history.entries.len() - 1 {
-            let current_time: DateTime<Utc> = history.entries[i].obsoleted_at.parse().unwrap();
-            let next_time: DateTime<Utc> = history.entries[i + 1].obsoleted_at.parse().unwrap();
+            let current_time: DateTime<Utc> = history.entries[i].obsoleted_at;
+            let next_time: DateTime<Utc> = history.entries[i + 1].obsoleted_at;
             assert!(current_time <= next_time);
         }
 
         // Verify the new entry is the last one
         let last_entry = &history.entries[2];
-        let last_timestamp: DateTime<Utc> = last_entry.obsoleted_at.parse().unwrap();
+        let last_timestamp: DateTime<Utc> = last_entry.obsoleted_at;
         assert!(last_timestamp >= before_time);
 
         Ok(())
@@ -2090,7 +2088,6 @@ mod tests {
         assert_eq!(history.entries.len(), 1);
 
         let entry = &history.entries[0];
-        assert!(entry.obsoleted_at.parse::<DateTime<Utc>>().is_ok());
 
         // Verify signers file content matches original
         assert_eq!(entry.signers_file, original_signers_config);
@@ -2152,10 +2149,10 @@ mod tests {
     // Helper function to create a test history entry
     fn create_test_history_entry(
         test_keys: &TestKeys,
-        timestamp: &str,
+        timestamp: DateTime<Utc>,
     ) -> HistoryEntry<AsfaloadPublicKey<minisign::PublicKey>> {
         HistoryEntry {
-            obsoleted_at: timestamp.to_string(),
+            obsoleted_at: timestamp,
             signers_file: create_test_signers_config(test_keys),
             signatures: create_test_signatures(test_keys),
         }
@@ -2164,7 +2161,7 @@ mod tests {
     #[test]
     fn test_history_entry_creation() {
         let test_keys = TestKeys::new(2);
-        let timestamp = "2023-01-01T00:00:00Z";
+        let timestamp: DateTime<Utc> = "2023-01-01T00:00:00Z".parse().unwrap();
 
         let entry = create_test_history_entry(&test_keys, timestamp);
 
@@ -2201,8 +2198,8 @@ mod tests {
         let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
             HistoryFile::new();
 
-        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z");
-        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z");
+        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
+        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z".parse().unwrap());
 
         history_file.add_entry(entry1);
         history_file.add_entry(entry2);
@@ -2210,11 +2207,11 @@ mod tests {
         assert_eq!(history_file.entries().len(), 2);
         assert_eq!(
             history_file.entries()[0].obsoleted_at,
-            "2023-01-01T00:00:00Z"
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
         assert_eq!(
             history_file.entries()[1].obsoleted_at,
-            "2023-02-01T00:00:00Z"
+            "2023-02-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
     }
 
@@ -2228,19 +2225,25 @@ mod tests {
         assert!(history_file.latest_entry().is_none());
 
         // Add one entry
-        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z");
+        let entry1 = create_test_history_entry(
+            &test_keys,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
         history_file.add_entry(entry1);
         assert_eq!(
             history_file.latest_entry().unwrap().obsoleted_at,
-            "2023-01-01T00:00:00Z"
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
 
         // Add another entry
-        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z");
+        let entry2 = create_test_history_entry(
+            &test_keys,
+            "2023-02-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
         history_file.add_entry(entry2);
         assert_eq!(
             history_file.latest_entry().unwrap().obsoleted_at,
-            "2023-02-01T00:00:00Z"
+            "2023-02-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
     }
 
@@ -2250,7 +2253,10 @@ mod tests {
         let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
             HistoryFile::new();
 
-        let entry = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z");
+        let entry = create_test_history_entry(
+            &test_keys,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
         history_file.add_entry(entry);
 
         let json = history_file.to_json().unwrap();
@@ -2346,7 +2352,7 @@ mod tests {
         assert_eq!(history_file.entries().len(), 1);
         assert_eq!(
             history_file.entries()[0].obsoleted_at,
-            "2023-01-01T00:00:00Z"
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
         assert_eq!(history_file.entries()[0].signers_file.version, 1);
         assert_eq!(
@@ -2455,7 +2461,10 @@ mod tests {
         let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
             HistoryFile::new();
 
-        let entry = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z");
+        let entry = create_test_history_entry(
+            &test_keys,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
         history_file.add_entry(entry);
 
         // Save to file
@@ -2470,7 +2479,7 @@ mod tests {
         assert_eq!(loaded_history_file.entries().len(), 1);
         assert_eq!(
             loaded_history_file.entries()[0].obsoleted_at,
-            "2023-01-01T00:00:00Z"
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
         assert_eq!(loaded_history_file.entries()[0].signers_file.version, 1);
         assert_eq!(loaded_history_file.entries()[0].signatures.len(), 2);
@@ -2500,7 +2509,7 @@ mod tests {
         let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
             HistoryFile::new();
 
-        let entry = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z");
+        let entry = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
         history_file.add_entry(entry);
 
         // Try to save to nonexistent directory
@@ -2520,9 +2529,18 @@ mod tests {
             HistoryFile::new();
 
         // Add multiple entries with different timestamps
-        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z");
-        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z");
-        let entry3 = create_test_history_entry(&test_keys, "2023-03-01T00:00:00Z");
+        let entry1 = create_test_history_entry(
+            &test_keys,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
+        let entry2 = create_test_history_entry(
+            &test_keys,
+            "2023-02-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
+        let entry3 = create_test_history_entry(
+            &test_keys,
+            "2023-03-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
 
         history_file.add_entry(entry1);
         history_file.add_entry(entry2);
@@ -2533,17 +2551,15 @@ mod tests {
 
         // Verify chronological order
         for i in 0..history_file.entries().len() - 1 {
-            let current_time: DateTime<Utc> =
-                history_file.entries()[i].obsoleted_at.parse().unwrap();
-            let next_time: DateTime<Utc> =
-                history_file.entries()[i + 1].obsoleted_at.parse().unwrap();
+            let current_time: DateTime<Utc> = history_file.entries()[i].obsoleted_at;
+            let next_time: DateTime<Utc> = history_file.entries()[i + 1].obsoleted_at;
             assert!(current_time <= next_time);
         }
 
         // Verify latest entry
         assert_eq!(
             history_file.latest_entry().unwrap().obsoleted_at,
-            "2023-03-01T00:00:00Z"
+            "2023-03-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
     }
 
@@ -2554,8 +2570,8 @@ mod tests {
             HistoryFile::new();
 
         // Add multiple entries
-        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z");
-        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z");
+        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
+        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z".parse().unwrap());
 
         original_history_file.add_entry(entry1);
         original_history_file.add_entry(entry2);
@@ -2590,7 +2606,7 @@ mod tests {
 
         // Create an entry with empty signatures
         let entry = HistoryEntry {
-            obsoleted_at: "2023-01-01T00:00:00Z".to_string(),
+            obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
             signers_file: create_test_signers_config(&test_keys),
             signatures: HashMap::new(),
         };
