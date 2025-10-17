@@ -1,18 +1,19 @@
-use aggregate_signature::{SignatureWithState, check_all_signers};
-use common::fs::names::signatures_path_for;
+use aggregate_signature::{
+    AggregateSignature, CompleteSignature, SignatureWithState, check_all_signers,
+};
+use chrono::{DateTime, Utc};
 use common::fs::names::{
-    PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_FILE, pending_signatures_path_for,
+    PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
+    pending_signatures_path_for, signatures_path_for,
 };
 use core::hash;
+use serde_json::json;
 use sha2::{Digest, Sha512};
 use signatures::keys::{
     AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
 };
 use signers_file_types::{SignersConfig, parse_signers_config};
-use std::collections::HashMap;
-use std::fs;
-use std::io::Write;
-use std::path::Path;
+use std::{collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
 use thiserror::Error;
 //
 
@@ -32,6 +33,10 @@ pub enum SignersFileError {
     InitialisationError(String),
     #[error("Aggregate signature error: {0}")]
     AggregateSignatureError(#[from] aggregate_signature::AggregateSignatureError),
+    #[error("Signers file not in a pending signers directory: {0}")]
+    NotInPendingDir(String),
+    #[error("Pending signers file filesystem hierarchy error: {0}")]
+    FileSystemHierarchyError(String),
 }
 /// Initialize a signers file in a specific directory.
 ///
@@ -168,10 +173,198 @@ where
 
     Ok(())
 }
+
+fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
+    dir: Pa,
+) -> Result<(), SignersFileError> {
+    let root_dir = dir.as_ref();
+    let active_signers_dir = root_dir.join(SIGNERS_DIR);
+    let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
+    let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+    // Read existing active signers configuration
+    let existing_content = fs::read_to_string(&active_signers_file)?;
+    let existing_config: SignersConfig<K> = parse_signers_config(&existing_content)?;
+
+    // Read the signatures file for the active signers
+    let signatures_file_path = signatures_path_for(&active_signers_file)?;
+    let signatures_content = fs::read_to_string(&signatures_file_path)?;
+    let signatures: HashMap<String, String> = serde_json::from_str(&signatures_content)?;
+
+    // Get current UTC time as ISO8601 string
+    let obsoleted_at = chrono::Utc::now();
+
+    // Create the history entry using the dedicated struct
+    let history_entry = HistoryEntry {
+        obsoleted_at,
+        signers_file: existing_config,
+        signatures,
+    };
+
+    // Read or create history file
+    let mut history_file: HistoryFile<K> = if history_file_path.exists() {
+        let history_content = fs::read_to_string(&history_file_path)?;
+        if history_content.trim().is_empty() {
+            HistoryFile::new()
+        } else {
+            HistoryFile::from_json(&history_content)?
+        }
+    } else {
+        HistoryFile::new()
+    };
+
+    // Append the new entry
+    history_file.add_entry(history_entry);
+
+    // Write updated history
+    history_file.save_to_file(&history_file_path)?;
+
+    // Remove existing active signers directory
+    fs::remove_dir_all(&active_signers_dir)?;
+    Ok(())
+}
+
+pub fn activate_signers_file<P: AsRef<Path>, K, S>(
+    signers_file: P,
+    agg_sig: AggregateSignature<K, S, CompleteSignature>,
+) -> Result<(), SignersFileError>
+where
+    K: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait + Clone,
+{
+    if signers_file.as_ref() != agg_sig.subject().path {
+        return Err(SignersFileError::InitialisationError(
+            "Path mismatch: the provided signers file path does not match the path in the aggregate signature.".to_string(),
+        ));
+    }
+    let signers_file_path = signers_file.as_ref();
+
+    // Verify the signers file is in a pending directory
+    let pending_dir = signers_file_path.parent().ok_or_else(|| {
+        SignersFileError::FileSystemHierarchyError(signers_file_path.to_string_lossy().to_string())
+    })?;
+
+    if pending_dir.file_name() != Some(OsStr::new(PENDING_SIGNERS_DIR)) {
+        return Err(SignersFileError::NotInPendingDir(
+            pending_dir.to_string_lossy().to_string(),
+        ));
+    }
+
+    let root_dir = pending_dir.parent().ok_or_else(|| {
+        SignersFileError::FileSystemHierarchyError(pending_dir.to_string_lossy().to_string())
+    })?;
+
+    // Handle existing active signers file and history
+    let active_signers_dir = root_dir.join(SIGNERS_DIR);
+    let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
+
+    if active_signers_file.exists() {
+        move_current_signers_to_history::<K, _>(root_dir)?;
+    }
+
+    // Rename pending directory to active directory
+    fs::rename(pending_dir, &active_signers_dir)?;
+
+    Ok(())
+}
+
+use serde::{Deserialize, Serialize};
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(bound(
+    serialize = "P: AsfaloadPublicKeyTrait",
+    deserialize = "P: AsfaloadPublicKeyTrait"
+))]
+pub struct HistoryEntry<P: AsfaloadPublicKeyTrait> {
+    /// ISO8601 formatted UTC date and time
+    pub obsoleted_at: DateTime<Utc>,
+    /// Content of the signers file
+    pub signers_file: SignersConfig<P>,
+    /// Content of the signatures file (map from public key string to signature string)
+    pub signatures: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(bound(
+    serialize = "P: AsfaloadPublicKeyTrait",
+    deserialize = "P: AsfaloadPublicKeyTrait"
+))]
+pub struct HistoryFile<P: AsfaloadPublicKeyTrait> {
+    /// Array of history entries, sorted chronologically
+    pub entries: Vec<HistoryEntry<P>>,
+}
+
+impl<PK> HistoryFile<PK>
+where
+    PK: AsfaloadPublicKeyTrait,
+{
+    /// Create a new empty history file
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    /// Add a new entry to the history file
+    pub fn add_entry(&mut self, entry: HistoryEntry<PK>) {
+        self.entries.push(entry);
+    }
+
+    /// Get all entries in the history file
+    pub fn entries(&self) -> &Vec<HistoryEntry<PK>> {
+        &self.entries
+    }
+
+    /// Get the most recent entry in the history file
+    pub fn latest_entry(&self) -> Option<&HistoryEntry<PK>> {
+        self.entries.last()
+    }
+
+    /// Parse a history file from JSON string
+    pub fn from_json(json_str: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json_str)
+    }
+
+    /// Convert the history file to a JSON string
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+
+    /// Load a history file from the given path
+    pub fn load_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, SignersFileError> {
+        let content = std::fs::read_to_string(path)?;
+        let history_file = Self::from_json(&content)?;
+        Ok(history_file)
+    }
+
+    /// Save the history file to the given path
+    pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), SignersFileError> {
+        let json = self.to_json()?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+}
+
+impl<P> Default for HistoryFile<P>
+where
+    P: AsfaloadPublicKeyTrait,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Helper function to parse a history file from JSON string
+pub fn parse_history_file<P: AsfaloadPublicKeyTrait>(
+    json_str: &str,
+) -> Result<HistoryFile<P>, serde_json::Error> {
+    HistoryFile::from_json(json_str)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::Result;
+    use chrono::Date;
     use common::fs::names::PENDING_SIGNATURES_SUFFIX;
     use common::fs::names::PENDING_SIGNERS_FILE;
     use signatures::keys::AsfaloadPublicKey;
@@ -1041,5 +1234,1391 @@ mod tests {
         let file_size = std::fs::metadata(pending_file_path)?.len();
         assert_eq!(file_size, 0);
         Ok(())
+    }
+
+    // Test activate pending signers file
+    // ----------------------------------
+
+    // Helper function to create a test aggregate signature
+    fn create_test_aggregate_signature(
+        signers_file_path: &Path,
+        test_keys: &TestKeys,
+    ) -> Result<
+        AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+            CompleteSignature,
+        >,
+        SignersFileError,
+    > {
+        // Create the local signers file (required for signature verification)
+        let local_signers_path = common::fs::names::local_signers_path_for(signers_file_path)?;
+        fs::copy(signers_file_path, &local_signers_path)?;
+
+        // Compute the hash of the signers file
+        let hash = common::sha512_for_file(signers_file_path)?;
+
+        // Sign with the first key
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        // Sign with second key
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let signature1 = seckey1.sign(&hash).unwrap();
+
+        // Create the agregate signature's files on disk using our api.
+        // Start by loading the empty signature
+        let _ = aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+            &signers_file_path,
+        )?
+        // As it is empty, is is pending
+        .get_pending()
+        .unwrap()
+        // As it is pending, we can add an individual signature to it
+        // After adding the signature, it is in this case complete.
+        .add_individual_signature(&signature0, pubkey0)?
+        // The threshold is 2 so it is pending here
+        .get_pending()
+        .unwrap()
+        .add_individual_signature(&signature1, pubkey1)?;
+
+        // Load the aggregate signature using the public API
+        let sig_with_state = aggregate_signature::load_for_file::<_, _, _>(signers_file_path)?;
+        match sig_with_state {
+            SignatureWithState::Complete(sig) => Ok(sig),
+            SignatureWithState::Pending(_) => Err(SignersFileError::InitialisationError(
+                "Expected complete signature".to_string(),
+            )),
+        }
+    }
+
+    #[test]
+    fn test_activate_signers_file_success() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create pending directory and signers file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        let signers_content = create_test_signers_config(&test_keys);
+        fs::write(&signers_file_path, signers_content.to_json()?)?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Activate the signers file
+        activate_signers_file(&signers_file_path, agg_sig)?;
+
+        // Verify the pending directory was renamed to active
+        let active_dir = root_dir.join(SIGNERS_DIR);
+        assert!(active_dir.exists());
+        assert!(!pending_dir.exists());
+
+        // Verify the signers file is in the active directory
+        let active_signers_file = active_dir.join(SIGNERS_FILE);
+        assert!(active_signers_file.exists());
+
+        // Verify the content is preserved
+        let active_content = fs::read_to_string(&active_signers_file)?;
+        let expected_content = create_test_signers_config(&test_keys);
+        assert_eq!(active_content, expected_content.to_json()?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_with_existing_active() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+
+        // Use distinct TestKeys instances for existing and new signers
+        let existing_keys = TestKeys::new(1);
+        let new_keys = TestKeys::new(2);
+
+        // Create existing active directory and signers file
+        let active_dir = root_dir.join(SIGNERS_DIR);
+        fs::create_dir_all(&active_dir)?;
+        let existing_signers_file = active_dir.join(SIGNERS_FILE);
+
+        // Create a template for the existing content
+        let existing_content_template = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://old.example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER" } }
+      ],
+      "threshold": 1
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+
+        // Substitute the placeholder with an actual public key from existing_keys
+        let existing_content = existing_keys.substitute_keys(existing_content_template.to_string());
+        fs::write(&existing_signers_file, existing_content)?;
+
+        // Create the signatures file for the existing signers file
+        let hash = common::sha512_for_file(&existing_signers_file)?;
+        let pubkey0 = existing_keys.pub_key(0).unwrap();
+        let seckey0 = existing_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        // Create signature of current signers file
+        let _ = aggregate_signature::load_for_file(&existing_signers_file)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature0, pubkey0)?;
+
+        // Create pending directory and signers file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+
+        // Use new_keys for the new signers config
+        let new_content = create_test_signers_config(&new_keys);
+        fs::write(&signers_file_path, &new_content.to_json()?)?;
+
+        // Create aggregate signature using new_keys
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &new_keys)?;
+        agg_sig.save_to_file()?;
+
+        // Activate the signers file
+        activate_signers_file(&signers_file_path, agg_sig)?;
+
+        // Verify the history file was created
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+        assert!(history_file_path.exists());
+
+        // Verify the history contains the old configuration
+        let history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::load_from_file(&history_file_path)?;
+        assert_eq!(history.entries.len(), 1);
+
+        // Verify the old configuration is in the history
+        let old_config_in_history = &history.entries[0].signers_file;
+        assert_eq!(
+            old_config_in_history.initial_version.permalink,
+            "https://old.example.com"
+        );
+
+        // Verify the new configuration is active
+        let new_active_content = fs::read_to_string(active_dir.join(SIGNERS_FILE))?;
+        assert_eq!(new_active_content, new_content.to_json()?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_path_mismatch() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create pending directory and signers file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        fs::write(&signers_file_path, &signers_content)?;
+
+        // Create aggregate signature with a different path
+        let different_path = root_dir.join("different_file.json");
+        fs::write(&different_path, &signers_content)?;
+        let agg_sig = create_test_aggregate_signature(&different_path, &test_keys)?;
+
+        // Try to activate with mismatched paths
+        let result = activate_signers_file(&signers_file_path, agg_sig);
+
+        // Verify the error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InitialisationError(msg) => {
+                assert!(msg.contains("Path mismatch: the provided signers file path does not match the path in the aggregate signature."));
+            }
+            other => panic!(
+                "Expected InitialisationError for path mismatch, got {:?}",
+                other
+            ),
+        }
+
+        // Verify the pending directory still exists
+        assert!(pending_dir.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_not_in_pending_dir() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create a directory that is not named PENDING_SIGNERS_DIR
+        let wrong_dir = root_dir.join("wrong_directory");
+        fs::create_dir_all(&wrong_dir)?;
+        let signers_file_path = wrong_dir.join(SIGNERS_FILE);
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Try to activate
+        let result = activate_signers_file(&signers_file_path, agg_sig);
+
+        // Verify the error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::NotInPendingDir(path) => {
+                assert_eq!(path, wrong_dir.to_string_lossy().to_string());
+            }
+            _ => panic!("Expected NotInPendingDir error"),
+        }
+
+        // Verify the directory still exists
+        assert!(wrong_dir.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_no_parent_directory() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let test_keys = TestKeys::new(2);
+
+        // Create a file at the root level (no parent directory)
+        let signers_file_path = temp_dir.path().join(SIGNERS_FILE);
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Try to activate
+        let result = activate_signers_file(&signers_file_path, agg_sig);
+
+        // Verify the error
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            SignersFileError::NotInPendingDir(path) => {
+                assert_eq!(
+                    path,
+                    signers_file_path
+                        .parent()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string()
+                );
+            }
+            _ => panic!("Expected NotInPendingDir but got {}", err),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_with_signature_files() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create pending directory and signers file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Activate the signers file
+        activate_signers_file(&signers_file_path, agg_sig)?;
+
+        // Verify the pending directory was renamed to active
+        let active_dir = root_dir.join(SIGNERS_DIR);
+        assert!(active_dir.exists());
+        assert!(!pending_dir.exists());
+
+        // Verify the signature files were removed
+        let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_file_path)?;
+        let complete_sig_path = common::fs::names::signatures_path_for(&signers_file_path)?;
+        assert!(!pending_sig_path.exists());
+        assert!(!complete_sig_path.exists());
+
+        // Verify the signers file is in the active directory
+        let active_signers_file = active_dir.join(SIGNERS_FILE);
+        assert!(active_signers_file.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_activate_signers_file_nested_directory() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let nested_dir = root_dir.join("nested");
+        fs::create_dir_all(&nested_dir)?;
+        let test_keys = TestKeys::new(2);
+
+        // Create pending directory in nested directory
+        let pending_dir = nested_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Create aggregate signature
+        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
+
+        // Activate the signers file
+        activate_signers_file(&signers_file_path, agg_sig)?;
+
+        // Verify the pending directory was renamed to active
+        let active_dir = nested_dir.join(SIGNERS_DIR);
+        assert!(active_dir.exists());
+        assert!(!pending_dir.exists());
+
+        // Verify the signers file is in the active directory
+        let active_signers_file = active_dir.join(SIGNERS_FILE);
+        assert!(active_signers_file.exists());
+
+        // Verify the content is preserved
+        let active_content = fs::read_to_string(&active_signers_file)?;
+        let expected_config = create_test_signers_config(&test_keys);
+        let expected_content = expected_config.to_json()?;
+        assert_eq!(active_content, expected_content);
+
+        Ok(())
+    }
+    use chrono::{DateTime, Utc};
+    use std::collections::HashMap;
+
+    // Helper function to create a test active signers setup
+    fn create_test_active_signers(
+        root_dir: &Path,
+        test_keys: &TestKeys,
+    ) -> Result<PathBuf, SignersFileError> {
+        let active_signers_dir = root_dir.join(SIGNERS_DIR);
+        fs::create_dir_all(&active_signers_dir)?;
+
+        let signers_file_path = active_signers_dir.join(SIGNERS_FILE);
+        let signers_config = create_test_signers_config(test_keys);
+        let signers_content = signers_config.to_json()?;
+        fs::write(&signers_file_path, signers_content)?;
+
+        let hash = common::sha512_for_file(&signers_file_path)?;
+
+        // Sign with both keys
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let signature1 = seckey1.sign(&hash).unwrap();
+
+        // Create the aggregate signature
+        aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+            &signers_file_path,
+        )?
+        .get_pending()
+        .unwrap()
+        .add_individual_signature(&signature0, pubkey0)?
+        .get_pending()
+        .unwrap()
+        .add_individual_signature(&signature1, pubkey1)?;
+
+        Ok(signers_file_path)
+    }
+
+    #[test]
+    fn test_move_to_history_creates_new_history_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Read the original signers file content
+        let original_signers_content = fs::read_to_string(&signers_file_path)?;
+        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&original_signers_content)?;
+
+        // Read the original signatures file content
+        let signatures_file_path = signatures_path_for(&signers_file_path)?;
+        let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
+        let original_signatures: HashMap<String, String> =
+            serde_json::from_str(&original_signatures_content)?;
+
+        // Ensure history file doesn't exist initially
+        assert!(!history_file_path.exists());
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<_>, _>(root_dir)?;
+
+        // Verify history file was created
+        assert!(history_file_path.exists());
+
+        // Verify active directory was removed
+        assert!(!signers_file_path.exists());
+        assert!(!root_dir.join(SIGNERS_DIR).exists());
+
+        // Verify history content
+        let history_content = fs::read_to_string(&history_file_path)?;
+        let history_file: HistoryFile<_> = serde_json::from_str(&history_content)?;
+        let history_entries = history_file.entries;
+        assert_eq!(history_entries.len(), 1);
+
+        let entry = history_entries[0].clone();
+
+        // Verify signers file content matches original
+        let signers_file_in_history = entry.signers_file;
+        assert_eq!(signers_file_in_history, original_signers_config);
+
+        // Verify signatures content matches original
+        let signatures_in_history = entry.signatures;
+        assert_eq!(signatures_in_history, original_signatures);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_appends_to_existing_history() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Create existing history file
+        let existing_entry: HistoryEntry<_> = serde_json::from_str(
+            r#"{
+            "obsoleted_at": "2023-01-01T00:00:00Z",
+            "signers_file": {
+                "version": 1,
+                "initial_version": {
+                    "permalink": "https://old.example.com",
+                    "mirrors": []
+                },
+                "artifact_signers": [
+                    {
+                    "signers": [
+                        { "kind": "key", "data": { "format": "minisign", "pubkey": "RWRaOIhiXUjDgCLx2NwuLAVboIDMJZ32WagBSN2wjxlvYvdsvjmMzGy3"} }
+                    ],
+                    "threshold": 1
+                    }
+                ],
+                "master_keys": [],
+                "threshold": 1
+            },
+            "signatures": {}
+        }"#,
+        )?;
+
+        let mut existing_history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::new();
+        existing_history.add_entry(existing_entry);
+        fs::write(
+            &history_file_path,
+            serde_json::to_string_pretty(&existing_history)?,
+        )?;
+
+        // Read the existing history content before the move
+        let original_history_content = fs::read_to_string(&history_file_path)?;
+        let original_history: HistoryFile<_> = serde_json::from_str(&original_history_content)?;
+        let original_history_entries = original_history.entries;
+        assert_eq!(original_history_entries.len(), 1);
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+
+        // Read the original signers file content
+        let original_signers_content = fs::read_to_string(&signers_file_path)?;
+        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&original_signers_content)?;
+
+        // Read the original signatures file content
+        let signatures_file_path = signatures_path_for(&signers_file_path)?;
+        let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
+        let original_signatures: HashMap<String, String> =
+            serde_json::from_str(&original_signatures_content)?;
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Verify history content
+        let history_content = fs::read_to_string(&history_file_path)?;
+        let history_file: HistoryFile<_> = serde_json::from_str(&history_content)?;
+        let history_entries = history_file.entries;
+        assert_eq!(history_entries.len(), 2);
+
+        // Verify first entry is unchanged and matches the original
+        let first_entry = &history_entries[0];
+        let original_first_entry = &original_history_entries[0];
+        assert_eq!(first_entry, original_first_entry);
+
+        // Verify second entry is the new one with correct content
+        let second_entry = &history_entries[1];
+
+        // Verify signers file content matches original
+        let signers_config_in_history = second_entry.clone().signers_file;
+        assert_eq!(signers_config_in_history, original_signers_config);
+
+        // Verify signatures content matches original
+        let signatures_in_history = second_entry.clone().signatures;
+        assert_eq!(signatures_in_history, original_signatures);
+
+        // Verify entries are sorted chronologically
+        assert!(first_entry.obsoleted_at < second_entry.obsoleted_at);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_preserves_all_existing_entries() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Create multiple existing history entries
+        let entry1 = serde_json::from_str(
+            r#"{
+            "obsoleted_at": "2023-01-01T00:00:00Z",
+            "signers_file": {
+                "version": 1,
+                "initial_version": {
+                    "permalink": "https://old1.example.com",
+                    "mirrors": []
+                },
+                "artifact_signers": [],
+                "master_keys": []
+            },
+            "signatures": {"key1": "sig1"}
+        }"#,
+        )?;
+
+        let entry2 = serde_json::from_str(
+            r#"{
+            "obsoleted_at": "2023-02-01T00:00:00Z",
+            "signers_file": {
+                "version": 2,
+                "initial_version": {
+                    "permalink": "https://old2.example.com",
+                    "mirrors": []
+                },
+                "artifact_signers": [],
+                "master_keys": []
+            },
+            "signatures": {"key2": "sig2"}
+        }"#,
+        )?;
+
+        let mut existing_history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::new();
+        existing_history.add_entry(entry1);
+        existing_history.add_entry(entry2);
+        fs::write(
+            &history_file_path,
+            serde_json::to_string_pretty(&existing_history)?,
+        )?;
+
+        assert_eq!(existing_history.entries.len(), 2);
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+
+        // Read the original signers file content
+        let original_signers_content = fs::read_to_string(&signers_file_path)?;
+        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&original_signers_content)?;
+
+        // Read the original signatures file content
+        let signatures_file_path = signatures_path_for(&signers_file_path)?;
+        let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
+        let original_signatures: HashMap<String, String> =
+            serde_json::from_str(&original_signatures_content)?;
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Verify history content
+        let history = HistoryFile::load_from_file(&history_file_path)?;
+        assert_eq!(history.entries.len(), 3);
+
+        // Verify all existing entries are unchanged
+        for i in 0..existing_history.entries.len() {
+            assert_eq!(&history.entries[i], &existing_history.entries[i]);
+        }
+
+        // Verify the new entry is the last one with correct content
+        let new_entry = &history.entries[2];
+
+        // Verify signers file content matches original
+        let signers_file_in_history = new_entry.signers_file.clone();
+        assert_eq!(signers_file_in_history, original_signers_config);
+
+        // Verify signatures content matches original
+        let signatures_in_history = new_entry.signatures.clone();
+        assert_eq!(signatures_in_history, original_signatures);
+
+        // Verify entries are sorted chronologically
+        for i in 0..history.entries.len() - 1 {
+            let current_time = history.entries[i].obsoleted_at.clone();
+            let next_time = history.entries[i + 1].obsoleted_at.clone();
+            assert!(current_time <= next_time);
+        }
+
+        Ok(())
+    }
+    #[test]
+    fn test_move_to_history_timestamp_format() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers setup
+        let _signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Record time before operation
+        let before_time = Utc::now();
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Record time after operation
+        let after_time = Utc::now();
+
+        // Verify history content
+        let history: HistoryFile<AsfaloadPublicKey<_>> =
+            HistoryFile::load_from_file(&history_file_path)?;
+        assert_eq!(history.entries.len(), 1);
+
+        let entry = &history.entries[0];
+        let timestamp = entry.obsoleted_at;
+
+        // Verify timestamp is recent (between before and after)
+        assert!(timestamp >= before_time);
+        assert!(timestamp <= after_time);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_preserves_signatures_content() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+        let signatures_path = signatures_path_for(&signers_file_path)?;
+
+        // Read original signatures content
+        let original_signatures_content = fs::read_to_string(&signatures_path)?;
+        let original_signatures: HashMap<String, String> =
+            serde_json::from_str(&original_signatures_content)?;
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Verify history content
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+        let history: HistoryFile<AsfaloadPublicKey<_>> =
+            HistoryFile::load_from_file(&history_file_path)?;
+        assert_eq!(history.entries.len(), 1);
+
+        let entry = &history.entries[0];
+        let signatures_in_history = entry.signatures.clone();
+
+        // Verify signatures content is preserved
+        assert_eq!(signatures_in_history, original_signatures);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_with_multiple_entries_sorted() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Create multiple existing history entries with different timestamps
+        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
+        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z".parse().unwrap());
+
+        let mut existing_history: HistoryFile<AsfaloadPublicKey<_>> = HistoryFile::new();
+        existing_history.add_entry(entry1);
+        existing_history.add_entry(entry2);
+        existing_history.save_to_file(&history_file_path)?;
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+
+        // Record time before operation
+        let before_time = Utc::now();
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Verify history content
+        let history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::load_from_file(&history_file_path)?;
+        assert_eq!(history.entries.len(), 3);
+
+        // Verify entries are sorted chronologically
+        for i in 0..history.entries.len() - 1 {
+            let current_time: DateTime<Utc> = history.entries[i].obsoleted_at;
+            let next_time: DateTime<Utc> = history.entries[i + 1].obsoleted_at;
+            assert!(current_time <= next_time);
+        }
+
+        // Verify the new entry is the last one
+        let last_entry = &history.entries[2];
+        let last_timestamp: DateTime<Utc> = last_entry.obsoleted_at;
+        assert!(last_timestamp >= before_time);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_error_when_no_active_signers() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+
+        // Don't create active signers directory
+        let result =
+            move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir);
+
+        // Should fail with IO error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::IoError(_) => {} // Expected
+            _ => panic!("Expected IoError"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_move_to_history_error_when_no_signatures_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers directory and file but no signatures file
+        let active_signers_dir = root_dir.join(SIGNERS_DIR);
+        fs::create_dir_all(&active_signers_dir)?;
+
+        let signers_file_path = active_signers_dir.join(SIGNERS_FILE);
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        fs::write(&signers_file_path, signers_content)?;
+
+        // Try to move to history
+        let result =
+            move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir);
+
+        // Should fail with IO error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::IoError(_) => {} // Expected
+            _ => panic!("Expected IoError"),
+        }
+
+        Ok(())
+    }
+    #[test]
+    fn test_move_to_history_with_empty_history_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Create an empty history file
+        fs::write(&history_file_path, "")?;
+
+        // Verify the history file exists but is empty
+        assert!(history_file_path.exists());
+        let initial_content = fs::read_to_string(&history_file_path)?;
+        assert!(initial_content.is_empty());
+
+        // Create active signers setup
+        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+
+        // Read the original signers file content
+        let original_signers_content = fs::read_to_string(&signers_file_path)?;
+        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&original_signers_content)?;
+
+        // Read the original signatures file content
+        let signatures_file_path = signatures_path_for(&signers_file_path)?;
+        let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
+        let original_signatures: HashMap<String, String> =
+            serde_json::from_str(&original_signatures_content)?;
+
+        // Move to history
+        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+
+        // Verify history content
+        let history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::load_from_file(&history_file_path)?;
+        assert_eq!(history.entries.len(), 1);
+
+        let entry = &history.entries[0];
+
+        // Verify signers file content matches original
+        assert_eq!(entry.signers_file, original_signers_config);
+
+        // Verify signatures content matches original
+        assert_eq!(entry.signatures, original_signatures);
+
+        // Verify active directory was removed
+        assert!(!signers_file_path.exists());
+        assert!(!root_dir.join(SIGNERS_DIR).exists());
+
+        Ok(())
+    }
+    // History file serialisation tests
+    // --------------------------------
+
+    // Helper function to create a test signers config
+    fn create_test_signers_config(
+        test_keys: &TestKeys,
+    ) -> SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> {
+        let json_content_template = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER" } },
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+      ],
+      "threshold": 2
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+        let json_content = test_keys.substitute_keys(json_content_template.to_string());
+        parse_signers_config(&json_content).unwrap()
+    }
+
+    // Helper function to create a test signatures map
+    fn create_test_signatures(test_keys: &TestKeys) -> HashMap<String, String> {
+        let mut signatures = HashMap::new();
+        signatures.insert(
+            test_keys.pub_key(0).unwrap().to_base64(),
+            "test_signature_0".to_string(),
+        );
+        signatures.insert(
+            test_keys.pub_key(1).unwrap().to_base64(),
+            "test_signature_1".to_string(),
+        );
+        signatures
+    }
+
+    // Helper function to create a test history entry
+    fn create_test_history_entry(
+        test_keys: &TestKeys,
+        timestamp: DateTime<Utc>,
+    ) -> HistoryEntry<AsfaloadPublicKey<minisign::PublicKey>> {
+        HistoryEntry {
+            obsoleted_at: timestamp,
+            signers_file: create_test_signers_config(test_keys),
+            signatures: create_test_signatures(test_keys),
+        }
+    }
+
+    #[test]
+    fn test_history_entry_creation() {
+        let test_keys = TestKeys::new(2);
+        let timestamp: DateTime<Utc> = "2023-01-01T00:00:00Z".parse().unwrap();
+
+        let entry = create_test_history_entry(&test_keys, timestamp);
+
+        assert_eq!(entry.obsoleted_at, timestamp);
+        assert_eq!(entry.signers_file.version, 1);
+        assert_eq!(
+            entry.signers_file.initial_version.permalink,
+            "https://example.com"
+        );
+        assert_eq!(entry.signers_file.artifact_signers.len(), 1);
+        assert_eq!(entry.signers_file.artifact_signers[0].threshold, 2);
+        assert_eq!(entry.signers_file.artifact_signers[0].signers.len(), 2);
+        assert_eq!(entry.signatures.len(), 2);
+    }
+
+    #[test]
+    fn test_history_file_new() {
+        let history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> = HistoryFile::new();
+
+        assert!(history_file.entries().is_empty());
+    }
+
+    #[test]
+    fn test_history_file_default() {
+        let history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::default();
+
+        assert!(history_file.entries().is_empty());
+    }
+
+    #[test]
+    fn test_history_file_add_entry() {
+        let test_keys = TestKeys::new(2);
+        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::new();
+
+        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
+        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z".parse().unwrap());
+
+        history_file.add_entry(entry1);
+        history_file.add_entry(entry2);
+
+        assert_eq!(history_file.entries().len(), 2);
+        assert_eq!(
+            history_file.entries()[0].obsoleted_at,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+        );
+        assert_eq!(
+            history_file.entries()[1].obsoleted_at,
+            "2023-02-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_history_file_latest_entry() {
+        let test_keys = TestKeys::new(2);
+        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::new();
+
+        // Empty history file
+        assert!(history_file.latest_entry().is_none());
+
+        // Add one entry
+        let entry1 = create_test_history_entry(
+            &test_keys,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
+        history_file.add_entry(entry1);
+        assert_eq!(
+            history_file.latest_entry().unwrap().obsoleted_at,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+        );
+
+        // Add another entry
+        let entry2 = create_test_history_entry(
+            &test_keys,
+            "2023-02-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
+        history_file.add_entry(entry2);
+        assert_eq!(
+            history_file.latest_entry().unwrap().obsoleted_at,
+            "2023-02-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_history_file_to_json() {
+        let test_keys = TestKeys::new(2);
+        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::new();
+
+        let entry = create_test_history_entry(
+            &test_keys,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
+        history_file.add_entry(entry);
+
+        let json = history_file.to_json().unwrap();
+
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // Verify structure
+        assert!(parsed.is_object());
+        assert_eq!(parsed.get("entries").unwrap().as_array().unwrap().len(), 1);
+
+        let entry = &parsed.get("entries").unwrap()[0];
+        assert!(entry.get("obsoleted_at").is_some());
+        assert!(entry.get("signers_file").is_some());
+        assert!(entry.get("signatures").is_some());
+    }
+
+    #[test]
+    fn test_history_file_from_json() {
+        let test_keys = TestKeys::new(2);
+
+        // Create a JSON template with placeholders
+        let json_template = r#"
+{
+  "entries": [
+    {
+      "obsoleted_at": "2023-01-01T00:00:00Z",
+      "signers_file": {
+        "version": 1,
+        "initial_version": {
+          "permalink": "https://example.com",
+          "mirrors": []
+        },
+        "artifact_signers": [
+          {
+            "signers": [
+              {
+                "kind": "key",
+                "data": {
+                  "format": "minisign",
+                  "pubkey": "PUBKEY0_PLACEHOLDER"
+                }
+              },
+              {
+                "kind": "key",
+                "data": {
+                  "format": "minisign",
+                  "pubkey": "PUBKEY1_PLACEHOLDER"
+                }
+              }
+            ],
+            "threshold": 2
+          }
+        ],
+        "master_keys": [],
+        "admin_keys": null
+      },
+      "signatures": {
+        "PUBKEY0_PLACEHOLDER": "SIGNATURE0_PLACEHOLDER",
+        "PUBKEY1_PLACEHOLDER": "SIGNATURE1_PLACEHOLDER"
+      }
+    }
+  ]
+}
+"#;
+
+        // Get the actual public keys from test_keys
+        let pubkey0 = test_keys.pub_key(0).unwrap().to_base64();
+        let pubkey1 = test_keys.pub_key(1).unwrap().to_base64();
+
+        // Compute actual signatures
+        let test_data = b"test data for signing";
+        let hash = common::sha512_for_content(test_data.to_vec()).unwrap();
+
+        let signature0 = test_keys.sec_key(0).unwrap().sign(&hash).unwrap();
+        let signature1 = test_keys.sec_key(1).unwrap().sign(&hash).unwrap();
+
+        let signature0_b64 = signature0.to_base64();
+        let signature1_b64 = signature1.to_base64();
+
+        // Replace placeholders in the template
+        let json_content = json_template
+            .replace("PUBKEY0_PLACEHOLDER", &pubkey0)
+            .replace("PUBKEY1_PLACEHOLDER", &pubkey1)
+            .replace("SIGNATURE0_PLACEHOLDER", &signature0_b64)
+            .replace("SIGNATURE1_PLACEHOLDER", &signature1_b64);
+
+        // Parse the history file
+        let history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_history_file(&json_content).unwrap();
+
+        // Verify the content
+        assert_eq!(history_file.entries().len(), 1);
+        assert_eq!(
+            history_file.entries()[0].obsoleted_at,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+        );
+        assert_eq!(history_file.entries()[0].signers_file.version, 1);
+        assert_eq!(
+            history_file.entries()[0]
+                .signers_file
+                .initial_version
+                .permalink,
+            "https://example.com"
+        );
+        assert_eq!(
+            history_file.entries()[0]
+                .signers_file
+                .artifact_signers
+                .len(),
+            1
+        );
+        assert_eq!(
+            history_file.entries()[0].signers_file.artifact_signers[0].threshold,
+            2
+        );
+        assert_eq!(
+            history_file.entries()[0].signers_file.artifact_signers[0]
+                .signers
+                .len(),
+            2
+        );
+
+        // Verify the public keys in the signers file
+        assert_eq!(
+            history_file.entries()[0].signers_file.artifact_signers[0].signers[0]
+                .data
+                .pubkey
+                .to_base64(),
+            pubkey0
+        );
+        assert_eq!(
+            history_file.entries()[0].signers_file.artifact_signers[0].signers[1]
+                .data
+                .pubkey
+                .to_base64(),
+            pubkey1
+        );
+
+        // Verify the signatures
+        assert_eq!(history_file.entries()[0].signatures.len(), 2);
+        assert_eq!(
+            history_file.entries()[0].signatures.get(&pubkey0).unwrap(),
+            &signature0_b64
+        );
+        assert_eq!(
+            history_file.entries()[0].signatures.get(&pubkey1).unwrap(),
+            &signature1_b64
+        );
+
+        // Verify that the signatures are valid for the test data
+        assert!(
+            test_keys
+                .pub_key(0)
+                .unwrap()
+                .verify(&signature0, &hash)
+                .is_ok()
+        );
+        assert!(
+            test_keys
+                .pub_key(1)
+                .unwrap()
+                .verify(&signature1, &hash)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_history_file_from_json_invalid() {
+        let invalid_json = r#"
+{ "entries" :
+[
+  {
+    "obsoleted_at": "2023-01-01T00:00:00Z",
+    "signers_file": {
+      "version": "invalid",  // Should be a number
+      "initial_version": {
+        "permalink": "https://example.com",
+        "mirrors": []
+      },
+      "artifact_signers": [],
+      "master_keys": [],
+      "admin_keys": null
+    },
+    "signatures": {}
+  }
+]
+}
+"#;
+
+        let result: Result<HistoryFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
+            parse_history_file(invalid_json);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_history_file_save_and_load() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("history.json");
+        let test_keys = TestKeys::new(2);
+        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::new();
+
+        let entry = create_test_history_entry(
+            &test_keys,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
+        history_file.add_entry(entry);
+
+        // Save to file
+        history_file.save_to_file(&file_path).unwrap();
+        assert!(file_path.exists());
+
+        // Load from file
+        let loaded_history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::load_from_file(&file_path).unwrap();
+
+        // Verify content
+        assert_eq!(loaded_history_file.entries().len(), 1);
+        assert_eq!(
+            loaded_history_file.entries()[0].obsoleted_at,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+        );
+        assert_eq!(loaded_history_file.entries()[0].signers_file.version, 1);
+        assert_eq!(loaded_history_file.entries()[0].signatures.len(), 2);
+    }
+
+    #[test]
+    fn test_history_file_load_nonexistent() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("nonexistent.json");
+
+        let result: Result<HistoryFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
+            HistoryFile::load_from_file(&file_path);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::IoError(_) => {} // Expected
+            _ => panic!("Expected IoError"),
+        }
+    }
+
+    #[test]
+    fn test_history_file_save_to_nonexistent_directory() {
+        let temp_dir = TempDir::new().unwrap();
+        let nonexistent_dir = temp_dir.path().join("nonexistent");
+        let file_path = nonexistent_dir.join("history.json");
+        let test_keys = TestKeys::new(2);
+        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::new();
+
+        let entry = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
+        history_file.add_entry(entry);
+
+        // Try to save to nonexistent directory
+        let result = history_file.save_to_file(&file_path);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::IoError(_) => {} // Expected
+            _ => panic!("Expected IoError"),
+        }
+    }
+
+    #[test]
+    fn test_history_file_multiple_entries() {
+        let test_keys = TestKeys::new(2);
+        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::new();
+
+        // Add multiple entries with different timestamps
+        let entry1 = create_test_history_entry(
+            &test_keys,
+            "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
+        let entry2 = create_test_history_entry(
+            &test_keys,
+            "2023-02-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
+        let entry3 = create_test_history_entry(
+            &test_keys,
+            "2023-03-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+        );
+
+        history_file.add_entry(entry1);
+        history_file.add_entry(entry2);
+        history_file.add_entry(entry3);
+
+        // Verify all entries are present
+        assert_eq!(history_file.entries().len(), 3);
+
+        // Verify chronological order
+        for i in 0..history_file.entries().len() - 1 {
+            let current_time: DateTime<Utc> = history_file.entries()[i].obsoleted_at;
+            let next_time: DateTime<Utc> = history_file.entries()[i + 1].obsoleted_at;
+            assert!(current_time <= next_time);
+        }
+
+        // Verify latest entry
+        assert_eq!(
+            history_file.latest_entry().unwrap().obsoleted_at,
+            "2023-03-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_history_file_roundtrip() {
+        let test_keys = TestKeys::new(2);
+        let mut original_history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::new();
+
+        // Add multiple entries
+        let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
+        let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z".parse().unwrap());
+
+        original_history_file.add_entry(entry1);
+        original_history_file.add_entry(entry2);
+
+        // Convert to JSON and back
+        let json = original_history_file.to_json().unwrap();
+        let deserialized_history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_history_file(&json).unwrap();
+
+        // Verify they are identical
+        assert_eq!(
+            original_history_file.entries().len(),
+            deserialized_history_file.entries().len()
+        );
+
+        for (original_entry, deserialized_entry) in original_history_file
+            .entries()
+            .iter()
+            .zip(deserialized_history_file.entries().iter())
+        {
+            assert_eq!(original_entry.obsoleted_at, deserialized_entry.obsoleted_at);
+            assert_eq!(original_entry.signers_file, deserialized_entry.signers_file);
+            assert_eq!(original_entry.signatures, deserialized_entry.signatures);
+        }
+    }
+
+    #[test]
+    fn test_history_file_with_empty_signatures() {
+        let test_keys = TestKeys::new(2);
+        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            HistoryFile::new();
+
+        // Create an entry with empty signatures
+        let entry = HistoryEntry {
+            obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
+            signers_file: create_test_signers_config(&test_keys),
+            signatures: HashMap::new(),
+        };
+
+        history_file.add_entry(entry);
+
+        // Verify it serializes and deserializes correctly
+        let json = history_file.to_json().unwrap();
+        let deserialized: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_history_file(&json).unwrap();
+
+        assert_eq!(deserialized.entries().len(), 1);
+        assert_eq!(deserialized.entries()[0].signatures.len(), 0);
     }
 }

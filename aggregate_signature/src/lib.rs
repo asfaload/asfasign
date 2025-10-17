@@ -4,7 +4,7 @@ use common::fs::names::{
     pending_signatures_path_for, signatures_path_for,
 };
 use sha2::{Digest, Sha512};
-use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait};
 use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -36,6 +36,25 @@ pub enum AggregateSignatureError {
 pub struct PendingSignature;
 pub struct CompleteSignature;
 
+// This trait allows to have one implementation of the save_to_file fn, saving
+// to the correct location according to completeness of the signature (with or
+// without the .pending suffix)
+pub trait SignatureState {
+    fn signature_path_for(origin: &Path) -> Result<PathBuf, AggregateSignatureError>;
+}
+
+impl SignatureState for PendingSignature {
+    fn signature_path_for(origin: &Path) -> Result<PathBuf, AggregateSignatureError> {
+        pending_signatures_path_for(origin).map_err(|e| e.into())
+    }
+}
+
+impl SignatureState for CompleteSignature {
+    fn signature_path_for(origin: &Path) -> Result<PathBuf, AggregateSignatureError> {
+        signatures_path_for(origin).map_err(|e| e.into())
+    }
+}
+
 pub enum SignatureWithState<P, S>
 where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
@@ -50,13 +69,17 @@ where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    pub fn get_complete(&self) -> Option<&AggregateSignature<P, S, CompleteSignature>> {
+    // Consumes self to do as get_pending
+    pub fn get_complete(self) -> Option<AggregateSignature<P, S, CompleteSignature>> {
         match self {
             Self::Pending(_s) => None,
             Self::Complete(s) => Some(s),
         }
     }
-    pub fn get_pending(&self) -> Option<&AggregateSignature<P, S, PendingSignature>> {
+    // Consumes self. Made so that after calling get_pending we can call add_individual_signature
+    // that also consumes self, becaus it can update the agg_sig on disk, so using the old value
+    // makes no sense.
+    pub fn get_pending(self) -> Option<AggregateSignature<P, S, PendingSignature>> {
         match self {
             Self::Complete(_s) => None,
             Self::Pending(s) => Some(s),
@@ -112,6 +135,17 @@ where
     origin: String,
     subject: SignedFile,
     marker: PhantomData<SS>,
+}
+
+impl<P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone, S: AsfaloadSignatureTrait, SS>
+    AggregateSignature<P, S, SS>
+{
+    pub fn origin(&self) -> &str {
+        self.origin.as_str()
+    }
+    pub fn subject(&self) -> SignedFile {
+        self.subject.clone()
+    }
 }
 
 impl AsRef<Path> for SignedFile {
@@ -218,6 +252,28 @@ fn find_global_signers_for(file_path: &Path) -> Result<PathBuf, AggregateSignatu
             "File has no parent directory",
         ))
     })?;
+
+    // If we work on a signers file, we go up one level, so we do not
+    // consider a signers file for itself
+    current_dir = if file_path
+        .file_name()
+        .is_some_and(|name| name == SIGNERS_FILE)
+        && file_path
+            .parent()
+            .is_some_and(|p| p.file_name().unwrap_or_default() == SIGNERS_DIR)
+    {
+        current_dir
+            .parent()
+            .and_then(|d| d.parent())
+            .ok_or_else(|| {
+                AggregateSignatureError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "File has no parent directory",
+                ))
+            })?
+    } else {
+        current_dir
+    };
 
     loop {
         let candidate = current_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
@@ -370,7 +426,7 @@ where
     // Check if the aggregate signature is complete
     let complete_sig_path = signatures_path_for(file_path)?;
 
-    if complete_sig_path.exists() {
+    if complete_sig_path.exists() && complete_sig_path.is_file() {
         // Load the complete signature file
         // We double check the signature is complete. If it is not, it
         // will return an error. If it is complete, we don't care about
@@ -400,6 +456,7 @@ impl<P, S, SS> AggregateSignature<P, S, SS>
 where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
+    SS: SignatureState,
 {
     /// Check if aggregate signature meets all thresholds in signers config for artifacts
     pub fn is_artifact_complete(
@@ -435,9 +492,29 @@ where
         let keys = signers_config.admin_keys();
         check_groups(keys, &self.signatures, admin_data)
     }
+
+    pub fn save_to_file(&self) -> Result<(), AggregateSignatureError> {
+        let file_path = PathBuf::from(&self.origin);
+        let sig_file_path = SS::signature_path_for(&file_path)?;
+
+        // Convert signatures to a HashMap of base64-encoded public keys and signatures
+        let signatures_map: HashMap<String, String> = self
+            .signatures
+            .iter()
+            .map(|(pubkey, sig)| (pubkey.to_base64(), sig.to_base64()))
+            .collect();
+
+        // Serialize the HashMap to JSON
+        let json_content = serde_json::to_string_pretty(&signatures_map)?;
+
+        // Write the JSON content to the signature file
+        std::fs::write(&sig_file_path, json_content)?;
+
+        Ok(())
+    }
 }
 
-impl<P, S, PendingSignature> AggregateSignature<P, S, PendingSignature>
+impl<P, S> AggregateSignature<P, S, PendingSignature>
 where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait + Clone,
@@ -459,15 +536,27 @@ where
         }
         let complete_sig_path = signatures_path_for(&self.subject)?;
         if complete_sig_path.exists() {
-            return Err({
-                AggregateSignatureError::Io(std::io::Error::new(
-                    std::io::ErrorKind::AlreadyExists,
-                    format!(
-                        "Not overwriting existing complete aggregate signature {}",
-                        complete_sig_path.to_string_lossy()
-                    ),
-                ))
-            });
+            if complete_sig_path.is_file() {
+                return Err({
+                    AggregateSignatureError::Io(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        format!(
+                            "Not overwriting existing complete aggregate signature {}",
+                            complete_sig_path.to_string_lossy()
+                        ),
+                    ))
+                });
+            } else {
+                return Err({
+                    AggregateSignatureError::Io(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        format!(
+                            "The move to a complete signature cannot take place as a directory with the destination name exists: {}",
+                            complete_sig_path.to_string_lossy()
+                        ),
+                    ))
+                });
+            }
         }
         if is_aggregate_signature_complete::<_, P>(&self.subject, true)? {
             std::fs::rename(pending_sig_path, complete_sig_path)?;
@@ -479,6 +568,32 @@ where
             })
         } else {
             Err(AggregateSignatureError::IsIncomplete)
+        }
+    }
+
+    // IMPROVE: improve performance by limiting IO operations.
+    // see https://github.com/asfaload/asfasign/pull/39#discussion_r2435860732
+    pub fn add_individual_signature(
+        self,
+        sig: &S,
+        pubkey: &P,
+    ) -> Result<SignatureWithState<P, S>, AggregateSignatureError> {
+        // Add the signature to the aggregate
+        sig.add_to_aggregate_for_file(self.subject.path.clone(), pubkey)
+            .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
+        let agg_sig_with_state = load_for_file(self.subject.path.clone());
+        match agg_sig_with_state {
+            Ok(SignatureWithState::Pending(pending_agg_sig)) => {
+                match pending_agg_sig.try_transition_to_complete() {
+                    Ok(agg_sig) => Ok(SignatureWithState::Complete(agg_sig)),
+                    Err(AggregateSignatureError::IsIncomplete) => Ok(SignatureWithState::Pending(pending_agg_sig)),
+                    Err(e) => Err(e),
+                }
+            }
+            Ok(SignatureWithState::Complete(_)) => Err(AggregateSignatureError::Signature(
+                "Complete signature loaded from file after adding individual signature, which is supposed to be impossible".to_string(),
+            )),
+            Err(e) => Err(e)
         }
     }
 }
@@ -497,7 +612,7 @@ mod tests {
     use std::path::PathBuf;
     use std::str::FromStr;
     use tempfile::TempDir;
-    use test_helpers::TestKeys;
+    use test_helpers::{TestKeys, pause};
 
     #[test]
     fn test_load_and_complete() -> Result<()> {
@@ -648,21 +763,16 @@ mod tests {
 
         // Create local signers file
         create_local_signers_for(&signed_file_path)?;
-        // Write the signatures file for the signed file
-        let mut signatures_map = std::collections::HashMap::new();
-        signatures_map.insert(pubkey.to_base64(), signature.to_base64());
-        let json_content = serde_json::to_string_pretty(&signatures_map).unwrap();
 
-        let sig_file_path = signed_file_path.with_file_name(format!(
-            "{}.{}",
-            signed_file_path.file_name().unwrap().to_string_lossy(),
-            SIGNATURES_SUFFIX
-        ));
-
-        std::fs::write(&sig_file_path, json_content).unwrap();
-
-        // Load aggregate signature for the signed file
-        let agg_sig: SignatureWithState<_, _> = load_for_file(&signed_file_path)?;
+        // Load aggregate signature from disk, it is empty
+        let agg_sig =
+            load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(&signed_file_path)?
+                // As it is empty, is is pending
+                .get_pending()
+                .unwrap()
+                // As it is pending, we can add an individual signature to it
+                // After adding the signature, it is in this case complete.
+                .add_individual_signature(&signature, &pubkey)?;
 
         let agg_sig = agg_sig
             .get_complete()
@@ -1389,6 +1499,10 @@ mod tests {
         fs::create_dir_all(&no_signers_dir).unwrap();
         let result = find_global_signers_for(&no_signers_dir);
         assert!(matches!(result, Err(AggregateSignatureError::Io(_))));
+
+        // Test that for the signers file, we don't consider itself
+        let result = find_global_signers_for(&signers_file);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -2343,6 +2457,769 @@ mod tests {
             signatures.insert(pubkey1.clone(), sig1.clone());
             assert!(!check_all_signers(&signatures, &config, &data));
         }
+        Ok(())
+    }
+    // ------------------------------------
+    // saving aggregate signature to a file
+    // ------------------------------------
+    #[test]
+    fn test_save_to_file_pending_signature() -> Result<()> {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create a test file
+        let test_file = root.join("test_file.txt");
+        let file_content = b"test content for signing";
+        fs::write(&test_file, file_content)?;
+
+        // Generate keypairs
+        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey = keypair.public_key();
+        let seckey = keypair.secret_key("password").unwrap();
+
+        // Create a signature
+        let hash_for_content = common::sha512_for_content(file_content.to_vec())?;
+        let signature = seckey.sign(&hash_for_content).unwrap();
+
+        // Create a pending aggregate signature
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey.clone(), signature.clone());
+        let agg_sig: AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+            PendingSignature,
+        > = AggregateSignature {
+            signatures,
+            origin: test_file.to_string_lossy().to_string(),
+            subject: SignedFile::new(&test_file),
+            marker: PhantomData,
+        };
+
+        // Save the signature to file
+        agg_sig.save_to_file()?;
+
+        // Verify the pending signature file exists
+        let pending_sig_path = test_file.with_file_name(format!(
+            "{}.{}",
+            test_file.file_name().unwrap().to_string_lossy(),
+            PENDING_SIGNATURES_SUFFIX
+        ));
+        assert!(pending_sig_path.exists());
+
+        // Verify the content
+        let content = fs::read_to_string(&pending_sig_path)?;
+        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.len(), 1);
+        assert!(parsed_content.contains_key(&pubkey.to_base64()));
+        assert_eq!(parsed_content[&pubkey.to_base64()], signature.to_base64());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_save_to_file_complete_signature() -> Result<()> {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create a test file
+        let test_file = root.join("test_file.txt");
+        let file_content = b"test content for signing";
+        fs::write(&test_file, file_content)?;
+
+        // Generate keypairs
+        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey = keypair.public_key();
+        let seckey = keypair.secret_key("password").unwrap();
+
+        // Create a signature
+        let hash_for_content = common::sha512_for_content(file_content.to_vec())?;
+        let signature = seckey.sign(&hash_for_content).unwrap();
+
+        // Create a complete aggregate signature
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey.clone(), signature.clone());
+        let agg_sig: AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+            CompleteSignature,
+        > = AggregateSignature {
+            signatures,
+            origin: test_file.to_string_lossy().to_string(),
+            subject: SignedFile::new(&test_file),
+            marker: PhantomData,
+        };
+
+        // Save the signature to file
+        agg_sig.save_to_file()?;
+
+        // Verify the complete signature file exists
+        let complete_sig_path = test_file.with_file_name(format!(
+            "{}.{}",
+            test_file.file_name().unwrap().to_string_lossy(),
+            SIGNATURES_SUFFIX
+        ));
+        assert!(complete_sig_path.exists());
+
+        // Verify the content
+        let content = fs::read_to_string(&complete_sig_path)?;
+        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.len(), 1);
+        assert!(parsed_content.contains_key(&pubkey.to_base64()));
+        assert_eq!(parsed_content[&pubkey.to_base64()], signature.to_base64());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_save_to_file_multiple_signatures() -> Result<()> {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create a test file
+        let test_file = root.join("test_file.txt");
+        let file_content = b"test content for signing";
+        fs::write(&test_file, file_content)?;
+
+        // Generate two keypairs
+        let keypair1 = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey1 = keypair1.public_key();
+        let seckey1 = keypair1.secret_key("password").unwrap();
+        let keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey2 = keypair2.public_key();
+        let seckey2 = keypair2.secret_key("password").unwrap();
+
+        // Create signatures
+        let hash_for_content = common::sha512_for_content(file_content.to_vec())?;
+        let signature1 = seckey1.sign(&hash_for_content).unwrap();
+        let signature2 = seckey2.sign(&hash_for_content).unwrap();
+
+        // Create a pending aggregate signature with multiple signatures
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey1.clone(), signature1.clone());
+        signatures.insert(pubkey2.clone(), signature2.clone());
+        let agg_sig: AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+            PendingSignature,
+        > = AggregateSignature {
+            signatures,
+            origin: test_file.to_string_lossy().to_string(),
+            subject: SignedFile::new(&test_file),
+            marker: PhantomData,
+        };
+
+        // Save the signature to file
+        agg_sig.save_to_file()?;
+
+        // Verify the pending signature file exists
+        let pending_sig_path = test_file.with_file_name(format!(
+            "{}.{}",
+            test_file.file_name().unwrap().to_string_lossy(),
+            PENDING_SIGNATURES_SUFFIX
+        ));
+        assert!(pending_sig_path.exists());
+
+        // Verify the content contains both signatures
+        let content = fs::read_to_string(&pending_sig_path)?;
+        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.len(), 2);
+        assert!(parsed_content.contains_key(&pubkey1.to_base64()));
+        assert!(parsed_content.contains_key(&pubkey2.to_base64()));
+        assert_eq!(parsed_content[&pubkey1.to_base64()], signature1.to_base64());
+        assert_eq!(parsed_content[&pubkey2.to_base64()], signature2.to_base64());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_save_to_file_empty_signatures() -> Result<()> {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create a test file
+        let test_file = root.join("test_file.txt");
+        fs::write(&test_file, b"test content")?;
+
+        // Create an empty pending aggregate signature
+        let agg_sig: AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+            PendingSignature,
+        > = AggregateSignature {
+            signatures: HashMap::new(),
+            origin: test_file.to_string_lossy().to_string(),
+            subject: SignedFile::new(&test_file),
+            marker: PhantomData,
+        };
+
+        // Save the signature to file
+        agg_sig.save_to_file()?;
+
+        // Verify the pending signature file exists
+        let pending_sig_path = test_file.with_file_name(format!(
+            "{}.{}",
+            test_file.file_name().unwrap().to_string_lossy(),
+            PENDING_SIGNATURES_SUFFIX
+        ));
+        assert!(pending_sig_path.exists());
+
+        // Verify the content is an empty JSON object
+        let content = fs::read_to_string(&pending_sig_path)?;
+        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_save_to_file_overwrites_existing() -> Result<()> {
+        // Create a temporary directory
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create a test file
+        let test_file = root.join("test_file.txt");
+        fs::write(&test_file, b"test content")?;
+
+        // Create an existing signature file with different content
+        let pending_sig_path = test_file.with_file_name(format!(
+            "{}.{}",
+            test_file.file_name().unwrap().to_string_lossy(),
+            PENDING_SIGNATURES_SUFFIX
+        ));
+        let existing_content = r#"{"old_key": "old_signature"}"#;
+        fs::write(&pending_sig_path, existing_content)?;
+
+        // Generate a keypair
+        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let pubkey = keypair.public_key();
+        let seckey = keypair.secret_key("password").unwrap();
+
+        // Create a signature
+        let hash_for_content = common::sha512_for_content(b"test content".to_vec())?;
+        let signature = seckey.sign(&hash_for_content).unwrap();
+
+        // Create a pending aggregate signature
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey.clone(), signature.clone());
+        let agg_sig: AggregateSignature<
+            AsfaloadPublicKey<minisign::PublicKey>,
+            AsfaloadSignature<minisign::SignatureBox>,
+            PendingSignature,
+        > = AggregateSignature {
+            signatures,
+            origin: test_file.to_string_lossy().to_string(),
+            subject: SignedFile::new(&test_file),
+            marker: PhantomData,
+        };
+
+        // Save the signature to file (should overwrite)
+        agg_sig.save_to_file()?;
+
+        // Verify the content was overwritten
+        let content = fs::read_to_string(&pending_sig_path)?;
+        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.len(), 1);
+        assert!(parsed_content.contains_key(&pubkey.to_base64()));
+        assert_eq!(parsed_content[&pubkey.to_base64()], signature.to_base64());
+
+        Ok(())
+    }
+
+    // Tests for add_individual_signature
+    // ---------------------------------------
+    // Helper function to create a basic signers configuration
+    fn create_signers_config(
+        artifact_signers: Vec<AsfaloadPublicKey<minisign::PublicKey>>,
+        threshold: u32,
+    ) -> SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> {
+        let signers = artifact_signers
+            .into_iter()
+            .map(|pubkey| Signer {
+                kind: SignerKind::Key,
+                data: SignerData {
+                    format: KeyFormat::Minisign,
+                    pubkey,
+                },
+            })
+            .collect();
+
+        SignersConfig {
+            version: 1,
+            initial_version: InitialVersion {
+                permalink: "https://example.com".to_string(),
+                mirrors: vec![],
+            },
+            artifact_signers: vec![SignerGroup { signers, threshold }],
+            master_keys: vec![],
+            admin_keys: None,
+        }
+    }
+
+    // Helper function to sign a file and write its signature to disk
+    fn sign_and_write_sig_file(
+        file_path: &Path,
+        keypair: &AsfaloadKeyPair<minisign::KeyPair>,
+    ) -> Result<PathBuf, AggregateSignatureError> {
+        let content = std::fs::read_to_string(file_path)?;
+        let hash = common::sha512_for_content(content.into_bytes())?;
+        let seckey = keypair.secret_key("password").map_err(|e| {
+            AggregateSignatureError::Signature(format!("Failed to decrypt secret key: {}", e))
+        })?;
+        let signature = seckey.sign(&hash).map_err(|e| {
+            AggregateSignatureError::Signature(format!("Failed to sign file: {}", e))
+        })?;
+
+        let sig_file_path = file_path.with_file_name(format!(
+            "{}.{}",
+            file_path.file_name().unwrap().to_string_lossy(),
+            SIGNATURES_SUFFIX
+        ));
+
+        let mut sigs = HashMap::new();
+        sigs.insert(keypair.public_key().to_base64(), signature.to_base64());
+        let sig_json = serde_json::to_string_pretty(&sigs)?;
+        std::fs::write(&sig_file_path, sig_json)?;
+
+        Ok(sig_file_path)
+    }
+
+    // Helper function to create the test directory structure,
+    // write the signers config, and sign it.
+    // .
+    // ├── asfaload_signers
+    // │   ├── index.json
+    // │   └── index.json.signatures.json
+    // └── data
+    //     └── test_file.txt
+    fn setup_test_hierarchy(
+        temp_dir: &TempDir,
+        signers_config: &SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
+        signers_keypair: &AsfaloadKeyPair<minisign::KeyPair>,
+    ) -> Result<(PathBuf, PathBuf), AggregateSignatureError> {
+        let root = temp_dir.path();
+
+        // Create the data directory and test file
+        let data_dir = root.join("data");
+        fs::create_dir_all(&data_dir)?;
+        let test_file = data_dir.join("test_file.txt");
+        fs::write(&test_file, "test content for signing")?;
+
+        // Create the global signers directory and file
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir)?;
+        let signers_file = signers_dir.join(SIGNERS_FILE);
+        let config_json = serde_json::to_string_pretty(signers_config)?;
+        fs::write(&signers_file, &config_json)?;
+
+        // Sign the signers file itself
+        sign_and_write_sig_file(&signers_file, signers_keypair)?;
+
+        Ok((test_file, signers_file))
+    }
+
+    #[test]
+    fn test_add_individual_signature_success_pending_to_complete_threshold_2() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Generate a keypair for signing the artifact
+        let artifact_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_pubkey = artifact_keypair.public_key();
+        let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
+
+        // Generate a keypair for signing the signers file itself
+        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+
+        // Create a signers configuration with threshold 1
+        let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
+
+        // Setup the test hierarchy
+        let (test_file, _signers_file) =
+            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+
+        // Create a signature for the file content
+        let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
+        let signature = artifact_seckey.sign(&hash_for_content).unwrap();
+
+        // Create local signers file
+        create_local_signers_for(&test_file).unwrap();
+
+        // Create a pending signatures file
+        let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
+        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+
+        // Load the pending aggregate signature
+        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig = agg_sig_with_state.get_pending().unwrap();
+
+        // Add the individual signature
+        let result = agg_sig.add_individual_signature(&signature, &artifact_pubkey)?;
+
+        // Verify the result is a complete signature
+        let complete_sig = result.get_complete().unwrap();
+        assert_eq!(complete_sig.signatures.len(), 1);
+        assert!(complete_sig.signatures.contains_key(&artifact_pubkey));
+
+        // Verify the pending file is gone and complete file exists
+        assert!(!pending_sig_path.exists());
+        let complete_sig_path = signatures_path_for(&test_file).unwrap();
+        assert!(complete_sig_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_individual_signature_success_with_threshold_3() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Generate three keypairs for signing the artifact
+        let artifact_keypair1 = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_pubkey1 = artifact_keypair1.public_key();
+        let artifact_seckey1 = artifact_keypair1.secret_key("password").unwrap();
+
+        let artifact_keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_pubkey2 = artifact_keypair2.public_key();
+        let artifact_seckey2 = artifact_keypair2.secret_key("password").unwrap();
+
+        let artifact_keypair3 = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_pubkey3 = artifact_keypair3.public_key();
+        let artifact_seckey3 = artifact_keypair3.secret_key("password").unwrap();
+
+        // Generate a keypair for signing the signers file itself
+        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+
+        // Create a signers configuration with threshold 3
+        let signers_config = create_signers_config(
+            vec![
+                artifact_pubkey1.clone(),
+                artifact_pubkey2.clone(),
+                artifact_pubkey3.clone(),
+            ],
+            3,
+        );
+
+        // Setup the test hierarchy
+        let (test_file, _signers_file) =
+            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+
+        // Create local signers file and an empty pending signatures file
+        create_local_signers_for(&test_file).unwrap();
+        let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
+        fs::write(&pending_sig_path, "{}").unwrap();
+
+        // Load the initial empty aggregate signature
+        let mut agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let mut agg_sig = agg_sig_with_state.get_pending().unwrap();
+
+        // --- Add the first signature ---
+        let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
+        let signature1 = artifact_seckey1.sign(&hash_for_content).unwrap();
+        agg_sig_with_state = agg_sig.add_individual_signature(&signature1, &artifact_pubkey1)?;
+        agg_sig = agg_sig_with_state.get_pending().unwrap();
+
+        // Verify it's still pending
+        assert_eq!(agg_sig.signatures.len(), 1);
+        assert!(agg_sig.signatures.contains_key(&artifact_pubkey1));
+        assert!(pending_sig_path.exists());
+
+        // --- Add the second signature ---
+        let signature2 = artifact_seckey2.sign(&hash_for_content).unwrap();
+        agg_sig_with_state = agg_sig.add_individual_signature(&signature2, &artifact_pubkey2)?;
+        agg_sig = agg_sig_with_state.get_pending().unwrap();
+
+        // Verify it's still pending
+        assert_eq!(agg_sig.signatures.len(), 2);
+        assert!(agg_sig.signatures.contains_key(&artifact_pubkey1));
+        assert!(agg_sig.signatures.contains_key(&artifact_pubkey2));
+        assert!(pending_sig_path.exists());
+
+        // --- Add the third signature ---
+        let signature3 = artifact_seckey3.sign(&hash_for_content).unwrap();
+        agg_sig_with_state = agg_sig.add_individual_signature(&signature3, &artifact_pubkey3)?;
+
+        // Verify the result is now a complete signature
+        let complete_sig = agg_sig_with_state.get_complete().unwrap();
+        assert_eq!(complete_sig.signatures.len(), 3);
+        assert!(complete_sig.signatures.contains_key(&artifact_pubkey1));
+        assert!(complete_sig.signatures.contains_key(&artifact_pubkey2));
+        assert!(complete_sig.signatures.contains_key(&artifact_pubkey3));
+
+        // Verify the pending file is gone and complete file exists
+        assert!(!pending_sig_path.exists());
+        let complete_sig_path = signatures_path_for(&test_file).unwrap();
+        assert!(complete_sig_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_individual_signature_success_stays_pending() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Generate two keypairs for signing the artifact
+        let artifact_keypair1 = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_pubkey1 = artifact_keypair1.public_key();
+        let artifact_seckey1 = artifact_keypair1.secret_key("password").unwrap();
+        let artifact_keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_pubkey2 = artifact_keypair2.public_key();
+
+        // Generate a keypair for signing the signers file itself
+        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+
+        // Create a signers configuration with threshold 2
+        let signers_config =
+            create_signers_config(vec![artifact_pubkey1.clone(), artifact_pubkey2.clone()], 2);
+
+        // Setup the test hierarchy
+        let (test_file, _signers_file) =
+            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+
+        // Create a signature for the file content
+        let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
+        let signature1 = artifact_seckey1.sign(&hash_for_content).unwrap();
+
+        // Create local signers file
+        create_local_signers_for(&test_file).unwrap();
+
+        // Create a pending signatures file
+        let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
+        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+
+        // Load the pending aggregate signature
+        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig = agg_sig_with_state.get_pending().unwrap();
+
+        // Add the first individual signature
+        let result = agg_sig.add_individual_signature(&signature1, &artifact_pubkey1)?;
+
+        // Verify the result is still a pending signature
+        let pending_sig = result.get_pending().unwrap();
+        assert_eq!(pending_sig.signatures.len(), 1);
+        assert!(pending_sig.signatures.contains_key(&artifact_pubkey1));
+
+        // Verify the pending file still exists
+        assert!(pending_sig_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_individual_signature_io_error_on_save() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Generate a keypair for signing the artifact
+        let artifact_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_pubkey = artifact_keypair.public_key();
+        let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
+
+        // Generate a keypair for signing the signers file itself
+        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+
+        // Create a signers configuration
+        let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
+
+        // Setup the test hierarchy
+        let (test_file, _signers_file) =
+            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+
+        // Create a signature for the file content
+        let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
+        let signature = artifact_seckey.sign(&hash_for_content).unwrap();
+
+        // Create local signers file
+        create_local_signers_for(&test_file).unwrap();
+
+        // Create a pending signatures file
+        let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
+        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+
+        // Load the pending aggregate signature
+        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig = agg_sig_with_state.get_pending().unwrap();
+
+        // Make the pending signatures file read-only to cause an IO error
+        let mut perms = fs::metadata(&pending_sig_path)?.permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&pending_sig_path, perms)?;
+
+        // Try to add the individual signature
+        let result = agg_sig.add_individual_signature(&signature, &artifact_pubkey);
+
+        // Verify the result is an IO error
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AggregateSignatureError::Signature(e) => {
+                assert_eq!(e, "IO error: Permission denied (os error 13)");
+            }
+            other => panic!("Expected IO error, got {:?}", other),
+        }
+
+        // Restore permissions for cleanup
+        let mut perms = fs::metadata(&pending_sig_path)?.permissions();
+        perms.set_readonly(false);
+        fs::set_permissions(&pending_sig_path, perms)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_individual_signature_signature_error() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Generate a keypair for signing the artifact
+        let artifact_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_pubkey = artifact_keypair.public_key();
+        let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
+
+        // Generate a keypair for signing the signers file itself
+        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+
+        // Create a signers configuration
+        let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
+
+        // Setup the test hierarchy
+        let (test_file, _signers_file) =
+            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+
+        // Create a signature for different content with artifact_keypair
+        let wrong_hash = common::sha512_for_content(b"wrong content".to_vec())?;
+        let wrong_signature = artifact_seckey.sign(&wrong_hash).unwrap();
+
+        // Create local signers file
+        create_local_signers_for(&test_file).unwrap();
+
+        // Create a pending signatures file
+        let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
+        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+
+        // Load the pending aggregate signature
+        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig = agg_sig_with_state.get_pending().unwrap();
+
+        // Try to add the wrong signature
+        let result = agg_sig.add_individual_signature(&wrong_signature, &artifact_pubkey);
+
+        // Verify the result is a Signature error
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AggregateSignatureError::Signature(_) => {} // Expected
+            _ => panic!("Expected Signature error"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_individual_signature_load_error() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Generate a keypair for signing the artifact
+        let artifact_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_pubkey = artifact_keypair.public_key();
+        let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
+
+        // Generate a keypair for signing the signers file itself
+        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+
+        // Create a signers configuration
+        let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
+
+        // Setup the test hierarchy
+        let (test_file, _signers_file) =
+            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+
+        // Create a signature for the file content
+        let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
+        let signature = artifact_seckey.sign(&hash_for_content).unwrap();
+
+        // Create local signers file
+        create_local_signers_for(&test_file).unwrap();
+
+        // Create a pending signatures file
+        let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
+        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+
+        // Load the pending aggregate signature
+        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig = agg_sig_with_state.get_pending().unwrap();
+
+        // Corrupt the pending signatures file to cause a load error
+        fs::write(&pending_sig_path, "invalid json content")?;
+
+        // Try to add the individual signature
+        let result = agg_sig.add_individual_signature(&signature, &artifact_pubkey);
+
+        // Verify the result is a JsonError
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AggregateSignatureError::Signature(msg) => {
+                assert_eq!(msg, "JSON error: expected value at line 1 column 1")
+            }
+            other => panic!("Expected JsonError, got {:?}", other),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_individual_signature_io_error_on_directory_creation() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Generate a keypair for signing the artifact
+        let artifact_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_pubkey = artifact_keypair.public_key();
+        let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
+
+        // Generate a keypair for signing the signers file itself
+        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+
+        // Create a signers configuration
+        let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 2);
+
+        // Setup the test hierarchy
+        let (test_file, _signers_file) =
+            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+
+        // Create a signature for the file content
+        let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
+        let signature = artifact_seckey.sign(&hash_for_content).unwrap();
+
+        // Create local signers file
+        create_local_signers_for(&test_file).unwrap();
+
+        // Create a pending signatures file
+        let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
+        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+
+        // Load the pending aggregate signature
+        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig = agg_sig_with_state.get_pending().unwrap();
+
+        // Create a directory with the same name as the pending signatures file
+        // This will cause an IO error when trying to write the file
+        let pending_sig_dir = pending_sig_path.with_extension("");
+        fs::create_dir_all(&pending_sig_dir)?;
+
+        // Try to add the individual signature
+        let result = agg_sig.add_individual_signature(&signature, &artifact_pubkey);
+
+        // Verify the result is an IO error
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AggregateSignatureError::Io(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+                assert!(
+                    e.to_string()
+                        .contains("a directory with the destination name exists",)
+                );
+            }
+            other => panic!("Expected IO error, got {:?}", other),
+        }
+
         Ok(())
     }
 }

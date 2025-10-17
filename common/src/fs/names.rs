@@ -12,16 +12,19 @@ pub const SIGNERS_DIR: &str = "asfaload.signers";
 pub const PENDING_SIGNERS_DIR: &str = "asfaload.signers.pending";
 pub const SIGNERS_FILE: &str = "index.json";
 pub const PENDING_SIGNERS_FILE: &str = "index.json.pending";
+pub const SIGNERS_HISTORY_SUFFIX: &str = "history.json";
+pub const SIGNERS_HISTORY_FILE: &str = "asfaload.signers.history.json";
 
 fn file_path_with_suffix<P: AsRef<Path>>(path_in: P, suffix: &str) -> std::io::Result<PathBuf> {
     let file_path = path_in.as_ref();
-    let _file_name = file_path.file_name().ok_or_else(|| {
+    file_path.file_name().ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "Input path has no file name",
         )
     })?;
-    Ok(file_path.with_file_name(format!("{}.{}", file_path.to_string_lossy(), suffix)))
+    let new_path_str = format!("{}.{}", file_path.to_string_lossy(), suffix);
+    Ok(std::path::PathBuf::from(new_path_str))
 }
 // Get the signatures file path for a file path.
 // It doesn't check on disk that the path received is effectively a file.

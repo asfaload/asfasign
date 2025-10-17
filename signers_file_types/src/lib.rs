@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::marker::PhantomData;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use signatures::keys::AsfaloadPublicKeyTrait;
 
@@ -10,7 +13,7 @@ use signatures::keys::AsfaloadPublicKeyTrait;
 // represents the public key) is handled manually within the `SignerData<P>`'s custom `impl
 // Serialize` and `impl Deserialize` blocks, which only require `P: AsfaloadPublicKeyTrait`. `P`
 // itself does not need to implement `serde::Deserialize` or `serde::Serialize` directly.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(
     serialize = "P: AsfaloadPublicKeyTrait",
     deserialize = "P: AsfaloadPublicKeyTrait"
@@ -35,9 +38,12 @@ where
             _ => &self.artifact_signers,
         }
     }
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct InitialVersion {
     pub permalink: String,
     #[serde(default)]
