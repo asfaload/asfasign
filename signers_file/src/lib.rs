@@ -12,7 +12,7 @@ use sha2::{Digest, Sha512};
 use signatures::keys::{
     AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
 };
-use signers_file_types::{SignersConfig, parse_signers_config};
+use signers_file_types::{Signer, SignersConfig, parse_signers_config};
 use std::{collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
 use thiserror::Error;
 //
@@ -38,6 +38,28 @@ pub enum SignersFileError {
     #[error("Pending signers file filesystem hierarchy error: {0}")]
     FileSystemHierarchyError(String),
 }
+
+// Helper function used to validate the signer of a signers file
+// initialisation, i.e. when no existing signers file is active.
+fn is_valid_signer_for_signer_init<P: AsfaloadPublicKeyTrait + Eq>(
+    pubkey: &P,
+    config: SignersConfig<P>,
+) -> Result<(), SignersFileError> {
+    let is_valid = config.admin_keys().iter().any(|group| {
+        group
+            .signers
+            .iter()
+            .any(|signer| signer.data.pubkey == *pubkey)
+    });
+    if is_valid {
+        Ok(())
+    } else {
+        Err(SignersFileError::InvalidSigner(
+            "The provided public key is not in the admin_signers or artifact_signers groups"
+                .to_string(),
+        ))
+    }
+}
 /// Initialize a signers file in a specific directory.
 ///
 /// This function validates the provided JSON content by deserializing it into a SignersConfig,
@@ -56,11 +78,12 @@ pub enum SignersFileError {
 /// # Returns
 /// * `Ok(())` if the pending file was successfully created
 /// * `Err(SignersFileError)` if there was an error validating the JSON, signature, or writing the file
-pub fn initialize_signers_file<P: AsRef<Path>, S, K>(
+pub fn write_valid_signers_file<P: AsRef<Path>, S, K>(
     dir_path_in: P,
     json_content: &str,
     signature: &S,
     pubkey: &K,
+    validator: impl FnOnce() -> Result<(), SignersFileError>,
 ) -> Result<(), SignersFileError>
 where
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
@@ -106,23 +129,9 @@ where
         )));
     }
     // First, validate the JSON by parsing it
-    let signers_config: SignersConfig<K> = parse_signers_config(json_content)?;
+    let _signers_config: SignersConfig<K> = parse_signers_config(json_content)?;
 
-    // Check that the signer is in the admin_signers group (equal to artifact signers of
-    // admin group is not present in file)
-    let is_valid_signer = signers_config.admin_keys().iter().any(|group| {
-        group
-            .signers
-            .iter()
-            .any(|signer| signer.data.pubkey == *pubkey)
-    });
-
-    if !is_valid_signer {
-        return Err(SignersFileError::InvalidSigner(
-            "The provided public key is not in the admin_signers or artifact_signers groups"
-                .to_string(),
-        ));
-    }
+    validator()?;
 
     // Compute the SHA-512 hash of the JSON content
     let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec())?;
@@ -174,6 +183,26 @@ where
     Ok(())
 }
 
+pub fn initialize_signers_file<P: AsRef<Path>, S, K>(
+    dir_path_in: P,
+    json_content: &str,
+    signature: &S,
+    pubkey: &K,
+) -> Result<(), SignersFileError>
+where
+    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
+    S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
+{
+    let signers_config: SignersConfig<K> = parse_signers_config(json_content)?;
+    let validator = || is_valid_signer_for_signer_init(pubkey, signers_config);
+    write_valid_signers_file(
+        dir_path_in.as_ref(),
+        json_content,
+        signature,
+        pubkey,
+        validator,
+    )
+}
 fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
     dir: Pa,
 ) -> Result<(), SignersFileError> {

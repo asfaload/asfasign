@@ -38,6 +38,9 @@ where
             _ => &self.artifact_signers,
         }
     }
+    pub fn master_keys(&self) -> &Vec<SignerGroup<P>> {
+        &self.master_keys
+    }
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
