@@ -60,6 +60,34 @@ fn is_valid_signer_for_signer_init<P: AsfaloadPublicKeyTrait + Eq>(
         ))
     }
 }
+
+// Helper function used to validate the signer of a signers file
+// initialisation, i.e. when there is an existing signers file active,
+// which influences the validation.
+fn is_valid_signer_for_update_of<P: AsfaloadPublicKeyTrait + Eq>(
+    pubkey: &P,
+    active_config: SignersConfig<P>,
+) -> Result<(), SignersFileError> {
+    let is_valid = active_config.admin_keys().iter().any(|group| {
+        group
+            .signers
+            .iter()
+            .any(|signer| signer.data.pubkey == *pubkey)
+    }) || active_config.master_keys().iter().any(|group| {
+        group
+            .signers
+            .iter()
+            .any(|signer| signer.data.pubkey == *pubkey)
+    });
+    if is_valid {
+        Ok(())
+    } else {
+        Err(SignersFileError::InvalidSigner(
+            "The provided public key is not in the current admin or master signers groups"
+                .to_string(),
+        ))
+    }
+}
 /// Initialize a signers file in a specific directory.
 ///
 /// This function validates the provided JSON content by deserializing it into a SignersConfig,
@@ -203,6 +231,55 @@ where
         validator,
     )
 }
+
+/// Propose an update to an existing signers file.
+///
+/// This function validates that the provided signature is from a signer in the admin or master
+/// group of the currently active signers file, and then calls initialize_signers_file to create
+/// a new pending signers file.
+///
+/// # Arguments
+/// * `dir_path` - The directory where the pending signers file should be placed
+/// * `json_content` - The JSON content of the new signers configuration
+/// * `signature` - The signature of the SHA-512 hash of the JSON content
+/// * `pubkey` - The public key of the signer
+///
+/// # Returns
+/// * `Ok(())` if the pending file was successfully created
+/// * `Err(SignersFileError)` if there was an error validating the signature or creating the file
+pub fn propose_signers_file<P: AsRef<Path>, S, K>(
+    dir_path: P,
+    json_content: &str,
+    signature: &S,
+    pubkey: &K,
+) -> Result<(), SignersFileError>
+where
+    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
+    S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
+{
+    // Determine the path to the active signers file
+    let active_signers_dir = dir_path.as_ref().join(SIGNERS_DIR);
+    let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
+
+    // Check if the active signers file exists
+    if !active_signers_file.exists() {
+        return Err(SignersFileError::InitialisationError(format!(
+            "Active signers file does not exist: {}",
+            active_signers_file.to_string_lossy()
+        )));
+    }
+
+    // Parse the active signers file
+    let active_content = fs::read_to_string(&active_signers_file)?;
+    let active_config: SignersConfig<K> = parse_signers_config(&active_content)?;
+
+    // Check if the provided pubkey is in the admin_keys or master_keys groups
+    let validator = || is_valid_signer_for_update_of(pubkey, active_config);
+
+    // If the check passes, call initialize_signers_file
+    write_valid_signers_file(dir_path, json_content, signature, pubkey, validator)
+}
+
 fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
     dir: Pa,
 ) -> Result<(), SignersFileError> {
