@@ -2727,4 +2727,467 @@ mod tests {
         assert_eq!(deserialized.entries().len(), 1);
         assert_eq!(deserialized.entries()[0].signatures.len(), 0);
     }
+
+    // Helper function to create a test active signers setup
+    fn create_test_active_signers_for_update(
+        root_dir: &Path,
+        test_keys: &TestKeys,
+        include_admin: bool,
+        include_master: bool,
+    ) -> Result<PathBuf, SignersFileError> {
+        let active_signers_dir = root_dir.join(SIGNERS_DIR);
+        fs::create_dir_all(&active_signers_dir)?;
+
+        let signers_file_path = active_signers_dir.join(SIGNERS_FILE);
+
+        // Create a template for the active signers content
+        let mut template = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER" } },
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+      ],
+      "threshold": 2
+    }
+  ]
+  "#
+        .to_string();
+
+        if include_master {
+            template.push_str(
+                r#",
+  "master_keys": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+      ],
+      "threshold": 1
+    }
+  ]"#,
+            );
+        } else {
+            template.push_str(
+                r#",
+  "master_keys": []"#,
+            );
+        }
+
+        if include_admin {
+            template.push_str(
+                r#",
+  "admin_keys": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+      ],
+      "threshold": 1
+    }
+  ]"#,
+            );
+        }
+
+        template.push_str("\n}");
+
+        // Substitute placeholders with actual keys
+        let content = test_keys.substitute_keys(template);
+        fs::write(&signers_file_path, content)?;
+
+        // Create signatures for the active signers file
+        let hash = common::sha512_for_file(&signers_file_path)?;
+
+        // Sign with the first two keys (artifact signers)
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let signature1 = seckey1.sign(&hash).unwrap();
+
+        // Create the aggregate signature
+        aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+            &signers_file_path,
+        )?
+        .get_pending()
+        .unwrap()
+        .add_individual_signature(&signature0, pubkey0)?
+        .get_pending()
+        .unwrap()
+        .add_individual_signature(&signature1, pubkey1)?;
+
+        // If admin keys are included, sign with them too
+        if include_admin {
+            let pubkey3 = test_keys.pub_key(3).unwrap();
+            let seckey3 = test_keys.sec_key(3).unwrap();
+            let signature3 = seckey3.sign(&hash).unwrap();
+
+            aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+                &signers_file_path,
+            )?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature3, pubkey3)?;
+        }
+
+        // If master keys are included, sign with them too
+        if include_master {
+            let pubkey2 = test_keys.pub_key(2).unwrap();
+            let seckey2 = test_keys.sec_key(2).unwrap();
+            let signature2 = seckey2.sign(&hash).unwrap();
+
+            aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+                &signers_file_path,
+            )?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature2, pubkey2)?;
+        }
+
+        Ok(signers_file_path)
+    }
+
+    // Helper function to create a test proposal
+    fn create_test_proposal(
+        test_keys: &TestKeys,
+        signer_index: usize,
+    ) -> (
+        String,
+        AsfaloadSignature<minisign::SignatureBox>,
+        &AsfaloadPublicKey<minisign::PublicKey>,
+    ) {
+        // Create a template for the proposal
+        let template = r#"
+{
+  "version": 2,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER" } },
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+      ],
+      "threshold": 2
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+
+        // Substitute placeholders with actual keys
+        let content = test_keys.substitute_keys(template.to_string());
+
+        // Compute hash and sign
+        let hash = common::sha512_for_content(content.as_bytes().to_vec()).unwrap();
+        let pubkey = test_keys.pub_key(signer_index).unwrap();
+        let seckey = test_keys.sec_key(signer_index).unwrap();
+        let signature = seckey.sign(&hash).unwrap();
+
+        (content, signature, pubkey)
+    }
+
+    #[test]
+    fn test_propose_signers_file_with_admin_signer() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(4);
+
+        // Create active signers with admin keys
+        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+
+        // Create a proposal signed by an admin key
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
+
+        // Propose the new signers file
+        propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
+
+        // Verify the pending file was created
+        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
+
+        // Verify the content
+        let content = fs::read_to_string(&pending_file_path)?;
+        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&content)?;
+
+        // Verify the pending signature file was created
+        let pending_sig_file_path = root_dir.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
+        assert!(pending_sig_file_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_propose_signers_file_with_master_signer() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(3);
+
+        // Create active signers with master keys
+        create_test_active_signers_for_update(root_dir, &test_keys, false, true)?;
+
+        // Create a proposal signed by a master key
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+
+        // Propose the new signers file
+        propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
+
+        // Verify the pending file was created
+        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
+
+        // Verify the content
+        let content = fs::read_to_string(&pending_file_path)?;
+        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&content)?;
+
+        // Verify the pending signature file was created
+        let pending_sig_file_path = root_dir.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
+        assert!(pending_sig_file_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_propose_signers_file_with_artifact_signer_fails() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers without admin or master keys
+        create_test_active_signers_for_update(root_dir, &test_keys, false, false)?;
+
+        // Create a proposal signed by an artifact key
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
+
+        // Try to propose the new signers file
+        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+
+        // Verify it fails
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InvalidSigner(_) => {} // Expected
+            _ => panic!("Expected InvalidSigner error"),
+        }
+
+        // Verify no pending file was created
+        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(!pending_file_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_propose_signers_file_without_active_signers_fails() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(1);
+
+        // Don't create active signers
+
+        // Create a proposal
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
+
+        // Try to propose the new signers file
+        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+
+        // Verify it fails
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InitialisationError(_) => {} // Expected
+            _ => panic!("Expected InitialisationError error"),
+        }
+
+        // Verify no pending file was created
+        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(!pending_file_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_propose_signers_file_with_invalid_signature_fails() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(4);
+
+        // Create active signers with admin keys
+        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+
+        // Create a proposal
+        let (proposal_content, _, pubkey) = create_test_proposal(&test_keys, 3);
+
+        // Create an invalid signature (sign wrong data)
+        let wrong_hash = common::sha512_for_content(b"wrong data".to_vec())?;
+        let seckey = test_keys.sec_key(3).unwrap();
+        let invalid_signature = seckey.sign(&wrong_hash).unwrap();
+
+        // Try to propose the new signers file
+        let result = propose_signers_file(root_dir, &proposal_content, &invalid_signature, pubkey);
+
+        // Verify it fails
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::SignatureVerificationFailed(_) => {} // Expected
+            _ => panic!("Expected SignatureVerificationFailed error"),
+        }
+
+        // Verify no pending file was created
+        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(!pending_file_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_propose_signers_file_with_existing_pending_file_fails() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(4);
+
+        // Create active signers with admin keys
+        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+
+        // Create an existing pending file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let pending_file_path = pending_dir.join(SIGNERS_FILE);
+        fs::write(&pending_file_path, "existing content")?;
+
+        // Create a proposal
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
+
+        // Try to propose the new signers file
+        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+
+        // Verify it fails
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InitialisationError(_) => {} // Expected
+            _ => panic!("Expected InitialisationError error"),
+        }
+
+        // Verify the existing pending file is unchanged
+        let content = fs::read_to_string(&pending_file_path)?;
+        assert_eq!(content, "existing content");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_propose_signers_file_with_existing_pending_signature_file_fails() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(4);
+
+        // Create active signers with admin keys
+        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+
+        // Create an existing pending signature file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let pending_sig_file_path =
+            pending_dir.join(format!("{}.{}", SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX));
+        fs::write(&pending_sig_file_path, "existing signature")?;
+
+        // Create a proposal
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
+
+        // Try to propose the new signers file
+        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+
+        // Verify it fails
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InitialisationError(_) => {} // Expected
+            _ => panic!("Expected InitialisationError error"),
+        }
+
+        // Verify the existing pending signature file is unchanged
+        let content = fs::read_to_string(&pending_sig_file_path)?;
+        assert_eq!(content, "existing signature");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_propose_signers_file_with_existing_complete_signature_file_fails() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(4);
+
+        // Create active signers with admin keys
+        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+
+        // Create an existing complete signature file
+        let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let complete_sig_file_path =
+            pending_dir.join(format!("{}.{}", SIGNERS_FILE, SIGNATURES_SUFFIX));
+        fs::write(&complete_sig_file_path, "existing signature")?;
+
+        // Create a proposal
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
+
+        // Try to propose the new signers file
+        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+
+        // Verify it fails
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InitialisationError(_) => {} // Expected
+            _ => panic!("Expected InitialisationError error"),
+        }
+
+        // Verify the existing complete signature file is unchanged
+        let content = fs::read_to_string(&complete_sig_file_path)?;
+        assert_eq!(content, "existing signature");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_propose_signers_file_with_nested_directory() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let nested_dir = root_dir.join("nested");
+        let test_keys = TestKeys::new(4);
+
+        // Create active signers with admin keys in nested directory
+        create_test_active_signers_for_update(&nested_dir, &test_keys, true, false)?;
+
+        // Create a proposal signed by an admin key
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
+
+        // Propose the new signers file
+        propose_signers_file(&nested_dir, &proposal_content, &signature, pubkey)?;
+
+        // Verify the pending file was created in the nested directory
+        let pending_file_path =
+            nested_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
+
+        // Verify the content
+        let content = fs::read_to_string(&pending_file_path)?;
+        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&content)?;
+
+        Ok(())
+    }
 }
