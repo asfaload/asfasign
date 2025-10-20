@@ -559,7 +559,14 @@ where
             }
         }
         if is_aggregate_signature_complete::<_, P>(&self.subject, true)? {
-            std::fs::rename(pending_sig_path, complete_sig_path)?;
+            std::fs::rename(&pending_sig_path, &complete_sig_path).map_err(|e| {
+                AggregateSignatureError::Io(std::io::Error::other(format!(
+                    "Error renaming pending to complete: {} -> {} : {}",
+                    pending_sig_path.to_string_lossy(),
+                    complete_sig_path.to_string_lossy(),
+                    e
+                )))
+            })?;
             Ok(AggregateSignature::<P, S, CompleteSignature> {
                 origin: self.origin.clone(),
                 subject: self.subject.clone(),
