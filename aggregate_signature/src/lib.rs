@@ -5,8 +5,8 @@ use common::fs::names::{
 };
 use sha2::{Digest, Sha512};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait};
-use signers_file_types::{SignerGroup, SignersConfig};
-use std::collections::HashMap;
+use signers_file_types::{Signer, SignerGroup, SignersConfig};
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -338,6 +338,47 @@ where
     let config = signers_file_types::parse_signers_config(&content)
         .map_err(AggregateSignatureError::JsonError)?;
     Ok(config)
+}
+
+/// Returns the public keys of signers that are present in `new_config` but not in `old_config`.
+///
+/// This function compares the public keys of signers in both configurations
+/// and returns a `Vec` of public keys from `new_config` that are not
+/// found in `old_config`, regardless of the groups they belong to.
+pub fn get_newly_added_signer_keys<P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone>(
+    old_config: &SignersConfig<P>,
+    new_config: &SignersConfig<P>,
+) -> Vec<P> {
+    // Create a HashSet of public keys from the old configuration for efficient lookup.
+    let old_signers: HashSet<P> = old_config
+        .admin_keys()
+        .iter()
+        .chain(old_config.master_keys().iter())
+        .chain(old_config.artifact_signers.iter())
+        .flat_map(|group| {
+            group
+                .signers
+                .iter()
+                .map(|signer| signer.data.pubkey.clone())
+        })
+        .collect();
+
+    let new_signers: HashSet<P> = new_config
+        .admin_keys()
+        .iter()
+        .chain(new_config.master_keys().iter())
+        .chain(new_config.artifact_signers.iter())
+        .flat_map(|group| {
+            group
+                .signers
+                .iter()
+                .map(|signer| signer.data.pubkey.clone())
+        })
+        .collect();
+
+    let diff = new_signers.difference(&old_signers).collect::<Vec<&P>>();
+    // Need to clone references targets as they are owned by this function
+    diff.iter().map(|p| (*p).clone()).collect()
 }
 
 /// Check if an aggregate signature for a file is complete
@@ -3228,5 +3269,230 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    // ---------------------------------
+    // Test get_newly_added_signer_keys
+    // ---------------------------------
+
+    /// Helper function to create a Signer from a TestKeys instance.
+    fn create_signer(
+        test_keys: &TestKeys,
+        index: usize,
+    ) -> Signer<AsfaloadPublicKey<minisign::PublicKey>> {
+        Signer {
+            kind: SignerKind::Key,
+            data: SignerData {
+                format: KeyFormat::Minisign,
+                pubkey: test_keys.pub_key(index).unwrap().clone(),
+            },
+        }
+    }
+
+    /// Helper function to create a SignerGroup from a vector of Signer indices.
+    fn create_group(
+        test_keys: &TestKeys,
+        indices: Vec<usize>,
+        threshold: u32,
+    ) -> SignerGroup<AsfaloadPublicKey<minisign::PublicKey>> {
+        let signers = indices
+            .into_iter()
+            .map(|i| create_signer(test_keys, i))
+            .collect();
+        SignerGroup { signers, threshold }
+    }
+
+    #[test]
+    fn test_no_new_signers_identical_configs() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+        };
+
+        let new_config = old_config.clone();
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert!(new_signers.is_empty());
+    }
+
+    #[test]
+    fn test_no_new_signers_reordered_groups() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            artifact_signers: vec![create_group(&test_keys, vec![1, 0], 2)], // Reordered
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert!(new_signers.is_empty());
+    }
+
+    #[test]
+    fn test_new_signer_in_artifact_signers() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)], // Added key 1
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert_eq!(new_signers.len(), 1);
+        assert_eq!(new_signers[0], test_keys.pub_key(1).unwrap().clone());
+    }
+
+    #[test]
+    fn test_new_signer_in_master_keys() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![create_group(&test_keys, vec![1], 1)], // Added key 1
+            admin_keys: None,
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert_eq!(new_signers.len(), 1);
+        assert_eq!(new_signers[0], test_keys.pub_key(1).unwrap().clone());
+    }
+
+    #[test]
+    fn test_new_signer_in_admin_keys() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![],
+            admin_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert_eq!(new_signers.len(), 1);
+        assert_eq!(new_signers[0], test_keys.pub_key(1).unwrap().clone());
+    }
+
+    #[test]
+    fn test_new_signers_and_removed_signers() {
+        let test_keys = TestKeys::new(10);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0, 5, 8], 1)],
+            master_keys: vec![create_group(&test_keys, vec![2, 6, 9], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![7], 2)]),
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert_eq!(new_signers.len(), 5);
+        assert!(!new_signers.contains(test_keys.pub_key(1).unwrap()));
+        assert!(!new_signers.contains(test_keys.pub_key(2).unwrap()));
+        assert!(!new_signers.contains(test_keys.pub_key(3).unwrap()));
+        assert!(!new_signers.contains(test_keys.pub_key(4).unwrap()));
+        assert!(new_signers.contains(test_keys.pub_key(5).unwrap()));
+        assert!(new_signers.contains(test_keys.pub_key(6).unwrap()));
+        assert!(new_signers.contains(test_keys.pub_key(7).unwrap()));
+        assert!(new_signers.contains(test_keys.pub_key(8).unwrap()));
+        assert!(new_signers.contains(test_keys.pub_key(9).unwrap()));
+    }
+
+    #[test]
+    fn test_all_signers_are_new() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![create_group(&test_keys, vec![1], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert_eq!(new_signers.len(), 3);
+        let new_signer_keys: HashSet<_> = new_signers.into_iter().collect();
+        assert!(new_signer_keys.contains(test_keys.pub_key(0).unwrap()));
+        assert!(new_signer_keys.contains(test_keys.pub_key(1).unwrap()));
+        assert!(new_signer_keys.contains(test_keys.pub_key(2).unwrap()));
+    }
+
+    #[test]
+    fn test_all_signers_are_removed() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![create_group(&test_keys, vec![1], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert!(new_signers.is_empty());
     }
 }
