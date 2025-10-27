@@ -2987,7 +2987,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(_) => {} // Expected
-            _ => panic!("Expected InvalidSigner error"),
+            e => panic!("Expected InvalidSigner error, got {}", e),
         }
 
         // Verify no pending file was created
