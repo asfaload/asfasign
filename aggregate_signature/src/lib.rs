@@ -334,7 +334,13 @@ fn load_signers_config<P>(
 where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
 {
-    let content = std::fs::read_to_string(signers_file_path)?;
+    let content = std::fs::read_to_string(signers_file_path).map_err(|e| {
+        std::io::Error::other(format!(
+            "could not read {}: {}",
+            signers_file_path.to_string_lossy(),
+            e
+        ))
+    })?;
     let config = signers_file_types::parse_signers_config(&content)
         .map_err(AggregateSignatureError::JsonError)?;
     Ok(config)
