@@ -347,7 +347,7 @@ where
     //  Determine the file type
     let signed_file = SignedFile::new(file_path);
 
-    //  Get the path to the complete signature file
+    //  Get the path to the signatures file
     let sig_file_path = if look_at_pending {
         pending_signatures_path_for(file_path)?
     } else {
