@@ -2742,8 +2742,8 @@ mod tests {
     fn create_test_active_signers_for_update(
         root_dir: &Path,
         test_keys: &TestKeys,
-        include_admin: bool,
-        include_master: bool,
+        admin_count: usize,
+        master_count: usize,
     ) -> Result<PathBuf, SignersFileError> {
         let active_signers_dir = root_dir.join(SIGNERS_DIR);
         fs::create_dir_all(&active_signers_dir)?;
@@ -2769,18 +2769,36 @@ mod tests {
   ]
   "#
         .to_string();
+        let mut key_index = 2;
 
-        if include_master {
+        if master_count > 0 {
             template.push_str(
                 r#",
   "master_keys": [
     {
-      "signers": [
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
-      ],
-      "threshold": 1
-    }
-  ]"#,
+      "signers": [ "#,
+            );
+
+            for master in 0..master_count {
+                template.push_str(
+                format!(r#"        {{ "kind": "key", "data": {{ "format": "minisign", "pubkey": "PUBKEY{key_index}_PLACEHOLDER" }} }}
+  "#).as_ref(),
+            );
+                if master < master_count - 1 {
+                    template.push(',');
+                }
+                key_index += 1;
+            }
+
+            template.push_str(
+                format!(
+                    r#"
+        ],
+      "threshold": {master_count}
+    }}
+  ]"#
+                )
+                .as_ref(),
             );
         } else {
             template.push_str(
@@ -2789,17 +2807,34 @@ mod tests {
             );
         }
 
-        if include_admin {
+        if admin_count > 0 {
             template.push_str(
                 r#",
   "admin_keys": [
     {
-      "signers": [
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
-      ],
-      "threshold": 1
-    }
-  ]"#,
+      "signers": [ "#,
+            );
+
+            for admin in 0..admin_count {
+                template.push_str(
+                format!(r#"        {{ "kind": "key", "data": {{ "format": "minisign", "pubkey": "PUBKEY{key_index}_PLACEHOLDER" }} }}
+  "#).as_ref(),
+            );
+                key_index += 1;
+                if admin < admin_count - 1 {
+                    template.push(',');
+                }
+            }
+
+            template.push_str(
+                format!(
+                    r#"
+        ],
+      "threshold": {admin_count}
+    }}
+  ]"#
+                )
+                .as_ref(),
             );
         }
 
@@ -2832,32 +2867,50 @@ mod tests {
         .unwrap()
         .add_individual_signature(&signature1, pubkey1)?;
 
-        // If admin keys are included, sign with them too
-        if include_admin {
-            let pubkey3 = test_keys.pub_key(3).unwrap();
-            let seckey3 = test_keys.sec_key(3).unwrap();
-            let signature3 = seckey3.sign(&hash).unwrap();
+        let key_index = 2;
+        // If master keys are included, sign with them too
+        if master_count > 0 {
+            let sig =
+                aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+                    &signers_file_path,
+                )?;
 
-            aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-                &signers_file_path,
-            )?
-            .get_pending()
-            .unwrap()
-            .add_individual_signature(&signature3, pubkey3)?;
+            (0..master_count)
+                .collect::<Vec<usize>>()
+                .iter()
+                .fold(sig, |acc, i| {
+                    let pubkey = test_keys.pub_key(i + key_index).unwrap();
+                    let seckey = test_keys.sec_key(i + key_index).unwrap();
+                    let signature = seckey.sign(&hash).unwrap();
+
+                    acc.get_pending()
+                        .unwrap()
+                        .add_individual_signature(&signature, pubkey)
+                        .unwrap()
+                });
         }
 
-        // If master keys are included, sign with them too
-        if include_master {
-            let pubkey2 = test_keys.pub_key(2).unwrap();
-            let seckey2 = test_keys.sec_key(2).unwrap();
-            let signature2 = seckey2.sign(&hash).unwrap();
+        let key_index = 2 + master_count;
+        // If admin keys are included, sign with them too
+        if admin_count > 0 {
+            let sig =
+                aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+                    &signers_file_path,
+                )?;
 
-            aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-                &signers_file_path,
-            )?
-            .get_pending()
-            .unwrap()
-            .add_individual_signature(&signature2, pubkey2)?;
+            (0..admin_count)
+                .collect::<Vec<usize>>()
+                .iter()
+                .fold(sig, |acc, i| {
+                    let pubkey = test_keys.pub_key(i + key_index).unwrap();
+                    let seckey = test_keys.sec_key(i + key_index).unwrap();
+                    let signature = seckey.sign(&hash).unwrap();
+
+                    acc.get_pending()
+                        .unwrap()
+                        .add_individual_signature(&signature, pubkey)
+                        .unwrap()
+                });
         }
 
         Ok(signers_file_path)
@@ -2913,10 +2966,10 @@ mod tests {
         let test_keys = TestKeys::new(4);
 
         // Create active signers with admin keys
-        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
         // Create a proposal signed by an admin key
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
 
         // Propose the new signers file
         propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
@@ -2954,7 +3007,7 @@ mod tests {
         let test_keys = TestKeys::new(3);
 
         // Create active signers with master keys
-        create_test_active_signers_for_update(root_dir, &test_keys, false, true)?;
+        create_test_active_signers_for_update(root_dir, &test_keys, 0, 1)?;
 
         // Create a proposal signed by a master key
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
@@ -2996,7 +3049,7 @@ mod tests {
         let test_keys = TestKeys::new(4);
 
         // Create active signers without admin or master keys
-        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
         // Create a proposal signed by an artifact key
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
@@ -3027,7 +3080,7 @@ mod tests {
         let test_keys = TestKeys::new(2);
 
         // Create active signers without admin or master keys
-        create_test_active_signers_for_update(root_dir, &test_keys, false, false)?;
+        create_test_active_signers_for_update(root_dir, &test_keys, 0, 0)?;
 
         // Create a proposal signed by an artifact key
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
@@ -3078,10 +3131,10 @@ mod tests {
         let test_keys = TestKeys::new(4);
 
         // Create active signers with admin keys
-        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
         // Create a proposal
-        let (proposal_content, _, pubkey) = create_test_proposal(&test_keys, 3);
+        let (proposal_content, _, pubkey) = create_test_proposal(&test_keys, 2);
 
         // Create an invalid signature (sign wrong data)
         let wrong_hash = common::sha512_for_content(b"wrong data".to_vec())?;
@@ -3095,7 +3148,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::SignatureVerificationFailed(_) => {} // Expected
-            _ => panic!("Expected SignatureVerificationFailed error"),
+            e => panic!("Expected SignatureVerificationFailed error, got {}", e),
         }
 
         // Verify no pending file was created
@@ -3112,7 +3165,7 @@ mod tests {
         let test_keys = TestKeys::new(4);
 
         // Create active signers with admin keys
-        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
         // Create an existing pending file
         let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
@@ -3147,7 +3200,7 @@ mod tests {
         let test_keys = TestKeys::new(4);
 
         // Create active signers with admin keys
-        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
         // Create an existing pending signature file
         let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
@@ -3183,7 +3236,7 @@ mod tests {
         let test_keys = TestKeys::new(4);
 
         // Create active signers with admin keys
-        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
+        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
         // Create an existing complete signature file
         let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
@@ -3220,10 +3273,10 @@ mod tests {
         let test_keys = TestKeys::new(4);
 
         // Create active signers with admin keys in nested directory
-        create_test_active_signers_for_update(&nested_dir, &test_keys, true, false)?;
+        create_test_active_signers_for_update(&nested_dir, &test_keys, 1, 0)?;
 
         // Create a proposal signed by an admin key
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
 
         // Propose the new signers file
         propose_signers_file(&nested_dir, &proposal_content, &signature, pubkey)?;
