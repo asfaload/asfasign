@@ -279,8 +279,10 @@ where
 {
     let content = std::fs::read_to_string(signers_file_path).map_err(|e| {
         std::io::Error::other(format!(
-            "could not read {}: {}",
+            "could not read {} at {}:{}\n {}",
             signers_file_path.to_string_lossy(),
+            file!(),
+            line!(),
             e
         ))
     })?;
