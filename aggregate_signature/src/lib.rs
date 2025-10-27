@@ -1,7 +1,7 @@
 use common::AsfaloadHashes;
 use common::fs::names::{
-    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, local_signers_path_for,
-    pending_signatures_path_for, signatures_path_for,
+    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, find_global_signers_for,
+    local_signers_path_for, pending_signatures_path_for, signatures_path_for,
 };
 use sha2::{Digest, Sha512};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait};
@@ -235,63 +235,6 @@ where
         signatures.insert(pubkey, signature);
     }
     Ok(signatures)
-}
-
-/// Find the active signers file by traversing parent directories
-fn find_global_signers_for(file_path: &Path) -> Result<PathBuf, AggregateSignatureError> {
-    if file_path.is_dir() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Not looking for global signers for a directory.",
-        )
-        .into());
-    }
-    let mut current_dir = file_path.parent().ok_or_else(|| {
-        AggregateSignatureError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "File has no parent directory",
-        ))
-    })?;
-
-    // If we work on a signers file, we go up one level, so we do not
-    // consider a signers file for itself
-    current_dir = if file_path
-        .file_name()
-        .is_some_and(|name| name == SIGNERS_FILE)
-        && file_path
-            .parent()
-            .is_some_and(|p| p.file_name().unwrap_or_default() == SIGNERS_DIR)
-    {
-        current_dir
-            .parent()
-            .and_then(|d| d.parent())
-            .ok_or_else(|| {
-                AggregateSignatureError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "File has no parent directory",
-                ))
-            })?
-    } else {
-        current_dir
-    };
-
-    loop {
-        let candidate = current_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-
-        // Move up to the parent directory
-        current_dir = match current_dir.parent() {
-            Some(parent) => parent,
-            None => {
-                return Err(AggregateSignatureError::Io(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "No signers file found in parent directories",
-                )));
-            }
-        };
-    }
 }
 
 fn create_local_signers_for<P: AsRef<Path>>(
@@ -1543,15 +1486,10 @@ mod tests {
         let found = find_global_signers_for(&test_file).unwrap();
         assert_eq!(found, signers_file);
 
-        // We only look for signers for a file, not a directory
-        let result = find_global_signers_for(&project_dir);
-        assert!(result.is_err());
-        assert!(matches!(result, Err(AggregateSignatureError::Io(_))));
-
         // Test when no signers file exists
         let no_signers_dir = root.join("no_signers");
         fs::create_dir_all(&no_signers_dir).unwrap();
-        let result = find_global_signers_for(&no_signers_dir);
+        let result = find_global_signers_for(&no_signers_dir).map_err(|e| e.into());
         assert!(matches!(result, Err(AggregateSignatureError::Io(_))));
 
         // Test that for the signers file, we don't consider itself
