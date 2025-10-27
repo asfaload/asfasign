@@ -120,14 +120,15 @@ where
     S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
     // Ensure we work in the right directory
+
     let dir_path = {
-        let path = if dir_path_in.as_ref().ends_with(PENDING_SIGNERS_DIR) {
+        if dir_path_in.as_ref().ends_with(PENDING_SIGNERS_DIR) {
             dir_path_in.as_ref().to_path_buf()
         } else {
             dir_path_in.as_ref().join(PENDING_SIGNERS_DIR)
-        };
-        path
+        }
     };
+
     // If a signers file exists, we refuse to overwrite it
     let signers_file_path = dir_path.join(SIGNERS_FILE);
     if signers_file_path.exists() {
