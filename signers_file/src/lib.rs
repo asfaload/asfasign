@@ -68,6 +68,7 @@ fn is_valid_signer_for_update_of<P: AsfaloadPublicKeyTrait + Eq>(
     pubkey: &P,
     active_config: SignersConfig<P>,
 ) -> Result<(), SignersFileError> {
+    // Only an admin key or a master key can propose a new signers file.
     let is_valid = active_config.admin_keys().iter().any(|group| {
         group
             .signers
@@ -3286,6 +3287,132 @@ mod tests {
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
                 assert!(msg.contains("not in the admin_signers or artifact_signers groups"));
+            }
+            e => panic!("Expected InvalidSigner error, got {}", e),
+        }
+    }
+
+    #[test]
+    fn test_is_valid_signer_for_update_of() {
+        let test_keys = TestKeys::new(5);
+
+        // Create a test config with admin, master, and artifact signers
+        let json_content_template = r#"
+        {
+          "version": 1,
+          "initial_version": {
+            "permalink": "https://example.com",
+            "mirrors": []
+          },
+          "artifact_signers": [
+            {
+              "signers": [
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+              ],
+              "threshold": 2
+            }
+          ],
+          "master_keys": [
+            {
+              "signers": [
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+              ],
+              "threshold": 1
+            }
+          ],
+          "admin_keys": [
+            {
+              "signers": [
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER"} }
+              ],
+              "threshold": 1
+            }
+          ]
+        }
+        "#;
+
+        let json_content = test_keys.substitute_keys(json_content_template.to_string());
+        let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&json_content).unwrap();
+
+        // Test with a valid admin signer
+        let admin_pubkey = test_keys.pub_key(3).unwrap();
+        assert!(is_valid_signer_for_update_of(admin_pubkey, config.clone()).is_ok());
+
+        // Test with a valid master signer
+        let master_pubkey = test_keys.pub_key(2).unwrap();
+        assert!(is_valid_signer_for_update_of(master_pubkey, config.clone()).is_ok());
+
+        // Test with an artifact signer (should not be valid for updates as there is an admin group)
+        let artifact_pubkey = test_keys.pub_key(0).unwrap();
+        let result = is_valid_signer_for_update_of(artifact_pubkey, config.clone());
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InvalidSigner(msg) => {
+                assert!(msg.contains("not in the current admin or master signers groups"));
+            }
+            e => panic!("Expected InvalidSigner error, got {}", e),
+        }
+
+        // Test with an invalid signer (not in the config)
+        let invalid_pubkey = test_keys.pub_key(4).unwrap();
+        let result = is_valid_signer_for_update_of(invalid_pubkey, config);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InvalidSigner(msg) => {
+                assert!(msg.contains("not in the current admin or master signers groups"));
+            }
+            _ => panic!("Expected InvalidSigner error"),
+        }
+
+        // Test with a config that has no admin_keys (artifact_signers should be used as admin)
+        let json_content_no_admin = r#"
+        {
+          "version": 1,
+          "initial_version": {
+            "permalink": "https://example.com",
+            "mirrors": []
+          },
+          "artifact_signers": [
+            {
+              "signers": [
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+              ],
+              "threshold": 2
+            }
+          ],
+          "master_keys": [
+            {
+              "signers": [
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+              ],
+              "threshold": 1
+            }
+          ]
+        }
+        "#;
+
+        let json_content_no_admin = test_keys.substitute_keys(json_content_no_admin.to_string());
+        let config_no_admin: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&json_content_no_admin).unwrap();
+
+        // Test with a valid artifact signer (when admin_keys is not present, artifact_signers are used as admin)
+        let artifact_pubkey = test_keys.pub_key(0).unwrap();
+        assert!(is_valid_signer_for_update_of(artifact_pubkey, config_no_admin.clone()).is_ok());
+
+        // Test with a valid master signer
+        let master_pubkey = test_keys.pub_key(2).unwrap();
+        assert!(is_valid_signer_for_update_of(master_pubkey, config_no_admin.clone()).is_ok());
+
+        // Test with an invalid signer (not in the config)
+        let invalid_pubkey = test_keys.pub_key(3).unwrap();
+        let result = is_valid_signer_for_update_of(invalid_pubkey, config_no_admin);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InvalidSigner(msg) => {
+                assert!(msg.contains("not in the current admin or master signers groups"));
             }
             e => panic!("Expected InvalidSigner error, got {}", e),
         }
