@@ -3190,4 +3190,104 @@ mod tests {
 
         Ok(())
     }
+
+    // is_valid_signer_for_signer_init
+    // -------------------------------
+    #[test]
+    fn test_is_valid_signer_for_signer_init() {
+        let test_keys = TestKeys::new(5);
+
+        // Create a test config with admin and artifact signers
+        let json_content_template = r#"
+        {
+          "version": 1,
+          "initial_version": {
+            "permalink": "https://example.com",
+            "mirrors": []
+          },
+          "artifact_signers": [
+            {
+              "signers": [
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+              ],
+              "threshold": 2
+            }
+          ],
+          "master_keys": [],
+          "admin_keys": [
+            {
+              "signers": [
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER"} },
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER"} }
+              ],
+              "threshold": 2
+            }
+          ]
+        }
+        "#;
+
+        let json_content = test_keys.substitute_keys(json_content_template.to_string());
+        let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&json_content).unwrap();
+
+        // Test with a valid admin signer
+        let admin_pubkey = test_keys.pub_key(2).unwrap();
+        assert!(is_valid_signer_for_signer_init(admin_pubkey, config.clone()).is_ok());
+
+        // Test with a valid artifact signer, but not accepted as first signer (when admin_keys is present, artifact signers are not valid)
+        let artifact_pubkey = test_keys.pub_key(0).unwrap();
+        assert!(is_valid_signer_for_signer_init(artifact_pubkey, config.clone()).is_err());
+
+        // Test with an invalid signer (not in the config)
+        let invalid_pubkey = test_keys.pub_key(4).unwrap();
+        let result = is_valid_signer_for_signer_init(invalid_pubkey, config.clone());
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InvalidSigner(msg) => {
+                assert!(msg.contains("not in the admin_signers or artifact_signers groups"));
+            }
+            _ => panic!("Expected InvalidSigner error"),
+        }
+
+        // Test with a config that has no admin_keys (artifact_signers should be valid)
+        let json_content_no_admin = r#"
+        {
+          "version": 1,
+          "initial_version": {
+            "permalink": "https://example.com",
+            "mirrors": []
+          },
+          "artifact_signers": [
+            {
+              "signers": [
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+              ],
+              "threshold": 2
+            }
+          ],
+          "master_keys": []
+        }
+        "#;
+
+        let json_content_no_admin = test_keys.substitute_keys(json_content_no_admin.to_string());
+        let config_no_admin: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&json_content_no_admin).unwrap();
+
+        // Test with a valid artifact signer (when admin_keys is not present)
+        let artifact_pubkey = test_keys.pub_key(0).unwrap();
+        assert!(is_valid_signer_for_signer_init(artifact_pubkey, config_no_admin.clone()).is_ok());
+
+        // Test with an invalid signer (not in the config)
+        let invalid_pubkey = test_keys.pub_key(2).unwrap(); // This key is not in the artifact_signers
+        let result = is_valid_signer_for_signer_init(invalid_pubkey, config_no_admin);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InvalidSigner(msg) => {
+                assert!(msg.contains("not in the admin_signers or artifact_signers groups"));
+            }
+            e => panic!("Expected InvalidSigner error, got {}", e),
+        }
+    }
 }
