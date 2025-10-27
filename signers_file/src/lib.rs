@@ -4,7 +4,8 @@ use aggregate_signature::{
 use chrono::{DateTime, Utc};
 use common::fs::names::{
     PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
-    pending_signatures_path_for, signatures_path_for,
+    create_local_signers_for, find_global_signers_for, pending_signatures_path_for,
+    signatures_path_for,
 };
 use core::hash;
 use serde_json::json;
@@ -196,6 +197,10 @@ where
     let mut signatures: HashMap<K, S> = HashMap::new();
     signatures.insert(pubkey.clone(), signature.clone());
 
+    if find_global_signers_for(&dir_path).is_ok() {
+        // We do an update, copy global to local signers
+        create_local_signers_for(&signers_file_path)?;
+    }
     // Now everything is set up, try the transition to a complete signature.
     // This will succeed only if the signature is complete, and it is fine
     // if it returns an error reporting an incomplete signature for which the
@@ -2925,12 +2930,19 @@ mod tests {
         let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(&content)?;
 
-        // Verify the pending signature file was created
+        // Verify the pending signature is not there as signature is complete
         let pending_sig_file_path = root_dir.join(format!(
             "{}/{}.{}",
             PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
         ));
-        assert!(pending_sig_file_path.exists());
+        assert!(!pending_sig_file_path.exists());
+
+        // Verify the complete signature file was created
+        let complete_sig_file_path = root_dir.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        assert!(complete_sig_file_path.exists());
 
         Ok(())
     }
@@ -2959,24 +2971,32 @@ mod tests {
         let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(&content)?;
 
-        // Verify the pending signature file was created
+        // Verify the pending signature is not there as signature is complete
         let pending_sig_file_path = root_dir.join(format!(
             "{}/{}.{}",
             PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
         ));
-        assert!(pending_sig_file_path.exists());
+        assert!(!pending_sig_file_path.exists());
+
+        // Verify the complete signature file was created
+        let complete_sig_file_path = root_dir.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        assert!(complete_sig_file_path.exists());
 
         Ok(())
     }
 
     #[test]
-    fn test_propose_signers_file_with_artifact_signer_fails() -> Result<()> {
+    fn test_propose_signers_file_with_artifact_signer_fails_when_admin_group_present() -> Result<()>
+    {
         let temp_dir = TempDir::new()?;
         let root_dir = temp_dir.path();
-        let test_keys = TestKeys::new(2);
+        let test_keys = TestKeys::new(4);
 
         // Create active signers without admin or master keys
-        create_test_active_signers_for_update(root_dir, &test_keys, false, false)?;
+        create_test_active_signers_for_update(root_dir, &test_keys, true, false)?;
 
         // Create a proposal signed by an artifact key
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
@@ -2984,7 +3004,8 @@ mod tests {
         // Try to propose the new signers file
         let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
 
-        // Verify it fails
+        // Verify it fails because when there is an admin group, the artifact signers cannot
+        // propose a new signers file
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(_) => {} // Expected
@@ -2998,6 +3019,30 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_propose_signers_file_with_artifact_signer_ok_when_no_admin_group_present() -> Result<()>
+    {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers without admin or master keys
+        create_test_active_signers_for_update(root_dir, &test_keys, false, false)?;
+
+        // Create a proposal signed by an artifact key
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
+
+        // Try to propose the new signers file
+        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+
+        assert!(result.is_ok());
+
+        // Verify no pending file was created
+        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
+
+        Ok(())
+    }
     #[test]
     fn test_propose_signers_file_without_active_signers_fails() -> Result<()> {
         let temp_dir = TempDir::new()?;
