@@ -237,39 +237,6 @@ where
     Ok(signatures)
 }
 
-fn create_local_signers_for<P: AsRef<Path>>(
-    file_path_in: P,
-) -> Result<PathBuf, AggregateSignatureError> {
-    let file_path = file_path_in.as_ref();
-
-    // Not working on directories
-    if file_path.is_dir() {
-        return Err(AggregateSignatureError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Not creating local signers for a directory.",
-        )));
-    }
-
-    let local_signers_path = local_signers_path_for(file_path)?;
-
-    // Not overwriting existing files
-    if local_signers_path.exists() {
-        return Err({
-            AggregateSignatureError::Io(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                format!(
-                    "Not overwriting existing local signers file at {}",
-                    local_signers_path.to_string_lossy()
-                ),
-            ))
-        });
-    }
-
-    let global_signers = find_global_signers_for(file_path)?;
-    std::fs::copy(global_signers, &local_signers_path)?;
-    Ok(local_signers_path)
-}
-
 /// Load signers configuration from a file
 fn load_signers_config<P>(
     signers_file_path: &Path,
@@ -600,7 +567,9 @@ where
 mod tests {
     use super::*;
     use anyhow::Result;
-    use common::fs::names::{PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
+    use common::fs::names::{
+        PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX, create_local_signers_for,
+    };
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
@@ -1692,7 +1661,7 @@ mod tests {
         // Try to create local signers for a directory - should fail
         let result = create_local_signers_for(dir_path);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.unwrap_err().into() {
             AggregateSignatureError::Io(e) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput);
                 assert!(
@@ -1752,7 +1721,7 @@ mod tests {
         // Try to create local signers - should fail because local file already exists
         let result = create_local_signers_for(&test_file);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.unwrap_err().into() {
             AggregateSignatureError::Io(e) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
                 assert!(
@@ -1787,7 +1756,7 @@ mod tests {
         // Try to create local signers - should fail because no global signers found
         let result = create_local_signers_for(&test_file);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.unwrap_err().into() {
             AggregateSignatureError::Io(e) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
                 assert!(

@@ -71,6 +71,40 @@ pub fn find_global_signers_for(file_path: &Path) -> Result<PathBuf, std::io::Err
         };
     }
 }
+
+pub fn create_local_signers_for<P: AsRef<Path>>(
+    file_path_in: P,
+) -> Result<PathBuf, std::io::Error> {
+    let file_path = file_path_in.as_ref();
+
+    // Not working on directories
+    if file_path.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Not creating local signers for a directory.",
+        ));
+    }
+
+    let local_signers_path = local_signers_path_for(file_path)?;
+
+    // Not overwriting existing files
+    if local_signers_path.exists() {
+        return Err({
+            std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!(
+                    "Not overwriting existing local signers file at {}",
+                    local_signers_path.to_string_lossy()
+                ),
+            )
+        });
+    }
+
+    let global_signers = find_global_signers_for(file_path)?;
+    std::fs::copy(global_signers, &local_signers_path)?;
+    Ok(local_signers_path)
+}
+
 fn file_path_with_suffix<P: AsRef<Path>>(path_in: P, suffix: &str) -> std::io::Result<PathBuf> {
     let file_path = path_in.as_ref();
     file_path.file_name().ok_or_else(|| {
