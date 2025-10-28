@@ -941,6 +941,175 @@ mod tests {
     }
 
     #[test]
+    fn test_initialize_signers_with_2_signers_threshold_1() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+
+        let test_keys = TestKeys::new(3);
+
+        // Example JSON content (from the existing test)
+        let json_content_template = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+      ],
+      "threshold": 1
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+
+        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
+
+        // Get keys we work with here
+        let pub_key = test_keys.pub_key(0).unwrap();
+        let sec_key = test_keys.sec_key(0).unwrap();
+
+        // Sign the hash
+        let signature = sec_key.sign(&hash_value).unwrap();
+
+        // Call the function
+        initialize_signers_file(
+            dir_path,
+            json_content,
+            &signature,
+            test_keys.pub_key(0).unwrap(),
+        )
+        .unwrap();
+
+        // Even though we have a threshold 1, for a signers file initialisation we need
+        // to collect signatures from all signers preseng in the file. That's why we
+        // end up here with a pending signers dir and a pending agg sig.
+        // Check that the pending file exists
+        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
+
+        // Check the content
+        let content = fs::read_to_string(&pending_file_path).unwrap();
+        // We don't compare exactly because of formatting, but we can parse it again to validate
+        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&content).unwrap();
+
+        // Check that the signature does not exist as the aggregate
+        // signature is not complete
+        let sig_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        assert!(!sig_file_path.exists());
+        let pending_sig_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
+        assert!(pending_sig_file_path.exists());
+
+        // Check the signature file content
+        let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
+        let sig_map: std::collections::HashMap<String, String> =
+            serde_json::from_str(&sig_content).unwrap();
+        assert_eq!(sig_map.len(), 1);
+        assert!(sig_map.contains_key(&pub_key.to_base64()));
+        assert_eq!(
+            sig_map.get(&pub_key.to_base64()).unwrap(),
+            &signature.to_base64()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_initialize_signers_file_with_1_signer() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+
+        let test_keys = TestKeys::new(3);
+
+        // Example JSON content (from the existing test)
+        let json_content_template = r#"
+{
+  "version": 1,
+  "initial_version": {
+    "permalink": "https://example.com",
+    "mirrors": []
+  },
+  "artifact_signers": [
+    {
+      "signers": [
+        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
+      ],
+      "threshold": 1
+    }
+  ],
+  "master_keys": [],
+  "admin_keys": null
+}
+"#;
+
+        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
+
+        // Get keys we work with here
+        let pub_key = test_keys.pub_key(0).unwrap();
+        let sec_key = test_keys.sec_key(0).unwrap();
+
+        // Sign the hash
+        let signature = sec_key.sign(&hash_value).unwrap();
+
+        // Call the function
+        initialize_signers_file(
+            dir_path,
+            json_content,
+            &signature,
+            test_keys.pub_key(0).unwrap(),
+        )
+        .unwrap();
+
+        // Check that the active file exists
+        let active_file_path = dir_path.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
+        assert!(active_file_path.exists());
+
+        // Check the content
+        let content = fs::read_to_string(&active_file_path).unwrap();
+        // We don't compare exactly because of formatting, but we can parse it again to validate
+        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&content).unwrap();
+
+        // Check that the signature does not exist as the aggregate
+        // signature is not complete
+        let sig_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        assert!(sig_file_path.exists());
+        // Check the signature file content
+        let sig_content = fs::read_to_string(sig_file_path).unwrap();
+        let sig_map: std::collections::HashMap<String, String> =
+            serde_json::from_str(&sig_content).unwrap();
+        assert_eq!(sig_map.len(), 1);
+        assert!(sig_map.contains_key(&pub_key.to_base64()));
+        assert_eq!(
+            sig_map.get(&pub_key.to_base64()).unwrap(),
+            &signature.to_base64()
+        );
+
+        // Check no pending signers dir was left
+        let pending_sig_dir = dir_path.join(PENDING_SIGNERS_DIR);
+        assert!(!pending_sig_dir.exists());
+
+        Ok(())
+    }
+
+    #[test]
     fn test_initialize_signers_file_invalid_signer() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
