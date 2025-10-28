@@ -3,9 +3,8 @@ use common::fs::names::{
     PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, find_global_signers_for,
     local_signers_path_for, pending_signatures_path_for, signatures_path_for,
 };
-use sha2::{Digest, Sha512};
-use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait};
-use signers_file_types::{Signer, SignerGroup, SignersConfig};
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -555,7 +554,7 @@ mod tests {
     use std::path::PathBuf;
     use std::str::FromStr;
     use tempfile::TempDir;
-    use test_helpers::{TestKeys, pause};
+    use test_helpers::TestKeys;
 
     #[test]
     fn test_load_and_complete() -> Result<()> {
@@ -916,10 +915,10 @@ mod tests {
 
         // Create also signature for other data
         let other_data = common::sha512_for_content(b"my other data".to_vec())?;
-        let other_sig1 = seckey1.sign(&other_data).unwrap();
-        let other_sig2 = seckey2.sign(&other_data).unwrap();
+        let _other_sig1 = seckey1.sign(&other_data).unwrap();
+        let _other_sig2 = seckey2.sign(&other_data).unwrap();
         let other_sig3 = seckey3.sign(&other_data).unwrap();
-        let other_sig4 = seckey4.sign(&other_data).unwrap();
+        let _other_sig4 = seckey4.sign(&other_data).unwrap();
 
         // Create signatures maps
         // The name of the variable indicates which signatures is contains
@@ -2996,11 +2995,11 @@ mod tests {
             other => panic!("Expected IO error, got {:?}", other),
         }
 
-        // Restore permissions for cleanup
+        // Restore permissions for cleanup to ensure TempDir is cleaned up on all platforms.
         let mut perms = fs::metadata(&pending_sig_path)?.permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
         perms.set_readonly(false);
         fs::set_permissions(&pending_sig_path, perms)?;
-
         Ok(())
     }
 

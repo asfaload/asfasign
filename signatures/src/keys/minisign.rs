@@ -5,10 +5,7 @@ use crate::keys::{
 use base64::{Engine, prelude::BASE64_STANDARD};
 use common::{
     AsfaloadHashes,
-    fs::names::{
-        PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_FILE,
-        pending_signatures_path_for, signatures_path_for,
-    },
+    fs::names::{pending_signatures_path_for, signatures_path_for},
 };
 pub use minisign::KeyPair;
 use serde_json;
@@ -305,6 +302,7 @@ mod asfaload_index_tests {
     use std::{fs::File, path::PathBuf};
 
     use anyhow::{Context, Result};
+    use common::fs::names::PENDING_SIGNATURES_SUFFIX;
 
     use super::*;
     //------------------------------------------------------------

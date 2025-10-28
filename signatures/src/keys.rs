@@ -1,5 +1,5 @@
 pub mod minisign;
-use std::{fmt::Display, path::Path};
+use std::path::Path;
 
 use common::AsfaloadHashes;
 
