@@ -204,15 +204,20 @@ where
     // if it returns an error reporting an incomplete signature for which the
     // transition cannot occur.
     let agg_sig: SignatureWithState<AsfaloadPublicKey<_>, AsfaloadSignature<_>> =
-        aggregate_signature::load_for_file::<_, _, _>(signers_file_path)?;
+        aggregate_signature::load_for_file::<_, _, _>(&signers_file_path)?;
     if let Some(pending_sig) = agg_sig.get_pending() {
-        if let Err(e) = pending_sig.try_transition_to_complete() {
+        let transition_result = pending_sig.try_transition_to_complete();
+        if let Err(e) = transition_result {
             if !matches!(
                 e,
                 aggregate_signature::AggregateSignatureError::IsIncomplete
             ) {
                 return Err(e.into());
             }
+        } else {
+            // The signature is complete
+            let agg_sig = transition_result?;
+            activate_signers_file(signers_file_path, agg_sig)?;
         }
     }
 
@@ -229,6 +234,14 @@ where
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
     S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
+    if dir_path_in.as_ref().join(SIGNERS_DIR).exists()
+        || dir_path_in.as_ref().join(PENDING_SIGNERS_DIR).exists()
+    {
+        return Err(SignersFileError::InitialisationError(format!(
+            "Cannot initialise a signers dir in a directory with an existing signers dir: {}",
+            dir_path_in.as_ref().to_string_lossy(),
+        )));
+    }
     let signers_config: SignersConfig<K> = parse_signers_config(json_content)?;
     let validator = || is_valid_signer_for_signer_init(pubkey, &signers_config);
     write_valid_signers_file(
@@ -1139,26 +1152,24 @@ mod tests {
         let seckey = test_keys.sec_key(0).unwrap();
         let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
-        let sig_file_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
-        ));
-        let pending_file_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
+        let pending_signers_dir = dir_path.join(PENDING_SIGNERS_DIR);
+        let active_signers_dir = dir_path.join(SIGNERS_DIR);
+        let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
+        let active_signers_file_signatures =
+            active_signers_dir.join(format!("{}.{}", SIGNERS_FILE, SIGNATURES_SUFFIX));
 
         // Now sign proposal with unique artifact key which should be complete
         // ---------------------------------------------------------------
         let signature = seckey.sign(&hash_value).unwrap();
         let result = initialize_signers_file(dir_path, json_content, &signature, pubkey);
         result.expect("initialize_signers_file should have succeeded");
-        // Check that the pending file does not exist, as we have the complete
-        assert!(!pending_file_path.exists());
 
         // Check that the signature file exists as all
         // required admin signatures where collected.
-        assert!(sig_file_path.exists());
+        assert!(!pending_signers_dir.exists());
+        assert!(active_signers_dir.exists());
+        assert!(active_signers_file.exists());
+        assert!(active_signers_file_signatures.exists());
         Ok(())
     }
 
@@ -1218,9 +1229,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
         initialize_signers_file(dir_path, json_content, &signature, pub_key).unwrap();
+        // Threshold was one, so it is activated
         let pending_signers_file_path =
             dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
-        assert!(pending_signers_file_path.exists());
+        assert!(!pending_signers_file_path.exists());
+        let active_signers_file_path = dir_path.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
+        assert!(active_signers_file_path.exists());
         let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
         assert!(result.is_err());
         match result.as_ref().unwrap_err() {
@@ -2977,8 +2991,8 @@ mod tests {
         // Propose the new signers file
         propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
 
-        // Verify the pending file was created
-        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        // Verify the active file was created as we have a threshold of 1
+        let pending_file_path = root_dir.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
         assert!(pending_file_path.exists());
 
         // Verify the content
@@ -2989,14 +3003,14 @@ mod tests {
         // Verify the pending signature is not there as signature is complete
         let pending_sig_file_path = root_dir.join(format!(
             "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+            SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
         ));
         assert!(!pending_sig_file_path.exists());
 
-        // Verify the complete signature file was created
+        // Verify the complete signature file is present
         let complete_sig_file_path = root_dir.join(format!(
             "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+            SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
         ));
         assert!(complete_sig_file_path.exists());
 
@@ -3100,26 +3114,30 @@ mod tests {
         // Propose the new signers file
         propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
 
-        // Verify the pending file was created
-        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
-        assert!(pending_file_path.exists());
+        // Verify the active file was created as threshold is 1
+        let active_file_path = root_dir.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
+        assert!(active_file_path.exists());
+
+        // Check the pending signers dir is not present
+        let pending_signers_dir = root_dir.join(PENDING_SIGNERS_DIR);
+        assert!(!pending_signers_dir.exists());
 
         // Verify the content
-        let content = fs::read_to_string(&pending_file_path)?;
+        let content = fs::read_to_string(&active_file_path)?;
         let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(&content)?;
 
         // Verify the pending signature is not there as signature is complete
         let pending_sig_file_path = root_dir.join(format!(
             "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+            SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
         ));
         assert!(!pending_sig_file_path.exists());
 
         // Verify the complete signature file was created
         let complete_sig_file_path = root_dir.join(format!(
             "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+            SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
         ));
         assert!(complete_sig_file_path.exists());
 
@@ -3367,19 +3385,18 @@ mod tests {
         propose_signers_file(&nested_dir, &proposal_content, &signature, pubkey)?;
 
         // Verify the pending file was created in the nested directory
-        let pending_file_path =
-            nested_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
-        assert!(pending_file_path.exists());
+        let active_file_path = nested_dir.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
+        assert!(active_file_path.exists());
 
         // Verify the content
-        let content = fs::read_to_string(&pending_file_path)?;
+        let content = fs::read_to_string(&active_file_path)?;
         let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(&content)?;
 
         // Check the signature was transitioned to complete
         let complete_signature_path = nested_dir.join(format!(
             "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+            SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
         ));
         assert!(complete_signature_path.exists());
 
@@ -3749,22 +3766,19 @@ mod tests {
         )?;
 
         // Verify pending signers file exists
-        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
-        assert!(pending_file_path.exists());
+        let active_file_path = dir_path.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
+        assert!(active_file_path.exists());
 
         // Verify complete signature file exists (complete signature)
         let complete_sig_path = dir_path.join(format!(
             "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+            SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
         ));
         assert!(complete_sig_path.exists());
 
         // Verify pending signature file does not exist
-        let pending_sig_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(!pending_sig_path.exists());
+        let pending_sig_dir = dir_path.join(PENDING_SIGNERS_DIR);
+        assert!(!pending_sig_dir.exists());
 
         Ok(())
     }
