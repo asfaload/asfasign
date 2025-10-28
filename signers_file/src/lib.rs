@@ -56,8 +56,7 @@ fn is_valid_signer_for_signer_init<P: AsfaloadPublicKeyTrait + Eq>(
         Ok(())
     } else {
         Err(SignersFileError::InvalidSigner(
-            "The provided public key is not in the admin_signers or artifact_signers groups"
-                .to_string(),
+            "The provided public key is not in the required groups for signers init".to_string(),
         ))
     }
 }
@@ -85,8 +84,7 @@ fn is_valid_signer_for_update_of<P: AsfaloadPublicKeyTrait + Eq>(
         Ok(())
     } else {
         Err(SignersFileError::InvalidSigner(
-            "The provided public key is not in the current admin or master signers groups"
-                .to_string(),
+            "The provided public key is not in the required groups of current config for signers update".to_string(),
         ))
     }
 }
@@ -3430,7 +3428,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
-                assert!(msg.contains("not in the admin_signers or artifact_signers groups"));
+                assert!(msg.contains("not in the required groups for signers init"));
             }
             _ => panic!("Expected InvalidSigner error"),
         }
@@ -3470,7 +3468,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
-                assert!(msg.contains("not in the admin_signers or artifact_signers groups"));
+                assert!(msg.contains("not in the required groups for signers init"));
             }
             e => panic!("Expected InvalidSigner error, got {}", e),
         }
@@ -3534,7 +3532,9 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
-                assert!(msg.contains("not in the current admin or master signers groups"));
+                assert!(
+                    msg.contains("not in the required groups of current config for signers update")
+                );
             }
             e => panic!("Expected InvalidSigner error, got {}", e),
         }
@@ -3545,7 +3545,9 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
-                assert!(msg.contains("not in the current admin or master signers groups"));
+                assert!(
+                    msg.contains("not in the required groups of current config for signers update")
+                );
             }
             _ => panic!("Expected InvalidSigner error"),
         }
@@ -3596,7 +3598,9 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
-                assert!(msg.contains("not in the current admin or master signers groups"));
+                assert!(
+                    msg.contains("not in the required groups of current config for signers update")
+                );
             }
             e => panic!("Expected InvalidSigner error, got {}", e),
         }
