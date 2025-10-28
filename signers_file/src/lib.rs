@@ -44,7 +44,7 @@ pub enum SignersFileError {
 // initialisation, i.e. when no existing signers file is active.
 fn is_valid_signer_for_signer_init<P: AsfaloadPublicKeyTrait + Eq>(
     pubkey: &P,
-    config: SignersConfig<P>,
+    config: &SignersConfig<P>,
 ) -> Result<(), SignersFileError> {
     let is_valid = config.admin_keys().iter().any(|group| {
         group
@@ -67,7 +67,7 @@ fn is_valid_signer_for_signer_init<P: AsfaloadPublicKeyTrait + Eq>(
 // which influences the validation.
 fn is_valid_signer_for_update_of<P: AsfaloadPublicKeyTrait + Eq>(
     pubkey: &P,
-    active_config: SignersConfig<P>,
+    active_config: &SignersConfig<P>,
 ) -> Result<(), SignersFileError> {
     // Only an admin key or a master key can propose a new signers file.
     let is_valid = active_config.admin_keys().iter().any(|group| {
@@ -232,7 +232,7 @@ where
     S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
     let signers_config: SignersConfig<K> = parse_signers_config(json_content)?;
-    let validator = || is_valid_signer_for_signer_init(pubkey, signers_config);
+    let validator = || is_valid_signer_for_signer_init(pubkey, &signers_config);
     write_valid_signers_file(
         dir_path_in.as_ref(),
         json_content,
@@ -284,7 +284,7 @@ where
     let active_config: SignersConfig<K> = parse_signers_config(&active_content)?;
 
     // Check if the provided pubkey is in the admin_keys or master_keys groups
-    let validator = || is_valid_signer_for_update_of(pubkey, active_config);
+    let validator = || is_valid_signer_for_update_of(pubkey, &active_config);
 
     // If the check passes, call initialize_signers_file
     write_valid_signers_file(dir_path, json_content, signature, pubkey, validator)
@@ -3418,15 +3418,15 @@ mod tests {
 
         // Test with a valid admin signer
         let admin_pubkey = test_keys.pub_key(2).unwrap();
-        assert!(is_valid_signer_for_signer_init(admin_pubkey, config.clone()).is_ok());
+        assert!(is_valid_signer_for_signer_init(admin_pubkey, &config).is_ok());
 
         // Test with a valid artifact signer, but not accepted as first signer (when admin_keys is present, artifact signers are not valid)
         let artifact_pubkey = test_keys.pub_key(0).unwrap();
-        assert!(is_valid_signer_for_signer_init(artifact_pubkey, config.clone()).is_err());
+        assert!(is_valid_signer_for_signer_init(artifact_pubkey, &config).is_err());
 
         // Test with an invalid signer (not in the config)
         let invalid_pubkey = test_keys.pub_key(4).unwrap();
-        let result = is_valid_signer_for_signer_init(invalid_pubkey, config.clone());
+        let result = is_valid_signer_for_signer_init(invalid_pubkey, &config);
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
@@ -3462,11 +3462,11 @@ mod tests {
 
         // Test with a valid artifact signer (when admin_keys is not present)
         let artifact_pubkey = test_keys.pub_key(0).unwrap();
-        assert!(is_valid_signer_for_signer_init(artifact_pubkey, config_no_admin.clone()).is_ok());
+        assert!(is_valid_signer_for_signer_init(artifact_pubkey, &config_no_admin).is_ok());
 
         // Test with an invalid signer (not in the config)
         let invalid_pubkey = test_keys.pub_key(2).unwrap(); // This key is not in the artifact_signers
-        let result = is_valid_signer_for_signer_init(invalid_pubkey, config_no_admin);
+        let result = is_valid_signer_for_signer_init(invalid_pubkey, &config_no_admin);
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
@@ -3522,15 +3522,15 @@ mod tests {
 
         // Test with a valid admin signer
         let admin_pubkey = test_keys.pub_key(3).unwrap();
-        assert!(is_valid_signer_for_update_of(admin_pubkey, config.clone()).is_ok());
+        assert!(is_valid_signer_for_update_of(admin_pubkey, &config).is_ok());
 
         // Test with a valid master signer
         let master_pubkey = test_keys.pub_key(2).unwrap();
-        assert!(is_valid_signer_for_update_of(master_pubkey, config.clone()).is_ok());
+        assert!(is_valid_signer_for_update_of(master_pubkey, &config).is_ok());
 
         // Test with an artifact signer (should not be valid for updates as there is an admin group)
         let artifact_pubkey = test_keys.pub_key(0).unwrap();
-        let result = is_valid_signer_for_update_of(artifact_pubkey, config.clone());
+        let result = is_valid_signer_for_update_of(artifact_pubkey, &config);
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
@@ -3541,7 +3541,7 @@ mod tests {
 
         // Test with an invalid signer (not in the config)
         let invalid_pubkey = test_keys.pub_key(4).unwrap();
-        let result = is_valid_signer_for_update_of(invalid_pubkey, config);
+        let result = is_valid_signer_for_update_of(invalid_pubkey, &config);
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
@@ -3584,15 +3584,15 @@ mod tests {
 
         // Test with a valid artifact signer (when admin_keys is not present, artifact_signers are used as admin)
         let artifact_pubkey = test_keys.pub_key(0).unwrap();
-        assert!(is_valid_signer_for_update_of(artifact_pubkey, config_no_admin.clone()).is_ok());
+        assert!(is_valid_signer_for_update_of(artifact_pubkey, &config_no_admin).is_ok());
 
         // Test with a valid master signer
         let master_pubkey = test_keys.pub_key(2).unwrap();
-        assert!(is_valid_signer_for_update_of(master_pubkey, config_no_admin.clone()).is_ok());
+        assert!(is_valid_signer_for_update_of(master_pubkey, &config_no_admin).is_ok());
 
         // Test with an invalid signer (not in the config)
         let invalid_pubkey = test_keys.pub_key(3).unwrap();
-        let result = is_valid_signer_for_update_of(invalid_pubkey, config_no_admin);
+        let result = is_valid_signer_for_update_of(invalid_pubkey, &config_no_admin);
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
