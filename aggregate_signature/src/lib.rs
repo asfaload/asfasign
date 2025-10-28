@@ -268,31 +268,8 @@ pub fn get_newly_added_signer_keys<P: AsfaloadPublicKeyTrait + Eq + std::hash::H
     new_config: &SignersConfig<P>,
 ) -> Vec<P> {
     // Create a HashSet of public keys from the old configuration for efficient lookup.
-    let old_signers: HashSet<P> = old_config
-        .admin_keys()
-        .iter()
-        .chain(old_config.master_keys().iter())
-        .chain(old_config.artifact_signers.iter())
-        .flat_map(|group| {
-            group
-                .signers
-                .iter()
-                .map(|signer| signer.data.pubkey.clone())
-        })
-        .collect();
-
-    let new_signers: HashSet<P> = new_config
-        .admin_keys()
-        .iter()
-        .chain(new_config.master_keys().iter())
-        .chain(new_config.artifact_signers.iter())
-        .flat_map(|group| {
-            group
-                .signers
-                .iter()
-                .map(|signer| signer.data.pubkey.clone())
-        })
-        .collect();
+    let old_signers: HashSet<P> = old_config.all_signer_keys();
+    let new_signers: HashSet<P> = new_config.all_signer_keys();
 
     let diff = new_signers.difference(&old_signers).collect::<Vec<&P>>();
     // Need to clone references targets as they are owned by this function
