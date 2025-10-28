@@ -271,9 +271,7 @@ pub fn get_newly_added_signer_keys<P: AsfaloadPublicKeyTrait + Eq + std::hash::H
     let old_signers: HashSet<P> = old_config.all_signer_keys();
     let new_signers: HashSet<P> = new_config.all_signer_keys();
 
-    let diff = new_signers.difference(&old_signers).collect::<Vec<&P>>();
-    // Need to clone references targets as they are owned by this function
-    diff.iter().map(|p| (*p).clone()).collect()
+    new_signers.difference(&old_signers).cloned().collect()
 }
 
 /// Check if an aggregate signature for a file is complete
