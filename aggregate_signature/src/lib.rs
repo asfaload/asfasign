@@ -3324,16 +3324,17 @@ mod tests {
         };
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
-        assert_eq!(new_signers.len(), 5);
-        assert!(!new_signers.contains(test_keys.pub_key(1).unwrap()));
-        assert!(!new_signers.contains(test_keys.pub_key(2).unwrap()));
-        assert!(!new_signers.contains(test_keys.pub_key(3).unwrap()));
-        assert!(!new_signers.contains(test_keys.pub_key(4).unwrap()));
-        assert!(new_signers.contains(test_keys.pub_key(5).unwrap()));
-        assert!(new_signers.contains(test_keys.pub_key(6).unwrap()));
-        assert!(new_signers.contains(test_keys.pub_key(7).unwrap()));
-        assert!(new_signers.contains(test_keys.pub_key(8).unwrap()));
-        assert!(new_signers.contains(test_keys.pub_key(9).unwrap()));
+        let new_signers_set: std::collections::HashSet<_> = new_signers.into_iter().collect();
+        assert_eq!(new_signers_set.len(), 5);
+        assert!(!new_signers_set.contains(test_keys.pub_key(1).unwrap()));
+        assert!(!new_signers_set.contains(test_keys.pub_key(2).unwrap()));
+        assert!(!new_signers_set.contains(test_keys.pub_key(3).unwrap()));
+        assert!(!new_signers_set.contains(test_keys.pub_key(4).unwrap()));
+        assert!(new_signers_set.contains(test_keys.pub_key(5).unwrap()));
+        assert!(new_signers_set.contains(test_keys.pub_key(6).unwrap()));
+        assert!(new_signers_set.contains(test_keys.pub_key(7).unwrap()));
+        assert!(new_signers_set.contains(test_keys.pub_key(8).unwrap()));
+        assert!(new_signers_set.contains(test_keys.pub_key(9).unwrap()));
     }
 
     #[test]
