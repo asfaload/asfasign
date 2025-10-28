@@ -3001,6 +3001,88 @@ mod tests {
     }
 
     #[test]
+    fn test_propose_signers_file_with_multiple_admin_signers() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(5);
+
+        // Create active signers with admin keys
+        create_test_active_signers_for_update(root_dir, &test_keys, 2, 0)?;
+
+        // Create a proposal signed by an admin key
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+
+        // Propose the new signers file
+        propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
+
+        // Verify the pending file was created
+        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
+
+        // Verify the content
+        let content = fs::read_to_string(&pending_file_path)?;
+        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&content)?;
+
+        // Verify the pending signature is there as signature is incomplete
+        let pending_sig_file_path = root_dir.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
+        assert!(pending_sig_file_path.exists());
+
+        // Verify the complete signature file was created
+        let complete_sig_file_path = root_dir.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        assert!(!complete_sig_file_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_propose_signers_file_with_multiple_master_signers() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(5);
+
+        // Create active signers with admin keys
+        create_test_active_signers_for_update(root_dir, &test_keys, 1, 2)?;
+
+        // Create a proposal signed by an admin key
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+
+        // Propose the new signers file
+        propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
+
+        // Verify the pending file was created
+        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
+
+        // Verify the content
+        let content = fs::read_to_string(&pending_file_path)?;
+        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+            parse_signers_config(&content)?;
+
+        // Verify the pending signature not there as signature is incomplete
+        let pending_sig_file_path = root_dir.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
+        assert!(pending_sig_file_path.exists());
+
+        // Verify the complete signature file was created
+        let complete_sig_file_path = root_dir.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        assert!(!complete_sig_file_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
     fn test_propose_signers_file_with_master_signer() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let root_dir = temp_dir.path();
