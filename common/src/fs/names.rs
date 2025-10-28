@@ -15,6 +15,96 @@ pub const PENDING_SIGNERS_FILE: &str = "index.json.pending";
 pub const SIGNERS_HISTORY_SUFFIX: &str = "history.json";
 pub const SIGNERS_HISTORY_FILE: &str = "asfaload.signers.history.json";
 
+/// Find the active signers file by traversing parent directories
+pub fn find_global_signers_for(file_path: &Path) -> Result<PathBuf, std::io::Error> {
+    // We accept looking for the global signer for a directory.
+    let mut current_dir = {
+        if file_path.is_dir() {
+            Ok(file_path)
+        } else {
+            file_path.parent().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "File has no parent directory",
+                )
+            })
+        }
+    }?;
+
+    // If we work on a signers file, we go up one level, so we do not
+    // consider a signers file for itself
+    current_dir = if file_path
+        .file_name()
+        .is_some_and(|name| name == SIGNERS_FILE)
+        && file_path
+            .parent()
+            .is_some_and(|p| p.file_name().unwrap_or_default() == SIGNERS_DIR)
+    {
+        current_dir
+            .parent()
+            .and_then(|d| d.parent())
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "File has no parent directory",
+                )
+            })?
+    } else {
+        current_dir
+    };
+
+    loop {
+        let candidate = current_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+
+        // Move up to the parent directory
+        current_dir = match current_dir.parent() {
+            Some(parent) => parent,
+            None => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "No signers file found in parent directories",
+                ));
+            }
+        };
+    }
+}
+
+pub fn create_local_signers_for<P: AsRef<Path>>(
+    file_path_in: P,
+) -> Result<PathBuf, std::io::Error> {
+    let file_path = file_path_in.as_ref();
+
+    // Not working on directories
+    if file_path.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Not creating local signers for a directory.",
+        ));
+    }
+
+    let local_signers_path = local_signers_path_for(file_path)?;
+
+    // Not overwriting existing files
+    if local_signers_path.exists() {
+        return Err({
+            std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!(
+                    "Not overwriting existing local signers file at {}",
+                    local_signers_path.to_string_lossy()
+                ),
+            )
+        });
+    }
+
+    let global_signers = find_global_signers_for(file_path)?;
+    std::fs::copy(global_signers, &local_signers_path)?;
+    Ok(local_signers_path)
+}
+
 fn file_path_with_suffix<P: AsRef<Path>>(path_in: P, suffix: &str) -> std::io::Result<PathBuf> {
     let file_path = path_in.as_ref();
     file_path.file_name().ok_or_else(|| {

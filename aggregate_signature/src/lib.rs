@@ -1,12 +1,12 @@
 use common::AsfaloadHashes;
 use common::fs::names::{
-    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, local_signers_path_for,
-    pending_signatures_path_for, signatures_path_for,
+    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, find_global_signers_for,
+    local_signers_path_for, pending_signatures_path_for, signatures_path_for,
 };
 use sha2::{Digest, Sha512};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait};
-use signers_file_types::{SignerGroup, SignersConfig};
-use std::collections::HashMap;
+use signers_file_types::{Signer, SignerGroup, SignersConfig};
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -237,96 +237,6 @@ where
     Ok(signatures)
 }
 
-/// Find the active signers file by traversing parent directories
-fn find_global_signers_for(file_path: &Path) -> Result<PathBuf, AggregateSignatureError> {
-    if file_path.is_dir() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Not looking for global signers for a directory.",
-        )
-        .into());
-    }
-    let mut current_dir = file_path.parent().ok_or_else(|| {
-        AggregateSignatureError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "File has no parent directory",
-        ))
-    })?;
-
-    // If we work on a signers file, we go up one level, so we do not
-    // consider a signers file for itself
-    current_dir = if file_path
-        .file_name()
-        .is_some_and(|name| name == SIGNERS_FILE)
-        && file_path
-            .parent()
-            .is_some_and(|p| p.file_name().unwrap_or_default() == SIGNERS_DIR)
-    {
-        current_dir
-            .parent()
-            .and_then(|d| d.parent())
-            .ok_or_else(|| {
-                AggregateSignatureError::Io(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "File has no parent directory",
-                ))
-            })?
-    } else {
-        current_dir
-    };
-
-    loop {
-        let candidate = current_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-
-        // Move up to the parent directory
-        current_dir = match current_dir.parent() {
-            Some(parent) => parent,
-            None => {
-                return Err(AggregateSignatureError::Io(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "No signers file found in parent directories",
-                )));
-            }
-        };
-    }
-}
-
-fn create_local_signers_for<P: AsRef<Path>>(
-    file_path_in: P,
-) -> Result<PathBuf, AggregateSignatureError> {
-    let file_path = file_path_in.as_ref();
-
-    // Not working on directories
-    if file_path.is_dir() {
-        return Err(AggregateSignatureError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Not creating local signers for a directory.",
-        )));
-    }
-
-    let local_signers_path = local_signers_path_for(file_path)?;
-
-    // Not overwriting existing files
-    if local_signers_path.exists() {
-        return Err({
-            AggregateSignatureError::Io(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                format!(
-                    "Not overwriting existing local signers file at {}",
-                    local_signers_path.to_string_lossy()
-                ),
-            ))
-        });
-    }
-
-    let global_signers = find_global_signers_for(file_path)?;
-    std::fs::copy(global_signers, &local_signers_path)?;
-    Ok(local_signers_path)
-}
-
 /// Load signers configuration from a file
 fn load_signers_config<P>(
     signers_file_path: &Path,
@@ -334,10 +244,34 @@ fn load_signers_config<P>(
 where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
 {
-    let content = std::fs::read_to_string(signers_file_path)?;
+    let content = std::fs::read_to_string(signers_file_path).map_err(|e| {
+        std::io::Error::other(format!(
+            "could not read {} at {}:{}\n {}",
+            signers_file_path.to_string_lossy(),
+            file!(),
+            line!(),
+            e
+        ))
+    })?;
     let config = signers_file_types::parse_signers_config(&content)
         .map_err(AggregateSignatureError::JsonError)?;
     Ok(config)
+}
+
+/// Returns the public keys of signers that are present in `new_config` but not in `old_config`.
+///
+/// This function compares the public keys of signers in both configurations
+/// and returns a `Vec` of public keys from `new_config` that are not
+/// found in `old_config`, regardless of the groups they belong to.
+pub fn get_newly_added_signer_keys<P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone>(
+    old_config: &SignersConfig<P>,
+    new_config: &SignersConfig<P>,
+) -> Vec<P> {
+    // Create a HashSet of public keys from the old configuration for efficient lookup.
+    let old_signers: HashSet<P> = old_config.all_signer_keys();
+    let new_signers: HashSet<P> = new_config.all_signer_keys();
+
+    new_signers.difference(&old_signers).cloned().collect()
 }
 
 /// Check if an aggregate signature for a file is complete
@@ -355,7 +289,7 @@ where
     //  Determine the file type
     let signed_file = SignedFile::new(file_path);
 
-    //  Get the path to the complete signature file
+    //  Get the path to the signatures file
     let sig_file_path = if look_at_pending {
         pending_signatures_path_for(file_path)?
     } else {
@@ -559,7 +493,14 @@ where
             }
         }
         if is_aggregate_signature_complete::<_, P>(&self.subject, true)? {
-            std::fs::rename(pending_sig_path, complete_sig_path)?;
+            std::fs::rename(&pending_sig_path, &complete_sig_path).map_err(|e| {
+                AggregateSignatureError::Io(std::io::Error::other(format!(
+                    "Error renaming pending to complete: {} -> {} : {}",
+                    pending_sig_path.to_string_lossy(),
+                    complete_sig_path.to_string_lossy(),
+                    e
+                )))
+            })?;
             Ok(AggregateSignature::<P, S, CompleteSignature> {
                 origin: self.origin.clone(),
                 subject: self.subject.clone(),
@@ -601,7 +542,9 @@ where
 mod tests {
     use super::*;
     use anyhow::Result;
-    use common::fs::names::{PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
+    use common::fs::names::{
+        PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX, create_local_signers_for,
+    };
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
@@ -1489,15 +1432,10 @@ mod tests {
         let found = find_global_signers_for(&test_file).unwrap();
         assert_eq!(found, signers_file);
 
-        // We only look for signers for a file, not a directory
-        let result = find_global_signers_for(&project_dir);
-        assert!(result.is_err());
-        assert!(matches!(result, Err(AggregateSignatureError::Io(_))));
-
         // Test when no signers file exists
         let no_signers_dir = root.join("no_signers");
         fs::create_dir_all(&no_signers_dir).unwrap();
-        let result = find_global_signers_for(&no_signers_dir);
+        let result = find_global_signers_for(&no_signers_dir).map_err(|e| e.into());
         assert!(matches!(result, Err(AggregateSignatureError::Io(_))));
 
         // Test that for the signers file, we don't consider itself
@@ -1698,7 +1636,7 @@ mod tests {
         // Try to create local signers for a directory - should fail
         let result = create_local_signers_for(dir_path);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.unwrap_err().into() {
             AggregateSignatureError::Io(e) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::InvalidInput);
                 assert!(
@@ -1758,7 +1696,7 @@ mod tests {
         // Try to create local signers - should fail because local file already exists
         let result = create_local_signers_for(&test_file);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.unwrap_err().into() {
             AggregateSignatureError::Io(e) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
                 assert!(
@@ -1793,7 +1731,7 @@ mod tests {
         // Try to create local signers - should fail because no global signers found
         let result = create_local_signers_for(&test_file);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.unwrap_err().into() {
             AggregateSignatureError::Io(e) => {
                 assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
                 assert!(
@@ -3221,5 +3159,231 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    // ---------------------------------
+    // Test get_newly_added_signer_keys
+    // ---------------------------------
+
+    /// Helper function to create a Signer from a TestKeys instance.
+    fn create_signer(
+        test_keys: &TestKeys,
+        index: usize,
+    ) -> Signer<AsfaloadPublicKey<minisign::PublicKey>> {
+        Signer {
+            kind: SignerKind::Key,
+            data: SignerData {
+                format: KeyFormat::Minisign,
+                pubkey: test_keys.pub_key(index).unwrap().clone(),
+            },
+        }
+    }
+
+    /// Helper function to create a SignerGroup from a vector of Signer indices.
+    fn create_group(
+        test_keys: &TestKeys,
+        indices: Vec<usize>,
+        threshold: u32,
+    ) -> SignerGroup<AsfaloadPublicKey<minisign::PublicKey>> {
+        let signers = indices
+            .into_iter()
+            .map(|i| create_signer(test_keys, i))
+            .collect();
+        SignerGroup { signers, threshold }
+    }
+
+    #[test]
+    fn test_no_new_signers_identical_configs() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+        };
+
+        let new_config = old_config.clone();
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert!(new_signers.is_empty());
+    }
+
+    #[test]
+    fn test_no_new_signers_reordered_groups() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            artifact_signers: vec![create_group(&test_keys, vec![1, 0], 2)], // Reordered
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert!(new_signers.is_empty());
+    }
+
+    #[test]
+    fn test_new_signer_in_artifact_signers() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)], // Added key 1
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert_eq!(new_signers.len(), 1);
+        assert_eq!(new_signers[0], test_keys.pub_key(1).unwrap().clone());
+    }
+
+    #[test]
+    fn test_new_signer_in_master_keys() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![create_group(&test_keys, vec![1], 1)], // Added key 1
+            admin_keys: None,
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert_eq!(new_signers.len(), 1);
+        assert_eq!(new_signers[0], test_keys.pub_key(1).unwrap().clone());
+    }
+
+    #[test]
+    fn test_new_signer_in_admin_keys() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![],
+            admin_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert_eq!(new_signers.len(), 1);
+        assert_eq!(new_signers[0], test_keys.pub_key(1).unwrap().clone());
+    }
+
+    #[test]
+    fn test_new_signers_and_removed_signers() {
+        let test_keys = TestKeys::new(10);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0, 5, 8], 1)],
+            master_keys: vec![create_group(&test_keys, vec![2, 6, 9], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![7], 2)]),
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        let new_signers_set: std::collections::HashSet<_> = new_signers.into_iter().collect();
+        assert_eq!(new_signers_set.len(), 5);
+        assert!(!new_signers_set.contains(test_keys.pub_key(1).unwrap()));
+        assert!(!new_signers_set.contains(test_keys.pub_key(2).unwrap()));
+        assert!(!new_signers_set.contains(test_keys.pub_key(3).unwrap()));
+        assert!(!new_signers_set.contains(test_keys.pub_key(4).unwrap()));
+        assert!(new_signers_set.contains(test_keys.pub_key(5).unwrap()));
+        assert!(new_signers_set.contains(test_keys.pub_key(6).unwrap()));
+        assert!(new_signers_set.contains(test_keys.pub_key(7).unwrap()));
+        assert!(new_signers_set.contains(test_keys.pub_key(8).unwrap()));
+        assert!(new_signers_set.contains(test_keys.pub_key(9).unwrap()));
+    }
+
+    #[test]
+    fn test_all_signers_are_new() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![create_group(&test_keys, vec![1], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert_eq!(new_signers.len(), 3);
+        let new_signer_keys: HashSet<_> = new_signers.into_iter().collect();
+        assert!(new_signer_keys.contains(test_keys.pub_key(0).unwrap()));
+        assert!(new_signer_keys.contains(test_keys.pub_key(1).unwrap()));
+        assert!(new_signer_keys.contains(test_keys.pub_key(2).unwrap()));
+    }
+
+    #[test]
+    fn test_all_signers_are_removed() {
+        let test_keys = TestKeys::new(3);
+        let old_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
+            master_keys: vec![create_group(&test_keys, vec![1], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+        };
+
+        let new_config = SignersConfig {
+            version: 1,
+            initial_version: Default::default(),
+            artifact_signers: vec![],
+            master_keys: vec![],
+            admin_keys: None,
+        };
+
+        let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
+        assert!(new_signers.is_empty());
     }
 }

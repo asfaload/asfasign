@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -38,8 +38,25 @@ where
             _ => &self.artifact_signers,
         }
     }
+    pub fn master_keys(&self) -> &Vec<SignerGroup<P>> {
+        &self.master_keys
+    }
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
+    }
+    // Get all signers keys present in the SignersConfig.
+    pub fn all_signer_keys(&self) -> HashSet<P> {
+        self.admin_keys()
+            .iter()
+            .chain(self.master_keys().iter())
+            .chain(self.artifact_signers.iter())
+            .flat_map(|group| {
+                group
+                    .signers
+                    .iter()
+                    .map(|signer| signer.data.pubkey.clone())
+            })
+            .collect()
     }
 }
 
@@ -48,6 +65,14 @@ pub struct InitialVersion {
     pub permalink: String,
     #[serde(default)]
     pub mirrors: Vec<String>,
+}
+impl Default for InitialVersion {
+    fn default() -> Self {
+        InitialVersion {
+            permalink: "".to_string(),
+            mirrors: vec![],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

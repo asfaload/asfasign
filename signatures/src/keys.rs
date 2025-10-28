@@ -94,7 +94,7 @@ pub struct AsfaloadSecretKey<K> {
     // Keep it private as for minisign it is the decrypted key, i.e. non password protected.
     key: K,
 }
-pub trait AsfaloadPublicKeyTrait: Sized {
+pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone {
     type Signature: AsfaloadSignatureTrait;
 
     fn verify(
