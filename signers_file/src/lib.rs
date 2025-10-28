@@ -266,8 +266,13 @@ where
     S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
     // Determine the path to the active signers file
-    let active_signers_dir = dir_path.as_ref().join(SIGNERS_DIR);
-    let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
+    let active_signers_file = find_global_signers_for(dir_path.as_ref()).map_err(|e| {
+        SignersFileError::InitialisationError(format!(
+            "Active signers file not found for {}: {}",
+            dir_path.as_ref().to_string_lossy(),
+            e
+        ))
+    })?;
 
     // Check if the active signers file exists
     if !active_signers_file.exists() {
@@ -3346,14 +3351,14 @@ mod tests {
     }
 
     #[test]
-    fn test_propose_signers_file_with_nested_directory() -> Result<()> {
+    fn test_propose_signers_file_for_nested_directory() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let root_dir = temp_dir.path();
         let nested_dir = root_dir.join("nested");
         let test_keys = TestKeys::new(4);
 
         // Create active signers with admin keys in nested directory
-        create_test_active_signers_for_update(&nested_dir, &test_keys, 1, 0)?;
+        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
         // Create a proposal signed by an admin key
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
@@ -3370,6 +3375,13 @@ mod tests {
         let content = fs::read_to_string(&pending_file_path)?;
         let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(&content)?;
+
+        // Check the signature was transitioned to complete
+        let complete_signature_path = nested_dir.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+        ));
+        assert!(complete_signature_path.exists());
 
         Ok(())
     }
