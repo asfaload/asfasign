@@ -1,5 +1,5 @@
 pub mod minisign;
-use std::{fmt::Display, path::Path};
+use std::path::Path;
 
 use common::AsfaloadHashes;
 
@@ -50,7 +50,7 @@ pub mod errs {
     }
 }
 
-// Trait that we will implement for keypairs we support. Inintially only minisign::KeyPair
+// Trait that we will implement for keypairs we support. Initially only minisign::KeyPair
 pub trait AsfaloadKeyPairTrait<'a>: Sized {
     type PublicKey;
     type SecretKey;
@@ -58,11 +58,11 @@ pub trait AsfaloadKeyPairTrait<'a>: Sized {
     // If the path is an existing directory, save the secret key in this directory in
     // file named 'key', and public key in 'key.pub'.
     // If the path is an inexisting file in an existing directory, save secret key
-    // in this newly created filr, and save the public key in the same filename with added suffx
+    // in this newly created file, and save the public key in the same filename with added suffx
     // '.pub'
     fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, errs::KeyError>;
     // As we use minisign as the first (and initially only) signing scheme, our proposed API is
-    // modelled after it. When we generate a minisign key pai, the private key is encrypted and
+    // modelled after it. When we generate a minisign key pair, the private key is encrypted and
     // needs to be decrypted for use.
     // This method returns the decrypted secret key, and thus requires the decryption password as
     // argument.
@@ -132,7 +132,7 @@ pub trait AsfaloadSignatureTrait: Sized {
     fn from_string(s: &str) -> Result<Self, errs::SignatureError>;
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError>;
 
-    // As we need to serialise to json, and json does not support multiline strings, we ssupport
+    // As we need to serialise to json, and json does not support multiline strings, we support
     // the serialisation to base64 format.
     fn from_base64(s: &str) -> Result<Self, errs::SignatureError>;
 

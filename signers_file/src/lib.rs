@@ -1,19 +1,13 @@
-use aggregate_signature::{
-    AggregateSignature, CompleteSignature, SignatureWithState, check_all_signers,
-};
+use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
 use chrono::{DateTime, Utc};
 use common::fs::names::{
-    PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
-    create_local_signers_for, find_global_signers_for, pending_signatures_path_for,
-    signatures_path_for,
+    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE, create_local_signers_for,
+    find_global_signers_for, pending_signatures_path_for, signatures_path_for,
 };
-use core::hash;
-use serde_json::json;
-use sha2::{Digest, Sha512};
 use signatures::keys::{
     AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
 };
-use signers_file_types::{Signer, SignersConfig, parse_signers_config};
+use signers_file_types::{SignersConfig, parse_signers_config};
 use std::{collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
 use thiserror::Error;
 //
@@ -496,9 +490,8 @@ pub fn parse_history_file<P: AsfaloadPublicKeyTrait>(
 mod tests {
     use super::*;
     use anyhow::Result;
-    use chrono::Date;
     use common::fs::names::PENDING_SIGNATURES_SUFFIX;
-    use common::fs::names::PENDING_SIGNERS_FILE;
+    use common::fs::names::SIGNATURES_SUFFIX;
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signers_file_types::KeyFormat;
@@ -1279,8 +1272,7 @@ mod tests {
         // Now sign proposal with admin key which should be ok
         // --------------------------------------------------
         let admin_signature = admin_seckey.sign(&hash_value).unwrap();
-        let result =
-            initialize_signers_file(dir_path, json_content, &admin_signature, admin_pubkey);
+        initialize_signers_file(dir_path, json_content, &admin_signature, admin_pubkey)?;
         // Check that the pending file exists
         assert!(pending_file_path.exists());
 
@@ -2186,8 +2178,8 @@ mod tests {
 
         // Verify entries are sorted chronologically
         for i in 0..history.entries.len() - 1 {
-            let current_time = history.entries[i].obsoleted_at.clone();
-            let next_time = history.entries[i + 1].obsoleted_at.clone();
+            let current_time = history.entries[i].obsoleted_at;
+            let next_time = history.entries[i + 1].obsoleted_at;
             assert!(current_time <= next_time);
         }
 
@@ -2277,7 +2269,7 @@ mod tests {
         existing_history.save_to_file(&history_file_path)?;
 
         // Create active signers setup
-        let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
+        let _signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
 
         // Record time before operation
         let before_time = Utc::now();
@@ -4383,11 +4375,11 @@ mod tests {
             e => panic!("Expected IoError, got {}", e),
         }
 
-        // Restore permissions for cleanup
+        // Restore permissions for cleanup to ensure TempDir is cleaned up on all platforms.
         let mut perms = fs::metadata(&pending_dir)?.permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
         perms.set_readonly(false);
         fs::set_permissions(&pending_dir, perms)?;
-
         Ok(())
     }
 

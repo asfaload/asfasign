@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-// FIXME: we could improve this by reusing defined const in furture consts,
+// FIXME: we could improve this by reusing defined const in future consts,
 // but it seems too much of a burden at this time.
 // We might want to look at https://crates.io/crates/constcat
 pub const PENDING_SUFFIX: &str = "pending";

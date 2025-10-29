@@ -1,5 +1,4 @@
-use std::collections::{HashMap, HashSet};
-use std::marker::PhantomData;
+use std::collections::HashSet;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use signatures::keys::AsfaloadPublicKeyTrait;

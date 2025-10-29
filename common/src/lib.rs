@@ -2,7 +2,6 @@ pub mod fs;
 
 use sha2::{Digest, Sha512, digest::typenum};
 use std::fs::File;
-use std::io::{BufReader, Read};
 use std::path::Path;
 
 pub enum AsfaloadHashes {
