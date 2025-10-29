@@ -340,7 +340,7 @@ where
     }
 }
 /// Load signatures for a file from the corresponding signatures file
-// This function cannot be placed in the implemetation of AggregateSignature<P,S,SS> because
+// This function cannot be placed in the implementation of AggregateSignature<P,S,SS> because
 // in that case, it would have to be called like this: AggregateSignature<_,_,_>::load_for_file(...)
 // which requires to determine the phantom type on AggregateSignature before load can be called.
 // This is annoying but also makes no sense as a call like this one
