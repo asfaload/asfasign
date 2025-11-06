@@ -493,6 +493,7 @@ mod tests {
     use common::fs::names::PENDING_SIGNATURES_SUFFIX;
     use common::fs::names::SIGNATURES_SUFFIX;
     use common::fs::names::determine_file_type;
+    use common::fs::names::local_signers_path_for;
     use common::sha512_for_file;
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
@@ -1537,7 +1538,7 @@ mod tests {
 
     // Helper function to create a test aggregate signature
     fn create_test_aggregate_signature(
-        signers_file_path: &Path,
+        signed_file_path: &Path,
         test_keys: &TestKeys,
     ) -> Result<
         AggregateSignature<
@@ -1547,12 +1548,14 @@ mod tests {
         >,
         SignersFileError,
     > {
-        // Create the local signers file (required for signature verification)
-        let local_signers_path = common::fs::names::local_signers_path_for(signers_file_path)?;
-        fs::copy(signers_file_path, &local_signers_path)?;
+        if determine_file_type(signed_file_path) == FileType::Artifact {
+            // Create the local signers file (required for signature verification)
+            let local_signers_path = local_signers_path_for(signed_file_path)?;
+            fs::copy(signed_file_path, &local_signers_path)?;
+        }
 
         // Compute the hash of the signers file
-        let hash = common::sha512_for_file(signers_file_path)?;
+        let hash = common::sha512_for_file(signed_file_path)?;
 
         // Sign with the first key
         let pubkey0 = test_keys.pub_key(0).unwrap();
@@ -1567,7 +1570,7 @@ mod tests {
         // Create the agregate signature's files on disk using our api.
         // Start by loading the empty signature
         let _ = aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-            &signers_file_path,
+            &signed_file_path,
         )?
         // As it is empty, is is pending
         .get_pending()
@@ -1581,7 +1584,7 @@ mod tests {
         .add_individual_signature(&signature1, pubkey1)?;
 
         // Load the aggregate signature using the public API
-        let sig_with_state = aggregate_signature::load_for_file::<_, _, _>(signers_file_path)?;
+        let sig_with_state = aggregate_signature::load_for_file::<_, _, _>(signed_file_path)?;
         match sig_with_state {
             SignatureWithState::Complete(sig) => Ok(sig),
             SignatureWithState::Pending(_) => Err(SignersFileError::InitialisationError(
@@ -1681,6 +1684,8 @@ mod tests {
         let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
         fs::create_dir_all(&pending_dir)?;
         let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        let completed_dir = root_dir.join(SIGNERS_DIR);
+        let completed_signers_file_path = completed_dir.join(SIGNERS_FILE);
 
         // Use new_keys for the new signers config
         let new_content = create_test_signers_config(&new_keys);
@@ -1734,6 +1739,8 @@ mod tests {
         let new_active_content = fs::read_to_string(active_dir.join(SIGNERS_FILE))?;
         assert_eq!(new_active_content, new_content.to_json()?);
 
+        let local_copy_path = local_signers_path_for(completed_signers_file_path)?;
+        assert!(!local_copy_path.exists());
         Ok(())
     }
 
