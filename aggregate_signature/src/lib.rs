@@ -7,6 +7,7 @@ use common::fs::names::{
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -92,6 +93,17 @@ pub enum FileType {
     Signers,
     InitialSigners,
 }
+impl Display for FileType {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            FileType::Artifact => write!(f, "Artifact"),
+            FileType::Signers => write!(f, "Signers"),
+            FileType::InitialSigners => write!(f, "InitialSigners"),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SignedFile {
     pub kind: FileType,

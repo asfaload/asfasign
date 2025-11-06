@@ -1,4 +1,4 @@
-use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
+use aggregate_signature::{AggregateSignature, CompleteSignature, FileType, SignatureWithState};
 use chrono::{DateTime, Utc};
 use common::fs::names::{
     PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE, create_local_signers_for,
@@ -211,7 +211,7 @@ where
         } else {
             // The signature is complete
             let agg_sig = transition_result?;
-            activate_signers_file(signers_file_path, agg_sig)?;
+            activate_signers_file(agg_sig)?;
         }
     }
 
@@ -350,20 +350,20 @@ fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
     Ok(())
 }
 
-pub fn activate_signers_file<P: AsRef<Path>, K, S>(
-    signers_file: P,
+pub fn activate_signers_file<K, S>(
     agg_sig: AggregateSignature<K, S, CompleteSignature>,
 ) -> Result<(), SignersFileError>
 where
     K: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait + Clone,
 {
-    if signers_file.as_ref() != agg_sig.subject().path {
-        return Err(SignersFileError::InitialisationError(
-            "Path mismatch: the provided signers file path does not match the path in the aggregate signature.".to_string(),
-        ));
+    if agg_sig.subject().kind == FileType::Artifact {
+        return Err(SignersFileError::FileSystemHierarchyError(format!(
+            "Cannot activate a signers file for file of type {}",
+            agg_sig.subject().kind
+        )));
     }
-    let signers_file_path = signers_file.as_ref();
+    let signers_file_path = agg_sig.subject().path;
 
     // Verify the signers file is in a pending directory
     let pending_dir = signers_file_path.parent().ok_or_else(|| {
@@ -1605,7 +1605,7 @@ mod tests {
         let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
 
         // Activate the signers file
-        activate_signers_file(&signers_file_path, agg_sig)?;
+        activate_signers_file(agg_sig)?;
 
         // Verify the pending directory was renamed to active
         let active_dir = root_dir.join(SIGNERS_DIR);
@@ -1689,7 +1689,7 @@ mod tests {
         agg_sig.save_to_file()?;
 
         // Activate the signers file
-        activate_signers_file(&signers_file_path, agg_sig)?;
+        activate_signers_file(agg_sig)?;
 
         // Verify the history file was created
         let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
@@ -1844,7 +1844,7 @@ mod tests {
         let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
 
         // Activate the signers file
-        activate_signers_file(&signers_file_path, agg_sig)?;
+        activate_signers_file(agg_sig)?;
 
         // Verify the pending directory was renamed to active
         let active_dir = root_dir.join(SIGNERS_DIR);
@@ -1884,7 +1884,7 @@ mod tests {
         let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
 
         // Activate the signers file
-        activate_signers_file(&signers_file_path, agg_sig)?;
+        activate_signers_file(agg_sig)?;
 
         // Verify the pending directory was renamed to active
         let active_dir = nested_dir.join(SIGNERS_DIR);
