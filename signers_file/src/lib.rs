@@ -189,10 +189,6 @@ where
     let mut signatures: HashMap<K, S> = HashMap::new();
     signatures.insert(pubkey.clone(), signature.clone());
 
-    if find_global_signers_for(&dir_path).is_ok() {
-        // We do an update, copy global to local signers
-        create_local_signers_for(&signers_file_path)?;
-    }
     // Now everything is set up, try the transition to a complete signature.
     // This will succeed only if the signature is complete, and it is fine
     // if it returns an error reporting an incomplete signature for which the
@@ -492,6 +488,7 @@ mod tests {
     use anyhow::Result;
     use common::fs::names::PENDING_SIGNATURES_SUFFIX;
     use common::fs::names::SIGNATURES_SUFFIX;
+    use common::fs::names::SIGNERS_SUFFIX;
     use common::fs::names::determine_file_type;
     use common::fs::names::local_signers_path_for;
     use common::sha512_for_file;
@@ -3297,6 +3294,14 @@ mod tests {
             SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
         ));
         assert!(complete_sig_file_path.exists());
+        // Check no local copy of the signers was taken as it is a signers file
+        let local_signers_path = root_dir.join(format!(
+            "{}/{}.{}",
+            SIGNERS_DIR, SIGNERS_FILE, SIGNERS_SUFFIX
+        ));
+        assert!(!local_signers_path.exists());
+        dbg!(&root_dir);
+        test_helpers::pause();
 
         Ok(())
     }
