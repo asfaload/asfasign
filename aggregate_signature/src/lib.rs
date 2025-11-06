@@ -1,7 +1,8 @@
 use common::AsfaloadHashes;
 use common::fs::names::{
-    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, find_global_signers_for,
-    local_signers_path_for, pending_signatures_path_for, signatures_path_for,
+    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, create_local_signers_for,
+    find_global_signers_for, local_signers_path_for, pending_signatures_path_for,
+    signatures_path_for,
 };
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file_types::{SignerGroup, SignersConfig};
@@ -308,9 +309,14 @@ where
     //  Check completeness based on file type
     let is_complete = match signed_file.kind {
         FileType::Artifact => {
-            // For artifact, look at the local signers file created when
-            // the new artifact signature was initialised.
-            let signers_file_path = local_signers_path_for(file_path)?;
+            // For artifact, we look at the global signers file until the
+            // aggregate signature is complete, at which time we copy the
+            // global signers file locally.
+            let signers_file_path = if look_at_pending {
+                find_global_signers_for(file_path)
+            } else {
+                local_signers_path_for(file_path)
+            }?;
             let signers_config = load_signers_config::<PK>(&signers_file_path)?;
             check_groups(&signers_config.artifact_signers, &signatures, &file_hash)
         }
@@ -320,7 +326,7 @@ where
             // - Respect the new signers file
             // - Collect signatures from all new signers
             // FIXME: implement the criteria above
-            let signers_file_path = local_signers_path_for(file_path)?;
+            let signers_file_path = find_global_signers_for(file_path)?;
             let signers_config = load_signers_config::<PK>(&signers_file_path)?;
             check_groups(signers_config.admin_keys(), &signatures, &file_hash)
                 || check_groups(&signers_config.master_keys, &signatures, &file_hash)
@@ -492,6 +498,11 @@ where
             }
         }
         if is_aggregate_signature_complete::<_, P>(&self.subject, true)? {
+            // For artifact signatures, we copy the signers file at the time the
+            // aggregate signature is completed.
+            if self.subject.kind == FileType::Artifact {
+                create_local_signers_for(&self.subject)?;
+            }
             std::fs::rename(&pending_sig_path, &complete_sig_path).map_err(|e| {
                 AggregateSignatureError::Io(std::io::Error::other(format!(
                     "Error renaming pending to complete: {} -> {} : {}",
@@ -702,9 +713,6 @@ mod tests {
         // Create a dummy file to represent the signed file
         let signed_file_path = dir_path.join("data.txt");
         std::fs::write(&signed_file_path, data).unwrap();
-
-        // Create local signers file
-        create_local_signers_for(&signed_file_path)?;
 
         // Load aggregate signature from disk, it is empty
         let agg_sig =
@@ -1833,9 +1841,6 @@ mod tests {
         let config_json = serde_json::to_string_pretty(&signers_config).unwrap();
         fs::write(&signers_file, config_json).unwrap();
 
-        // Create local signers file
-        create_local_signers_for(&test_file).unwrap();
-
         // Create a pending signatures file with the signature
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
         let mut signatures_map = HashMap::new();
@@ -2038,8 +2043,8 @@ mod tests {
         let sig2 = seckey2.sign(&hash_for_content).unwrap();
 
         // Copy global signers file to local
-        let result = create_local_signers_for(&test_file);
-        assert!(result.is_ok());
+        //let result = create_local_signers_for(&test_file);
+        //assert!(result.is_ok());
 
         // Test when pending signature file doesn't exist
         let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
@@ -2095,8 +2100,9 @@ mod tests {
         let mut low_threshold_config = signers_config.clone();
         low_threshold_config.artifact_signers[0].threshold = 1;
 
+        // Overwrite the global signers file as it is the one looked at for pending signatures.
         let config_json = serde_json::to_string_pretty(&low_threshold_config).unwrap();
-        fs::write(local_signers_path_for(&test_file).unwrap(), config_json).unwrap();
+        fs::write(&signers_file, config_json).unwrap();
 
         // Reset to pending signatures with one valid signature
         fs::write(&pending_sig_file_path, incomplete_json).unwrap();
@@ -2782,9 +2788,6 @@ mod tests {
         let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
         let signature = artifact_seckey.sign(&hash_for_content).unwrap();
 
-        // Create local signers file
-        create_local_signers_for(&test_file).unwrap();
-
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
         fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
@@ -2843,8 +2846,7 @@ mod tests {
         let (test_file, _signers_file) =
             setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
 
-        // Create local signers file and an empty pending signatures file
-        create_local_signers_for(&test_file).unwrap();
+        // Create empty pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
         fs::write(&pending_sig_path, "{}").unwrap();
 
@@ -2919,9 +2921,6 @@ mod tests {
         let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
         let signature1 = artifact_seckey1.sign(&hash_for_content).unwrap();
 
-        // Create local signers file
-        create_local_signers_for(&test_file).unwrap();
-
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
         fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
@@ -2966,9 +2965,6 @@ mod tests {
         // Create a signature for the file content
         let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
         let signature = artifact_seckey.sign(&hash_for_content).unwrap();
-
-        // Create local signers file
-        create_local_signers_for(&test_file).unwrap();
 
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
@@ -3026,9 +3022,6 @@ mod tests {
         let wrong_hash = common::sha512_for_content(b"wrong content".to_vec())?;
         let wrong_signature = artifact_seckey.sign(&wrong_hash).unwrap();
 
-        // Create local signers file
-        create_local_signers_for(&test_file).unwrap();
-
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
         fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
@@ -3072,9 +3065,6 @@ mod tests {
         // Create a signature for the file content
         let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
         let signature = artifact_seckey.sign(&hash_for_content).unwrap();
-
-        // Create local signers file
-        create_local_signers_for(&test_file).unwrap();
 
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
@@ -3124,9 +3114,6 @@ mod tests {
         // Create a signature for the file content
         let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
         let signature = artifact_seckey.sign(&hash_for_content).unwrap();
-
-        // Create local signers file
-        create_local_signers_for(&test_file).unwrap();
 
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
