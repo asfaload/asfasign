@@ -1728,19 +1728,22 @@ mod tests {
         let signers_content = signers_config.to_json()?;
         fs::write(&signers_file_path, &signers_content)?;
 
-        // Create aggregate signature with a different path
+        // Create aggregate signature for a file with a signers file content but
+        // with a different path
         let different_path = root_dir.join("different_file.json");
         fs::write(&different_path, &signers_content)?;
-        let agg_sig = create_test_aggregate_signature(&different_path, &test_keys)?;
-
-        // Try to activate with mismatched paths
-        let result = activate_signers_file(&signers_file_path, agg_sig);
+        // As this is an artifact file, it will look for an active signers file,
+        // which is not present, hence the error.
+        let result = create_test_aggregate_signature(&different_path, &test_keys);
 
         // Verify the error
         assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::InitialisationError(msg) => {
-                assert!(msg.contains("Path mismatch: the provided signers file path does not match the path in the aggregate signature."));
+        match result.err().unwrap() {
+            SignersFileError::AggregateSignatureError(e) => {
+                assert!(
+                    e.to_string()
+                        .contains("No signers file found in parent directories")
+                );
             }
             other => panic!(
                 "Expected InitialisationError for path mismatch, got {:?}",
@@ -1750,41 +1753,6 @@ mod tests {
 
         // Verify the pending directory still exists
         assert!(pending_dir.exists());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_activate_signers_file_not_in_pending_dir() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let root_dir = temp_dir.path();
-        let test_keys = TestKeys::new(2);
-
-        // Create a directory that is not named PENDING_SIGNERS_DIR
-        let wrong_dir = root_dir.join("wrong_directory");
-        fs::create_dir_all(&wrong_dir)?;
-        let signers_file_path = wrong_dir.join(SIGNERS_FILE);
-        let signers_config = create_test_signers_config(&test_keys);
-        let signers_content = signers_config.to_json()?;
-        fs::write(&signers_file_path, signers_content)?;
-
-        // Create aggregate signature
-        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
-
-        // Try to activate
-        let result = activate_signers_file(&signers_file_path, agg_sig);
-
-        // Verify the error
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::NotInPendingDir(path) => {
-                assert_eq!(path, wrong_dir.to_string_lossy().to_string());
-            }
-            _ => panic!("Expected NotInPendingDir error"),
-        }
-
-        // Verify the directory still exists
-        assert!(wrong_dir.exists());
 
         Ok(())
     }
@@ -1801,26 +1769,24 @@ mod tests {
         fs::write(&signers_file_path, signers_content)?;
 
         // Create aggregate signature
-        let agg_sig = create_test_aggregate_signature(&signers_file_path, &test_keys)?;
-
-        // Try to activate
-        let result = activate_signers_file(&signers_file_path, agg_sig);
+        // As the file signed has the name of a signers file but is not in a signers dir,
+        // it is handled as an artifact, which requires the presence of an active signers
+        // file when signing. As there is none, it causes the error.
+        let result = create_test_aggregate_signature(&signers_file_path, &test_keys);
 
         // Verify the error
         assert!(result.is_err());
-        let err = result.unwrap_err();
-        match err {
-            SignersFileError::NotInPendingDir(path) => {
-                assert_eq!(
-                    path,
-                    signers_file_path
-                        .parent()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string()
+        match result.err().unwrap() {
+            SignersFileError::AggregateSignatureError(e) => {
+                assert!(
+                    e.to_string()
+                        .contains("No signers file found in parent directories")
                 );
             }
-            _ => panic!("Expected NotInPendingDir but got {}", err),
+            other => panic!(
+                "Expected InitialisationError for path mismatch, got {:?}",
+                other
+            ),
         }
 
         Ok(())
