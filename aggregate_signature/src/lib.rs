@@ -354,11 +354,17 @@ where
             // - Respect the current signers file
             // - Respect the new signers file
             // - Collect signatures from all new signers
-            // FIXME: implement the criteria above
             let signers_file_path = find_global_signers_for(file_path)?;
             let signers_config = load_signers_config::<PK>(&signers_file_path)?;
-            check_groups(signers_config.admin_keys(), &signatures, &file_hash)
-                || check_groups(&signers_config.master_keys, &signatures, &file_hash)
+            let new_signers_config = load_signers_config::<PK>(file_path)?;
+
+            let added_signers = get_newly_added_signer_keys(&signers_config, &new_signers_config);
+            // existing signers file
+            (check_groups(signers_config.admin_keys(), &signatures, &file_hash)
+                || check_groups(&signers_config.master_keys, &signatures, &file_hash))
+                && (check_groups(signers_config.admin_keys(), &signatures, &file_hash)
+                    || check_groups(&signers_config.master_keys, &signatures, &file_hash))
+                && (check_signers(&signatures, &added_signers, &file_hash))
         }
 
         FileType::InitialSigners => {

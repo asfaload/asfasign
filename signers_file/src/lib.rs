@@ -492,6 +492,7 @@ mod tests {
     use anyhow::Result;
     use common::fs::names::PENDING_SIGNATURES_SUFFIX;
     use common::fs::names::SIGNATURES_SUFFIX;
+    use common::sha512_for_file;
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signers_file_types::KeyFormat;
@@ -1682,7 +1683,28 @@ mod tests {
 
         // Use new_keys for the new signers config
         let new_content = create_test_signers_config(&new_keys);
-        fs::write(&signers_file_path, &new_content.to_json()?)?;
+        let new_signers_file_content = new_content.to_json()?;
+        fs::write(&signers_file_path, &new_signers_file_content)?;
+        let new_signers_content_hash = sha512_for_file(&signers_file_path)?;
+
+        let existing_signer_sig = existing_keys
+            .sec_key(0)
+            .unwrap()
+            .sign(&new_signers_content_hash)?;
+        let sig_with_state_1 =
+            aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+                &signers_file_path,
+            )?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&existing_signer_sig, existing_keys.pub_key(0).unwrap())?;
+
+        match sig_with_state_1 {
+            SignatureWithState::Pending(_) => {} // expected
+            // As we do an update of the signers file, we need the signatures to complete the
+            // existing signers file + complete the new one + get signatures from those new in the new file.
+            SignatureWithState::Complete(_) => panic!("Signature was expected to be incomplete!"),
+        }
 
         // Create aggregate signature using new_keys
         let agg_sig = create_test_aggregate_signature(&signers_file_path, &new_keys)?;
