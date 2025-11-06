@@ -1,7 +1,7 @@
-use aggregate_signature::{AggregateSignature, CompleteSignature, FileType, SignatureWithState};
+use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
 use chrono::{DateTime, Utc};
 use common::fs::names::{
-    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE, create_local_signers_for,
+    FileType, PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
     find_global_signers_for, pending_signatures_path_for, signatures_path_for,
 };
 use signatures::keys::{
@@ -492,6 +492,7 @@ mod tests {
     use anyhow::Result;
     use common::fs::names::PENDING_SIGNATURES_SUFFIX;
     use common::fs::names::SIGNATURES_SUFFIX;
+    use common::fs::names::determine_file_type;
     use common::sha512_for_file;
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
