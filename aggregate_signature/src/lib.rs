@@ -221,6 +221,23 @@ where
             })
         })
 }
+
+pub fn check_signers<P, S>(
+    signatures: &HashMap<P, S>,
+    signers: &[P],
+    admin_data: &AsfaloadHashes,
+) -> bool
+where
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
+    signers.iter().all(|signer| {
+        signatures
+            .get(signer)
+            .is_some_and(|signature| signer.verify(signature, admin_data).is_ok())
+    })
+}
+
 // Load individual signatures from the file.
 // If the file does not exist, act as if no signature was collected yet.
 fn get_individual_signatures<P, S, PP: AsRef<Path>>(
@@ -3383,5 +3400,124 @@ mod tests {
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert!(new_signers.is_empty());
+    }
+
+    #[test]
+    fn test_check_signers_comprehensive() -> Result<()> {
+        // Create test keys and data
+        let test_keys = TestKeys::new(5);
+        let data = common::sha512_for_content(b"test data".to_vec())?;
+
+        // Get public and secret keys
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let pubkey2 = test_keys.pub_key(2).unwrap();
+        let seckey2 = test_keys.sec_key(2).unwrap();
+        let pubkey3 = test_keys.pub_key(3).unwrap();
+        let seckey3 = test_keys.sec_key(3).unwrap();
+        let pubkey4 = test_keys.pub_key(4).unwrap();
+        let seckey4 = test_keys.sec_key(4).unwrap();
+
+        // Create signatures
+        let sig0 = seckey0.sign(&data).unwrap();
+        let sig1 = seckey1.sign(&data).unwrap();
+        let sig2 = seckey2.sign(&data).unwrap();
+        let sig3 = seckey3.sign(&data).unwrap();
+        let sig4 = seckey4.sign(&data).unwrap();
+
+        // Create invalid signatures (signed for different data)
+        let other_data = common::sha512_for_content(b"other data".to_vec())?;
+        let invalid_sig0 = seckey0.sign(&other_data).unwrap();
+        let invalid_sig1 = seckey1.sign(&other_data).unwrap();
+
+        // Test 1: Empty signatures and empty signers
+        let empty_signatures: HashMap<AsfaloadPublicKey<_>, AsfaloadSignature<_>> = HashMap::new();
+        let empty_signers: Vec<AsfaloadPublicKey<_>> = Vec::new();
+        assert!(check_signers(&empty_signatures, &empty_signers, &data));
+
+        // Test 2: Empty signatures with non-empty signers
+        let signers = vec![pubkey0.clone(), pubkey1.clone()];
+        assert!(!check_signers(&empty_signatures, &signers, &data));
+
+        // Test 3: Non-empty signatures with empty signers
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.clone(), sig0.clone());
+        assert!(check_signers(&signatures, &empty_signers, &data));
+
+        // Test 4: Matching signatures and signers (all valid)
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.clone(), sig0.clone());
+        signatures.insert(pubkey1.clone(), sig1.clone());
+        let signers = vec![pubkey0.clone(), pubkey1.clone()];
+        assert!(check_signers(&signatures, &signers, &data));
+
+        // Test 5: Missing signatures for some signers
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.clone(), sig0.clone());
+        // Missing signature for pubkey1
+        let signers = vec![pubkey0.clone(), pubkey1.clone()];
+        assert!(!check_signers(&signatures, &signers, &data));
+
+        // Test 6: Invalid signatures for some signers
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.clone(), sig0.clone());
+        signatures.insert(pubkey1.clone(), invalid_sig1.clone()); // Invalid signature
+        let signers = vec![pubkey0.clone(), pubkey1.clone()];
+        assert!(!check_signers(&signatures, &signers, &data));
+
+        // Test 7: Extra signatures not in the signers list
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.clone(), sig0.clone());
+        signatures.insert(pubkey1.clone(), sig1.clone());
+        signatures.insert(pubkey2.clone(), sig2.clone()); // Extra signature
+        let signers = vec![pubkey0.clone(), pubkey1.clone()];
+        assert!(check_signers(&signatures, &signers, &data));
+
+        // Test 8: Duplicate signers in the list
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.clone(), sig0.clone());
+        let signers = vec![pubkey0.clone(), pubkey0.clone()];
+        assert!(check_signers(&signatures, &signers, &data));
+
+        // Test 9: Large number of signers
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.clone(), sig0.clone());
+        signatures.insert(pubkey1.clone(), sig1.clone());
+        signatures.insert(pubkey2.clone(), sig2.clone());
+        signatures.insert(pubkey3.clone(), sig3.clone());
+        signatures.insert(pubkey4.clone(), sig4.clone());
+        let signers = vec![
+            pubkey0.clone(),
+            pubkey1.clone(),
+            pubkey2.clone(),
+            pubkey3.clone(),
+            pubkey4.clone(),
+        ];
+        assert!(check_signers(&signatures, &signers, &data));
+
+        // Test 10: Mixed valid and invalid signatures
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.clone(), sig0.clone()); // Valid
+        signatures.insert(pubkey1.clone(), invalid_sig1.clone()); // Invalid
+        signatures.insert(pubkey2.clone(), sig2.clone()); // Valid
+        signatures.insert(pubkey3.clone(), invalid_sig0.clone()); // Invalid
+        let signers = vec![
+            pubkey0.clone(),
+            pubkey1.clone(),
+            pubkey2.clone(),
+            pubkey3.clone(),
+        ];
+        assert!(!check_signers(&signatures, &signers, &data));
+
+        // Test 11: Signers with valid signatures but for wrong data
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey0.clone(), invalid_sig0.clone()); // Valid for wrong data
+        signatures.insert(pubkey1.clone(), invalid_sig1.clone()); // Valid for wrong data
+        let signers = vec![pubkey0.clone(), pubkey1.clone()];
+        assert!(!check_signers(&signatures, &signers, &data));
+
+        Ok(())
     }
 }
