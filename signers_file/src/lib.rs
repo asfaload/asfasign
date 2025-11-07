@@ -489,7 +489,6 @@ mod tests {
     use common::fs::names::PENDING_SIGNATURES_SUFFIX;
     use common::fs::names::SIGNATURES_SUFFIX;
     use common::fs::names::SIGNERS_SUFFIX;
-    use common::fs::names::determine_file_type;
     use common::fs::names::local_signers_path_for;
     use common::sha512_for_file;
     use signatures::keys::AsfaloadPublicKey;
@@ -1545,12 +1544,6 @@ mod tests {
         >,
         SignersFileError,
     > {
-        if determine_file_type(signed_file_path) == FileType::Artifact {
-            // Create the local signers file (required for signature verification)
-            let local_signers_path = local_signers_path_for(signed_file_path)?;
-            fs::copy(signed_file_path, &local_signers_path)?;
-        }
-
         // Compute the hash of the signers file
         let hash = common::sha512_for_file(signed_file_path)?;
 
@@ -1759,8 +1752,9 @@ mod tests {
         // with a different path
         let different_path = root_dir.join("different_file.json");
         fs::write(&different_path, &signers_content)?;
-        // As this is an artifact file, it will look for an active signers file,
-        // which is not present, hence the error.
+
+        // As this is an artifact file, the helper will look for an active signers file
+        // when creating the agg sig. But it is not present, hence the error.
         let result = create_test_aggregate_signature(&different_path, &test_keys);
 
         // Verify the error
