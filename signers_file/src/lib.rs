@@ -3268,40 +3268,39 @@ mod tests {
         // Propose the new signers file
         propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
 
-        // Verify the active file was created as threshold is 1
-        let active_file_path = root_dir.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
-        assert!(active_file_path.exists());
+        // Verify the pending file is created. Threshold is 1, but need signature from previous
+        // signers file.
+        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
 
-        // Check the pending signers dir is not present
+        // Check the pending signers dir is  present
         let pending_signers_dir = root_dir.join(PENDING_SIGNERS_DIR);
-        assert!(!pending_signers_dir.exists());
+        assert!(pending_signers_dir.exists());
 
         // Verify the content
-        let content = fs::read_to_string(&active_file_path)?;
+        let content = fs::read_to_string(&pending_file_path)?;
         let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(&content)?;
 
-        // Verify the pending signature is not there as signature is complete
-        let pending_sig_file_path = root_dir.join(format!(
+        // Verify the pending signature is there (previous signers have not signed!)
+        let pending_signatures_file_path = root_dir.join(format!(
             "{}/{}.{}",
-            SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
         ));
-        assert!(!pending_sig_file_path.exists());
+        assert!(pending_signatures_file_path.exists());
 
-        // Verify the complete signature file was created
-        let complete_sig_file_path = root_dir.join(format!(
+        // Verify the complete signature file was not created
+        let complete_signatures_file_path = root_dir.join(format!(
             "{}/{}.{}",
-            SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
         ));
-        assert!(complete_sig_file_path.exists());
+        assert!(!complete_signatures_file_path.exists());
         // Check no local copy of the signers was taken as it is a signers file
         let local_signers_path = root_dir.join(format!(
             "{}/{}.{}",
             SIGNERS_DIR, SIGNERS_FILE, SIGNERS_SUFFIX
         ));
         assert!(!local_signers_path.exists());
-        dbg!(&root_dir);
-        test_helpers::pause();
 
         Ok(())
     }
@@ -3547,20 +3546,22 @@ mod tests {
         propose_signers_file(&nested_dir, &proposal_content, &signature, pubkey)?;
 
         // Verify the pending file was created in the nested directory
-        let active_file_path = nested_dir.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
-        assert!(active_file_path.exists());
+        // File is pending as old signers did not sign the update
+        let pending_file_path =
+            nested_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
 
         // Verify the content
-        let content = fs::read_to_string(&active_file_path)?;
+        let content = fs::read_to_string(&pending_file_path)?;
         let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(&content)?;
 
         // Check the signature was transitioned to complete
-        let complete_signature_path = nested_dir.join(format!(
+        let pending_signature_path = nested_dir.join(format!(
             "{}/{}.{}",
-            SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
         ));
-        assert!(complete_signature_path.exists());
+        assert!(pending_signature_path.exists());
 
         Ok(())
     }
