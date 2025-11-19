@@ -112,23 +112,17 @@ where
     let agg_sig: SignatureWithState<AsfaloadPublicKey<_>, AsfaloadSignature<_>> =
         aggregate_signature::load_for_file::<_, _, _>(&signers_file_path)?;
     if let Some(pending_sig) = agg_sig.get_pending() {
-        // Match consumes the result, giving you ownership of Ok or Err
         match pending_sig.try_transition_to_complete() {
             Ok(agg_sig) => {
-                // Success case: The signature completed successfully
+                // Success case: The signature completed successfully.
                 activate_signers_file(agg_sig)?;
             }
+            Err(aggregate_signature::AggregateSignatureError::IsIncomplete) => {
+                // Signature is not yet complete, which is fine. We just added our part.
+            }
             Err(e) => {
-                // Error case: Check if it's a fatal error or just incomplete
-                if !matches!(
-                    e,
-                    aggregate_signature::AggregateSignatureError::IsIncomplete
-                ) {
-                    // 'e' is owned here, so .into() works perfectly
-                    return Err(e.into());
-                }
-                // If it IS 'IsIncomplete', we do nothing and continue?
-                // (Based on your code logic, this path ignores IsIncomplete)
+                // Any other error is fatal.
+                return Err(e.into());
             }
         }
     }
