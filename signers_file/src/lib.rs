@@ -6,6 +6,7 @@ use common::fs::names::{
 };
 use signatures::keys::{
     AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
+    errs::SignatureError,
 };
 use signers_file_types::{SignersConfig, parse_signers_config};
 use std::{collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
@@ -34,6 +35,15 @@ pub enum SignersFileError {
     FileSystemHierarchyError(String),
 }
 
+impl From<SignatureError> for SignersFileError {
+    fn from(e: SignatureError) -> Self {
+        match e {
+            SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
+            SignatureError::JsonError(json_err) => SignersFileError::JsonError(json_err),
+            other => SignersFileError::SignatureOperationFailed(other.to_string()),
+        }
+    }
+}
 // Helper function used to validate the signer of a signers file
 // initialisation, i.e. when no existing signers file is active.
 fn is_valid_signer_for_signer_init<P: AsfaloadPublicKeyTrait + Eq>(
@@ -94,16 +104,7 @@ where
     S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
     // Add the signature to the aggregate signatures file
-    signature
-        .add_to_aggregate_for_file(&signers_file_path, pubkey)
-        .map_err(|e| {
-            use signatures::keys::errs::SignatureError;
-            match e {
-                SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
-                SignatureError::JsonError(json_err) => SignersFileError::JsonError(json_err),
-                other => SignersFileError::SignatureOperationFailed(other.to_string()),
-            }
-        })?;
+    signature.add_to_aggregate_for_file(&signers_file_path, pubkey)?;
 
     // Now everything is set up, try the transition to a complete signature.
     // This will succeed only if the signature is complete, and it is fine
