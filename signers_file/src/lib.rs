@@ -82,6 +82,60 @@ fn is_valid_signer_for_update_of<P: AsfaloadPublicKeyTrait + Eq>(
         ))
     }
 }
+
+fn sign_signers_file<P, S, K>(
+    signers_file_path: P,
+    signature: &S,
+    pubkey: &K,
+) -> Result<(), SignersFileError>
+where
+    P: AsRef<Path>,
+    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
+    S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
+{
+    // Add the signature to the aggregate signatures file
+    signature
+        .add_to_aggregate_for_file(&signers_file_path, pubkey)
+        .map_err(|e| {
+            use signatures::keys::errs::SignatureError;
+            match e {
+                SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
+                SignatureError::JsonError(json_err) => SignersFileError::JsonError(json_err),
+                other => SignersFileError::SignatureOperationFailed(other.to_string()),
+            }
+        })?;
+
+    // Now everything is set up, try the transition to a complete signature.
+    // This will succeed only if the signature is complete, and it is fine
+    // if it returns an error reporting an incomplete signature for which the
+    // transition cannot occur.
+    let agg_sig: SignatureWithState<AsfaloadPublicKey<_>, AsfaloadSignature<_>> =
+        aggregate_signature::load_for_file::<_, _, _>(&signers_file_path)?;
+    if let Some(pending_sig) = agg_sig.get_pending() {
+        // Match consumes the result, giving you ownership of Ok or Err
+        match pending_sig.try_transition_to_complete() {
+            Ok(agg_sig) => {
+                // Success case: The signature completed successfully
+                activate_signers_file(agg_sig)?;
+            }
+            Err(e) => {
+                // Error case: Check if it's a fatal error or just incomplete
+                if !matches!(
+                    e,
+                    aggregate_signature::AggregateSignatureError::IsIncomplete
+                ) {
+                    // 'e' is owned here, so .into() works perfectly
+                    return Err(e.into());
+                }
+                // If it IS 'IsIncomplete', we do nothing and continue?
+                // (Based on your code logic, this path ignores IsIncomplete)
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Initialize a signers file in a specific directory.
 ///
 /// This function validates the provided JSON content by deserializing it into a SignersConfig,
@@ -174,42 +228,7 @@ where
     let mut file = fs::File::create(&signers_file_path)?;
     file.write_all(json_content.as_bytes())?;
 
-    // Add the signature to the aggregate signatures file
-    signature
-        .add_to_aggregate_for_file(&signers_file_path, pubkey)
-        .map_err(|e| {
-            use signatures::keys::errs::SignatureError;
-            match e {
-                // As we write a new file here, no need to handle the JSonError as
-                // it should not happen.
-                SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
-                other => SignersFileError::SignatureOperationFailed(other.to_string()),
-            }
-        })?;
-    let mut signatures: HashMap<K, S> = HashMap::new();
-    signatures.insert(pubkey.clone(), signature.clone());
-
-    // Now everything is set up, try the transition to a complete signature.
-    // This will succeed only if the signature is complete, and it is fine
-    // if it returns an error reporting an incomplete signature for which the
-    // transition cannot occur.
-    let agg_sig: SignatureWithState<AsfaloadPublicKey<_>, AsfaloadSignature<_>> =
-        aggregate_signature::load_for_file::<_, _, _>(&signers_file_path)?;
-    if let Some(pending_sig) = agg_sig.get_pending() {
-        let transition_result = pending_sig.try_transition_to_complete();
-        if let Err(e) = transition_result {
-            if !matches!(
-                e,
-                aggregate_signature::AggregateSignatureError::IsIncomplete
-            ) {
-                return Err(e.into());
-            }
-        } else {
-            // The signature is complete
-            let agg_sig = transition_result?;
-            activate_signers_file(agg_sig)?;
-        }
-    }
+    sign_signers_file(signers_file_path, signature, pubkey)?;
 
     Ok(())
 }
@@ -4476,6 +4495,577 @@ mod tests {
         // Verify no nested pending directory was created
         let nested_pending = pending_dir.join(PENDING_SIGNERS_DIR);
         assert!(!nested_pending.exists());
+
+        Ok(())
+    }
+
+    // Tests for sign_signers_file
+    // ---------------------------
+
+    // Helper function to create a test signers file with given content
+    fn create_test_signers_file_with_content(
+        dir_path: &Path,
+        content: &str,
+    ) -> Result<PathBuf, SignersFileError> {
+        let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        fs::write(&signers_file_path, content)?;
+        Ok(signers_file_path)
+    }
+
+    // Helper function to create a test signature file
+    fn create_test_signature_file(
+        signers_file_path: &Path,
+        test_keys: &TestKeys,
+        signer_indices: &[usize],
+    ) -> Result<(), SignersFileError> {
+        let hash = common::sha512_for_file(signers_file_path)?;
+        let mut signatures = HashMap::new();
+
+        for &index in signer_indices {
+            let pubkey = test_keys.pub_key(index).unwrap();
+            let seckey = test_keys.sec_key(index).unwrap();
+            let signature = seckey.sign(&hash).unwrap();
+            signatures.insert(pubkey.to_base64(), signature.to_base64());
+        }
+
+        let pending_sig_path = pending_signatures_path_for(signers_file_path)?;
+        fs::write(pending_sig_path, serde_json::to_string(&signatures)?)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sign_signers_file_success() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create a test signers file
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
+
+        // Compute hash and sign
+        let hash = common::sha512_for_file(&signers_file_path)?;
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let seckey = test_keys.sec_key(0).unwrap();
+        let signature = seckey.sign(&hash).unwrap();
+
+        // Call sign_signers_file
+        sign_signers_file(&signers_file_path, &signature, pubkey)?;
+
+        // Verify the pending signature file exists
+        let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
+        assert!(pending_sig_path.exists());
+
+        // Verify the signature file content
+        let sig_content = fs::read_to_string(&pending_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 1);
+        assert!(sig_map.contains_key(&pubkey.to_base64()));
+        assert_eq!(
+            sig_map.get(&pubkey.to_base64()).unwrap(),
+            &signature.to_base64()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sign_signers_file_with_existing_signatures() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(3);
+
+        // Create a test signers file
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
+
+        // Create an existing signature file with one signature
+        create_test_signature_file(&signers_file_path, &test_keys, &[0])?;
+
+        // Compute hash and sign with a different key
+        let hash = common::sha512_for_file(&signers_file_path)?;
+        let pubkey = test_keys.pub_key(1).unwrap();
+        let seckey = test_keys.sec_key(1).unwrap();
+        let signature = seckey.sign(&hash).unwrap();
+
+        // Call sign_signers_file
+        sign_signers_file(&signers_file_path, &signature, pubkey)?;
+
+        // Verify the signature is complete and the signers file was activated
+        let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
+        assert!(!pending_sig_path.exists());
+        let active_signers_path = temp_dir.path().join(SIGNERS_DIR).join(SIGNERS_FILE);
+        let complete_sig_path = signatures_path_for(&active_signers_path)?;
+        assert!(complete_sig_path.exists());
+
+        // Verify the signature file content contains both signatures
+        let sig_content = fs::read_to_string(&complete_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 2);
+        assert!(sig_map.contains_key(&test_keys.pub_key(0).unwrap().to_base64()));
+        assert!(sig_map.contains_key(&pubkey.to_base64()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sign_signers_file_with_2_steps_to_complete() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create a test signers file with threshold 1
+        let mut signers_config = create_test_signers_config(&test_keys);
+        signers_config.artifact_signers[0].threshold = 1;
+        let signers_content = signers_config.to_json()?;
+        let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
+
+        // Compute hash and sign
+        let hash = common::sha512_for_file(&signers_file_path)?;
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let signature1 = seckey1.sign(&hash).unwrap();
+
+        // Define our pending and complete signatures path here.
+        let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
+        let active_signers_path = temp_dir.path().join(SIGNERS_DIR).join(SIGNERS_FILE);
+        let complete_sig_path = signatures_path_for(&active_signers_path)?;
+
+        // Call sign_signers_file
+        sign_signers_file(&signers_file_path, &signature0, pubkey0)?;
+
+        // Verify we have still the pending signature in the
+        // PENDING_SIGNERS_DIR. The threshold is 1, but for a new signers
+        // file we need all sigers to sign before we activate it.
+        assert!(pending_sig_path.exists());
+
+        // Verify the signature file content
+        let sig_content = fs::read_to_string(&pending_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 1);
+        assert!(sig_map.contains_key(&pubkey0.to_base64()));
+        assert_eq!(
+            sig_map.get(&pubkey0.to_base64()).unwrap(),
+            &signature0.to_base64()
+        );
+
+        // Add second signature
+        sign_signers_file(&signers_file_path, &signature1, pubkey1)?;
+        assert!(!pending_sig_path.exists());
+        assert!(complete_sig_path.exists());
+        //
+        // Verify the signature file content contains both signatures
+        let sig_content = fs::read_to_string(&complete_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 2);
+        assert!(sig_map.contains_key(&pubkey0.to_base64()));
+        assert!(sig_map.contains_key(&pubkey1.to_base64()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sign_signers_file_io_error() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create a test signers file
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
+
+        // Compute hash and sign
+        let hash = common::sha512_for_file(&signers_file_path)?;
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let seckey = test_keys.sec_key(0).unwrap();
+        let signature = seckey.sign(&hash).unwrap();
+
+        // Make the directory read-only to cause an IO error
+        let pending_dir = signers_file_path.parent().unwrap();
+        let mut perms = fs::metadata(pending_dir)?.permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(pending_dir, perms)?;
+
+        // Call sign_signers_file and expect an error
+        let result = sign_signers_file(&signers_file_path, &signature, pubkey);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::IoError(_) => {} // Expected
+            e => panic!("Expected IoError, got {}", e),
+        }
+
+        // Restore permissions for cleanup
+        let mut perms = fs::metadata(pending_dir)?.permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(pending_dir, perms)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sign_signers_file_signature_operation_error() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create a test signers file
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
+
+        // Create a corrupted signature file that will cause an error
+        let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
+        fs::write(&pending_sig_path, "invalid json")?;
+
+        // Compute hash and sign
+        let hash = common::sha512_for_file(&signers_file_path)?;
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let seckey = test_keys.sec_key(0).unwrap();
+        let signature = seckey.sign(&hash).unwrap();
+
+        // Call sign_signers_file and expect an error
+        let result = sign_signers_file(&signers_file_path, &signature, pubkey);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::JsonError(_) => {} // Expected
+            e => panic!("Expected JsonError, got {}", e),
+        }
+
+        Ok(())
+    }
+
+    // Tests for sign_signers_file with active signers file in parent directory
+    // -------------------------------------------------------------------
+
+    // Helper function to create an active signers file in a parent directory
+    fn create_active_signers_in_parent(
+        parent_dir: &Path,
+        test_keys: &TestKeys,
+    ) -> Result<PathBuf, SignersFileError> {
+        let active_signers_dir = parent_dir.join(SIGNERS_DIR);
+        fs::create_dir_all(&active_signers_dir)?;
+        let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
+
+        // Create a simple signers config with the test keys
+        let signers_config = create_test_signers_config(test_keys);
+        let signers_content = signers_config.to_json()?;
+        fs::write(&active_signers_file, signers_content)?;
+
+        // Create signatures for the active signers file
+        let hash = common::sha512_for_file(&active_signers_file)?;
+
+        // Sign with both keys to make it complete
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let signature1 = seckey1.sign(&hash).unwrap();
+
+        // Create the aggregate signature
+        aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
+            &active_signers_file,
+        )?
+        .get_pending()
+        .unwrap()
+        .add_individual_signature(&signature0, pubkey0)?
+        .get_pending()
+        .unwrap()
+        .add_individual_signature(&signature1, pubkey1)?;
+
+        Ok(active_signers_file)
+    }
+
+    #[test]
+    fn test_sign_signers_file_with_parent_active_signers_complete_after_all_signatures()
+    -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let parent_dir = temp_dir.path();
+        let child_dir = parent_dir.join("child");
+        fs::create_dir(&child_dir)?;
+
+        // These keys are used in the existing signers file, with a threshold of 2
+        // It means those 2 keys have to sign for the activation to take place
+        let test_keys = TestKeys::new(2);
+        // These keys are used in the new signers file placed in a child directory,
+        // with a threshold of 2
+        // As those are new signers, both signatures have also to be collected for the
+        // signers file to be activated.
+        let new_keys = TestKeys::new(2);
+
+        // Create active signers in parent directory
+        let _active_signers_file = create_active_signers_in_parent(parent_dir, &test_keys)?;
+
+        // Create a test signers file in child directory
+        let signers_config = create_test_signers_config(&new_keys);
+        let signers_content = signers_config.to_json()?;
+        let signers_file_path =
+            create_test_signers_file_with_content(&child_dir, &signers_content)?;
+
+        // Define paths for assertions
+        let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
+        let active_signers_path = child_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
+        let complete_sig_path = signatures_path_for(&active_signers_path)?;
+
+        // Compute hash once
+        let hash = common::sha512_for_file(&signers_file_path)?;
+
+        // Sign with first key (present in existing signers file in parent dir)
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        // Call sign_signers_file with first signature
+        sign_signers_file(&signers_file_path, &signature0, pubkey0)?;
+
+        // Assert after first signature: pending exists, not complete
+        assert!(
+            pending_sig_path.exists(),
+            "Pending signature file should exist after first signature"
+        );
+        assert!(
+            !complete_sig_path.exists(),
+            "Complete signature file should not exist yet"
+        );
+
+        let sig_content = fs::read_to_string(&pending_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 1, "Should have one signature");
+        assert!(
+            sig_map.contains_key(&pubkey0.to_base64()),
+            "Should contain first signature"
+        );
+        assert_eq!(
+            sig_map.get(&pubkey0.to_base64()).unwrap(),
+            &signature0.to_base64()
+        );
+
+        // Sign with second key (present in existing signers file in parent dir)
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let signature1 = seckey1.sign(&hash).unwrap();
+
+        // Call sign_signers_file with second signature
+        sign_signers_file(&signers_file_path, &signature1, pubkey1)?;
+
+        // Assert after second signature: still pending, not complete
+        assert!(
+            pending_sig_path.exists(),
+            "Pending signature file should still exist"
+        );
+        assert!(
+            !complete_sig_path.exists(),
+            "Complete signature file should not exist yet"
+        );
+
+        let sig_content = fs::read_to_string(&pending_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 2, "Should have two signatures");
+        assert!(
+            sig_map.contains_key(&pubkey0.to_base64()),
+            "Should contain first signature"
+        );
+        assert!(
+            sig_map.contains_key(&pubkey1.to_base64()),
+            "Should contain second signature"
+        );
+        assert_eq!(
+            sig_map.get(&pubkey1.to_base64()).unwrap(),
+            &signature1.to_base64()
+        );
+
+        // Sign with third key (present in new signers file)
+        let pubkey2 = new_keys.pub_key(0).unwrap();
+        let seckey2 = new_keys.sec_key(0).unwrap();
+        let signature2 = seckey2.sign(&hash).unwrap();
+
+        // Call sign_signers_file with third signature
+        sign_signers_file(&signers_file_path, &signature2, pubkey2)?;
+
+        // Assert after third signature: still pending, not complete
+        assert!(
+            pending_sig_path.exists(),
+            "Pending signature file should still exist"
+        );
+        assert!(
+            !complete_sig_path.exists(),
+            "Complete signature file should not exist yet"
+        );
+
+        let sig_content = fs::read_to_string(&pending_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 3, "Should have three signatures");
+        assert!(
+            sig_map.contains_key(&pubkey0.to_base64()),
+            "Should contain first signature"
+        );
+        assert!(
+            sig_map.contains_key(&pubkey1.to_base64()),
+            "Should contain second signature"
+        );
+        assert!(
+            sig_map.contains_key(&pubkey2.to_base64()),
+            "Should contain third signature"
+        );
+        assert_eq!(
+            sig_map.get(&pubkey2.to_base64()).unwrap(),
+            &signature2.to_base64()
+        );
+
+        // Sign with fourth key (present in new signers file)
+        let pubkey3 = new_keys.pub_key(1).unwrap();
+        let seckey3 = new_keys.sec_key(1).unwrap();
+        let signature3 = seckey3.sign(&hash).unwrap();
+
+        // Call sign_signers_file with fourth signature
+        sign_signers_file(&signers_file_path, &signature3, pubkey3)?;
+
+        // Assert after fourth signature: complete, pending moved
+        assert!(
+            !pending_sig_path.exists(),
+            "Pending signature file should be gone"
+        );
+        assert!(
+            complete_sig_path.exists(),
+            "Complete signature file should exist"
+        );
+        assert!(
+            active_signers_path.exists(),
+            "Active signers file should exist"
+        );
+
+        let sig_content = fs::read_to_string(&complete_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 4, "Should have all four signatures");
+        assert!(
+            sig_map.contains_key(&pubkey0.to_base64()),
+            "Should contain first signature"
+        );
+        assert!(
+            sig_map.contains_key(&pubkey1.to_base64()),
+            "Should contain second signature"
+        );
+        assert!(
+            sig_map.contains_key(&pubkey2.to_base64()),
+            "Should contain third signature"
+        );
+        assert!(
+            sig_map.contains_key(&pubkey3.to_base64()),
+            "Should contain fourth signature"
+        );
+        assert_eq!(
+            sig_map.get(&pubkey3.to_base64()).unwrap(),
+            &signature3.to_base64()
+        );
+
+        Ok(())
+    }
+    #[test]
+    fn test_sign_signers_file_with_parent_active_signers_complete_after_2_signatures() -> Result<()>
+    {
+        let temp_dir = TempDir::new()?;
+        let parent_dir = temp_dir.path();
+        let child_dir = parent_dir.join("child");
+        fs::create_dir(&child_dir)?;
+
+        // The parent and new signers file have the same signers.
+        // There's no reason to not support that scenario. It could be useful
+        // to copy a signers file to a child dir before making chages in the parent.
+        let test_keys = TestKeys::new(2);
+
+        // Create active signers in parent directory
+        let _active_signers_file = create_active_signers_in_parent(parent_dir, &test_keys)?;
+
+        // Create a test signers file in child directory
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        let signers_file_path =
+            create_test_signers_file_with_content(&child_dir, &signers_content)?;
+
+        // Define paths for assertions
+        let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
+        let active_signers_path = child_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
+        let complete_sig_path = signatures_path_for(&active_signers_path)?;
+
+        // Compute hash once
+        let hash = common::sha512_for_file(&signers_file_path)?;
+
+        // Sign with first key
+        let pubkey0 = test_keys.pub_key(0).unwrap();
+        let seckey0 = test_keys.sec_key(0).unwrap();
+        let signature0 = seckey0.sign(&hash).unwrap();
+
+        // Call sign_signers_file with first signature
+        sign_signers_file(&signers_file_path, &signature0, pubkey0)?;
+
+        // Assert after first signature: pending exists, not complete
+        assert!(
+            pending_sig_path.exists(),
+            "Pending signature file should exist after first signature"
+        );
+        assert!(
+            !complete_sig_path.exists(),
+            "Complete signature file should not exist yet"
+        );
+
+        let sig_content = fs::read_to_string(&pending_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 1, "Should have one signature");
+        assert!(
+            sig_map.contains_key(&pubkey0.to_base64()),
+            "Should contain first signature"
+        );
+        assert_eq!(
+            sig_map.get(&pubkey0.to_base64()).unwrap(),
+            &signature0.to_base64()
+        );
+
+        // Sign with second key
+        let pubkey1 = test_keys.pub_key(1).unwrap();
+        let seckey1 = test_keys.sec_key(1).unwrap();
+        let signature1 = seckey1.sign(&hash).unwrap();
+
+        // Call sign_signers_file with second signature
+        sign_signers_file(&signers_file_path, &signature1, pubkey1)?;
+
+        // Assert after second signature: complete as the signers are the same
+        // in parent and new signers files
+        assert!(
+            !pending_sig_path.exists(),
+            "Pending signature file should not exist"
+        );
+        assert!(
+            complete_sig_path.exists(),
+            "Complete signature file should exist"
+        );
+
+        let sig_content = fs::read_to_string(&complete_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 2, "Should have two signatures");
+        assert!(
+            sig_map.contains_key(&pubkey0.to_base64()),
+            "Should contain first signature"
+        );
+        assert!(
+            sig_map.contains_key(&pubkey1.to_base64()),
+            "Should contain second signature"
+        );
+        assert_eq!(
+            sig_map.get(&pubkey1.to_base64()).unwrap(),
+            &signature1.to_base64()
+        );
 
         Ok(())
     }
