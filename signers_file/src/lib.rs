@@ -93,7 +93,7 @@ fn is_valid_signer_for_update_of<P: AsfaloadPublicKeyTrait + Eq>(
     }
 }
 
-fn sign_signers_file<P, S, K>(
+pub fn sign_signers_file<P, S, K>(
     signers_file_path: P,
     signature: &S,
     pubkey: &K,

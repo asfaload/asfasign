@@ -5,7 +5,7 @@ members = [
   "aggregate_signature",
   "test_helpers",
   "common",
-  "signers_file_types",
+  "signers_file_types", "integration_tests",
 ]
 
 [workspace.lints.clippy]
