@@ -132,6 +132,16 @@ pub struct AsfaloadPublicKey<K> {
     key: K,
 }
 
+impl<K> TryFrom<String> for AsfaloadPublicKey<K>
+where
+    AsfaloadPublicKey<K>: AsfaloadPublicKeyTrait,
+{
+    type Error = errs::KeyError;
+    fn try_from(value: String) -> Result<AsfaloadPublicKey<K>, errs::KeyError> {
+        Self::from_base64(value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AsfaloadSignature<S> {
     signature: S,
