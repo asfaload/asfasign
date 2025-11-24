@@ -9,6 +9,7 @@ minisign = { git = "https://github.com/jedisct1/rust-minisign", rev = "fe7afaf" 
 serde_json = "1.0.143"
 thiserror = "2.0.12"
 common = { path = "../common/" }
+serde = "1.0.228"
 
 [dev-dependencies]
 anyhow = "1.0.98"

@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use signatures::keys::AsfaloadPublicKeyTrait;
+pub use signatures::keys::KeyFormat;
+use signatures::keys::{AsfaloadPublicKeyTrait, errs};
 
 // We set a bound in the serde annotation. Here why, as explained by AI:
 // Without this bound, we get the error `E0277` "the trait bound `P: _::_serde::Deserialize<'_>` is
@@ -197,12 +198,6 @@ where
             pubkey,
         })
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum KeyFormat {
-    Minisign,
 }
 
 pub fn parse_signers_config<P: AsfaloadPublicKeyTrait>(
