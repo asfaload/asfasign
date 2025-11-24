@@ -2,7 +2,10 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use signatures::keys::KeyFormat;
-use signatures::keys::{AsfaloadPublicKeyTrait, errs};
+use signatures::keys::{
+    AsfaloadPublicKeyTrait,
+    errs::{self, KeyError},
+};
 
 // We set a bound in the serde annotation. Here why, as explained by AI:
 // Without this bound, we get the error `E0277` "the trait bound `P: _::_serde::Deserialize<'_>` is
@@ -32,6 +35,82 @@ impl<P> SignersConfig<P>
 where
     P: AsfaloadPublicKeyTrait,
 {
+    // Create a new SignersConfig with the SignerGroup parameters
+    pub fn new(
+        version: u32,
+        artifact_signers: Vec<SignerGroup<P>>,
+        master_keys: Vec<SignerGroup<P>>,
+        admin_keys: Option<Vec<SignerGroup<P>>>,
+    ) -> Self {
+        Self {
+            version,
+            initial_version: InitialVersion {
+                permalink: "https://example.com".to_string(),
+                mirrors: vec![],
+            },
+            artifact_signers,
+            master_keys,
+            admin_keys,
+        }
+    }
+
+    // Helper function to create a SignerGroup from pubkeys' string representation.
+    fn create_group<PK>(pubkeys: Vec<String>, threshold: u32) -> Result<SignerGroup<PK>, KeyError>
+    where
+        PK: AsfaloadPublicKeyTrait,
+    {
+        if pubkeys.is_empty() {
+            return Ok(SignerGroup {
+                signers: vec![],
+                threshold: 0, // Default threshold when no signers
+            });
+        }
+
+        let signers = pubkeys
+            .into_iter()
+            .map(Signer::from_key)
+            .collect::<Result<Vec<Signer<PK>>, _>>()?;
+
+        Ok(SignerGroup { signers, threshold })
+    }
+
+    // Create a SignersConfig with the given public keys as strings and threshold for different groups
+    pub fn with_keys(
+        version: u32,
+        (artifact_signers, artifact_threshold): (Vec<String>, u32),
+        (master_keys, master_threshold): (Vec<String>, u32),
+        admin_keys: Option<(Vec<String>, u32)>,
+    ) -> Result<Self, KeyError> {
+        // Helper function to create a SignerGroup from a vector of public key strings
+        // Create the artifact signers group
+        let artifact_signers = if artifact_signers.is_empty() {
+            vec![]
+        } else {
+            vec![Self::create_group(artifact_signers, artifact_threshold)?]
+        };
+
+        // Create the master signers group
+        let master_keys = if master_keys.is_empty() {
+            vec![]
+        } else {
+            vec![Self::create_group(master_keys, master_threshold)?]
+        };
+
+        // Create the admin signers group
+        let admin_keys = match admin_keys {
+            Some((keys, _threshold)) if keys.is_empty() => None,
+            Some((keys, threshold)) => Some(vec![Self::create_group(keys, threshold)?]),
+            None => None,
+        };
+
+        Ok(Self::new(
+            version,
+            artifact_signers,
+            master_keys,
+            admin_keys,
+        ))
+    }
+
     pub fn admin_keys(&self) -> &Vec<SignerGroup<P>> {
         match &self.admin_keys {
             Some(v) if !v.is_empty() => v,
@@ -143,6 +222,19 @@ where
 pub struct Signer<P: AsfaloadPublicKeyTrait> {
     pub kind: SignerKind,
     pub data: SignerData<P>, // Specify the concrete type here
+}
+
+impl<P: AsfaloadPublicKeyTrait> Signer<P> {
+    pub fn from_key(pk_str: String) -> Result<Self, errs::KeyError> {
+        let pk = P::from_base64(pk_str)?;
+        Ok(Self {
+            kind: SignerKind::Key,
+            data: SignerData {
+                format: pk.key_format(),
+                pubkey: pk,
+            },
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -2403,28 +2403,19 @@ mod tests {
     fn create_test_signers_config(
         test_keys: &TestKeys,
     ) -> SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> {
-        let json_content_template = r#"
-{
-  "version": 1,
-  "initial_version": {
-    "permalink": "https://example.com",
-    "mirrors": []
-  },
-  "artifact_signers": [
-    {
-      "signers": [
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER" } },
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
-      ],
-      "threshold": 2
-    }
-  ],
-  "master_keys": [],
-  "admin_keys": null
-}
-"#;
-        let json_content = test_keys.substitute_keys(json_content_template.to_string());
-        parse_signers_config(&json_content).unwrap()
+        SignersConfig::with_keys(
+            1,
+            (
+                vec![
+                    test_keys.pub_key(0).unwrap().to_base64(),
+                    test_keys.pub_key(1).unwrap().to_base64(),
+                ],
+                2,
+            ),
+            (vec![], 0),
+            None,
+        )
+        .unwrap()
     }
 
     // Helper function to create a test signatures map
