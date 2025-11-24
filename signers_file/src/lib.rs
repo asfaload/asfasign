@@ -230,7 +230,7 @@ where
 
 pub fn initialize_signers_file<P: AsRef<Path>, S, K>(
     dir_path_in: P,
-    json_content: &str,
+    json_content_in: impl AsRef<str>,
     signature: &S,
     pubkey: &K,
 ) -> Result<(), SignersFileError>
@@ -238,6 +238,7 @@ where
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
     S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
+    let json_content = json_content_in.as_ref();
     if dir_path_in.as_ref().join(SIGNERS_DIR).exists()
         || dir_path_in.as_ref().join(PENDING_SIGNERS_DIR).exists()
     {
@@ -953,46 +954,29 @@ mod tests {
 
         let test_keys = TestKeys::new(3);
 
-        // Example JSON content (from the existing test)
-        let json_content_template = r#"
-{
-  "version": 1,
-  "initial_version": {
-    "permalink": "https://example.com",
-    "mirrors": []
-  },
-  "artifact_signers": [
-    {
-      "signers": [
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER"} }
-      ],
-      "threshold": 1
-    }
-  ],
-  "master_keys": [],
-  "admin_keys": null
-}
-"#;
+        // Extract used keys
+        let pub_key0 = test_keys.pub_key(0).unwrap().clone();
+        let pub_key1 = test_keys.pub_key(1).unwrap().clone();
+        let sec_key0 = test_keys.sec_key(0).unwrap();
 
-        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
+        let signers_config = SignersConfig::with_keys(
+            1,
+            (vec![pub_key0.clone(), pub_key1.clone()], 1),
+            (vec![], 0),
+            None,
+        )?;
+        let json_content = serde_json::json!(signers_config).to_string();
+
+        //let json_content = &test_keys.substitute_keys(json_content_template.to_string());
         let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         // Get keys we work with here
-        let pub_key = test_keys.pub_key(0).unwrap();
-        let sec_key = test_keys.sec_key(0).unwrap();
 
         // Sign the hash
-        let signature = sec_key.sign(&hash_value).unwrap();
+        let signature = sec_key0.sign(&hash_value).unwrap();
 
         // Call the function
-        initialize_signers_file(
-            dir_path,
-            json_content,
-            &signature,
-            test_keys.pub_key(0).unwrap(),
-        )
-        .unwrap();
+        initialize_signers_file(dir_path, json_content, &signature, &pub_key0).unwrap();
 
         // Even though we have a threshold 1, for a signers file initialisation we need
         // to collect signatures from all signers preseng in the file. That's why we
@@ -1025,9 +1009,9 @@ mod tests {
         let sig_map: std::collections::HashMap<String, String> =
             serde_json::from_str(&sig_content).unwrap();
         assert_eq!(sig_map.len(), 1);
-        assert!(sig_map.contains_key(&pub_key.to_base64()));
+        assert!(sig_map.contains_key(&pub_key0.to_base64()));
         assert_eq!(
-            sig_map.get(&pub_key.to_base64()).unwrap(),
+            sig_map.get(&pub_key0.to_base64()).unwrap(),
             &signature.to_base64()
         );
         Ok(())
@@ -1040,33 +1024,15 @@ mod tests {
 
         let test_keys = TestKeys::new(3);
 
-        // Example JSON content (from the existing test)
-        let json_content_template = r#"
-{
-  "version": 1,
-  "initial_version": {
-    "permalink": "https://example.com",
-    "mirrors": []
-  },
-  "artifact_signers": [
-    {
-      "signers": [
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
-      ],
-      "threshold": 1
-    }
-  ],
-  "master_keys": [],
-  "admin_keys": null
-}
-"#;
-
-        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-
         // Get keys we work with here
         let pub_key = test_keys.pub_key(0).unwrap();
         let sec_key = test_keys.sec_key(0).unwrap();
+
+        // Build signers config
+        let signers_config =
+            SignersConfig::with_keys(1, (vec![pub_key.clone()], 1), (vec![], 0), None)?;
+        let json_content = serde_json::json!(signers_config).to_string();
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         // Sign the hash
         let signature = sec_key.sign(&hash_value).unwrap();
@@ -1169,31 +1135,10 @@ mod tests {
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(3);
 
-        // JSON content with a specific signer
-        let json_content_template = r#"
-    {
-      "version": 1,
-      "initial_version": {
-        "permalink": "https://example.com",
-        "mirrors": []
-      },
-      "artifact_signers": [
-        {
-          "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
-          ],
-          "threshold": 1
-        }
-      ],
-      "master_keys": [],
-      "admin_keys": null
-    }
-    "#;
-        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-
-        // Generate a keypair (in the config)
         let pubkey = test_keys.pub_key(0).unwrap();
         let seckey = test_keys.sec_key(0).unwrap();
+        let json_content =
+            SignersConfig::with_artifact_signers_only(1, (vec![pubkey.clone()], 1))?.to_json()?;
 
         // Sign different data (not the hash of the JSON)
         let signature = seckey
@@ -1220,40 +1165,24 @@ mod tests {
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(4);
 
-        // JSON content with admin_signers
-        let json_content_template = r#"
-    {
-      "version": 1,
-      "initial_version": {
-        "permalink": "https://example.com",
-        "mirrors": []
-      },
-      "artifact_signers": [
-        {
-          "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
-          ],
-          "threshold": 1
-        }
-      ],
-      "master_keys": [],
-      "admin_keys": [
-        {
-          "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER"} }
-          ],
-          "threshold": 2
-        }
-      ]
-    }
-    "#;
+        // Get keys
+        let pubkey0 = test_keys.pub_key(0).unwrap().clone();
+        let pubkey2 = test_keys.pub_key(2).unwrap().clone();
+        let pubkey3 = test_keys.pub_key(3).unwrap().clone();
 
-        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
+        // Generate config
+        let json_content = SignersConfig::with_keys(
+            1,
+            (vec![pubkey0.clone()], 1),
+            (vec![], 0),
+            Some((vec![pubkey2.clone(), pubkey3.clone()], 2)),
+        )?
+        .to_json()?;
+        //
         // Get keys we work with here
-        let non_admin_pubkey = test_keys.pub_key(0).unwrap();
+        let non_admin_pubkey = pubkey0;
         let non_admin_seckey = test_keys.sec_key(0).unwrap();
-        let admin_pubkey = test_keys.pub_key(2).unwrap();
+        let admin_pubkey = pubkey2;
         let admin_seckey = test_keys.sec_key(2).unwrap();
         let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
@@ -1265,9 +1194,9 @@ mod tests {
         // Call the function
         let result = initialize_signers_file(
             dir_path,
-            json_content,
+            &json_content,
             &non_admin_signature,
-            non_admin_pubkey,
+            &non_admin_pubkey,
         );
         let sig_file_path = dir_path.join(format!(
             "{}/{}.{}",
@@ -1285,7 +1214,7 @@ mod tests {
         // Now sign proposal with admin key which should be ok
         // --------------------------------------------------
         let admin_signature = admin_seckey.sign(&hash_value).unwrap();
-        initialize_signers_file(dir_path, json_content, &admin_signature, admin_pubkey)?;
+        initialize_signers_file(dir_path, json_content, &admin_signature, &admin_pubkey)?;
         // Check that the pending file exists
         assert!(pending_file_path.exists());
 
@@ -1298,32 +1227,16 @@ mod tests {
     fn test_initialize_signers_file_with_one_signer() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
-        let test_keys = TestKeys::new(4);
+        let test_keys = TestKeys::new(1);
 
-        // JSON content with admin_signers
-        let json_content_template = r#"
-    {
-      "version": 1,
-      "initial_version": {
-        "permalink": "https://example.com",
-        "mirrors": []
-      },
-      "artifact_signers": [
-        {
-          "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
-          ],
-          "threshold": 1
-        }
-      ],
-      "master_keys": []
-    }
-    "#;
-
-        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
         // Get keys we work with here
         let pubkey = test_keys.pub_key(0).unwrap();
         let seckey = test_keys.sec_key(0).unwrap();
+
+        // Generate config
+        let json_content =
+            SignersConfig::with_artifact_signers_only(1, (vec![pubkey.clone()], 1))?.to_json()?;
+
         let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         let pending_signers_dir = dir_path.join(PENDING_SIGNERS_DIR);
@@ -1353,32 +1266,13 @@ mod tests {
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(1);
 
-        // Create a valid JSON content
-        let json_content_template = r#"
-{
-  "version": 1,
-  "initial_version": {
-    "permalink": "https://example.com",
-    "mirrors": []
-  },
-  "artifact_signers": [
-    {
-      "signers": [
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
-      ],
-      "threshold": 1
-    }
-  ],
-  "master_keys": [],
-  "admin_keys": null
-}
-"#;
-        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
         let sec_key = test_keys.sec_key(0).unwrap();
+
+        let json_content =
+            SignersConfig::with_artifact_signers_only(1, (vec![pub_key.clone()], 1))?.to_json()?;
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let signature = sec_key.sign(&hash_value).unwrap();
 
         // Test for IO error: Make the directory read-only
@@ -1387,7 +1281,7 @@ mod tests {
         fs::set_permissions(dir_path, perms).unwrap();
 
         // Try to initialize the signers file, which should fail with an IO error
-        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+        let result = initialize_signers_file(dir_path, &json_content, &signature, pub_key);
 
         // Check that we got an IO error
         assert!(result.is_err());
@@ -1402,7 +1296,7 @@ mod tests {
         // first create a signers file in an empty directory
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
-        initialize_signers_file(dir_path, json_content, &signature, pub_key).unwrap();
+        initialize_signers_file(dir_path, &json_content, &signature, pub_key).unwrap();
         // Threshold was one, so it is activated
         let pending_signers_file_path =
             dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -1426,34 +1320,14 @@ mod tests {
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(1);
 
-        // Create a valid JSON content
-        let json_content_template = r#"
-{
-  "version": 1,
-  "initial_version": {
-    "permalink": "https://example.com",
-    "mirrors": []
-  },
-  "artifact_signers": [
-    {
-      "signers": [
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
-      ],
-      "threshold": 1
-    }
-  ],
-  "master_keys": [],
-  "admin_keys": null
-}
-"#;
-        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-
-        // Compute the SHA-512 hash of the JSON content
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
         let sec_key = test_keys.sec_key(0).unwrap();
+
+        let json_content =
+            SignersConfig::with_artifact_signers_only(1, (vec![pub_key.clone()], 1))?.to_json()?;
+        // Compute the SHA-512 hash of the JSON content
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let signature = sec_key.sign(&hash_value).unwrap();
 
         // Create complete signature file, content does not matter, only existence.
@@ -1486,34 +1360,13 @@ mod tests {
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(1);
 
-        // Create a valid JSON content
-        let json_content_template = r#"
-{
-  "version": 1,
-  "initial_version": {
-    "permalink": "https://example.com",
-    "mirrors": []
-  },
-  "artifact_signers": [
-    {
-      "signers": [
-        { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY0_PLACEHOLDER"} }
-      ],
-      "threshold": 1
-    }
-  ],
-  "master_keys": [],
-  "admin_keys": null
-}
-"#;
-        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-
-        // Compute the SHA-512 hash of the JSON content
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-
         // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
         let sec_key = test_keys.sec_key(0).unwrap();
+
+        let json_content =
+            SignersConfig::with_artifact_signers_only(1, (vec![pub_key.clone()], 1))?.to_json()?;
+        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let signature = sec_key.sign(&hash_value).unwrap();
 
         // Create complete signature file, content does not matter, only existence.
@@ -1648,6 +1501,7 @@ mod tests {
         let existing_signers_file = active_dir.join(SIGNERS_FILE);
 
         // Create a template for the existing content
+        // The permalink is specific
         let existing_content_template = r#"
 {
   "version": 1,

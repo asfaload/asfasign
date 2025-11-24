@@ -115,6 +115,13 @@ where
         ))
     }
 
+    pub fn with_artifact_signers_only(
+        version: u32,
+        artifact_signers_and_threshold: (Vec<APK>, u32),
+    ) -> Result<Self, errs::KeyError> {
+        Self::with_keys(version, artifact_signers_and_threshold, (vec![], 0), None)
+    }
+
     pub fn admin_keys(&self) -> &Vec<SignerGroup<APK>> {
         match &self.admin_keys {
             Some(v) if !v.is_empty() => v,
