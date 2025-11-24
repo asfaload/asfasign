@@ -1,6 +1,7 @@
 use crate::keys::{
     AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
-    AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait, errs,
+    AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
+    KeyFormat, errs,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use common::{
@@ -201,6 +202,10 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     fn from_base64(s: String) -> Result<Self, errs::KeyError> {
         let k = minisign::PublicKey::from_base64(s.as_str())?;
         Ok(AsfaloadPublicKey { key: k })
+    }
+
+    fn key_format(&self) -> KeyFormat {
+        KeyFormat::Minisign
     }
 }
 

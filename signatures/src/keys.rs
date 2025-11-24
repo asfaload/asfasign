@@ -122,6 +122,7 @@ pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone {
         Self::from_bytes(&s.into_bytes())
     }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError>;
+    fn key_format(&self) -> KeyFormat;
 }
 
 #[derive(Debug, Clone)]
