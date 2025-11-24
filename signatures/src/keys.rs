@@ -103,6 +103,7 @@ pub struct AsfaloadSecretKey<K> {
 }
 pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone {
     type Signature: AsfaloadSignatureTrait;
+    type KeyType;
 
     fn verify(
         &self,
@@ -123,6 +124,7 @@ pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone {
     }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError>;
     fn key_format(&self) -> KeyFormat;
+    fn key(&self) -> Self::KeyType;
 }
 
 #[derive(Debug, Clone)]

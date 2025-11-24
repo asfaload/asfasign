@@ -8,7 +8,7 @@ use common::{
     AsfaloadHashes,
     fs::names::{pending_signatures_path_for, signatures_path_for},
 };
-pub use minisign::KeyPair;
+pub use minisign::{KeyPair, PublicKey};
 use serde_json;
 use std::{
     ffi::OsString,
@@ -163,6 +163,7 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
 
 impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     type Signature = AsfaloadSignature<minisign::SignatureBox>;
+    type KeyType = minisign::PublicKey;
 
     fn verify(
         &self,
@@ -206,6 +207,10 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
 
     fn key_format(&self) -> KeyFormat {
         KeyFormat::Minisign
+    }
+
+    fn key(&self) -> minisign::PublicKey {
+        self.key.clone()
     }
 }
 
