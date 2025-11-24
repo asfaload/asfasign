@@ -31,17 +31,20 @@ pub struct SignersConfig<P: AsfaloadPublicKeyTrait> {
     pub admin_keys: Option<Vec<SignerGroup<P>>>,
 }
 
-impl<P> SignersConfig<P>
+impl<APK> SignersConfig<APK>
 where
-    P: AsfaloadPublicKeyTrait,
+    APK: AsfaloadPublicKeyTrait,
 {
     // Create a new SignersConfig with the SignerGroup parameters
     pub fn new(
         version: u32,
-        artifact_signers: Vec<SignerGroup<P>>,
-        master_keys: Vec<SignerGroup<P>>,
-        admin_keys: Option<Vec<SignerGroup<P>>>,
-    ) -> Self {
+        artifact_signers: Vec<SignerGroup<APK>>,
+        master_keys: Vec<SignerGroup<APK>>,
+        admin_keys: Option<Vec<SignerGroup<APK>>>,
+    ) -> Self
+    where
+        APK: AsfaloadPublicKeyTrait,
+    {
         Self {
             version,
             initial_version: InitialVersion {
@@ -55,9 +58,9 @@ where
     }
 
     // Helper function to create a SignerGroup from pubkeys' string representation.
-    fn create_group<PK>(pubkeys: Vec<String>, threshold: u32) -> Result<SignerGroup<PK>, KeyError>
+    fn create_group(pubkeys: Vec<APK>, threshold: u32) -> Result<SignerGroup<APK>, KeyError>
     where
-        PK: AsfaloadPublicKeyTrait,
+        APK: AsfaloadPublicKeyTrait,
     {
         if pubkeys.is_empty() {
             return Ok(SignerGroup {
@@ -65,22 +68,23 @@ where
                 threshold: 0, // Default threshold when no signers
             });
         }
-
         let signers = pubkeys
-            .into_iter()
+            .iter()
             .map(Signer::from_key)
-            .collect::<Result<Vec<Signer<PK>>, _>>()?;
-
+            .collect::<Result<Vec<Signer<APK>>, KeyError>>()?;
         Ok(SignerGroup { signers, threshold })
     }
 
     // Create a SignersConfig with the given public keys as strings and threshold for different groups
     pub fn with_keys(
         version: u32,
-        (artifact_signers, artifact_threshold): (Vec<String>, u32),
-        (master_keys, master_threshold): (Vec<String>, u32),
-        admin_keys: Option<(Vec<String>, u32)>,
-    ) -> Result<Self, KeyError> {
+        (artifact_signers, artifact_threshold): (Vec<APK>, u32),
+        (master_keys, master_threshold): (Vec<APK>, u32),
+        admin_keys: Option<(Vec<APK>, u32)>,
+    ) -> Result<Self, KeyError>
+    where
+        APK: AsfaloadPublicKeyTrait,
+    {
         // Helper function to create a SignerGroup from a vector of public key strings
         // Create the artifact signers group
         let artifact_signers = if artifact_signers.is_empty() {
@@ -111,20 +115,20 @@ where
         ))
     }
 
-    pub fn admin_keys(&self) -> &Vec<SignerGroup<P>> {
+    pub fn admin_keys(&self) -> &Vec<SignerGroup<APK>> {
         match &self.admin_keys {
             Some(v) if !v.is_empty() => v,
             _ => &self.artifact_signers,
         }
     }
-    pub fn master_keys(&self) -> &Vec<SignerGroup<P>> {
+    pub fn master_keys(&self) -> &Vec<SignerGroup<APK>> {
         &self.master_keys
     }
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
     // Get all signers keys present in the SignersConfig.
-    pub fn all_signer_keys(&self) -> HashSet<P> {
+    pub fn all_signer_keys(&self) -> HashSet<APK> {
         self.admin_keys()
             .iter()
             .chain(self.master_keys().iter())
@@ -225,13 +229,12 @@ pub struct Signer<P: AsfaloadPublicKeyTrait> {
 }
 
 impl<P: AsfaloadPublicKeyTrait> Signer<P> {
-    pub fn from_key(pk_str: String) -> Result<Self, errs::KeyError> {
-        let pk = P::from_base64(pk_str)?;
+    pub fn from_key(pk: &P) -> Result<Self, errs::KeyError> {
         Ok(Self {
             kind: SignerKind::Key,
             data: SignerData {
                 format: pk.key_format(),
-                pubkey: pk,
+                pubkey: pk.clone(),
             },
         })
     }

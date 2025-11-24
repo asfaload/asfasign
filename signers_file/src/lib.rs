@@ -2402,13 +2402,16 @@ mod tests {
     // Helper function to create a test signers config
     fn create_test_signers_config(
         test_keys: &TestKeys,
-    ) -> SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> {
+    ) -> SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>
+    where
+        AsfaloadPublicKey<minisign::PublicKey>: AsfaloadPublicKeyTrait,
+    {
         SignersConfig::with_keys(
             1,
             (
                 vec![
-                    test_keys.pub_key(0).unwrap().to_base64(),
-                    test_keys.pub_key(1).unwrap().to_base64(),
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
                 ],
                 2,
             ),
