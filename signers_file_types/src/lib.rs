@@ -41,10 +41,7 @@ where
         artifact_signers: Vec<SignerGroup<APK>>,
         master_keys: Vec<SignerGroup<APK>>,
         admin_keys: Option<Vec<SignerGroup<APK>>>,
-    ) -> Self
-    where
-        APK: AsfaloadPublicKeyTrait,
-    {
+    ) -> Self {
         Self {
             version,
             initial_version: InitialVersion {
@@ -58,10 +55,7 @@ where
     }
 
     // Helper function to create a SignerGroup from pubkeys' string representation.
-    fn create_group(pubkeys: Vec<APK>, threshold: u32) -> Result<SignerGroup<APK>, KeyError>
-    where
-        APK: AsfaloadPublicKeyTrait,
-    {
+    fn create_group(pubkeys: Vec<APK>, threshold: u32) -> Result<SignerGroup<APK>, KeyError> {
         if pubkeys.is_empty() {
             return Ok(SignerGroup {
                 signers: vec![],
@@ -81,10 +75,7 @@ where
         (artifact_signers, artifact_threshold): (Vec<APK>, u32),
         (master_keys, master_threshold): (Vec<APK>, u32),
         admin_keys: Option<(Vec<APK>, u32)>,
-    ) -> Result<Self, KeyError>
-    where
-        APK: AsfaloadPublicKeyTrait,
-    {
+    ) -> Result<Self, KeyError> {
         // Helper function to create a SignerGroup from a vector of public key strings
         // Create the artifact signers group
         let artifact_signers = if artifact_signers.is_empty() {
