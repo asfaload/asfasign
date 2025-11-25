@@ -2,10 +2,21 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use signatures::keys::KeyFormat;
-use signatures::keys::{
-    AsfaloadPublicKeyTrait,
-    errs::{self, KeyError},
-};
+use signatures::keys::{AsfaloadPublicKeyTrait, errs::KeyError};
+
+pub mod errs {
+    use signatures::keys::errs::KeyError;
+    use thiserror::Error;
+
+    #[derive(Error, Debug)]
+    pub enum SignersConfigError {
+        #[error("Key error")]
+        IOError(#[from] KeyError),
+        #[error("Invalid Signer group")]
+        GroupError(String),
+    }
+}
+use errs::SignersConfigError;
 
 // We set a bound in the serde annotation. Here why, as explained by AI:
 // Without this bound, we get the error `E0277` "the trait bound `P: _::_serde::Deserialize<'_>` is
@@ -55,12 +66,14 @@ where
     }
 
     // Helper function to create a SignerGroup from pubkeys' string representation.
-    fn create_group(pubkeys: Vec<APK>, threshold: u32) -> Result<SignerGroup<APK>, KeyError> {
+    fn create_group(
+        pubkeys: Vec<APK>,
+        threshold: u32,
+    ) -> Result<SignerGroup<APK>, errs::SignersConfigError> {
         if pubkeys.is_empty() {
-            return Ok(SignerGroup {
-                signers: vec![],
-                threshold: 0, // Default threshold when no signers
-            });
+            return Err(errs::SignersConfigError::GroupError(
+                "Empty groups cannot be built".to_string(),
+            ));
         }
         let signers = pubkeys
             .iter()
@@ -75,7 +88,7 @@ where
         (artifact_signers, artifact_threshold): (Vec<APK>, u32),
         (master_keys, master_threshold): (Vec<APK>, u32),
         admin_keys: Option<(Vec<APK>, u32)>,
-    ) -> Result<Self, KeyError> {
+    ) -> Result<Self, SignersConfigError> {
         // Helper function to create a SignerGroup from a vector of public key strings
         // Create the artifact signers group
         let artifact_signers = if artifact_signers.is_empty() {
@@ -109,7 +122,7 @@ where
     pub fn with_artifact_signers_only(
         version: u32,
         artifact_signers_and_threshold: (Vec<APK>, u32),
-    ) -> Result<Self, errs::KeyError> {
+    ) -> Result<Self, SignersConfigError> {
         Self::with_keys(version, artifact_signers_and_threshold, (vec![], 0), None)
     }
 
@@ -227,7 +240,7 @@ pub struct Signer<APK: AsfaloadPublicKeyTrait> {
 }
 
 impl<APK: AsfaloadPublicKeyTrait> Signer<APK> {
-    pub fn from_key(pk: &APK) -> Result<Self, errs::KeyError> {
+    pub fn from_key(pk: &APK) -> Result<Self, KeyError> {
         Ok(Self {
             kind: SignerKind::Key,
             data: SignerData {
