@@ -1,15 +1,14 @@
-use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
+use aggregate_signature::{
+    AggregateSignature, AggregateSignatureError, CompleteSignature, SignatureWithState,
+};
 use chrono::{DateTime, Utc};
 use common::fs::names::{
     FileType, PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
     find_global_signers_for, pending_signatures_path_for, signatures_path_for,
 };
-use signatures::keys::{
-    AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-    errs::SignatureError,
-};
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, errs::SignatureError};
 use signers_file_types::{SignersConfig, parse_signers_config};
-use std::{collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
+use std::{borrow::Borrow, collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
 use thiserror::Error;
 //
 
@@ -97,7 +96,7 @@ pub fn sign_signers_file<P, S, K>(
     signers_file_path: P,
     signature: &S,
     pubkey: &K,
-) -> Result<(), SignersFileError>
+) -> Result<SignatureWithState<K, S>, SignersFileError>
 where
     P: AsRef<Path>,
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
@@ -110,25 +109,34 @@ where
     // This will succeed only if the signature is complete, and it is fine
     // if it returns an error reporting an incomplete signature for which the
     // transition cannot occur.
-    let agg_sig: SignatureWithState<AsfaloadPublicKey<_>, AsfaloadSignature<_>> =
+    let agg_sig: SignatureWithState<K, S> =
         aggregate_signature::load_for_file::<_, _, _>(&signers_file_path)?;
-    if let Some(pending_sig) = agg_sig.get_pending() {
+    if agg_sig.is_pending() {
+        let pending_sig = agg_sig
+            .get_pending()
+            // We are sure it is pending here, but handling it makes the code stronger
+            // in case it is moved
+            .ok_or(AggregateSignatureError::LogicError(
+                "Agg sig determined as pending returned nothing with get_pending".to_string(),
+            ))?;
         match pending_sig.try_transition_to_complete() {
             Ok(agg_sig) => {
                 // Success case: The signature completed successfully.
-                activate_signers_file(agg_sig)?;
+                activate_signers_file(&agg_sig)?;
+                Ok(SignatureWithState::Complete(agg_sig))
             }
             Err(aggregate_signature::AggregateSignatureError::IsIncomplete) => {
                 // Signature is not yet complete, which is fine. We just added our part.
+                Ok(SignatureWithState::Pending(pending_sig))
             }
             Err(e) => {
                 // Any other error is fatal.
-                return Err(e.into());
+                Err(e.into())
             }
         }
+    } else {
+        Ok(agg_sig)
     }
-
-    Ok(())
 }
 
 /// Initialize a signers file in a specific directory.
@@ -361,13 +369,13 @@ fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
     Ok(())
 }
 
-pub fn activate_signers_file<K, S>(
-    agg_sig: AggregateSignature<K, S, CompleteSignature>,
-) -> Result<(), SignersFileError>
+pub fn activate_signers_file<K, S, A>(agg_sig: A) -> Result<(), SignersFileError>
 where
     K: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait + Clone,
+    A: Borrow<AggregateSignature<K, S, CompleteSignature>>,
 {
+    let agg_sig = agg_sig.borrow();
     if agg_sig.subject().kind == FileType::Artifact {
         return Err(SignersFileError::FileSystemHierarchyError(format!(
             "Cannot activate a signers file for file of type {}",
@@ -508,6 +516,7 @@ mod tests {
     use common::sha512_for_file;
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
+    use signatures::keys::AsfaloadSignature;
     use signers_file_types::KeyFormat;
     use signers_file_types::SignerKind;
     use std::path::PathBuf;
@@ -4542,7 +4551,7 @@ mod tests {
         // Call sign_signers_file and expect an error
         let result = sign_signers_file(&signers_file_path, &signature, pubkey);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.err().unwrap() {
             SignersFileError::IoError(_) => {} // Expected
             e => panic!("Expected IoError, got {}", e),
         }
@@ -4580,7 +4589,7 @@ mod tests {
         // Call sign_signers_file and expect an error
         let result = sign_signers_file(&signers_file_path, &signature, pubkey);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.err().unwrap() {
             SignersFileError::JsonError(_) => {} // Expected
             e => panic!("Expected JsonError, got {}", e),
         }

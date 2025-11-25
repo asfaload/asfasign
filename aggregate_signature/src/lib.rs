@@ -30,6 +30,11 @@ pub enum AggregateSignatureError {
     MissingSignaturesInCompleteSignature,
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
+    // Use when an agg signature does not have the status is should logically have.
+    // Should not happen, but is used to avoid an unwrap() when we are sure that
+    // we would get a Some with SignatureWithState::get_pending because we tested it before.
+    #[error("Logic error: {0}")]
+    LogicError(String),
 }
 
 pub struct PendingSignature;
@@ -83,6 +88,16 @@ where
             Self::Complete(_s) => None,
             Self::Pending(s) => Some(s),
         }
+    }
+    // Function allowing to check the agg sig status without consuming it
+    pub fn is_pending(&self) -> bool {
+        match self {
+            Self::Complete(_) => false,
+            Self::Pending(_) => true,
+        }
+    }
+    pub fn is_complete(&self) -> bool {
+        !self.is_pending()
     }
 }
 #[derive(Clone)]
