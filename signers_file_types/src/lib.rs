@@ -1,7 +1,22 @@
 use std::collections::HashSet;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use signatures::keys::AsfaloadPublicKeyTrait;
+pub use signatures::keys::KeyFormat;
+use signatures::keys::{AsfaloadPublicKeyTrait, errs::KeyError};
+
+pub mod errs {
+    use signatures::keys::errs::KeyError;
+    use thiserror::Error;
+
+    #[derive(Error, Debug)]
+    pub enum SignersConfigError {
+        #[error("Key error")]
+        IOError(#[from] KeyError),
+        #[error("Invalid Signer group")]
+        GroupError(String),
+    }
+}
+use errs::SignersConfigError;
 
 // We set a bound in the serde annotation. Here why, as explained by AI:
 // Without this bound, we get the error `E0277` "the trait bound `P: _::_serde::Deserialize<'_>` is
@@ -9,42 +24,122 @@ use signatures::keys::AsfaloadPublicKeyTrait;
 // `SignersConfig`, `SignerGroup`, and `Signer`, `serde` implicitly adds `P: Deserialize` and `P:
 // Serialize` bounds to their generic parameter `P`.
 // However, in this design, the actual deserialization and serialization of the generic `P` (which
-// represents the public key) is handled manually within the `SignerData<P>`'s custom `impl
+// represents the public key) is handled manually within the `SignerData<APK>`'s custom `impl
 // Serialize` and `impl Deserialize` blocks, which only require `P: AsfaloadPublicKeyTrait`. `P`
 // itself does not need to implement `serde::Deserialize` or `serde::Serialize` directly.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
+    serialize = "APK: AsfaloadPublicKeyTrait",
+    deserialize = "APK: AsfaloadPublicKeyTrait"
 ))]
-pub struct SignersConfig<P: AsfaloadPublicKeyTrait> {
+pub struct SignersConfig<APK: AsfaloadPublicKeyTrait> {
     pub version: u32,
     pub initial_version: InitialVersion,
-    pub artifact_signers: Vec<SignerGroup<P>>,
-    pub master_keys: Vec<SignerGroup<P>>,
+    pub artifact_signers: Vec<SignerGroup<APK>>,
+    pub master_keys: Vec<SignerGroup<APK>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     // FIXME: make private, but causes trouble in tests of aggregate signature definitions
-    pub admin_keys: Option<Vec<SignerGroup<P>>>,
+    pub admin_keys: Option<Vec<SignerGroup<APK>>>,
 }
 
-impl<P> SignersConfig<P>
+impl<APK> SignersConfig<APK>
 where
-    P: AsfaloadPublicKeyTrait,
+    APK: AsfaloadPublicKeyTrait,
 {
-    pub fn admin_keys(&self) -> &Vec<SignerGroup<P>> {
+    // Create a new SignersConfig with the SignerGroup parameters
+    pub fn new(
+        version: u32,
+        artifact_signers: Vec<SignerGroup<APK>>,
+        master_keys: Vec<SignerGroup<APK>>,
+        admin_keys: Option<Vec<SignerGroup<APK>>>,
+    ) -> Self {
+        Self {
+            version,
+            initial_version: InitialVersion {
+                permalink: "https://example.com".to_string(),
+                mirrors: vec![],
+            },
+            artifact_signers,
+            master_keys,
+            admin_keys,
+        }
+    }
+
+    // Helper function to create a SignerGroup from pubkeys' string representation.
+    fn create_group(
+        pubkeys: Vec<APK>,
+        threshold: u32,
+    ) -> Result<SignerGroup<APK>, errs::SignersConfigError> {
+        if pubkeys.is_empty() {
+            return Err(errs::SignersConfigError::GroupError(
+                "Empty groups cannot be built".to_string(),
+            ));
+        }
+        let signers = pubkeys
+            .iter()
+            .map(Signer::from_key)
+            .collect::<Result<Vec<Signer<APK>>, KeyError>>()?;
+        Ok(SignerGroup { signers, threshold })
+    }
+
+    // Create a SignersConfig with the given public keys as strings and threshold for different groups
+    pub fn with_keys(
+        version: u32,
+        (artifact_signers, artifact_threshold): (Vec<APK>, u32),
+        (master_keys, master_threshold): (Vec<APK>, u32),
+        admin_keys: Option<(Vec<APK>, u32)>,
+    ) -> Result<Self, SignersConfigError> {
+        // Helper function to create a SignerGroup from a vector of public key strings
+        // Create the artifact signers group
+        let artifact_signers = if artifact_signers.is_empty() {
+            vec![]
+        } else {
+            vec![Self::create_group(artifact_signers, artifact_threshold)?]
+        };
+
+        // Create the master signers group
+        let master_keys = if master_keys.is_empty() {
+            vec![]
+        } else {
+            vec![Self::create_group(master_keys, master_threshold)?]
+        };
+
+        // Create the admin signers group
+        let admin_keys = match admin_keys {
+            Some((keys, _threshold)) if keys.is_empty() => None,
+            Some((keys, threshold)) => Some(vec![Self::create_group(keys, threshold)?]),
+            None => None,
+        };
+
+        Ok(Self::new(
+            version,
+            artifact_signers,
+            master_keys,
+            admin_keys,
+        ))
+    }
+
+    pub fn with_artifact_signers_only(
+        version: u32,
+        artifact_signers_and_threshold: (Vec<APK>, u32),
+    ) -> Result<Self, SignersConfigError> {
+        Self::with_keys(version, artifact_signers_and_threshold, (vec![], 0), None)
+    }
+
+    pub fn admin_keys(&self) -> &Vec<SignerGroup<APK>> {
         match &self.admin_keys {
             Some(v) if !v.is_empty() => v,
             _ => &self.artifact_signers,
         }
     }
-    pub fn master_keys(&self) -> &Vec<SignerGroup<P>> {
+    pub fn master_keys(&self) -> &Vec<SignerGroup<APK>> {
         &self.master_keys
     }
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
     // Get all signers keys present in the SignersConfig.
-    pub fn all_signer_keys(&self) -> HashSet<P> {
+    pub fn all_signer_keys(&self) -> HashSet<APK> {
         self.admin_keys()
             .iter()
             .chain(self.master_keys().iter())
@@ -76,19 +171,19 @@ impl Default for InitialVersion {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
+    serialize = "APK: AsfaloadPublicKeyTrait",
+    deserialize = "APK: AsfaloadPublicKeyTrait"
 ))]
 #[derive(Eq, PartialEq)]
-pub struct SignerGroup<P: AsfaloadPublicKeyTrait> {
-    pub signers: Vec<Signer<P>>,
+pub struct SignerGroup<APK: AsfaloadPublicKeyTrait> {
+    pub signers: Vec<Signer<APK>>,
     pub threshold: u32,
 }
 
 // Custom deserializer for SignerGroup that validates threshold <= signers.len()
-impl<'de, P> Deserialize<'de> for SignerGroup<P>
+impl<'de, APK> Deserialize<'de> for SignerGroup<APK>
 where
-    P: AsfaloadPublicKeyTrait,
+    APK: AsfaloadPublicKeyTrait,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -96,9 +191,9 @@ where
     {
         // Create a helper struct that mirrors SignerGroup but without the custom Deserialize
         #[derive(Deserialize)]
-        #[serde(bound(deserialize = "P: AsfaloadPublicKeyTrait"))]
-        struct SignerGroupHelper<P: AsfaloadPublicKeyTrait> {
-            signers: Vec<Signer<P>>,
+        #[serde(bound(deserialize = "APK: AsfaloadPublicKeyTrait"))]
+        struct SignerGroupHelper<APK: AsfaloadPublicKeyTrait> {
+            signers: Vec<Signer<APK>>,
             threshold: u32,
         }
 
@@ -135,13 +230,25 @@ where
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
+    serialize = "APK: AsfaloadPublicKeyTrait",
+    deserialize = "APK: AsfaloadPublicKeyTrait"
 ))]
 #[derive(Eq, PartialEq)]
-pub struct Signer<P: AsfaloadPublicKeyTrait> {
+pub struct Signer<APK: AsfaloadPublicKeyTrait> {
     pub kind: SignerKind,
-    pub data: SignerData<P>, // Specify the concrete type here
+    pub data: SignerData<APK>,
+}
+
+impl<APK: AsfaloadPublicKeyTrait> Signer<APK> {
+    pub fn from_key(pk: &APK) -> Result<Self, KeyError> {
+        Ok(Self {
+            kind: SignerKind::Key,
+            data: SignerData {
+                format: pk.key_format(),
+                pubkey: pk.clone(),
+            },
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -151,14 +258,14 @@ pub enum SignerKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignerData<P: AsfaloadPublicKeyTrait> {
+pub struct SignerData<APK: AsfaloadPublicKeyTrait> {
     pub format: KeyFormat,
-    pub pubkey: P,
+    pub pubkey: APK,
 }
 
-impl<P> Serialize for SignerData<P>
+impl<APK> Serialize for SignerData<APK>
 where
-    P: AsfaloadPublicKeyTrait,
+    APK: AsfaloadPublicKeyTrait,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -173,9 +280,9 @@ where
     }
 }
 
-impl<'de, P> Deserialize<'de> for SignerData<P>
+impl<'de, APK> Deserialize<'de> for SignerData<APK>
 where
-    P: AsfaloadPublicKeyTrait,
+    APK: AsfaloadPublicKeyTrait,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -189,7 +296,7 @@ where
 
         let helper = SignerDataHelper::deserialize(deserializer)?;
         // Parse the public key from string using the trait method
-        let pubkey = P::from_base64(helper.pubkey.clone()).map_err(|_e| {
+        let pubkey = APK::from_base64(helper.pubkey.clone()).map_err(|_e| {
             serde::de::Error::custom(format!("Problem parsing pubkey base64: {}", helper.pubkey))
         })?;
         Ok(SignerData {
@@ -199,14 +306,8 @@ where
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum KeyFormat {
-    Minisign,
-}
-
-pub fn parse_signers_config<P: AsfaloadPublicKeyTrait>(
+pub fn parse_signers_config<APK: AsfaloadPublicKeyTrait>(
     json_str: &str,
-) -> Result<SignersConfig<P>, serde_json::Error> {
+) -> Result<SignersConfig<APK>, serde_json::Error> {
     serde_json::from_str(json_str)
 }

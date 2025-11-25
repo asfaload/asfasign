@@ -2,6 +2,13 @@ pub mod minisign;
 use std::path::Path;
 
 use common::AsfaloadHashes;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyFormat {
+    Minisign,
+}
 
 pub enum AsfaloadKeyPairs {
     Minisign(minisign::KeyPair),
@@ -96,6 +103,7 @@ pub struct AsfaloadSecretKey<K> {
 }
 pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone {
     type Signature: AsfaloadSignatureTrait;
+    type KeyType;
 
     fn verify(
         &self,
@@ -115,11 +123,23 @@ pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone {
         Self::from_bytes(&s.into_bytes())
     }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError>;
+    fn key_format(&self) -> KeyFormat;
+    fn key(&self) -> Self::KeyType;
 }
 
 #[derive(Debug, Clone)]
 pub struct AsfaloadPublicKey<K> {
     key: K,
+}
+
+impl<K> TryFrom<String> for AsfaloadPublicKey<K>
+where
+    AsfaloadPublicKey<K>: AsfaloadPublicKeyTrait,
+{
+    type Error = errs::KeyError;
+    fn try_from(value: String) -> Result<AsfaloadPublicKey<K>, errs::KeyError> {
+        Self::from_base64(value)
+    }
 }
 
 #[derive(Debug, Clone)]
