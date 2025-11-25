@@ -13,22 +13,22 @@ use signatures::keys::{
 // `SignersConfig`, `SignerGroup`, and `Signer`, `serde` implicitly adds `P: Deserialize` and `P:
 // Serialize` bounds to their generic parameter `P`.
 // However, in this design, the actual deserialization and serialization of the generic `P` (which
-// represents the public key) is handled manually within the `SignerData<P>`'s custom `impl
+// represents the public key) is handled manually within the `SignerData<APK>`'s custom `impl
 // Serialize` and `impl Deserialize` blocks, which only require `P: AsfaloadPublicKeyTrait`. `P`
 // itself does not need to implement `serde::Deserialize` or `serde::Serialize` directly.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
+    serialize = "APK: AsfaloadPublicKeyTrait",
+    deserialize = "APK: AsfaloadPublicKeyTrait"
 ))]
-pub struct SignersConfig<P: AsfaloadPublicKeyTrait> {
+pub struct SignersConfig<APK: AsfaloadPublicKeyTrait> {
     pub version: u32,
     pub initial_version: InitialVersion,
-    pub artifact_signers: Vec<SignerGroup<P>>,
-    pub master_keys: Vec<SignerGroup<P>>,
+    pub artifact_signers: Vec<SignerGroup<APK>>,
+    pub master_keys: Vec<SignerGroup<APK>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     // FIXME: make private, but causes trouble in tests of aggregate signature definitions
-    pub admin_keys: Option<Vec<SignerGroup<P>>>,
+    pub admin_keys: Option<Vec<SignerGroup<APK>>>,
 }
 
 impl<APK> SignersConfig<APK>
@@ -167,19 +167,19 @@ impl Default for InitialVersion {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
+    serialize = "APK: AsfaloadPublicKeyTrait",
+    deserialize = "APK: AsfaloadPublicKeyTrait"
 ))]
 #[derive(Eq, PartialEq)]
-pub struct SignerGroup<P: AsfaloadPublicKeyTrait> {
-    pub signers: Vec<Signer<P>>,
+pub struct SignerGroup<APK: AsfaloadPublicKeyTrait> {
+    pub signers: Vec<Signer<APK>>,
     pub threshold: u32,
 }
 
 // Custom deserializer for SignerGroup that validates threshold <= signers.len()
-impl<'de, P> Deserialize<'de> for SignerGroup<P>
+impl<'de, APK> Deserialize<'de> for SignerGroup<APK>
 where
-    P: AsfaloadPublicKeyTrait,
+    APK: AsfaloadPublicKeyTrait,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -187,9 +187,9 @@ where
     {
         // Create a helper struct that mirrors SignerGroup but without the custom Deserialize
         #[derive(Deserialize)]
-        #[serde(bound(deserialize = "P: AsfaloadPublicKeyTrait"))]
-        struct SignerGroupHelper<P: AsfaloadPublicKeyTrait> {
-            signers: Vec<Signer<P>>,
+        #[serde(bound(deserialize = "APK: AsfaloadPublicKeyTrait"))]
+        struct SignerGroupHelper<APK: AsfaloadPublicKeyTrait> {
+            signers: Vec<Signer<APK>>,
             threshold: u32,
         }
 
@@ -226,17 +226,17 @@ where
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
+    serialize = "APK: AsfaloadPublicKeyTrait",
+    deserialize = "APK: AsfaloadPublicKeyTrait"
 ))]
 #[derive(Eq, PartialEq)]
-pub struct Signer<P: AsfaloadPublicKeyTrait> {
+pub struct Signer<APK: AsfaloadPublicKeyTrait> {
     pub kind: SignerKind,
-    pub data: SignerData<P>, // Specify the concrete type here
+    pub data: SignerData<APK>,
 }
 
-impl<P: AsfaloadPublicKeyTrait> Signer<P> {
-    pub fn from_key(pk: &P) -> Result<Self, errs::KeyError> {
+impl<APK: AsfaloadPublicKeyTrait> Signer<APK> {
+    pub fn from_key(pk: &APK) -> Result<Self, errs::KeyError> {
         Ok(Self {
             kind: SignerKind::Key,
             data: SignerData {
@@ -254,14 +254,14 @@ pub enum SignerKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignerData<P: AsfaloadPublicKeyTrait> {
+pub struct SignerData<APK: AsfaloadPublicKeyTrait> {
     pub format: KeyFormat,
-    pub pubkey: P,
+    pub pubkey: APK,
 }
 
-impl<P> Serialize for SignerData<P>
+impl<APK> Serialize for SignerData<APK>
 where
-    P: AsfaloadPublicKeyTrait,
+    APK: AsfaloadPublicKeyTrait,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -276,9 +276,9 @@ where
     }
 }
 
-impl<'de, P> Deserialize<'de> for SignerData<P>
+impl<'de, APK> Deserialize<'de> for SignerData<APK>
 where
-    P: AsfaloadPublicKeyTrait,
+    APK: AsfaloadPublicKeyTrait,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -292,7 +292,7 @@ where
 
         let helper = SignerDataHelper::deserialize(deserializer)?;
         // Parse the public key from string using the trait method
-        let pubkey = P::from_base64(helper.pubkey.clone()).map_err(|_e| {
+        let pubkey = APK::from_base64(helper.pubkey.clone()).map_err(|_e| {
             serde::de::Error::custom(format!("Problem parsing pubkey base64: {}", helper.pubkey))
         })?;
         Ok(SignerData {
@@ -302,8 +302,8 @@ where
     }
 }
 
-pub fn parse_signers_config<P: AsfaloadPublicKeyTrait>(
+pub fn parse_signers_config<APK: AsfaloadPublicKeyTrait>(
     json_str: &str,
-) -> Result<SignersConfig<P>, serde_json::Error> {
+) -> Result<SignersConfig<APK>, serde_json::Error> {
     serde_json::from_str(json_str)
 }
