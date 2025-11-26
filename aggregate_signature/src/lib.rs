@@ -1,8 +1,8 @@
-use common::AsfaloadHashes;
 use common::fs::names::{
-    FileType, create_local_signers_for, determine_file_type, find_global_signers_for,
-    local_signers_path_for, pending_signatures_path_for, signatures_path_for,
+    create_local_signers_for, find_global_signers_for, local_signers_path_for,
+    pending_signatures_path_for, signatures_path_for,
 };
+use common::{AsfaloadHashes, FileType, SignedFile};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::{HashMap, HashSet};
@@ -101,21 +101,6 @@ where
     }
 }
 #[derive(Clone)]
-pub struct SignedFile {
-    pub kind: FileType,
-    pub path: PathBuf,
-}
-
-impl SignedFile {
-    pub fn new<P: AsRef<Path>>(path: P) -> Self {
-        let file_type = determine_file_type(&path);
-        Self {
-            kind: file_type,
-            path: path.as_ref().to_path_buf(),
-        }
-    }
-}
-#[derive(Clone)]
 pub struct AggregateSignature<P, S, SS>
 where
     P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
@@ -137,12 +122,6 @@ impl<P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone, S: AsfaloadSignat
     }
     pub fn subject(&self) -> SignedFile {
         self.subject.clone()
-    }
-}
-
-impl AsRef<Path> for SignedFile {
-    fn as_ref(&self) -> &Path {
-        self.path.as_ref()
     }
 }
 

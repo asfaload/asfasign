@@ -2,9 +2,12 @@ use aggregate_signature::{
     AggregateSignature, AggregateSignatureError, CompleteSignature, SignatureWithState,
 };
 use chrono::{DateTime, Utc};
-use common::fs::names::{
-    FileType, PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
-    find_global_signers_for, pending_signatures_path_for, signatures_path_for,
+use common::{
+    FileType,
+    fs::names::{
+        PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
+        find_global_signers_for, pending_signatures_path_for, signatures_path_for,
+    },
 };
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, errs::SignatureError};
 use signers_file_types::{SignersConfig, parse_signers_config};
