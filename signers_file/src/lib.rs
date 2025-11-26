@@ -15,37 +15,6 @@ use std::{borrow::Borrow, collections::HashMap, ffi::OsStr, fs, io::Write, path:
 use thiserror::Error;
 //
 
-#[derive(Debug, Error)]
-pub enum SignersFileError {
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
-    #[error("JSON error: {0}")]
-    JsonError(#[from] serde_json::Error),
-    #[error("Invalid signer: {0}")]
-    InvalidSigner(String),
-    #[error("Signature verification failed: {0}")]
-    SignatureVerificationFailed(String),
-    #[error("Signature operation failed: {0}")]
-    SignatureOperationFailed(String),
-    #[error("Signers file initialisation failed: {0}")]
-    InitialisationError(String),
-    #[error("Aggregate signature error: {0}")]
-    AggregateSignatureError(#[from] aggregate_signature::AggregateSignatureError),
-    #[error("Signers file not in a pending signers directory: {0}")]
-    NotInPendingDir(String),
-    #[error("Pending signers file filesystem hierarchy error: {0}")]
-    FileSystemHierarchyError(String),
-}
-
-impl From<SignatureError> for SignersFileError {
-    fn from(e: SignatureError) -> Self {
-        match e {
-            SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
-            SignatureError::JsonError(json_err) => SignersFileError::JsonError(json_err),
-            other => SignersFileError::SignatureOperationFailed(other.to_string()),
-        }
-    }
-}
 // Helper function used to validate the signer of a signers file
 // initialisation, i.e. when no existing signers file is active.
 fn is_valid_signer_for_signer_init<P: AsfaloadPublicKeyTrait + Eq>(

@@ -1,11 +1,12 @@
 use crate::keys::{
     AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-    KeyFormat, errs,
+    KeyFormat,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use common::{
     AsfaloadHashes,
+    errors::keys::*,
     fs::names::{pending_signatures_path_for, signatures_path_for},
 };
 pub use minisign::{KeyPair, PublicKey};
@@ -19,36 +20,6 @@ use std::{
 };
 
 // Convert minisign errors to our generic errors
-impl From<minisign::PError> for errs::KeyError {
-    fn from(e: minisign::PError) -> Self {
-        match e.kind() {
-            minisign::ErrorKind::Io => errs::KeyError::IOError(std::io::Error::other(e)),
-            _ => errs::KeyError::CreationFailed(e.to_string()),
-        }
-    }
-}
-
-impl From<minisign::PError> for errs::SignError {
-    fn from(e: minisign::PError) -> Self {
-        errs::SignError::SignatureFailed(e.to_string())
-    }
-}
-
-impl From<minisign::PError> for errs::VerifyError {
-    fn from(e: minisign::PError) -> Self {
-        errs::VerifyError::VerificationFailed(e.to_string())
-    }
-}
-
-impl From<minisign::PError> for errs::SignatureError {
-    fn from(e: minisign::PError) -> Self {
-        match e.kind() {
-            minisign::ErrorKind::Io => errs::SignatureError::IoError(std::io::Error::other(e)),
-            _ => errs::SignatureError::FormatError(e.to_string()),
-        }
-    }
-}
-
 // Beware, if the path ends with /, it is dropped before appending .pub.
 // See https://www.reddit.com/r/rust/comments/ooh5wn/damn_trailing_slash/
 fn append_pub_extension<T: AsRef<Path>>(p: &T) -> PathBuf {
@@ -69,7 +40,7 @@ fn append_pub_extension<T: AsRef<Path>>(p: &T) -> PathBuf {
 fn save_to_file_path<T: AsRef<Path>>(
     keypair: &AsfaloadKeyPair<minisign::KeyPair>,
     p: T,
-) -> Result<&AsfaloadKeyPair<minisign::KeyPair>, errs::KeyError> {
+) -> Result<&AsfaloadKeyPair<minisign::KeyPair>, KeyError> {
     let path = p.as_ref();
     // Use "key"" as default name
     // Secret key to disk
@@ -84,14 +55,11 @@ fn save_to_file_path<T: AsRef<Path>>(
 impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
     type PublicKey = AsfaloadPublicKey<minisign::PublicKey>;
     type SecretKey = AsfaloadSecretKey<minisign::SecretKey>;
-    fn new(password: &str) -> Result<Self, errs::KeyError> {
+    fn new(password: &str) -> Result<Self, KeyError> {
         let kp = KeyPair::generate_encrypted_keypair(Some(password.to_string()))?;
         Ok(AsfaloadKeyPair { key_pair: kp })
     }
-    fn save<T: AsRef<Path>>(
-        &self,
-        p: T,
-    ) -> Result<&AsfaloadKeyPair<minisign::KeyPair>, errs::KeyError> {
+    fn save<T: AsRef<Path>>(&self, p: T) -> Result<&AsfaloadKeyPair<minisign::KeyPair>, KeyError> {
         let path = p.as_ref();
         // If this is a path to an existing dir
         if path.is_dir() {
@@ -101,7 +69,7 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
             let file_path = key_path_buf.as_path();
             // Do not go further if we would overwrite a file (either for secret key of pub key)
             if file_path.exists() || (append_pub_extension(&file_path).as_path().exists()) {
-                Err(errs::KeyError::NotOverwriting(
+                Err(KeyError::NotOverwriting(
                     "Refusing to write key to default name \"key\" in directory!".to_string(),
                 ))
             } else {
@@ -109,7 +77,7 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
             }
         // Do not go further if we would overwrite a file (either for secret key of pub key)
         } else if path.exists() || (append_pub_extension(&path).exists()) {
-            Err(errs::KeyError::NotOverwriting(
+            Err(KeyError::NotOverwriting(
                 "Refusing to write key to existing file!".to_string(),
             ))
         // In this case we got a path to a file to be created
@@ -122,7 +90,7 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
             key: self.key_pair.pk.clone(),
         }
     }
-    fn secret_key(&self, password: &str) -> Result<Self::SecretKey, errs::KeyError> {
+    fn secret_key(&self, password: &str) -> Result<Self::SecretKey, KeyError> {
         let r = AsfaloadSecretKey {
             key: self
                 .key_pair
@@ -139,7 +107,7 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
     type SecretKey = minisign::SecretKey;
     type Signature = AsfaloadSignature<minisign::SignatureBox>;
 
-    fn sign(&self, data: &AsfaloadHashes) -> Result<Self::Signature, errs::SignError> {
+    fn sign(&self, data: &AsfaloadHashes) -> Result<Self::Signature, SignError> {
         let data_reader = match data {
             AsfaloadHashes::Sha512(data) => Cursor::new(data),
         };
@@ -149,12 +117,12 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
         Ok(AsfaloadSignature { signature: sig })
     }
 
-    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
+    fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
         let k = minisign::SecretKey::from_bytes(data)?;
         Ok(AsfaloadSecretKey { key: k })
     }
 
-    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, errs::KeyError> {
+    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError> {
         let k = minisign::SecretKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
             .into_secret_key(Some(password.into()))?;
         Ok(AsfaloadSecretKey { key: k })
@@ -169,7 +137,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         &self,
         signature: &Self::Signature,
         data: &AsfaloadHashes,
-    ) -> Result<(), errs::VerifyError> {
+    ) -> Result<(), VerifyError> {
         let data_reader = match data {
             AsfaloadHashes::Sha512(data) => Cursor::new(data),
         };
@@ -188,19 +156,19 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         self.key.to_base64()
     }
 
-    fn from_bytes(data: &[u8]) -> Result<Self, errs::KeyError> {
+    fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
         let k = minisign::PublicKey::from_bytes(data)?;
         Ok(AsfaloadPublicKey { key: k })
     }
     // When saving to a file, we store a PublicKeyBox as encouraged by minisign for storage.
     // Other methods manipulate the PublickKey directly
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::KeyError> {
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError> {
         let k = minisign::PublicKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
             .into_public_key()?;
         Ok(AsfaloadPublicKey { key: k })
     }
 
-    fn from_base64(s: String) -> Result<Self, errs::KeyError> {
+    fn from_base64(s: String) -> Result<Self, KeyError> {
         let k = minisign::PublicKey::from_base64(s.as_str())?;
         Ok(AsfaloadPublicKey { key: k })
     }
@@ -219,16 +187,16 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         self.signature.to_string()
     }
 
-    fn from_string(data: &str) -> Result<Self, errs::SignatureError> {
+    fn from_string(data: &str) -> Result<Self, SignatureError> {
         let s = minisign::SignatureBox::from_string(data)?;
         Ok(AsfaloadSignature { signature: s })
     }
 
-    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, errs::SignatureError> {
+    fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, SignatureError> {
         let s = minisign::SignatureBox::from_file(path)?;
         Ok(AsfaloadSignature { signature: s })
     }
-    fn from_base64(s: &str) -> Result<Self, errs::SignatureError> {
+    fn from_base64(s: &str) -> Result<Self, SignatureError> {
         let s = BASE64_STANDARD.decode(s)?;
         Self::from_string(std::str::from_utf8(&s)?)
     }
@@ -241,9 +209,9 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         &self,
         signed_file: P,
         pub_key: &PK,
-    ) -> Result<(), errs::SignatureError> {
+    ) -> Result<(), SignatureError> {
         if signed_file.as_ref().is_dir() {
-            return Err(errs::SignatureError::IoError(std::io::Error::new(
+            return Err(SignatureError::IoError(std::io::Error::new(
                 std::io::ErrorKind::IsADirectory,
                 "Requires a file, cannot sign a directory",
             )));
@@ -253,7 +221,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
 
         // Refuse to add signatures to already completed signature.
         if signatures_path.exists() && signatures_path.is_file() {
-            return Err(errs::SignatureError::IoError(std::io::Error::new(
+            return Err(SignatureError::IoError(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
                 "Aggregate signature is already complete",
             )));
@@ -284,7 +252,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
 
             Ok(())
         } else {
-            Err(errs::SignatureError::InvalidSignatureForAggregate(
+            Err(SignatureError::InvalidSignatureForAggregate(
                 signed_file_path.to_path_buf(),
             ))
         }
@@ -372,12 +340,12 @@ mod asfaload_index_tests {
         // Saving keys does not overwrite existing files
         // ---------------------------------------------
         fn panic_if_writing_file(
-            save_result: Result<&AsfaloadKeyPair<minisign::KeyPair>, errs::KeyError>,
+            save_result: Result<&AsfaloadKeyPair<minisign::KeyPair>, KeyError>,
         ) {
             match save_result {
                 Ok(_) => panic!("should not overwrite existing file!"),
                 Err(e) => match e {
-                    errs::KeyError::NotOverwriting(_) => (),
+                    KeyError::NotOverwriting(_) => (),
                     _ => panic!("should not overwrite files!"),
                 },
             }
@@ -466,7 +434,7 @@ mod asfaload_index_tests {
         // When we saved the key to disk using the Box, it wrote a comment
         // followed by the base64 encoded key. Thus here we only need the second line.
         let public_key_string = value_read.lines().nth(1).ok_or_else(|| {
-            errs::KeyError::IOError(std::io::Error::new(
+            KeyError::IOError(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 "Public key file does not contain a second line",
             ))
@@ -525,7 +493,7 @@ mod asfaload_index_tests {
         let result = signature.add_to_aggregate_for_file(dir_path, &pubkey);
         assert!(result.is_err());
         match result.as_ref().unwrap_err() {
-            errs::SignatureError::IoError(io_err) => {
+            SignatureError::IoError(io_err) => {
                 let err: &std::io::Error = io_err; // Explicit type annotation
                 if err.kind() != std::io::ErrorKind::IsADirectory {
                     panic!(
@@ -543,7 +511,7 @@ mod asfaload_index_tests {
         // Attempting to add the signature of another data than the signed file's hash to the aggregate should fail.
         let result = wrong_signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
         match result {
-            Err(errs::SignatureError::InvalidSignatureForAggregate(_)) => {
+            Err(SignatureError::InvalidSignatureForAggregate(_)) => {
                 // Expected
             }
             Ok(_) => panic!("Expected an error, but got Ok"),
@@ -620,17 +588,14 @@ mod asfaload_index_tests {
     fn test_signature_trait_error_mapping() -> Result<()> {
         // Check underlying IO errors are mapped correctly to our IO error.
         let r = AsfaloadSignature::<minisign::SignatureBox>::from_file("/tmp/inexisting_path");
-        assert!(matches!(r, Err(errs::SignatureError::IoError(_))));
+        assert!(matches!(r, Err(SignatureError::IoError(_))));
 
         let r = AsfaloadSignature::from_base64("invalid");
-        assert!(matches!(
-            r,
-            Err(errs::SignatureError::Base64DecodeFailed(_))
-        ));
+        assert!(matches!(r, Err(SignatureError::Base64DecodeFailed(_))));
 
         // This seems to be reported as IO error by minisign
         let r = AsfaloadSignature::from_string("invalid");
-        assert!(matches!(r, Err(errs::SignatureError::IoError(_))));
+        assert!(matches!(r, Err(SignatureError::IoError(_))));
         Ok(())
     }
 }

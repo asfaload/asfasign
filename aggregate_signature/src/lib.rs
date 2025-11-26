@@ -1,3 +1,4 @@
+use common::errors::AggregateSignatureError;
 use common::fs::names::{
     create_local_signers_for, find_global_signers_for, local_signers_path_for,
     pending_signatures_path_for, signatures_path_for,
@@ -8,34 +9,6 @@ use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use thiserror::Error;
-
-#[derive(Debug, Error)]
-pub enum AggregateSignatureError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Signature error: {0}")]
-    Signature(String),
-    #[error("Base64 decode error: {0}")]
-    Base64Decode(#[from] base64::DecodeError),
-    #[error("UTF8 error: {0}")]
-    Utf8Error(#[from] std::string::FromUtf8Error),
-    #[error("Public key error: {0}")]
-    PublicKey(String),
-    #[error("Threshold not met for group")]
-    ThresholdNotMet,
-    #[error("Cannot transition incomplete signature to complete")]
-    IsIncomplete,
-    #[error("Complete signature file according to name is not complete according to signatures")]
-    MissingSignaturesInCompleteSignature,
-    #[error("JSON error: {0}")]
-    JsonError(#[from] serde_json::Error),
-    // Use when an agg signature does not have the status is should logically have.
-    // Should not happen, but is used to avoid an unwrap() when we are sure that
-    // we would get a Some with SignatureWithState::get_pending because we tested it before.
-    #[error("Logic error: {0}")]
-    LogicError(String),
-}
 
 pub struct PendingSignature;
 pub struct CompleteSignature;
