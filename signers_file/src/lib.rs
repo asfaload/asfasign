@@ -1,6 +1,7 @@
 use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
 use chrono::{DateTime, Utc};
 use common::{
+    SignedFileLoader,
     errors::{AggregateSignatureError, SignersFileError},
     fs::names::{
         PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
@@ -71,6 +72,13 @@ where
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
     S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
+    let signed_file = SignedFileLoader::load(&signers_file_path);
+    if !(signed_file.is_initial_signers() || signed_file.is_signers()) {
+        return Err(SignersFileError::FileSystemHierarchyError(format!(
+            "Trying to sign a file as signers file, which it is not: {}",
+            signers_file_path.as_ref().to_string_lossy()
+        )));
+    }
     // Add the signature to the aggregate signatures file
     signature.add_to_aggregate_for_file(&signers_file_path, pubkey)?;
 
@@ -4391,6 +4399,38 @@ mod tests {
             sig_map.get(&pubkey.to_base64()).unwrap(),
             &signature.to_base64()
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sign_signers_file_on_non_signers() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create a test signers file
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
+        let my_file = dir_path.join("myfile");
+        std::fs::rename(signers_file_path, &my_file)?;
+        std::fs::remove_dir(dir_path.join(PENDING_SIGNERS_DIR))?;
+
+        // Compute hash and sign
+        let hash = common::sha512_for_file(&my_file)?;
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let seckey = test_keys.sec_key(0).unwrap();
+        let signature = seckey.sign(&hash).unwrap();
+
+        // Call sign_signers_file
+        let result = sign_signers_file(&my_file, &signature, pubkey);
+
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            SignersFileError::FileSystemHierarchyError(_) => {} // Expected
+            e => panic!("Expected FileSystemHierarchyError, got {}", e),
+        }
 
         Ok(())
     }
