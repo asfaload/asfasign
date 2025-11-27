@@ -1,18 +1,15 @@
-use aggregate_signature::{
-    AggregateSignature, AggregateSignatureError, CompleteSignature, SignatureWithState,
-};
+use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
 use chrono::{DateTime, Utc};
 use common::{
-    FileType,
+    errors::{AggregateSignatureError, SignersFileError},
     fs::names::{
         PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
         find_global_signers_for, pending_signatures_path_for, signatures_path_for,
     },
 };
-use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, errs::SignatureError};
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file_types::{SignersConfig, parse_signers_config};
 use std::{borrow::Borrow, collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
-use thiserror::Error;
 //
 
 // Helper function used to validate the signer of a signers file
@@ -97,7 +94,7 @@ where
                 activate_signers_file(&agg_sig)?;
                 Ok(SignatureWithState::Complete(agg_sig))
             }
-            Err(aggregate_signature::AggregateSignatureError::IsIncomplete) => {
+            Err(AggregateSignatureError::IsIncomplete) => {
                 // Signature is not yet complete, which is fine. We just added our part.
                 Ok(SignatureWithState::Pending(pending_sig))
             }
@@ -348,13 +345,14 @@ where
     A: Borrow<AggregateSignature<K, S, CompleteSignature>>,
 {
     let agg_sig = agg_sig.borrow();
-    if agg_sig.subject().kind == FileType::Artifact {
+    if agg_sig.subject().is_artifact() {
         return Err(SignersFileError::FileSystemHierarchyError(format!(
             "Cannot activate a signers file for file of type {}",
-            agg_sig.subject().kind
+            agg_sig.subject().kind()
         )));
     }
-    let signers_file_path = agg_sig.subject().path;
+    let location = &agg_sig.subject().location();
+    let signers_file_path = Path::new(location);
 
     // Verify the signers file is in a pending directory
     let pending_dir = signers_file_path.parent().ok_or_else(|| {

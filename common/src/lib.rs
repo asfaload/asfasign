@@ -1,12 +1,15 @@
+pub mod errors;
 pub mod fs;
 
 use sha2::{Digest, Sha512, digest::typenum};
 use std::fmt::{Display, Formatter};
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::marker::PhantomData;
+use std::path::Path;
 
 use crate::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, find_global_signers_for};
 
+#[derive(Clone)]
 pub enum AsfaloadHashes {
     Sha512(sha2::digest::generic_array::GenericArray<u8, typenum::consts::U64>),
 }
@@ -36,6 +39,8 @@ pub fn sha512_for_file<P: AsRef<Path>>(path_in: P) -> Result<AsfaloadHashes, std
     }
 }
 
+// We distincuish 3 types of signed files, which have different criteria
+// used to determine if their signature is complete.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {
     Artifact,
@@ -44,7 +49,6 @@ pub enum FileType {
 }
 
 impl Display for FileType {
-    // This trait requires `fmt` with this exact signature.
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
             FileType::Artifact => write!(f, "Artifact"),
@@ -71,23 +75,133 @@ pub fn determine_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
     }
 }
 
+// This represents a file signed by our multisig approach.
+// The digest is an Option, to be filled lazily
+// We use a marker type indicating the kind of file it is.
 #[derive(Clone)]
-pub struct SignedFile {
-    pub kind: FileType,
-    pub path: PathBuf,
+pub struct SignedFile<T> {
+    pub location: String,
+    pub kind: FileType, // Duplicating info from marker type, but let's see if we use it or not
+    // before removing it.
+    pub digest: Option<AsfaloadHashes>,
+    // FIXME: make it private, but impacts tests of aggregate_signature
+    pub marker: PhantomData<T>,
 }
 
-impl AsRef<Path> for SignedFile {
+impl<T> AsRef<Path> for SignedFile<T> {
     fn as_ref(&self) -> &Path {
-        self.path.as_ref()
+        self.location.as_ref()
     }
 }
-impl SignedFile {
-    pub fn new<P: AsRef<Path>>(path: P) -> Self {
+
+// The SignedFile marker types
+#[derive(Clone)]
+pub struct InitialSignersFileMarker;
+#[derive(Clone)]
+pub struct SignersFileMarker;
+#[derive(Clone)]
+pub struct ArtifactMarker;
+
+// As we have marker types on the SignedFile, we need a DU type to be able to have
+// one function creating a SignedFile (ortherwise we would need one loader function
+// per marker type)
+#[derive(Clone)]
+pub enum SignedFileWithKind {
+    InitialSignersFile(SignedFile<InitialSignersFileMarker>),
+    SignersFile(SignedFile<SignersFileMarker>),
+    Artifact(SignedFile<ArtifactMarker>),
+}
+
+impl SignedFileWithKind {
+    // Functions to extract the wrapped SignedFile.
+    pub fn get_initial_signers(&self) -> Option<&SignedFile<InitialSignersFileMarker>> {
+        match self {
+            SignedFileWithKind::InitialSignersFile(f) => Some(f),
+            _ => None,
+        }
+    }
+    pub fn get_signers(&self) -> Option<&SignedFile<SignersFileMarker>> {
+        match self {
+            SignedFileWithKind::SignersFile(f) => Some(f),
+            _ => None,
+        }
+    }
+    pub fn get_artifact(&self) -> Option<&SignedFile<ArtifactMarker>> {
+        match self {
+            SignedFileWithKind::Artifact(f) => Some(f),
+            _ => None,
+        }
+    }
+
+    // Function to extract info from the wrapped SignedFile without
+    // requiring the caller to unwrap it.
+    pub fn location(&self) -> String {
+        match self {
+            SignedFileWithKind::InitialSignersFile(f) => f.location.clone(),
+            SignedFileWithKind::SignersFile(f) => f.location.clone(),
+            SignedFileWithKind::Artifact(f) => f.location.clone(),
+        }
+    }
+
+    pub fn kind(&self) -> FileType {
+        match self {
+            SignedFileWithKind::InitialSignersFile(f) => f.kind,
+            SignedFileWithKind::SignersFile(f) => f.kind,
+            SignedFileWithKind::Artifact(f) => f.kind,
+        }
+    }
+
+    // Functions to test the kind of SignedFile that is wrapped
+    pub fn is_initial_signers(&self) -> bool {
+        matches!(self, SignedFileWithKind::InitialSignersFile(_))
+    }
+    pub fn is_signers(&self) -> bool {
+        matches!(self, SignedFileWithKind::SignersFile(_))
+    }
+    pub fn is_artifact(&self) -> bool {
+        matches!(self, SignedFileWithKind::Artifact(_))
+    }
+}
+
+// Allows us to use the SignedFileWithKind as the wrapped SignedFile's location for a Path.
+impl AsRef<Path> for SignedFileWithKind {
+    fn as_ref(&self) -> &Path {
+        match self {
+            SignedFileWithKind::InitialSignersFile(f) => f.location.as_ref(),
+            SignedFileWithKind::SignersFile(f) => f.location.as_ref(),
+            SignedFileWithKind::Artifact(f) => f.location.as_ref(),
+        }
+    }
+}
+
+// Structure giving access to the loader SignedFile loader, which is returned wrapped in the enum
+// SignedFileWithKind.
+pub struct SignedFileLoader();
+impl SignedFileLoader {
+    // This simply builds the record and wrapts is in the enum according to its kind.
+    pub fn load<P: AsRef<Path>>(path: P) -> SignedFileWithKind {
         let file_type = determine_file_type(&path);
-        Self {
-            kind: file_type,
-            path: path.as_ref().to_path_buf(),
+        match file_type {
+            FileType::InitialSigners => {
+                SignedFileWithKind::InitialSignersFile(SignedFile::<InitialSignersFileMarker> {
+                    kind: file_type,
+                    location: path.as_ref().to_string_lossy().to_string(),
+                    digest: None,
+                    marker: PhantomData,
+                })
+            }
+            FileType::Signers => SignedFileWithKind::SignersFile(SignedFile::<SignersFileMarker> {
+                kind: file_type,
+                location: path.as_ref().to_string_lossy().to_string(),
+                digest: None,
+                marker: PhantomData,
+            }),
+            FileType::Artifact => SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker> {
+                kind: file_type,
+                location: path.as_ref().to_string_lossy().to_string(),
+                digest: None,
+                marker: PhantomData,
+            }),
         }
     }
 }

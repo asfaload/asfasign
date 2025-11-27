@@ -3,7 +3,7 @@ use common::fs::names::{
     create_local_signers_for, find_global_signers_for, local_signers_path_for,
     pending_signatures_path_for, signatures_path_for,
 };
-use common::{AsfaloadHashes, FileType, SignedFile};
+use common::{AsfaloadHashes, SignedFileLoader, SignedFileWithKind};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::{HashMap, HashSet};
@@ -83,7 +83,7 @@ where
     // The origin is a String. I originally wanted to make it a Url, but
     // then the path must be absolute, and I didn't want to set that restriction right now
     origin: String,
-    subject: SignedFile,
+    subject: SignedFileWithKind,
     marker: PhantomData<SS>,
 }
 
@@ -93,7 +93,7 @@ impl<P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone, S: AsfaloadSignat
     pub fn origin(&self) -> &str {
         self.origin.as_str()
     }
-    pub fn subject(&self) -> SignedFile {
+    pub fn subject(&self) -> SignedFileWithKind {
         self.subject.clone()
     }
 }
@@ -248,7 +248,7 @@ where
     let file_path = file_path.as_ref();
 
     //  Determine the file type
-    let signed_file = SignedFile::new(file_path);
+    let signed_file = SignedFileLoader::load(file_path);
 
     //  Get the path to the signatures file
     let sig_file_path = if look_at_pending {
@@ -268,8 +268,8 @@ where
     let file_hash = common::sha512_for_file(file_path)?;
 
     //  Check completeness based on file type
-    let is_complete = match signed_file.kind {
-        FileType::Artifact => {
+    let is_complete = match signed_file {
+        SignedFileWithKind::Artifact(_) => {
             // For artifact, we look at the global signers file until the
             // aggregate signature is complete, at which time we copy the
             // global signers file locally.
@@ -281,7 +281,7 @@ where
             let signers_config = load_signers_config::<PK>(&signers_file_path)?;
             check_groups(&signers_config.artifact_signers, &signatures, &file_hash)
         }
-        FileType::Signers => {
+        SignedFileWithKind::SignersFile(_) => {
             // For signers updates, we need to
             // - Respect the current signers file
             // - Respect the new signers file
@@ -299,7 +299,7 @@ where
                 && (check_signers(&signatures, &added_signers, &file_hash))
         }
 
-        FileType::InitialSigners => {
+        SignedFileWithKind::InitialSignersFile(_) => {
             // For initial signers, the config is the signers file itself,
             // and we require all signers in the file to sign it
             let signers_config = load_signers_config::<PK>(file_path)?;
@@ -326,7 +326,7 @@ where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    let signed_file = SignedFile::new(&path_in);
+    let signed_file = SignedFileLoader::load(&path_in);
     let file_path = path_in.as_ref();
 
     // Check if the aggregate signature is complete
@@ -467,7 +467,7 @@ where
         if is_aggregate_signature_complete::<_, P>(&self.subject, true)? {
             // For artifact signatures, we copy the signers file at the time the
             // aggregate signature is completed.
-            if self.subject.kind == FileType::Artifact {
+            if self.subject.is_artifact() {
                 create_local_signers_for(&self.subject)?;
             }
             std::fs::rename(&pending_sig_path, &complete_sig_path).map_err(|e| {
@@ -497,9 +497,9 @@ where
         pubkey: &P,
     ) -> Result<SignatureWithState<P, S>, AggregateSignatureError> {
         // Add the signature to the aggregate
-        sig.add_to_aggregate_for_file(self.subject.path.clone(), pubkey)
+        sig.add_to_aggregate_for_file(self.subject.location().clone(), pubkey)
             .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
-        let agg_sig_with_state = load_for_file(self.subject.path.clone());
+        let agg_sig_with_state = load_for_file(self.subject.location().clone());
         match agg_sig_with_state {
             Ok(SignatureWithState::Pending(pending_agg_sig)) => {
                 match pending_agg_sig.try_transition_to_complete() {
@@ -523,6 +523,7 @@ mod tests {
         PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR,
         SIGNERS_FILE, SIGNERS_SUFFIX, create_local_signers_for,
     };
+    use common::{ArtifactMarker, FileType, SignedFile};
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
@@ -565,7 +566,7 @@ mod tests {
             signatures,
             origin: signed_file_path.to_string_lossy().to_string(),
             marker: PhantomData,
-            subject: SignedFile::new(signed_file_path),
+            subject: SignedFileLoader::load(signed_file_path),
         };
 
         // Create signers config JSON string
@@ -749,10 +750,15 @@ mod tests {
             signatures,
             origin: "test_origin".to_string(),
             marker: PhantomData,
-            subject: SignedFile {
+            subject: SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker> {
                 kind: FileType::Artifact,
-                path: PathBuf::from_str("/data/file").unwrap(),
-            },
+                location: PathBuf::from_str("/data/file")
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                digest: None,
+                marker: PhantomData,
+            }),
         };
 
         // Create signers config JSON string with two groups
@@ -1708,7 +1714,7 @@ mod tests {
         > = AggregateSignature {
             signatures,
             origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFile::new(&test_file),
+            subject: SignedFileLoader::load(&test_file),
             marker: PhantomData,
         };
 
@@ -1732,8 +1738,11 @@ mod tests {
         // Verify the returned signature is in Complete state
         assert_eq!(complete_sig.signatures.len(), 1);
         assert_eq!(complete_sig.origin, test_file.to_string_lossy().to_string());
-        assert_eq!(complete_sig.subject.kind, FileType::Artifact);
-        assert_eq!(complete_sig.subject.path, test_file);
+        assert!(complete_sig.subject.is_artifact());
+        assert_eq!(
+            complete_sig.subject.location(),
+            test_file.to_string_lossy().to_string()
+        );
         Ok(())
     }
 
@@ -1755,7 +1764,7 @@ mod tests {
         > = AggregateSignature {
             signatures: HashMap::new(),
             origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFile::new(&test_file),
+            subject: SignedFileLoader::load(&test_file),
             marker: PhantomData,
         };
 
@@ -1798,7 +1807,7 @@ mod tests {
         > = AggregateSignature {
             signatures: HashMap::new(),
             origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFile::new(&test_file),
+            subject: SignedFileLoader::load(&test_file),
             marker: PhantomData,
         };
 
@@ -2608,7 +2617,7 @@ mod tests {
         > = AggregateSignature {
             signatures,
             origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFile::new(&test_file),
+            subject: SignedFileLoader::load(&test_file),
             marker: PhantomData,
         };
 
@@ -2663,7 +2672,7 @@ mod tests {
         > = AggregateSignature {
             signatures,
             origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFile::new(&test_file),
+            subject: SignedFileLoader::load(&test_file),
             marker: PhantomData,
         };
 
@@ -2723,7 +2732,7 @@ mod tests {
         > = AggregateSignature {
             signatures,
             origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFile::new(&test_file),
+            subject: SignedFileLoader::load(&test_file),
             marker: PhantomData,
         };
 
@@ -2768,7 +2777,7 @@ mod tests {
         > = AggregateSignature {
             signatures: HashMap::new(),
             origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFile::new(&test_file),
+            subject: SignedFileLoader::load(&test_file),
             marker: PhantomData,
         };
 
@@ -2829,7 +2838,7 @@ mod tests {
         > = AggregateSignature {
             signatures,
             origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFile::new(&test_file),
+            subject: SignedFileLoader::load(&test_file),
             marker: PhantomData,
         };
 
