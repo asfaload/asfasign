@@ -1,4 +1,5 @@
 use aggregate_signature::{SignatureWithState, load_for_file};
+use common::SignedFileWithKind;
 pub use common::{
     ArtifactMarker, InitialSignersFileMarker, SignedFile, SignersFileMarker,
     errors::SignedFileError,
@@ -95,5 +96,45 @@ where
             .get_complete()
             .is_some();
         Ok(r)
+    }
+}
+
+pub trait SignedFileWithKindTrait<P, S>
+where
+    P: AsfaloadPublicKeyTrait,
+    S: AsfaloadSignatureTrait,
+{
+    fn add_signature(&self, sig: S, pubkey: P)
+    -> Result<SignatureWithState<P, S>, SignedFileError>;
+    fn is_signed(&self) -> Result<bool, SignedFileError>;
+}
+
+impl<MP, MS> SignedFileWithKindTrait<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>
+    for SignedFileWithKind
+where
+    MP: Clone,
+    MS: Clone,
+    AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
+    AsfaloadSignature<MS>: AsfaloadSignatureTrait,
+{
+    fn add_signature(
+        &self,
+        sig: AsfaloadSignature<MS>,
+        pubkey: AsfaloadPublicKey<MP>,
+    ) -> Result<SignatureWithState<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>, SignedFileError>
+    {
+        match self {
+            SignedFileWithKind::InitialSignersFile(sf) => sf.add_signature(sig, pubkey),
+            SignedFileWithKind::SignersFile(sf) => sf.add_signature(sig, pubkey),
+            SignedFileWithKind::Artifact(sf) => sf.add_signature(sig, pubkey),
+        }
+    }
+
+    fn is_signed(&self) -> Result<bool, SignedFileError> {
+        match self {
+            SignedFileWithKind::InitialSignersFile(sf) => sf.is_signed(),
+            SignedFileWithKind::SignersFile(sf) => sf.is_signed(),
+            SignedFileWithKind::Artifact(sf) => sf.is_signed(),
+        }
     }
 }

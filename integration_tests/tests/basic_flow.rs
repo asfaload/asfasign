@@ -14,7 +14,7 @@ use signers_file_types::SignersConfig;
 use std::fs;
 use tempfile::TempDir;
 use test_helpers::TestKeys;
-use user_lib::SignedFileTrait;
+use user_lib::SignedFileWithKindTrait;
 
 #[test]
 fn basic_flow() -> Result<()> {
@@ -75,10 +75,7 @@ fn basic_flow() -> Result<()> {
             .secret_key("password")?
             .sign(&signers_file_hash_for_user2)?;
         // And adds it to the signers_file signatures.
-        signed_file
-            .get_initial_signers()
-            .expect("Expected initial signers file here")
-            .add_signature(signature2, user2_keypair.public_key())?;
+        signed_file.add_signature(signature2, user2_keypair.public_key())?;
     }
 
     // The signers file is now active and can be used.
@@ -97,17 +94,11 @@ fn basic_flow() -> Result<()> {
             .secret_key("password")?
             .sign(&text_file_hash)?;
         let signed_file = SignedFileLoader::load(&text_file);
-        signed_file
-            .get_artifact()
-            .expect("Expected artifact signature here")
-            .add_signature(signature2, user2_keypair.public_key())?;
+        signed_file.add_signature(signature2, user2_keypair.public_key())?;
     }
 
     // Check it left the signature as pending
-    let is_signed = SignedFileLoader::load(&text_file)
-        .get_artifact()
-        .expect("expected artifact here")
-        .is_signed()?;
+    let is_signed = SignedFileLoader::load(&text_file).is_signed()?;
     assert!(!is_signed);
     match load_for_file::<AsfaloadPublicKey<_>, AsfaloadSignature<_>, _>(&text_file)? {
         SignatureWithState::Pending(_) => Ok(()),
@@ -121,10 +112,7 @@ fn basic_flow() -> Result<()> {
         let signature1 = user1_keypair
             .secret_key("password")?
             .sign(&text_file_hash)?;
-        SignedFileLoader::load(&text_file)
-            .get_artifact()
-            .expect("Expected artifact signature here")
-            .add_signature(signature1, user1_keypair.public_key())?;
+        SignedFileLoader::load(&text_file).add_signature(signature1, user1_keypair.public_key())?;
     }
 
     // As both signatures have been collected, the aggregate signature is now complete.
