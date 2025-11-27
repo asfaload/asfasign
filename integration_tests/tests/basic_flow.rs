@@ -104,11 +104,10 @@ fn basic_flow() -> Result<()> {
     }
 
     // Check it left the signature as pending
-    let signed_file = SignedFileLoader::load(&text_file);
-    let artifact = signed_file.get_artifact().expect("expected artifact here");
-
-    let is_signed =
-        SignedFileTrait::<AsfaloadPublicKey<_>, AsfaloadSignature<_>>::is_signed(artifact)?;
+    let is_signed = SignedFileLoader::load(&text_file)
+        .get_artifact()
+        .expect("expected artifact here")
+        .is_signed()?;
     assert!(!is_signed);
     match load_for_file::<AsfaloadPublicKey<_>, AsfaloadSignature<_>, _>(&text_file)? {
         SignatureWithState::Pending(_) => Ok(()),
@@ -122,8 +121,7 @@ fn basic_flow() -> Result<()> {
         let signature1 = user1_keypair
             .secret_key("password")?
             .sign(&text_file_hash)?;
-        let signed_file = SignedFileLoader::load(&text_file);
-        signed_file
+        SignedFileLoader::load(&text_file)
             .get_artifact()
             .expect("Expected artifact signature here")
             .add_signature(signature1, user1_keypair.public_key())?;
