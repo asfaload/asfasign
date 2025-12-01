@@ -1,4 +1,3 @@
-use aggregate_signature::{SignatureWithState, load_for_file};
 use common::SignedFileWithKind;
 pub use common::{
     ArtifactMarker, InitialSignersFileMarker, SignedFile, SignersFileMarker,
@@ -9,15 +8,24 @@ use signatures::keys::{
 };
 use signers_file::sign_signers_file;
 
+// In this type argument we constrain the type argument of the SignatureWithState type
+// to AsfaloadPublicKey and AsfaloadSignature. Doing this allows the user of this
+// type to not specify the type arguments, makeing the code more succint.
+pub type SignatureWithState<MP, MS> =
+    aggregate_signature::SignatureWithState<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>;
+
 // We define and implement this trait in the user_lib as it depends on traits defined in other crates,
 // which we want to avoid in common.
-pub trait SignedFileTrait<P, S>
+pub trait SignedFileTrait<MP, MS>
 where
-    P: AsfaloadPublicKeyTrait,
-    S: AsfaloadSignatureTrait,
+    AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
+    AsfaloadSignature<MS>: AsfaloadSignatureTrait,
 {
-    fn add_signature(&self, sig: S, pubkey: P)
-    -> Result<SignatureWithState<P, S>, SignedFileError>;
+    fn add_signature(
+        &self,
+        sig: AsfaloadSignature<MS>,
+        pubkey: AsfaloadPublicKey<MP>,
+    ) -> Result<SignatureWithState<MP, MS>, SignedFileError>;
     fn is_signed(&self) -> Result<bool, SignedFileError>;
 }
 
@@ -30,7 +38,7 @@ pub trait SignableFileMarker {}
 impl SignableFileMarker for InitialSignersFileMarker {}
 impl SignableFileMarker for SignersFileMarker {}
 
-impl<MP, MS, T> SignedFileTrait<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>> for SignedFile<T>
+impl<MP, MS, T> SignedFileTrait<MP, MS> for SignedFile<T>
 where
     T: SignableFileMarker,
     MP: Clone,
@@ -42,21 +50,19 @@ where
         &self,
         sig: AsfaloadSignature<MS>,
         pubkey: AsfaloadPublicKey<MP>,
-    ) -> Result<SignatureWithState<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>, SignedFileError>
-    {
+    ) -> Result<SignatureWithState<MP, MS>, SignedFileError> {
         sign_signers_file(&self.location, &sig, &pubkey).map_err(|e| e.into())
     }
 
     fn is_signed(&self) -> Result<bool, SignedFileError> {
-        let r = load_for_file::<AsfaloadPublicKey<MP>, _, _>(&self.location)?
+        let r = SignatureWithState::<MP, MS>::load_for_file(&self.location)?
             .get_complete()
             .is_some();
         Ok(r)
     }
 }
 
-impl<MP, MS> SignedFileTrait<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>
-    for SignedFile<ArtifactMarker>
+impl<MP, MS> SignedFileTrait<MP, MS> for SignedFile<ArtifactMarker>
 where
     MP: Clone,
     MS: Clone,
@@ -67,10 +73,8 @@ where
         &self,
         sig: AsfaloadSignature<MS>,
         pubkey: AsfaloadPublicKey<MP>,
-    ) -> Result<SignatureWithState<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>, SignedFileError>
-    {
-        let agg_sig_with_state =
-            load_for_file::<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>, _>(&self.location)?;
+    ) -> Result<SignatureWithState<MP, MS>, SignedFileError> {
+        let agg_sig_with_state = SignatureWithState::<MP, MS>::load_for_file(&self.location)?;
         if let Some(pending_sig) = agg_sig_with_state.get_pending() {
             pending_sig
                 .add_individual_signature(&sig, &pubkey)
@@ -85,25 +89,14 @@ where
     }
 
     fn is_signed(&self) -> Result<bool, SignedFileError> {
-        let r = load_for_file::<AsfaloadPublicKey<_>, AsfaloadSignature<_>, _>(&self.location)?
+        let r = SignatureWithState::load_for_file(&self.location)?
             .get_complete()
             .is_some();
         Ok(r)
     }
 }
 
-pub trait SignedFileWithKindTrait<P, S>
-where
-    P: AsfaloadPublicKeyTrait,
-    S: AsfaloadSignatureTrait,
-{
-    fn add_signature(&self, sig: S, pubkey: P)
-    -> Result<SignatureWithState<P, S>, SignedFileError>;
-    fn is_signed(&self) -> Result<bool, SignedFileError>;
-}
-
-impl<MP, MS> SignedFileWithKindTrait<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>
-    for SignedFileWithKind
+pub trait SignedFileWithKindTrait<MP, MS>
 where
     MP: Clone,
     MS: Clone,
@@ -114,8 +107,22 @@ where
         &self,
         sig: AsfaloadSignature<MS>,
         pubkey: AsfaloadPublicKey<MP>,
-    ) -> Result<SignatureWithState<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>, SignedFileError>
-    {
+    ) -> Result<SignatureWithState<MP, MS>, SignedFileError>;
+    fn is_signed(&self) -> Result<bool, SignedFileError>;
+}
+
+impl<MP, MS> SignedFileWithKindTrait<MP, MS> for SignedFileWithKind
+where
+    MP: Clone,
+    MS: Clone,
+    AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
+    AsfaloadSignature<MS>: AsfaloadSignatureTrait,
+{
+    fn add_signature(
+        &self,
+        sig: AsfaloadSignature<MS>,
+        pubkey: AsfaloadPublicKey<MP>,
+    ) -> Result<SignatureWithState<MP, MS>, SignedFileError> {
         match self {
             SignedFileWithKind::InitialSignersFile(sf) => sf.add_signature(sig, pubkey),
             SignedFileWithKind::SignersFile(sf) => sf.add_signature(sig, pubkey),

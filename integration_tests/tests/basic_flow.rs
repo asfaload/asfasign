@@ -1,19 +1,16 @@
-use aggregate_signature::SignatureWithState;
-use aggregate_signature::load_for_file;
 use anyhow::Result;
 use common::SignedFileLoader;
 use common::fs::names::PENDING_SIGNERS_DIR;
 use common::fs::names::SIGNERS_FILE;
 use common::sha512_for_content;
 use common::sha512_for_file;
-use signatures::keys::AsfaloadPublicKey;
-use signatures::keys::AsfaloadSignature;
 use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
 use signers_file::initialize_signers_file;
 use signers_file_types::SignersConfig;
 use std::fs;
 use tempfile::TempDir;
 use test_helpers::TestKeys;
+use user_lib::SignatureWithState;
 use user_lib::SignedFileWithKindTrait;
 
 #[test]
@@ -100,7 +97,7 @@ fn basic_flow() -> Result<()> {
     // Check it left the signature as pending
     let is_signed = SignedFileLoader::load(&text_file).is_signed()?;
     assert!(!is_signed);
-    match load_for_file::<AsfaloadPublicKey<_>, AsfaloadSignature<_>, _>(&text_file)? {
+    match SignatureWithState::load_for_file(&text_file)? {
         SignatureWithState::Pending(_) => Ok(()),
         _ => Err(anyhow::anyhow!("Unexpected signature state")),
     }?;
@@ -116,7 +113,7 @@ fn basic_flow() -> Result<()> {
     }
 
     // As both signatures have been collected, the aggregate signature is now complete.
-    match load_for_file::<AsfaloadPublicKey<_>, AsfaloadSignature<_>, _>(&text_file)? {
+    match SignatureWithState::load_for_file(&text_file)? {
         SignatureWithState::Complete(_) => Ok(()),
         _ => Err(anyhow::anyhow!(
             "Unexpected signature state: should be complete at end of test"
