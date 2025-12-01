@@ -87,6 +87,22 @@ where
     marker: PhantomData<SS>,
 }
 
+impl<P, S, SS> AggregateSignature<P, S, SS>
+where
+    P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
+    // Function left private so it can only be used in this module
+    fn new(signatures: HashMap<P, S>, origin: String, subject: SignedFileWithKind) -> Self {
+        AggregateSignature {
+            signatures,
+            origin,
+            subject,
+            marker: PhantomData,
+        }
+    }
+}
+
 impl<P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone, S: AsfaloadSignatureTrait, SS>
     AggregateSignature<P, S, SS>
 {
@@ -339,23 +355,21 @@ where
         // its true return value
         is_aggregate_signature_complete::<_, P>(file_path, false)?;
         let signatures = get_individual_signatures(&complete_sig_path)?;
-        Ok(SignatureWithState::Complete(AggregateSignature {
+        Ok(SignatureWithState::Complete(AggregateSignature::new(
             signatures,
-            origin: file_path.to_string_lossy().to_string(),
-            subject: signed_file,
-            marker: PhantomData,
-        }))
+            file_path.to_string_lossy().to_string(),
+            signed_file,
+        )))
     } else {
         // Load the pending signature file
         let pending_sig_file_path = pending_signatures_path_for(file_path)?;
         let signatures = get_individual_signatures(pending_sig_file_path)?;
 
-        Ok(SignatureWithState::Pending(AggregateSignature {
+        Ok(SignatureWithState::Pending(AggregateSignature::new(
             signatures,
-            origin: file_path.to_string_lossy().to_string(),
-            subject: signed_file,
-            marker: PhantomData,
-        }))
+            file_path.to_string_lossy().to_string(),
+            signed_file,
+        )))
     }
 }
 impl<P, S, SS> AggregateSignature<P, S, SS>
@@ -478,12 +492,11 @@ where
                     e
                 )))
             })?;
-            Ok(AggregateSignature::<P, S, CompleteSignature> {
-                origin: self.origin.clone(),
-                subject: self.subject.clone(),
-                signatures: self.signatures.clone(),
-                marker: PhantomData,
-            })
+            Ok(AggregateSignature::<P, S, CompleteSignature>::new(
+                self.signatures.clone(),
+                self.origin.clone(),
+                self.subject.clone(),
+            ))
         } else {
             Err(AggregateSignatureError::IsIncomplete)
         }
@@ -562,12 +575,11 @@ mod tests {
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
             PendingSignature,
-        > = AggregateSignature {
+        > = AggregateSignature::new(
             signatures,
-            origin: signed_file_path.to_string_lossy().to_string(),
-            marker: PhantomData,
-            subject: SignedFileLoader::load(signed_file_path),
-        };
+            signed_file_path.to_string_lossy().to_string(),
+            SignedFileLoader::load(signed_file_path),
+        );
 
         // Create signers config JSON string
         let json_config_template = r#"
@@ -746,18 +758,17 @@ mod tests {
         signatures.insert(pubkey2.clone(), sig2);
 
         // Create aggregate signature manually
-        let agg_sig: AggregateSignature<_, _, CompleteSignature> = AggregateSignature {
+        let agg_sig: AggregateSignature<_, _, CompleteSignature> = AggregateSignature::new(
             signatures,
-            origin: "test_origin".to_string(),
-            marker: PhantomData,
-            subject: SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker>::new(
+            "test_origin".to_string(),
+            SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker>::new(
                 PathBuf::from_str("/data/file")
                     .unwrap()
                     .to_string_lossy()
                     .to_string(),
                 None,
             )),
-        };
+        );
 
         // Create signers config JSON string with two groups
         let json_config = r#"
@@ -1709,12 +1720,11 @@ mod tests {
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
             PendingSignature,
-        > = AggregateSignature {
+        > = AggregateSignature::new(
             signatures,
-            origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFileLoader::load(&test_file),
-            marker: PhantomData,
-        };
+            test_file.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file),
+        );
 
         // Transition to complete
         let complete_sig = agg_sig.try_transition_to_complete().unwrap();
@@ -1759,12 +1769,11 @@ mod tests {
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
             PendingSignature,
-        > = AggregateSignature {
-            signatures: HashMap::new(),
-            origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFileLoader::load(&test_file),
-            marker: PhantomData,
-        };
+        > = AggregateSignature::new(
+            HashMap::new(),
+            test_file.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file),
+        );
 
         // Attempt to transition to complete
         let result = agg_sig.try_transition_to_complete();
@@ -1802,12 +1811,11 @@ mod tests {
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
             PendingSignature,
-        > = AggregateSignature {
-            signatures: HashMap::new(),
-            origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFileLoader::load(&test_file),
-            marker: PhantomData,
-        };
+        > = AggregateSignature::new(
+            HashMap::new(),
+            test_file.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file),
+        );
 
         // Attempt to transition to complete
         let result = agg_sig.try_transition_to_complete();
@@ -2612,12 +2620,11 @@ mod tests {
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
             PendingSignature,
-        > = AggregateSignature {
+        > = AggregateSignature::new(
             signatures,
-            origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFileLoader::load(&test_file),
-            marker: PhantomData,
-        };
+            test_file.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file),
+        );
 
         // Save the signature to file
         agg_sig.save_to_file()?;
@@ -2667,12 +2674,11 @@ mod tests {
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
             CompleteSignature,
-        > = AggregateSignature {
+        > = AggregateSignature::new(
             signatures,
-            origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFileLoader::load(&test_file),
-            marker: PhantomData,
-        };
+            test_file.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file),
+        );
 
         // Save the signature to file
         agg_sig.save_to_file()?;
@@ -2727,12 +2733,11 @@ mod tests {
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
             PendingSignature,
-        > = AggregateSignature {
+        > = AggregateSignature::new(
             signatures,
-            origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFileLoader::load(&test_file),
-            marker: PhantomData,
-        };
+            test_file.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file),
+        );
 
         // Save the signature to file
         agg_sig.save_to_file()?;
@@ -2772,12 +2777,11 @@ mod tests {
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
             PendingSignature,
-        > = AggregateSignature {
-            signatures: HashMap::new(),
-            origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFileLoader::load(&test_file),
-            marker: PhantomData,
-        };
+        > = AggregateSignature::new(
+            HashMap::new(),
+            test_file.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file),
+        );
 
         // Save the signature to file
         agg_sig.save_to_file()?;
@@ -2833,12 +2837,11 @@ mod tests {
             AsfaloadPublicKey<minisign::PublicKey>,
             AsfaloadSignature<minisign::SignatureBox>,
             PendingSignature,
-        > = AggregateSignature {
+        > = AggregateSignature::new(
             signatures,
-            origin: test_file.to_string_lossy().to_string(),
-            subject: SignedFileLoader::load(&test_file),
-            marker: PhantomData,
-        };
+            test_file.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file),
+        );
 
         // Save the signature to file (should overwrite)
         agg_sig.save_to_file()?;
