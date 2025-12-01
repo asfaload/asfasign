@@ -81,7 +81,6 @@ pub fn determine_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
 #[derive(Clone)]
 pub struct SignedFile<T> {
     pub location: String,
-    pub kind: FileType, // Duplicating info from marker type, but let's see if we use it or not
     // before removing it.
     pub digest: Option<AsfaloadHashes>,
     // FIXME: make it private, but impacts tests of aggregate_signature
@@ -145,9 +144,9 @@ impl SignedFileWithKind {
 
     pub fn kind(&self) -> FileType {
         match self {
-            SignedFileWithKind::InitialSignersFile(f) => f.kind,
-            SignedFileWithKind::SignersFile(f) => f.kind,
-            SignedFileWithKind::Artifact(f) => f.kind,
+            SignedFileWithKind::InitialSignersFile(_) => FileType::InitialSigners,
+            SignedFileWithKind::SignersFile(_) => FileType::Signers,
+            SignedFileWithKind::Artifact(_) => FileType::Artifact,
         }
     }
 
@@ -184,20 +183,17 @@ impl SignedFileLoader {
         match file_type {
             FileType::InitialSigners => {
                 SignedFileWithKind::InitialSignersFile(SignedFile::<InitialSignersFileMarker> {
-                    kind: file_type,
                     location: path.as_ref().to_string_lossy().to_string(),
                     digest: None,
                     marker: PhantomData,
                 })
             }
             FileType::Signers => SignedFileWithKind::SignersFile(SignedFile::<SignersFileMarker> {
-                kind: file_type,
                 location: path.as_ref().to_string_lossy().to_string(),
                 digest: None,
                 marker: PhantomData,
             }),
             FileType::Artifact => SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker> {
-                kind: file_type,
                 location: path.as_ref().to_string_lossy().to_string(),
                 digest: None,
                 marker: PhantomData,

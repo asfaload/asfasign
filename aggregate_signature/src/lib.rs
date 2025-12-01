@@ -523,7 +523,7 @@ mod tests {
         PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR,
         SIGNERS_FILE, SIGNERS_SUFFIX, create_local_signers_for,
     };
-    use common::{ArtifactMarker, FileType, SignedFile};
+    use common::{ArtifactMarker, SignedFile};
     use minisign::SignatureBox;
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
@@ -751,7 +751,6 @@ mod tests {
             origin: "test_origin".to_string(),
             marker: PhantomData,
             subject: SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker> {
-                kind: FileType::Artifact,
                 location: PathBuf::from_str("/data/file")
                     .unwrap()
                     .to_string_lossy()
