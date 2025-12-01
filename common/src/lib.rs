@@ -81,12 +81,19 @@ pub fn determine_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
 #[derive(Clone)]
 pub struct SignedFile<T> {
     pub location: String,
-    // before removing it.
     pub digest: Option<AsfaloadHashes>,
-    // FIXME: make it private, but impacts tests of aggregate_signature
-    pub marker: PhantomData<T>,
+    marker: PhantomData<T>,
 }
 
+impl<T> SignedFile<T> {
+    pub fn new(location: String, digest: Option<AsfaloadHashes>) -> Self {
+        SignedFile {
+            location,
+            digest,
+            marker: PhantomData,
+        }
+    }
+}
 impl<T> AsRef<Path> for SignedFile<T> {
     fn as_ref(&self) -> &Path {
         self.location.as_ref()

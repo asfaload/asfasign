@@ -750,14 +750,13 @@ mod tests {
             signatures,
             origin: "test_origin".to_string(),
             marker: PhantomData,
-            subject: SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker> {
-                location: PathBuf::from_str("/data/file")
+            subject: SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker>::new(
+                PathBuf::from_str("/data/file")
                     .unwrap()
                     .to_string_lossy()
                     .to_string(),
-                digest: None,
-                marker: PhantomData,
-            }),
+                None,
+            )),
         };
 
         // Create signers config JSON string with two groups
