@@ -43,9 +43,12 @@ where
 
 impl<P, S> SignatureWithState<P, S>
 where
-    P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
+    pub fn load_for_file<PP: AsRef<Path>>(path_in: PP) -> Result<Self, AggregateSignatureError> {
+        generic_load_for_file(path_in)
+    }
     // Consumes self to do as get_pending
     pub fn get_complete(self) -> Option<AggregateSignature<P, S, CompleteSignature>> {
         match self {
@@ -335,7 +338,7 @@ where
 // This is annoying but also makes no sense as a call like this one
 //   AggregateSignature<_,_,CompleteSignature>::load_for_file(...)
 // could still return a pending signature.
-pub fn load_for_file<P, S, PP: AsRef<Path>>(
+fn generic_load_for_file<P, S, PP: AsRef<Path>>(
     path_in: PP,
 ) -> Result<SignatureWithState<P, S>, AggregateSignatureError>
 where
@@ -512,7 +515,7 @@ where
         // Add the signature to the aggregate
         sig.add_to_aggregate_for_file(self.subject.location().clone(), pubkey)
             .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
-        let agg_sig_with_state = load_for_file(self.subject.location().clone());
+        let agg_sig_with_state = SignatureWithState::load_for_file(self.subject.location().clone());
         match agg_sig_with_state {
             Ok(SignatureWithState::Pending(pending_agg_sig)) => {
                 match pending_agg_sig.try_transition_to_complete() {
@@ -696,14 +699,13 @@ mod tests {
         std::fs::write(&signed_file_path, data).unwrap();
 
         // Load aggregate signature from disk, it is empty
-        let agg_sig =
-            load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(&signed_file_path)?
-                // As it is empty, is is pending
-                .get_pending()
-                .unwrap()
-                // As it is pending, we can add an individual signature to it
-                // After adding the signature, it is in this case complete.
-                .add_individual_signature(&signature, &pubkey)?;
+        let agg_sig = SignatureWithState::load_for_file(&signed_file_path)?
+            // As it is empty, is is pending
+            .get_pending()
+            .unwrap()
+            // As it is pending, we can add an individual signature to it
+            // After adding the signature, it is in this case complete.
+            .add_individual_signature(&signature, &pubkey)?;
 
         let agg_sig = agg_sig
             .get_complete()
@@ -724,7 +726,8 @@ mod tests {
         let config_json = serde_json::to_string_pretty(&high_threshold_config).unwrap();
         fs::write(&signers_file, config_json).unwrap();
 
-        let agg_sig: SignatureWithState<_, _> = load_for_file(&signed_file_path)?;
+        let agg_sig: SignatureWithState<_, _> =
+            SignatureWithState::load_for_file(&signed_file_path)?;
         let agg_sig = agg_sig
             .get_complete()
             .ok_or(anyhow::anyhow!("Signature should have been complete"))?;
@@ -2976,7 +2979,7 @@ mod tests {
         fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
 
         // Load the pending aggregate signature
-        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
         let agg_sig = agg_sig_with_state.get_pending().unwrap();
 
         // Add the individual signature
@@ -3034,7 +3037,7 @@ mod tests {
         fs::write(&pending_sig_path, "{}").unwrap();
 
         // Load the initial empty aggregate signature
-        let mut agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let mut agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
         let mut agg_sig = agg_sig_with_state.get_pending().unwrap();
 
         // --- Add the first signature ---
@@ -3109,7 +3112,7 @@ mod tests {
         fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
 
         // Load the pending aggregate signature
-        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
         let agg_sig = agg_sig_with_state.get_pending().unwrap();
 
         // Add the first individual signature
@@ -3154,7 +3157,7 @@ mod tests {
         fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
 
         // Load the pending aggregate signature
-        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
         let agg_sig = agg_sig_with_state.get_pending().unwrap();
 
         // Make the pending signatures file read-only to cause an IO error
@@ -3210,7 +3213,7 @@ mod tests {
         fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
 
         // Load the pending aggregate signature
-        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
         let agg_sig = agg_sig_with_state.get_pending().unwrap();
 
         // Try to add the wrong signature
@@ -3254,7 +3257,7 @@ mod tests {
         fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
 
         // Load the pending aggregate signature
-        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
         let agg_sig = agg_sig_with_state.get_pending().unwrap();
 
         // Corrupt the pending signatures file to cause a load error
@@ -3303,7 +3306,7 @@ mod tests {
         fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
 
         // Load the pending aggregate signature
-        let agg_sig_with_state = load_for_file::<AsfaloadPublicKey<_>, _, _>(&test_file)?;
+        let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
         let agg_sig = agg_sig_with_state.get_pending().unwrap();
 
         // Create a directory with the same name as the pending signatures file

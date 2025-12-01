@@ -86,8 +86,7 @@ where
     // This will succeed only if the signature is complete, and it is fine
     // if it returns an error reporting an incomplete signature for which the
     // transition cannot occur.
-    let agg_sig: SignatureWithState<K, S> =
-        aggregate_signature::load_for_file::<_, _, _>(&signers_file_path)?;
+    let agg_sig: SignatureWithState<K, S> = SignatureWithState::load_for_file(&signers_file_path)?;
     match agg_sig {
         SignatureWithState::Pending(pending_sig) => {
             match pending_sig.try_transition_to_complete() {
@@ -1407,22 +1406,20 @@ mod tests {
 
         // Create the agregate signature's files on disk using our api.
         // Start by loading the empty signature
-        let _ = aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-            &signed_file_path,
-        )?
-        // As it is empty, is is pending
-        .get_pending()
-        .unwrap()
-        // As it is pending, we can add an individual signature to it
-        // After adding the signature, it is in this case complete.
-        .add_individual_signature(&signature0, pubkey0)?
-        // The threshold is 2 so it is pending here
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature1, pubkey1)?;
+        let _ = SignatureWithState::load_for_file(signed_file_path)?
+            // As it is empty, is is pending
+            .get_pending()
+            .unwrap()
+            // As it is pending, we can add an individual signature to it
+            // After adding the signature, it is in this case complete.
+            .add_individual_signature(&signature0, pubkey0)?
+            // The threshold is 2 so it is pending here
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature1, pubkey1)?;
 
         // Load the aggregate signature using the public API
-        let sig_with_state = aggregate_signature::load_for_file::<_, _, _>(signed_file_path)?;
+        let sig_with_state = SignatureWithState::load_for_file(signed_file_path)?;
         match sig_with_state {
             SignatureWithState::Complete(sig) => Ok(sig),
             SignatureWithState::Pending(_) => Err(SignersFileError::InitialisationError(
@@ -1514,7 +1511,7 @@ mod tests {
         let signature0 = seckey0.sign(&hash).unwrap();
 
         // Create signature of current signers file
-        let _ = aggregate_signature::load_for_file(&existing_signers_file)?
+        let _ = SignatureWithState::load_for_file(&existing_signers_file)?
             .get_pending()
             .unwrap()
             .add_individual_signature(&signature0, pubkey0)?;
@@ -1536,10 +1533,7 @@ mod tests {
             .sec_key(0)
             .unwrap()
             .sign(&new_signers_content_hash)?;
-        let sig_with_state_1 =
-            aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-                &signers_file_path,
-            )?
+        let sig_with_state_1 = SignatureWithState::load_for_file(&signers_file_path)?
             .get_pending()
             .unwrap()
             .add_individual_signature(&existing_signer_sig, existing_keys.pub_key(0).unwrap())?;
@@ -1767,15 +1761,13 @@ mod tests {
         let signature1 = seckey1.sign(&hash).unwrap();
 
         // Create the aggregate signature
-        aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-            &signers_file_path,
-        )?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature0, pubkey0)?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature1, pubkey1)?;
+        SignatureWithState::load_for_file(&signers_file_path)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature0, pubkey0)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature1, pubkey1)?;
 
         Ok(signers_file_path)
     }
@@ -2865,23 +2857,18 @@ mod tests {
         let signature1 = seckey1.sign(&hash).unwrap();
 
         // Create the aggregate signature
-        aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-            &signers_file_path,
-        )?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature0, pubkey0)?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature1, pubkey1)?;
+        SignatureWithState::load_for_file(&signers_file_path)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature0, pubkey0)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature1, pubkey1)?;
 
         let key_index = 2;
         // If master keys are included, sign with them too
         if master_count > 0 {
-            let sig =
-                aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-                    &signers_file_path,
-                )?;
+            let sig = SignatureWithState::load_for_file(&signers_file_path)?;
 
             (0..master_count)
                 .collect::<Vec<usize>>()
@@ -2901,10 +2888,7 @@ mod tests {
         let key_index = 2 + master_count;
         // If admin keys are included, sign with them too
         if admin_count > 0 {
-            let sig =
-                aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-                    &signers_file_path,
-                )?;
+            let sig = SignatureWithState::load_for_file(&signers_file_path)?;
 
             (0..admin_count)
                 .collect::<Vec<usize>>()
@@ -4631,15 +4615,13 @@ mod tests {
         let signature1 = seckey1.sign(&hash).unwrap();
 
         // Create the aggregate signature
-        aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-            &active_signers_file,
-        )?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature0, pubkey0)?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature1, pubkey1)?;
+        SignatureWithState::load_for_file(&active_signers_file)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature0, pubkey0)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature1, pubkey1)?;
 
         Ok(active_signers_file)
     }
