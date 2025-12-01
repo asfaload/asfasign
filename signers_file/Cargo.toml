@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.142"
-minisign = { git = "https://github.com/jedisct1/rust-minisign", rev = "fe7afaf" }
+minisign = "0.8.0"
 signatures = { path = "../signatures/" }
 thiserror = "2.0.16"
 tempfile = "3.21.0"

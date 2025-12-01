@@ -1,49 +1,18 @@
 use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
 use chrono::{DateTime, Utc};
-use common::fs::names::{
-    FileType, PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
-    find_global_signers_for, pending_signatures_path_for, signatures_path_for,
+use common::{
+    SignedFileLoader,
+    errors::{AggregateSignatureError, SignersFileError},
+    fs::names::{
+        PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
+        find_global_signers_for, pending_signatures_path_for, signatures_path_for,
+    },
 };
-use signatures::keys::{
-    AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-    errs::SignatureError,
-};
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signers_file_types::{SignersConfig, parse_signers_config};
-use std::{collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
-use thiserror::Error;
+use std::{borrow::Borrow, collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
 //
 
-#[derive(Debug, Error)]
-pub enum SignersFileError {
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
-    #[error("JSON error: {0}")]
-    JsonError(#[from] serde_json::Error),
-    #[error("Invalid signer: {0}")]
-    InvalidSigner(String),
-    #[error("Signature verification failed: {0}")]
-    SignatureVerificationFailed(String),
-    #[error("Signature operation failed: {0}")]
-    SignatureOperationFailed(String),
-    #[error("Signers file initialisation failed: {0}")]
-    InitialisationError(String),
-    #[error("Aggregate signature error: {0}")]
-    AggregateSignatureError(#[from] aggregate_signature::AggregateSignatureError),
-    #[error("Signers file not in a pending signers directory: {0}")]
-    NotInPendingDir(String),
-    #[error("Pending signers file filesystem hierarchy error: {0}")]
-    FileSystemHierarchyError(String),
-}
-
-impl From<SignatureError> for SignersFileError {
-    fn from(e: SignatureError) -> Self {
-        match e {
-            SignatureError::IoError(io_err) => SignersFileError::IoError(io_err),
-            SignatureError::JsonError(json_err) => SignersFileError::JsonError(json_err),
-            other => SignersFileError::SignatureOperationFailed(other.to_string()),
-        }
-    }
-}
 // Helper function used to validate the signer of a signers file
 // initialisation, i.e. when no existing signers file is active.
 fn is_valid_signer_for_signer_init<P: AsfaloadPublicKeyTrait + Eq>(
@@ -97,12 +66,19 @@ pub fn sign_signers_file<P, S, K>(
     signers_file_path: P,
     signature: &S,
     pubkey: &K,
-) -> Result<(), SignersFileError>
+) -> Result<SignatureWithState<K, S>, SignersFileError>
 where
     P: AsRef<Path>,
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
     S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
+    let signed_file = SignedFileLoader::load(&signers_file_path);
+    if !(signed_file.is_initial_signers() || signed_file.is_signers()) {
+        return Err(SignersFileError::FileSystemHierarchyError(format!(
+            "Trying to sign a file as signers file, which it is not: {}",
+            signers_file_path.as_ref().to_string_lossy()
+        )));
+    }
     // Add the signature to the aggregate signatures file
     signature.add_to_aggregate_for_file(&signers_file_path, pubkey)?;
 
@@ -110,25 +86,27 @@ where
     // This will succeed only if the signature is complete, and it is fine
     // if it returns an error reporting an incomplete signature for which the
     // transition cannot occur.
-    let agg_sig: SignatureWithState<AsfaloadPublicKey<_>, AsfaloadSignature<_>> =
-        aggregate_signature::load_for_file::<_, _, _>(&signers_file_path)?;
-    if let Some(pending_sig) = agg_sig.get_pending() {
-        match pending_sig.try_transition_to_complete() {
-            Ok(agg_sig) => {
-                // Success case: The signature completed successfully.
-                activate_signers_file(agg_sig)?;
-            }
-            Err(aggregate_signature::AggregateSignatureError::IsIncomplete) => {
-                // Signature is not yet complete, which is fine. We just added our part.
-            }
-            Err(e) => {
-                // Any other error is fatal.
-                return Err(e.into());
+    let agg_sig: SignatureWithState<K, S> = SignatureWithState::load_for_file(&signers_file_path)?;
+    match agg_sig {
+        SignatureWithState::Pending(pending_sig) => {
+            match pending_sig.try_transition_to_complete() {
+                Ok(agg_sig) => {
+                    // Success case: The signature completed successfully.
+                    activate_signers_file(&agg_sig)?;
+                    Ok(SignatureWithState::Complete(agg_sig))
+                }
+                Err(AggregateSignatureError::IsIncomplete) => {
+                    // Signature is not yet complete, which is fine. We just added our part.
+                    Ok(SignatureWithState::Pending(pending_sig))
+                }
+                Err(e) => {
+                    // Any other error is fatal.
+                    Err(e.into())
+                }
             }
         }
+        SignatureWithState::Complete(_) => Ok(agg_sig),
     }
-
-    Ok(())
 }
 
 /// Initialize a signers file in a specific directory.
@@ -361,20 +339,21 @@ fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
     Ok(())
 }
 
-pub fn activate_signers_file<K, S>(
-    agg_sig: AggregateSignature<K, S, CompleteSignature>,
-) -> Result<(), SignersFileError>
+pub fn activate_signers_file<K, S, A>(agg_sig: A) -> Result<(), SignersFileError>
 where
     K: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait + Clone,
+    A: Borrow<AggregateSignature<K, S, CompleteSignature>>,
 {
-    if agg_sig.subject().kind == FileType::Artifact {
+    let agg_sig = agg_sig.borrow();
+    if agg_sig.subject().is_artifact() {
         return Err(SignersFileError::FileSystemHierarchyError(format!(
             "Cannot activate a signers file for file of type {}",
-            agg_sig.subject().kind
+            agg_sig.subject().kind()
         )));
     }
-    let signers_file_path = agg_sig.subject().path;
+    let location = &agg_sig.subject().location();
+    let signers_file_path = Path::new(location);
 
     // Verify the signers file is in a pending directory
     let pending_dir = signers_file_path.parent().ok_or_else(|| {
@@ -508,6 +487,7 @@ mod tests {
     use common::sha512_for_file;
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
+    use signatures::keys::AsfaloadSignature;
     use signers_file_types::KeyFormat;
     use signers_file_types::SignerKind;
     use std::path::PathBuf;
@@ -1426,22 +1406,20 @@ mod tests {
 
         // Create the agregate signature's files on disk using our api.
         // Start by loading the empty signature
-        let _ = aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-            &signed_file_path,
-        )?
-        // As it is empty, is is pending
-        .get_pending()
-        .unwrap()
-        // As it is pending, we can add an individual signature to it
-        // After adding the signature, it is in this case complete.
-        .add_individual_signature(&signature0, pubkey0)?
-        // The threshold is 2 so it is pending here
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature1, pubkey1)?;
+        let _ = SignatureWithState::load_for_file(signed_file_path)?
+            // As it is empty, is is pending
+            .get_pending()
+            .unwrap()
+            // As it is pending, we can add an individual signature to it
+            // After adding the signature, it is in this case complete.
+            .add_individual_signature(&signature0, pubkey0)?
+            // The threshold is 2 so it is pending here
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature1, pubkey1)?;
 
         // Load the aggregate signature using the public API
-        let sig_with_state = aggregate_signature::load_for_file::<_, _, _>(signed_file_path)?;
+        let sig_with_state = SignatureWithState::load_for_file(signed_file_path)?;
         match sig_with_state {
             SignatureWithState::Complete(sig) => Ok(sig),
             SignatureWithState::Pending(_) => Err(SignersFileError::InitialisationError(
@@ -1533,7 +1511,7 @@ mod tests {
         let signature0 = seckey0.sign(&hash).unwrap();
 
         // Create signature of current signers file
-        let _ = aggregate_signature::load_for_file(&existing_signers_file)?
+        let _ = SignatureWithState::load_for_file(&existing_signers_file)?
             .get_pending()
             .unwrap()
             .add_individual_signature(&signature0, pubkey0)?;
@@ -1555,10 +1533,7 @@ mod tests {
             .sec_key(0)
             .unwrap()
             .sign(&new_signers_content_hash)?;
-        let sig_with_state_1 =
-            aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-                &signers_file_path,
-            )?
+        let sig_with_state_1 = SignatureWithState::load_for_file(&signers_file_path)?
             .get_pending()
             .unwrap()
             .add_individual_signature(&existing_signer_sig, existing_keys.pub_key(0).unwrap())?;
@@ -1786,15 +1761,13 @@ mod tests {
         let signature1 = seckey1.sign(&hash).unwrap();
 
         // Create the aggregate signature
-        aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-            &signers_file_path,
-        )?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature0, pubkey0)?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature1, pubkey1)?;
+        SignatureWithState::load_for_file(&signers_file_path)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature0, pubkey0)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature1, pubkey1)?;
 
         Ok(signers_file_path)
     }
@@ -2884,23 +2857,18 @@ mod tests {
         let signature1 = seckey1.sign(&hash).unwrap();
 
         // Create the aggregate signature
-        aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-            &signers_file_path,
-        )?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature0, pubkey0)?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature1, pubkey1)?;
+        SignatureWithState::load_for_file(&signers_file_path)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature0, pubkey0)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature1, pubkey1)?;
 
         let key_index = 2;
         // If master keys are included, sign with them too
         if master_count > 0 {
-            let sig =
-                aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-                    &signers_file_path,
-                )?;
+            let sig = SignatureWithState::load_for_file(&signers_file_path)?;
 
             (0..master_count)
                 .collect::<Vec<usize>>()
@@ -2920,10 +2888,7 @@ mod tests {
         let key_index = 2 + master_count;
         // If admin keys are included, sign with them too
         if admin_count > 0 {
-            let sig =
-                aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-                    &signers_file_path,
-                )?;
+            let sig = SignatureWithState::load_for_file(&signers_file_path)?;
 
             (0..admin_count)
                 .collect::<Vec<usize>>()
@@ -4417,6 +4382,38 @@ mod tests {
     }
 
     #[test]
+    fn test_sign_signers_file_on_non_signers() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create a test signers file
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_content = signers_config.to_json()?;
+        let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
+        let my_file = dir_path.join("myfile");
+        std::fs::rename(signers_file_path, &my_file)?;
+        std::fs::remove_dir(dir_path.join(PENDING_SIGNERS_DIR))?;
+
+        // Compute hash and sign
+        let hash = common::sha512_for_file(&my_file)?;
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let seckey = test_keys.sec_key(0).unwrap();
+        let signature = seckey.sign(&hash).unwrap();
+
+        // Call sign_signers_file
+        let result = sign_signers_file(&my_file, &signature, pubkey);
+
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            SignersFileError::FileSystemHierarchyError(_) => {} // Expected
+            e => panic!("Expected FileSystemHierarchyError, got {}", e),
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn test_sign_signers_file_with_existing_signatures() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
@@ -4542,7 +4539,7 @@ mod tests {
         // Call sign_signers_file and expect an error
         let result = sign_signers_file(&signers_file_path, &signature, pubkey);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.err().unwrap() {
             SignersFileError::IoError(_) => {} // Expected
             e => panic!("Expected IoError, got {}", e),
         }
@@ -4580,7 +4577,7 @@ mod tests {
         // Call sign_signers_file and expect an error
         let result = sign_signers_file(&signers_file_path, &signature, pubkey);
         assert!(result.is_err());
-        match result.unwrap_err() {
+        match result.err().unwrap() {
             SignersFileError::JsonError(_) => {} // Expected
             e => panic!("Expected JsonError, got {}", e),
         }
@@ -4618,15 +4615,13 @@ mod tests {
         let signature1 = seckey1.sign(&hash).unwrap();
 
         // Create the aggregate signature
-        aggregate_signature::load_for_file::<AsfaloadPublicKey<minisign::PublicKey>, _, _>(
-            &active_signers_file,
-        )?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature0, pubkey0)?
-        .get_pending()
-        .unwrap()
-        .add_individual_signature(&signature1, pubkey1)?;
+        SignatureWithState::load_for_file(&active_signers_file)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature0, pubkey0)?
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&signature1, pubkey1)?;
 
         Ok(active_signers_file)
     }

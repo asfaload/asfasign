@@ -1,11 +1,12 @@
 use std::collections::HashSet;
 
+use common::errors::keys::KeyError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use signatures::keys::AsfaloadPublicKeyTrait;
 pub use signatures::keys::KeyFormat;
-use signatures::keys::{AsfaloadPublicKeyTrait, errs::KeyError};
 
 pub mod errs {
-    use signatures::keys::errs::KeyError;
+    use common::errors::keys::KeyError;
     use thiserror::Error;
 
     #[derive(Error, Debug)]
