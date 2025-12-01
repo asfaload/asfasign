@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 base64 = "0.22.1"
-minisign = { git = "https://github.com/jedisct1/rust-minisign", rev = "fe7afaf" }
+minisign = "0.8.0"
 serde_json = "1.0.143"
 thiserror = "2.0.12"
 common = { path = "../common/" }

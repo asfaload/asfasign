@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-minisign = "0.7.9"
+minisign = "0.8.0"
 common = { path = "../common/" }
 signatures = { path = "../signatures/" }
 serde = "1.0.226"
