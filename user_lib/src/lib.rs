@@ -21,9 +21,18 @@ where
     fn is_signed(&self) -> Result<bool, SignedFileError>;
 }
 
-impl<MP, MS> SignedFileTrait<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>
-    for SignedFile<InitialSignersFileMarker>
+//SignedFileTrait implementation for initial signers file and signers file updates
+//are identical. The way to avoid duplicated code is to:
+//* define an empty helper trait implemented by both marker types that lead to
+//  the same implementation.
+//* implement the SignefFileTrait once for all markers implementing that helper trait.
+pub trait SignableFileMarker {}
+impl SignableFileMarker for InitialSignersFileMarker {}
+impl SignableFileMarker for SignersFileMarker {}
+
+impl<MP, MS, T> SignedFileTrait<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>> for SignedFile<T>
 where
+    T: SignableFileMarker,
     MP: Clone,
     MS: Clone,
     AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
@@ -46,30 +55,6 @@ where
     }
 }
 
-impl<MP, MS> SignedFileTrait<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>
-    for SignedFile<SignersFileMarker>
-where
-    MP: Clone,
-    MS: Clone,
-    AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
-    AsfaloadSignature<MS>: AsfaloadSignatureTrait,
-{
-    fn add_signature(
-        &self,
-        sig: AsfaloadSignature<MS>,
-        pubkey: AsfaloadPublicKey<MP>,
-    ) -> Result<SignatureWithState<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>, SignedFileError>
-    {
-        sign_signers_file(&self.location, &sig, &pubkey).map_err(|e| e.into())
-    }
-
-    fn is_signed(&self) -> Result<bool, SignedFileError> {
-        let r = load_for_file::<AsfaloadPublicKey<MP>, _, _>(&self.location)?
-            .get_complete()
-            .is_some();
-        Ok(r)
-    }
-}
 impl<MP, MS> SignedFileTrait<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>
     for SignedFile<ArtifactMarker>
 where
