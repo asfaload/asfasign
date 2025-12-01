@@ -88,31 +88,25 @@ where
     // transition cannot occur.
     let agg_sig: SignatureWithState<K, S> =
         aggregate_signature::load_for_file::<_, _, _>(&signers_file_path)?;
-    if agg_sig.is_pending() {
-        let pending_sig = agg_sig
-            .get_pending()
-            // We are sure it is pending here, but handling it makes the code stronger
-            // in case it is moved
-            .ok_or(AggregateSignatureError::LogicError(
-                "Agg sig determined as pending returned nothing with get_pending".to_string(),
-            ))?;
-        match pending_sig.try_transition_to_complete() {
-            Ok(agg_sig) => {
-                // Success case: The signature completed successfully.
-                activate_signers_file(&agg_sig)?;
-                Ok(SignatureWithState::Complete(agg_sig))
-            }
-            Err(AggregateSignatureError::IsIncomplete) => {
-                // Signature is not yet complete, which is fine. We just added our part.
-                Ok(SignatureWithState::Pending(pending_sig))
-            }
-            Err(e) => {
-                // Any other error is fatal.
-                Err(e.into())
+    match agg_sig {
+        SignatureWithState::Pending(pending_sig) => {
+            match pending_sig.try_transition_to_complete() {
+                Ok(agg_sig) => {
+                    // Success case: The signature completed successfully.
+                    activate_signers_file(&agg_sig)?;
+                    Ok(SignatureWithState::Complete(agg_sig))
+                }
+                Err(AggregateSignatureError::IsIncomplete) => {
+                    // Signature is not yet complete, which is fine. We just added our part.
+                    Ok(SignatureWithState::Pending(pending_sig))
+                }
+                Err(e) => {
+                    // Any other error is fatal.
+                    Err(e.into())
+                }
             }
         }
-    } else {
-        Ok(agg_sig)
+        SignatureWithState::Complete(_) => Ok(agg_sig),
     }
 }
 
