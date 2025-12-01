@@ -84,11 +84,19 @@ where
         pubkey: AsfaloadPublicKey<MP>,
     ) -> Result<SignatureWithState<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>, SignedFileError>
     {
-        load_for_file::<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>, _>(&self.location)?
-            .get_pending()
-            .expect("Expected pending agg sig here")
-            .add_individual_signature(&sig, &pubkey)
-            .map_err(|e| e.into())
+        let agg_sig_with_state =
+            load_for_file::<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>, _>(&self.location)?;
+        if let Some(pending_sig) = agg_sig_with_state.get_pending() {
+            pending_sig
+                .add_individual_signature(&sig, &pubkey)
+                .map_err(|e| e.into())
+        } else {
+            Err(SignedFileError::AggregateSignatureError(
+                common::errors::AggregateSignatureError::LogicError(
+                    "Signature is already complete; cannot add another signature.".to_string(),
+                ),
+            ))
+        }
     }
 
     fn is_signed(&self) -> Result<bool, SignedFileError> {
