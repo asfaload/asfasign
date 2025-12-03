@@ -87,8 +87,8 @@ where
     pub fn with_keys(
         version: u32,
         (artifact_signers, artifact_threshold): (Vec<APK>, u32),
-        (master_keys, master_threshold): (Vec<APK>, u32),
         admin_keys: Option<(Vec<APK>, u32)>,
+        (master_keys, master_threshold): (Vec<APK>, u32),
     ) -> Result<Self, SignersConfigError> {
         // Helper function to create a SignerGroup from a vector of public key strings
         // Create the artifact signers group
@@ -124,7 +124,7 @@ where
         version: u32,
         artifact_signers_and_threshold: (Vec<APK>, u32),
     ) -> Result<Self, SignersConfigError> {
-        Self::with_keys(version, artifact_signers_and_threshold, (vec![], 0), None)
+        Self::with_keys(version, artifact_signers_and_threshold, None, (vec![], 0))
     }
 
     pub fn admin_keys(&self) -> &Vec<SignerGroup<APK>> {
