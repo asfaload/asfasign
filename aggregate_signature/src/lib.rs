@@ -3766,7 +3766,7 @@ mod tests {
             1,
             (artifact_keys.clone(), 2),
             Some((admin_keys.clone(), 2)),
-            (master_keys.clone(), 2),
+            Some((master_keys.clone(), 2)),
         )?;
 
         assert!(!can_revoke(
@@ -3788,7 +3788,7 @@ mod tests {
             1,
             (artifact_keys.clone(), 2),
             Some((admin_keys.clone(), 2)),
-            (vec![], 0),
+            None,
         )?;
 
         assert!(!can_revoke(
@@ -3810,7 +3810,7 @@ mod tests {
             signers_keys_for_revocation_tests(true, true, true);
         // Create a config with admin_keys
         let config_sans_master =
-            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), None, (vec![], 0))?;
+            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), None, None)?;
 
         assert!(can_revoke(
             artifact_keys.first().unwrap(),
