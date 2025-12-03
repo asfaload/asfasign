@@ -217,6 +217,38 @@ where
     Ok(signatures)
 }
 
+// A user can revoke a signature if it is member of the most provileged
+// group defined in the SignersConfig
+pub fn can_revoke<PK: AsfaloadPublicKeyTrait>(
+    pubkey: &PK,
+    signers_config: &SignersConfig<PK>,
+) -> bool {
+    if !signers_config.master_keys.is_empty() {
+        return signers_config.master_keys.iter().any(|group| {
+            group
+                .signers
+                .iter()
+                .any(|signer| signer.data.pubkey == *pubkey)
+        });
+    }
+
+    if let Some(admin_keys) = &signers_config.admin_keys {
+        return admin_keys.iter().any(|group| {
+            group
+                .signers
+                .iter()
+                .any(|signer| signer.data.pubkey == *pubkey)
+        });
+    }
+
+    signers_config.artifact_signers.iter().any(|group| {
+        group
+            .signers
+            .iter()
+            .any(|signer| signer.data.pubkey == *pubkey)
+    })
+}
+
 /// Load signers configuration from a file
 fn load_signers_config<P>(
     signers_file_path: &Path,
@@ -3674,6 +3706,124 @@ mod tests {
         signatures.insert(pubkey1.clone(), invalid_sig1.clone()); // Valid for wrong data
         let signers = vec![pubkey0.clone(), pubkey1.clone()];
         assert!(!check_signers(&signatures, &signers, &data));
+
+        Ok(())
+    }
+
+    // can_revoke
+
+    // Helper function used in revocation tests to generate signers configs
+    // with 2 keys in groups to be present according to arguments passed.
+    // This just returns the keys to be placed in the SignersConfig to be
+    // built by the caller, so threshold can be set by the caller.
+    #[allow(clippy::type_complexity)]
+    fn signers_keys_for_revocation_tests(
+        with_artifact: bool,
+        with_admin: bool,
+        with_master: bool,
+    ) -> (
+        Vec<AsfaloadPublicKey<minisign::PublicKey>>,
+        Vec<AsfaloadPublicKey<minisign::PublicKey>>,
+        Vec<AsfaloadPublicKey<minisign::PublicKey>>,
+    )
+    where
+        AsfaloadPublicKey<minisign::PublicKey>: AsfaloadPublicKeyTrait,
+    {
+        let test_keys = TestKeys::new(6);
+        let artifact_keys = if with_artifact {
+            vec![
+                test_keys.pub_key(0).unwrap().clone(),
+                test_keys.pub_key(1).unwrap().clone(),
+            ]
+        } else {
+            vec![]
+        };
+        let admin_keys = if with_admin {
+            vec![
+                test_keys.pub_key(2).unwrap().clone(),
+                test_keys.pub_key(3).unwrap().clone(),
+            ]
+        } else {
+            vec![]
+        };
+        let master_keys = if with_master {
+            vec![
+                test_keys.pub_key(4).unwrap().clone(),
+                test_keys.pub_key(5).unwrap().clone(),
+            ]
+        } else {
+            vec![]
+        };
+
+        (artifact_keys, admin_keys, master_keys)
+    }
+    #[test]
+    fn test_can_revoke_with_all_levels_present_in_config() -> Result<()> {
+        let (artifact_keys, admin_keys, master_keys) =
+            signers_keys_for_revocation_tests(true, true, true);
+        // Create a config with admin_keys
+        let config_with_all = SignersConfig::with_keys(
+            1,
+            (artifact_keys.clone(), 2),
+            Some((admin_keys.clone(), 2)),
+            (master_keys.clone(), 2),
+        )?;
+
+        assert!(!can_revoke(
+            artifact_keys.first().unwrap(),
+            &config_with_all
+        ));
+        assert!(!can_revoke(admin_keys.first().unwrap(), &config_with_all));
+        assert!(can_revoke(master_keys.first().unwrap(), &config_with_all));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_can_revoke_with_no_master_present_in_config() -> Result<()> {
+        let (artifact_keys, admin_keys, master_keys) =
+            signers_keys_for_revocation_tests(true, true, true);
+        // Create a config with admin_keys
+        let config_sans_master = SignersConfig::with_keys(
+            1,
+            (artifact_keys.clone(), 2),
+            Some((admin_keys.clone(), 2)),
+            (vec![], 0),
+        )?;
+
+        assert!(!can_revoke(
+            artifact_keys.first().unwrap(),
+            &config_sans_master
+        ));
+        assert!(can_revoke(admin_keys.first().unwrap(), &config_sans_master));
+        assert!(!can_revoke(
+            master_keys.first().unwrap(),
+            &config_sans_master
+        ));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_can_revoke_with_only_artifact_present_in_config() -> Result<()> {
+        let (artifact_keys, admin_keys, master_keys) =
+            signers_keys_for_revocation_tests(true, true, true);
+        // Create a config with admin_keys
+        let config_sans_master =
+            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), None, (vec![], 0))?;
+
+        assert!(can_revoke(
+            artifact_keys.first().unwrap(),
+            &config_sans_master
+        ));
+        assert!(!can_revoke(
+            admin_keys.first().unwrap(),
+            &config_sans_master
+        ));
+        assert!(!can_revoke(
+            master_keys.first().unwrap(),
+            &config_sans_master
+        ));
 
         Ok(())
     }
