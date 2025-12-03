@@ -51,8 +51,8 @@ where
     pub fn new(
         version: u32,
         artifact_signers: Vec<SignerGroup<APK>>,
-        master_keys: Vec<SignerGroup<APK>>,
         admin_keys: Option<Vec<SignerGroup<APK>>>,
+        master_keys: Vec<SignerGroup<APK>>,
     ) -> Self {
         Self {
             version,
@@ -116,8 +116,8 @@ where
         Ok(Self::new(
             version,
             artifact_signers,
-            master_keys,
             admin_keys,
+            master_keys,
         ))
     }
 
