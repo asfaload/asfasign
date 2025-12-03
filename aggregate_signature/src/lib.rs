@@ -154,22 +154,12 @@ where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    let mut keys_iter = signers_config
-        .admin_keys()
-        .iter()
-        .chain(signers_config.master_keys.iter())
-        .chain(signers_config.artifact_signers.iter())
-        .peekable();
-
-    keys_iter.peek().is_some()
-        && keys_iter.all(|group| {
-            group.signers.iter().all(|signer| {
-                signatures
-                    .get(&signer.data.pubkey)
-                    .is_some_and(|signature| {
-                        signer.data.pubkey.verify(signature, admin_data).is_ok()
-                    })
-            })
+    let all_signer_keys = signers_config.all_signer_keys();
+    !all_signer_keys.is_empty()
+        && all_signer_keys.iter().all(|pubkey| {
+            signatures
+                .get(pubkey)
+                .is_some_and(|signature| pubkey.verify(signature, admin_data).is_ok())
         })
 }
 
@@ -223,13 +213,17 @@ pub fn can_revoke<PK: AsfaloadPublicKeyTrait>(
     pubkey: &PK,
     signers_config: &SignersConfig<PK>,
 ) -> bool {
-    if !signers_config.master_keys.is_empty() {
-        return signers_config.master_keys.iter().any(|group| {
-            group
-                .signers
-                .iter()
-                .any(|signer| signer.data.pubkey == *pubkey)
-        });
+    if !signers_config.master_keys().is_none_or(|v| v.is_empty()) {
+        return signers_config
+            .master_keys()
+            .unwrap_or_default()
+            .iter()
+            .any(|group| {
+                group
+                    .signers
+                    .iter()
+                    .any(|signer| signer.data.pubkey == *pubkey)
+            });
     }
 
     if let Some(admin_keys) = &signers_config.admin_keys {
@@ -344,9 +338,17 @@ where
             let added_signers = get_newly_added_signer_keys(&signers_config, &new_signers_config);
             // existing signers file
             (check_groups(signers_config.admin_keys(), &signatures, &file_hash)
-                || check_groups(&signers_config.master_keys, &signatures, &file_hash))
+                || check_groups(
+                    &signers_config.master_keys().unwrap_or_default(),
+                    &signatures,
+                    &file_hash,
+                ))
                 && (check_groups(new_signers_config.admin_keys(), &signatures, &file_hash)
-                    || check_groups(&new_signers_config.master_keys, &signatures, &file_hash))
+                    || check_groups(
+                        &new_signers_config.master_keys().unwrap_or_default(),
+                        &signatures,
+                        &file_hash,
+                    ))
                 && (check_signers(&signatures, &added_signers, &file_hash))
         }
 
@@ -434,7 +436,11 @@ where
         master_data: &AsfaloadHashes,
     ) -> bool {
         // Check master_keys groups
-        check_groups(&signers_config.master_keys, &self.signatures, master_data)
+        check_groups(
+            &signers_config.master_keys().unwrap_or_default(),
+            &self.signatures,
+            master_data,
+        )
     }
 
     /// Check if aggregate signature meets all thresholds in signers config for admin keys
@@ -711,7 +717,7 @@ mod tests {
                 mirrors: vec![],
             },
             artifact_signers: vec![group.clone()],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         };
         // Write signers configuration
@@ -1404,7 +1410,7 @@ mod tests {
                 ],
                 threshold: 2,
             }],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         };
 
@@ -1730,7 +1736,7 @@ mod tests {
                 }],
                 threshold: 1,
             }],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         };
 
@@ -1929,7 +1935,7 @@ mod tests {
                 ],
                 threshold: 2,
             }],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         };
 
@@ -2055,7 +2061,7 @@ mod tests {
                 mirrors: vec![],
             },
             artifact_signers: vec![],
-            master_keys: vec![SignerGroup {
+            master_keys: Some(vec![SignerGroup {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
@@ -2064,7 +2070,7 @@ mod tests {
                     },
                 }],
                 threshold: 1,
-            }],
+            }]),
             admin_keys: Some(vec![SignerGroup {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
@@ -2099,7 +2105,7 @@ mod tests {
                 }],
                 threshold: 1,
             }],
-            master_keys: vec![SignerGroup {
+            master_keys: Some(vec![SignerGroup {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
@@ -2108,7 +2114,7 @@ mod tests {
                     },
                 }],
                 threshold: 1,
-            }],
+            }]),
             admin_keys: Some(vec![SignerGroup {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
@@ -2252,7 +2258,7 @@ mod tests {
                 permalink: "https://example.com".to_string(),
                 mirrors: vec![],
             },
-            master_keys: vec![],
+            master_keys: None,
             artifact_signers: vec![SignerGroup {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
@@ -2287,7 +2293,7 @@ mod tests {
                 permalink: "https://example.com".to_string(),
                 mirrors: vec![],
             },
-            master_keys: vec![],
+            master_keys: None,
             artifact_signers: vec![SignerGroup {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
@@ -2390,7 +2396,7 @@ mod tests {
                     mirrors: vec![],
                 },
                 artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
-                master_keys: vec![],
+                master_keys: None,
                 admin_keys: None,
             };
 
@@ -2421,7 +2427,7 @@ mod tests {
                     create_group(vec![create_signer(pubkey0.clone())], 1),
                     create_group(vec![create_signer(pubkey1.clone())], 1),
                 ],
-                master_keys: vec![],
+                master_keys: None,
                 admin_keys: None,
             };
 
@@ -2446,7 +2452,7 @@ mod tests {
                     mirrors: vec![],
                 },
                 artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
-                master_keys: vec![],
+                master_keys: None,
                 admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
             };
 
@@ -2471,7 +2477,7 @@ mod tests {
                     mirrors: vec![],
                 },
                 artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
-                master_keys: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
+                master_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
                 admin_keys: None,
             };
 
@@ -2496,7 +2502,7 @@ mod tests {
                     mirrors: vec![],
                 },
                 artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
-                master_keys: vec![],
+                master_keys: None,
                 admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
             };
 
@@ -2522,7 +2528,7 @@ mod tests {
                     create_group(vec![create_signer(pubkey0.clone())], 1),
                     create_group(vec![create_signer(pubkey1.clone())], 1),
                 ],
-                master_keys: vec![create_group(vec![create_signer(pubkey2.clone())], 1)],
+                master_keys: Some(vec![create_group(vec![create_signer(pubkey2.clone())], 1)]),
                 admin_keys: Some(vec![
                     create_group(vec![create_signer(pubkey0.clone())], 1),
                     create_group(vec![create_signer(pubkey3.clone())], 1),
@@ -2561,7 +2567,7 @@ mod tests {
                     ],
                     2,
                 )],
-                master_keys: vec![],
+                master_keys: None,
                 admin_keys: None,
             };
 
@@ -2586,7 +2592,7 @@ mod tests {
                     mirrors: vec![],
                 },
                 artifact_signers: vec![],
-                master_keys: vec![],
+                master_keys: None,
                 admin_keys: None,
             };
 
@@ -2611,7 +2617,7 @@ mod tests {
                     ],
                     1,
                 )],
-                master_keys: vec![],
+                master_keys: None,
                 admin_keys: None,
             };
 
@@ -2916,7 +2922,7 @@ mod tests {
                 mirrors: vec![],
             },
             artifact_signers: vec![SignerGroup { signers, threshold }],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         }
     }
@@ -3403,7 +3409,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
-            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
         };
 
@@ -3420,14 +3426,14 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
-            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
         };
 
         let new_config = SignersConfig {
             version: 1,
             initial_version: Default::default(),
-            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             artifact_signers: vec![create_group(&test_keys, vec![1, 0], 2)], // Reordered
         };
@@ -3443,7 +3449,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         };
 
@@ -3451,7 +3457,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)], // Added key 1
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         };
 
@@ -3467,7 +3473,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         };
 
@@ -3475,7 +3481,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
-            master_keys: vec![create_group(&test_keys, vec![1], 1)], // Added key 1
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
             admin_keys: None,
         };
 
@@ -3491,7 +3497,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         };
 
@@ -3499,7 +3505,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
         };
 
@@ -3515,7 +3521,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
-            master_keys: vec![create_group(&test_keys, vec![2], 1)],
+            master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
         };
 
@@ -3523,7 +3529,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0, 5, 8], 1)],
-            master_keys: vec![create_group(&test_keys, vec![2, 6, 9], 2)],
+            master_keys: Some(vec![create_group(&test_keys, vec![2, 6, 9], 2)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![7], 2)]),
         };
 
@@ -3548,7 +3554,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         };
 
@@ -3556,7 +3562,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
-            master_keys: vec![create_group(&test_keys, vec![1], 1)],
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
         };
 
@@ -3575,7 +3581,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
-            master_keys: vec![create_group(&test_keys, vec![1], 1)],
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
         };
 
@@ -3583,7 +3589,7 @@ mod tests {
             version: 1,
             initial_version: Default::default(),
             artifact_signers: vec![],
-            master_keys: vec![],
+            master_keys: None,
             admin_keys: None,
         };
 

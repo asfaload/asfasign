@@ -47,12 +47,16 @@ fn is_valid_signer_for_update_of<P: AsfaloadPublicKeyTrait + Eq>(
             .signers
             .iter()
             .any(|signer| signer.data.pubkey == *pubkey)
-    }) || active_config.master_keys().iter().any(|group| {
-        group
-            .signers
-            .iter()
-            .any(|signer| signer.data.pubkey == *pubkey)
-    });
+    }) || active_config
+        .master_keys()
+        .unwrap_or_default()
+        .iter()
+        .any(|group| {
+            group
+                .signers
+                .iter()
+                .any(|signer| signer.data.pubkey == *pubkey)
+        });
     if is_valid {
         Ok(())
     } else {
@@ -549,9 +553,12 @@ mod tests {
             config.artifact_signers[0].signers[0].data.format,
             KeyFormat::Minisign
         );
-        assert_eq!(config.master_keys.len(), 1);
-        assert_eq!(config.master_keys[0].threshold, 2);
-        assert_eq!(config.master_keys[0].signers[0].kind, SignerKind::Key);
+        assert_eq!(config.master_keys().unwrap_or_default().len(), 1);
+        assert_eq!(config.master_keys().unwrap_or_default()[0].threshold, 2);
+        assert_eq!(
+            config.master_keys().unwrap_or_default()[0].signers[0].kind,
+            SignerKind::Key
+        );
         assert!(config.admin_keys.is_some());
         let admin_keys = config.admin_keys();
         assert_eq!(admin_keys[0].threshold, 3);
