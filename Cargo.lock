@@ -9,7 +9,7 @@ dependencies = [
  "anyhow",
  "base64",
  "common",
- "minisign 0.7.9 (git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf)",
+ "minisign",
  "serde",
  "serde_json",
  "sha2",
@@ -114,7 +114,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
- "minisign 0.7.9 (git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf)",
+ "minisign",
  "serde_json",
  "sha2",
  "tempfile",
@@ -197,19 +197,6 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.2.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "335ff9f135e4384c8150d6f27c6daed433577f86b4750418338c01a1a2528592"
-dependencies = [
- "cfg-if",
- "js-sys",
- "libc",
- "wasi 0.11.1+wasi-snapshot-preview1",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "getrandom"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26145e563e54f2cadc477553f1ec5ee650b00862f0a58bcd12cbdc5f0ea2d2f4"
@@ -218,7 +205,7 @@ dependencies = [
  "js-sys",
  "libc",
  "r-efi",
- "wasi 0.14.2+wasi-0.2.4",
+ "wasi",
  "wasm-bindgen",
 ]
 
@@ -271,7 +258,7 @@ dependencies = [
  "aggregate_signature",
  "anyhow",
  "common",
- "minisign 0.8.0",
+ "minisign",
  "signatures",
  "signers_file",
  "signers_file_types",
@@ -322,35 +309,12 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 
 [[package]]
 name = "minisign"
-version = "0.7.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26541387415a1e829df5d532aad019fb11bc723e2b5bc99edefa4cf5bfad0de7"
-dependencies = [
- "ct-codecs",
- "getrandom 0.2.16",
- "rpassword",
- "scrypt",
-]
-
-[[package]]
-name = "minisign"
-version = "0.7.9"
-source = "git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf#fe7afafbce85ab052f0616107812d7c2da612231"
-dependencies = [
- "ct-codecs",
- "getrandom 0.2.16",
- "rpassword",
- "scrypt",
-]
-
-[[package]]
-name = "minisign"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6bf96cef396a17a96f7600281aa4da9229860b7a082601b1f6db6eaa5f99ee5"
 dependencies = [
  "ct-codecs",
- "getrandom 0.3.3",
+ "getrandom",
  "rpassword",
  "scrypt",
 ]
@@ -537,7 +501,7 @@ dependencies = [
  "anyhow",
  "base64",
  "common",
- "minisign 0.7.9 (git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf)",
+ "minisign",
  "serde",
  "serde_json",
  "tempfile",
@@ -553,7 +517,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "common",
- "minisign 0.7.9 (git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf)",
+ "minisign",
  "serde",
  "serde_json",
  "sha2",
@@ -569,7 +533,7 @@ name = "signers_file_types"
 version = "0.1.0"
 dependencies = [
  "common",
- "minisign 0.7.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "minisign",
  "serde",
  "serde_json",
  "signatures",
@@ -600,7 +564,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15b61f8f20e3a6f7e0649d825294eaf317edce30f82cf6026e7e4cb9222a7d1e"
 dependencies = [
  "fastrand",
- "getrandom 0.3.3",
+ "getrandom",
  "once_cell",
  "rustix",
  "windows-sys 0.60.2",
@@ -610,7 +574,7 @@ dependencies = [
 name = "test_helpers"
 version = "0.1.0"
 dependencies = [
- "minisign 0.7.9 (git+https://github.com/jedisct1/rust-minisign?rev=fe7afaf)",
+ "minisign",
  "signatures",
 ]
 
@@ -663,12 +627,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "wasi"
-version = "0.11.1+wasi-snapshot-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasi"
