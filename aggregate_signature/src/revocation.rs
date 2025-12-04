@@ -582,6 +582,7 @@ mod tests {
     fn create_complete_signers_setup(
         temp_dir: &TempDir,
         test_keys: &TestKeys,
+        admin_key_indices: Option<Vec<usize>>,
         master_key_indices: Option<Vec<usize>>,
     ) -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
         let root = temp_dir.path();
@@ -625,6 +626,21 @@ mod tests {
             }]
         });
 
+        let admin_keys = admin_key_indices.clone().map(|indices| {
+            vec![SignerGroup {
+                signers: indices
+                    .iter()
+                    .map(|&i| Signer {
+                        kind: SignerKind::Key,
+                        data: SignerData {
+                            format: KeyFormat::Minisign,
+                            pubkey: test_keys.pub_key(i).unwrap().clone(),
+                        },
+                    })
+                    .collect(),
+                threshold: indices.len() as u32,
+            }]
+        });
         let signers_config = SignersConfig {
             version: 1,
             initial_version: InitialVersion {
@@ -636,7 +652,7 @@ mod tests {
                 threshold: 2,
             }],
             master_keys: master_keys.clone(),
-            admin_keys: None,
+            admin_keys: admin_keys.clone(),
         };
 
         // Write signers configuration
@@ -750,7 +766,7 @@ mod tests {
         let test_keys = TestKeys::new(3);
 
         // Create signers setup with master keys (key 2 is master)
-        create_complete_signers_setup(&temp_dir, &test_keys, Some(vec![2]))?;
+        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]))?;
 
         // Create signed artifact file
         let artifact_content = b"This is an artifact that will be revoked";
@@ -838,9 +854,9 @@ mod tests {
 
         Ok(())
     }
-
     #[test]
-    fn test_revoke_signed_file_with_artifact() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_revoke_signed_file_with_artifact_fail_when_master_present()
+    -> Result<(), Box<dyn std::error::Error>> {
         // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
         let test_keys = TestKeys::new(3);
 
@@ -848,7 +864,190 @@ mod tests {
         let temp_dir2 = TempDir::new()?;
 
         // Create signers setup without master keys
-        create_complete_signers_setup(&temp_dir2, &test_keys, None)?;
+        create_complete_signers_setup(&temp_dir2, &test_keys, None, Some(vec![2]))?;
+
+        // Create signed artifact file
+        let artifact_path =
+            create_signed_artifact_file(&temp_dir2, &test_keys, b"Another artifact")?;
+
+        // Prepare revocation with artifact signer (key 0)
+        let timestamp = Utc::now();
+        let subject_digest = common::sha512_for_file(&artifact_path)?;
+        let initiator_pubkey = test_keys.pub_key(0).unwrap(); // Artifact signer
+        let revocation_json = create_revocation_json(timestamp, &subject_digest, initiator_pubkey)?;
+
+        // Sign the revocation JSON
+        let revocation_hash = common::sha512_for_content(revocation_json.as_bytes().to_vec())?;
+        let initiator_seckey = test_keys.sec_key(0).unwrap();
+        let revocation_signature = initiator_seckey.sign(&revocation_hash)?;
+
+        // Perform revocation
+        let result = revoke_signed_file(
+            &artifact_path,
+            &revocation_json,
+            &revocation_signature,
+            initiator_pubkey,
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(e) => {
+                let err_str = e.to_string();
+                assert!(
+                    err_str.contains("Public key is not authorized to revoke this file")
+                        || err_str.contains("Signature verification failed"),
+                    "Unexpected error: {}",
+                    err_str
+                );
+            }
+            Ok(_) => panic!("Expected revocation to fail for unauthorized key"),
+        }
+
+        // Verify no revocation file was create
+        let revocation_file_path = revocation_path_for(&artifact_path)?;
+        assert!(!revocation_file_path.exists());
+        let revocation_sig_path = revocation_signatures_path_for(&artifact_path)?;
+        assert!(!revocation_sig_path.exists());
+        let revocation_signers_path = revocation_signers_path_for(&artifact_path)?;
+        assert!(!revocation_signers_path.exists());
+        let revoked_sig_path = revoked_signatures_path_for(&artifact_path)?;
+        assert!(!revoked_sig_path.exists());
+
+        Ok(())
+    }
+    #[test]
+    fn test_revoke_signed_file_with_artifact_fail_when_admin_present()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
+        let test_keys = TestKeys::new(3);
+
+        // Create new temp dir for clean test
+        let temp_dir2 = TempDir::new()?;
+
+        // Create signers setup without master keys
+        create_complete_signers_setup(&temp_dir2, &test_keys, Some(vec![2]), None)?;
+
+        // Create signed artifact file
+        let artifact_path =
+            create_signed_artifact_file(&temp_dir2, &test_keys, b"Another artifact")?;
+
+        // Prepare revocation with artifact signer (key 0)
+        let timestamp = Utc::now();
+        let subject_digest = common::sha512_for_file(&artifact_path)?;
+        let initiator_pubkey = test_keys.pub_key(0).unwrap(); // Artifact signer
+        let revocation_json = create_revocation_json(timestamp, &subject_digest, initiator_pubkey)?;
+
+        // Sign the revocation JSON
+        let revocation_hash = common::sha512_for_content(revocation_json.as_bytes().to_vec())?;
+        let initiator_seckey = test_keys.sec_key(0).unwrap();
+        let revocation_signature = initiator_seckey.sign(&revocation_hash)?;
+
+        // Perform revocation
+        let result = revoke_signed_file(
+            &artifact_path,
+            &revocation_json,
+            &revocation_signature,
+            initiator_pubkey,
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(e) => {
+                let err_str = e.to_string();
+                assert!(
+                    err_str.contains("Public key is not authorized to revoke this file")
+                        || err_str.contains("Signature verification failed"),
+                    "Unexpected error: {}",
+                    err_str
+                );
+            }
+            Ok(_) => panic!("Expected revocation to fail for unauthorized key"),
+        }
+
+        // Verify no revocation file was create
+        let revocation_file_path = revocation_path_for(&artifact_path)?;
+        assert!(!revocation_file_path.exists());
+        let revocation_sig_path = revocation_signatures_path_for(&artifact_path)?;
+        assert!(!revocation_sig_path.exists());
+        let revocation_signers_path = revocation_signers_path_for(&artifact_path)?;
+        assert!(!revocation_signers_path.exists());
+        let revoked_sig_path = revoked_signatures_path_for(&artifact_path)?;
+        assert!(!revoked_sig_path.exists());
+
+        Ok(())
+    }
+    #[test]
+    fn test_revoke_signed_file_with_admin_fail_when_master_present()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
+        let test_keys = TestKeys::new(4);
+
+        // Create new temp dir for clean test
+        let temp_dir2 = TempDir::new()?;
+
+        // Create signers setup without master keys
+        create_complete_signers_setup(&temp_dir2, &test_keys, Some(vec![2]), Some(vec![3]))?;
+
+        // Create signed artifact file
+        let artifact_path =
+            create_signed_artifact_file(&temp_dir2, &test_keys, b"Another artifact")?;
+
+        // Prepare revocation with artifact signer (key 0)
+        let timestamp = Utc::now();
+        let subject_digest = common::sha512_for_file(&artifact_path)?;
+        let initiator_pubkey = test_keys.pub_key(2).unwrap(); // Admin signer
+        let revocation_json = create_revocation_json(timestamp, &subject_digest, initiator_pubkey)?;
+
+        // Sign the revocation JSON
+        let revocation_hash = common::sha512_for_content(revocation_json.as_bytes().to_vec())?;
+        let initiator_seckey = test_keys.sec_key(2).unwrap();
+        let revocation_signature = initiator_seckey.sign(&revocation_hash)?;
+
+        // Perform revocation
+        let result = revoke_signed_file(
+            &artifact_path,
+            &revocation_json,
+            &revocation_signature,
+            initiator_pubkey,
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(e) => {
+                let err_str = e.to_string();
+                assert!(
+                    err_str.contains("Public key is not authorized to revoke this file")
+                        || err_str.contains("Signature verification failed"),
+                    "Unexpected error: {}",
+                    err_str
+                );
+            }
+            Ok(_) => panic!("Expected revocation to fail for unauthorized key"),
+        }
+
+        // Verify no revocation file was create
+        let revocation_file_path = revocation_path_for(&artifact_path)?;
+        assert!(!revocation_file_path.exists());
+        let revocation_sig_path = revocation_signatures_path_for(&artifact_path)?;
+        assert!(!revocation_sig_path.exists());
+        let revocation_signers_path = revocation_signers_path_for(&artifact_path)?;
+        assert!(!revocation_signers_path.exists());
+        let revoked_sig_path = revoked_signatures_path_for(&artifact_path)?;
+        assert!(!revoked_sig_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_revoke_signed_file_with_artifact_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
+        let test_keys = TestKeys::new(3);
+
+        // Create new temp dir for clean test
+        let temp_dir2 = TempDir::new()?;
+
+        // Create signers setup without master keys
+        create_complete_signers_setup(&temp_dir2, &test_keys, None, None)?;
 
         // Create signed artifact file
         let artifact_path =
@@ -896,7 +1095,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
 
         // Create signers setup with master keys (key 2 is master)
-        create_complete_signers_setup(&temp_dir, &test_keys, Some(vec![2]))?;
+        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]))?;
 
         // Create signed artifact file
         let artifact_path =
@@ -955,7 +1154,7 @@ mod tests {
         let test_keys = TestKeys::new(3);
 
         // Create signers setup with master keys
-        create_complete_signers_setup(&temp_dir4, &test_keys, Some(vec![2]))?;
+        create_complete_signers_setup(&temp_dir4, &test_keys, None, Some(vec![2]))?;
 
         // Create signed artifact file
         let artifact_path =
@@ -1011,7 +1210,7 @@ mod tests {
         // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
         let test_keys = TestKeys::new(3);
         let temp_dir = TempDir::new()?;
-        create_complete_signers_setup(&temp_dir, &test_keys, Some(vec![2]))?;
+        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]))?;
 
         let non_existent_path = temp_dir.path().join("nonexistent.bin");
         let master_pubkey = test_keys.pub_key(2).unwrap();
@@ -1062,7 +1261,7 @@ mod tests {
         let test_keys = TestKeys::new(3);
 
         let temp_dir = TempDir::new()?;
-        create_complete_signers_setup(&temp_dir, &test_keys, Some(vec![2]))?;
+        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]))?;
 
         let dir_path = temp_dir.path().join("subdir");
         fs::create_dir(&dir_path)?;
