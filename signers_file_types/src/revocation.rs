@@ -1,7 +1,8 @@
 use core::fmt;
+use std::{fs, path::Path};
 
 use chrono::{DateTime, Utc};
-use common::AsfaloadHashes;
+use common::{AsfaloadHashes, errors::RevocationError};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use signatures::keys::AsfaloadPublicKeyTrait;
 
@@ -17,6 +18,18 @@ where
     pub initiator: APK,
 }
 
+impl<APK> RevocationFile<APK>
+where
+    APK: AsfaloadPublicKeyTrait,
+{
+    pub fn from_json(json: &str) -> Result<Self, RevocationError> {
+        Ok(serde_json::from_str(json)?)
+    }
+    pub fn from_file<P: AsRef<Path>>(path_in: P) -> Result<Self, RevocationError> {
+        let json = fs::read_to_string(path_in.as_ref())?;
+        Self::from_json(json.as_str())
+    }
+}
 impl<APK> Serialize for RevocationFile<APK>
 where
     APK: AsfaloadPublicKeyTrait,

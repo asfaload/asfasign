@@ -132,6 +132,25 @@ pub fn pending_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Resul
 pub fn local_signers_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     file_path_with_suffix(path_in, SIGNERS_SUFFIX)
 }
+
+pub fn revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    file_path_with_suffix(path_in, REVOCATION_SUFFIX)
+}
+
+pub fn revocation_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    let rev_path = revocation_path_for(path_in)?;
+    file_path_with_suffix(rev_path, SIGNATURES_SUFFIX)
+}
+
+pub fn revocation_signers_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    let rev_path = revocation_path_for(path_in)?;
+    file_path_with_suffix(rev_path, SIGNERS_SUFFIX)
+}
+
+pub fn revoked_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    let rev_path = signatures_path_for(path_in)?;
+    file_path_with_suffix(rev_path, REVOKED_SUFFIX)
+}
 // Get the signatures file path for a file on disk. This chekcs on disk if the file
 // exists.
 pub fn signatures_path_on_disk_for<P: AsRef<Path>>(path_in: P) -> Result<PathBuf, std::io::Error> {
