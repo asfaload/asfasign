@@ -1,3 +1,4 @@
+pub mod revocation;
 use std::collections::HashSet;
 
 use common::errors::keys::KeyError;
