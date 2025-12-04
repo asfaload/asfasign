@@ -1,3 +1,5 @@
+pub mod revocation;
+
 use common::errors::AggregateSignatureError;
 use common::fs::names::{
     create_local_signers_for, find_global_signers_for, local_signers_path_for,

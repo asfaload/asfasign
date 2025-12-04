@@ -7,6 +7,8 @@ pub const PENDING_SUFFIX: &str = "pending";
 
 pub const SIGNATURES_SUFFIX: &str = "signatures.json";
 pub const PENDING_SIGNATURES_SUFFIX: &str = "signatures.json.pending";
+pub const REVOCATION_SUFFIX: &str = "revocation.json";
+pub const REVOKED_SUFFIX: &str = "revoked";
 pub const SIGNERS_SUFFIX: &str = "signers.json";
 pub const SIGNERS_DIR: &str = "asfaload.signers";
 pub const PENDING_SIGNERS_DIR: &str = "asfaload.signers.pending";
