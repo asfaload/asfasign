@@ -7,6 +7,8 @@ pub const PENDING_SUFFIX: &str = "pending";
 
 pub const SIGNATURES_SUFFIX: &str = "signatures.json";
 pub const PENDING_SIGNATURES_SUFFIX: &str = "signatures.json.pending";
+pub const REVOCATION_SUFFIX: &str = "revocation.json";
+pub const REVOKED_SUFFIX: &str = "revoked";
 pub const SIGNERS_SUFFIX: &str = "signers.json";
 pub const SIGNERS_DIR: &str = "asfaload.signers";
 pub const PENDING_SIGNERS_DIR: &str = "asfaload.signers.pending";
@@ -129,6 +131,25 @@ pub fn pending_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Resul
 // procedure for the file at path_in.
 pub fn local_signers_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     file_path_with_suffix(path_in, SIGNERS_SUFFIX)
+}
+
+pub fn revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    file_path_with_suffix(path_in, REVOCATION_SUFFIX)
+}
+
+pub fn revocation_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    let rev_path = revocation_path_for(path_in)?;
+    file_path_with_suffix(rev_path, SIGNATURES_SUFFIX)
+}
+
+pub fn revocation_signers_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    let rev_path = revocation_path_for(path_in)?;
+    file_path_with_suffix(rev_path, SIGNERS_SUFFIX)
+}
+
+pub fn revoked_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    let rev_path = signatures_path_for(path_in)?;
+    file_path_with_suffix(rev_path, REVOKED_SUFFIX)
 }
 // Get the signatures file path for a file on disk. This chekcs on disk if the file
 // exists.

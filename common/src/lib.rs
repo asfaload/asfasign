@@ -1,18 +1,77 @@
 pub mod errors;
 pub mod fs;
 
+use crate::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, find_global_signers_for};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha512, digest::typenum};
+use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::marker::PhantomData;
 use std::path::Path;
+use std::str::FromStr;
 
-use crate::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, find_global_signers_for};
-
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub enum AsfaloadHashes {
     Sha512(sha2::digest::generic_array::GenericArray<u8, typenum::consts::U64>),
 }
+
+impl fmt::Display for AsfaloadHashes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (prefix, bytes) = match self {
+            Self::Sha512(b) => ("sha512", b.as_slice()),
+        };
+        write!(f, "{}:{}", prefix, hex::encode(bytes))
+    }
+}
+
+// Required by #[serde(into = "String")]
+impl From<AsfaloadHashes> for String {
+    fn from(hash: AsfaloadHashes) -> Self {
+        hash.to_string()
+    }
+}
+// --- 2. Deserialization Logic (String -> Enum) ---
+
+// This parses "algo:hex" back into the Enum
+impl FromStr for AsfaloadHashes {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Split into "algo" and "hash"
+        let parts: Vec<&str> = s.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            return Err("Invalid format. Expected 'algo:hex_string'".to_string());
+        }
+
+        let algo = parts[0].to_lowercase();
+        let hex_val = parts[1];
+
+        let bytes = hex::decode(hex_val).map_err(|_| "Invalid hex string".to_string())?;
+
+        match algo.as_str() {
+            "sha512" => {
+                if bytes.len() != 64 {
+                    return Err("SHA512 must be 64 bytes".to_string());
+                }
+                Ok(Self::Sha512(
+                    *sha2::digest::generic_array::GenericArray::from_slice(&bytes),
+                ))
+            }
+            _ => Err(format!("Unsupported hash algorithm: {}", algo)),
+        }
+    }
+}
+
+// Required by #[serde(try_from = "String")]
+impl TryFrom<String> for AsfaloadHashes {
+    type Error = String;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        AsfaloadHashes::from_str(&s)
+    }
+}
+
 pub fn sha512_for_content(content: Vec<u8>) -> Result<AsfaloadHashes, std::io::Error> {
     if content.is_empty() {
         Err(std::io::Error::new(
@@ -381,5 +440,125 @@ mod asfaload_common_tests {
         let nested_index = nested_dir.join(SIGNERS_FILE);
         fs::write(&nested_index, "content").unwrap();
         assert_eq!(determine_file_type(&nested_index), FileType::Signers);
+    }
+
+    // AsfaloadHashes serde
+    use sha2::digest::generic_array::GenericArray;
+    use sha2::digest::typenum::consts::U64;
+
+    // --- Helper Functions to generate dummy hashes ---
+
+    fn mock_sha512(fill: u8) -> AsfaloadHashes {
+        let mut arr = GenericArray::<u8, U64>::default();
+        arr.fill(fill);
+        AsfaloadHashes::Sha512(arr)
+    }
+
+    // --- Serialization Tests (Enum -> JSON String) ---
+
+    #[test]
+    fn test_serialize_sha512_format() {
+        // Create a SHA512 hash filled with 0xAA
+        let hash = mock_sha512(0xAA);
+
+        let json = serde_json::to_string(&hash).expect("Serialization failed");
+
+        // 0xAA in hex is "aa". 64 bytes of 0xAA string length is 128 chars.
+        // Expected format: "sha512:aaaaaaaa..."
+        assert!(json.starts_with("\"sha512:"));
+        assert!(json.contains("aaaa"));
+        assert_eq!(json.len(), 1 + 7 + 128 + 1); // quotes(2) + "sha512:"(7) + hex(128)
+    }
+
+    // --- Deserialization Tests (JSON String -> Enum) ---
+
+    #[test]
+    fn test_deserialize_sha512_valid() {
+        // A valid 64-byte hex string (128 chars) of zeros
+        let input_str = "0".repeat(128);
+        let json = format!("\"sha512:{}\"", input_str);
+
+        let result: AsfaloadHashes = serde_json::from_str(&json).expect("Deserialization failed");
+
+        match result {
+            AsfaloadHashes::Sha512(bytes) => {
+                assert_eq!(bytes[0], 0);
+                assert_eq!(bytes[63], 0);
+            }
+            #[allow(unreachable_patterns)]
+            _ => panic!("Wrong variant parsed!"),
+        }
+    }
+
+    #[test]
+    fn test_round_trip() {
+        // Ensure what goes in comes out exactly the same
+        let original = mock_sha512(0x55);
+
+        let serialized = serde_json::to_string(&original).unwrap();
+        let deserialized: AsfaloadHashes = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(original, deserialized);
+    }
+
+    // --- Error Handling Tests ---
+
+    #[test]
+    fn test_deserialize_invalid_prefix() {
+        // "unknown" is not a supported algorithm
+        let json = "\"unknown:000000\"";
+        let result: Result<AsfaloadHashes, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("Unsupported hash algorithm"));
+    }
+
+    #[test]
+    fn test_deserialize_missing_separator() {
+        // Missing the ':' separator
+        let json = "\"sha512abcdef\"";
+        let result: Result<AsfaloadHashes, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid format"));
+    }
+
+    #[test]
+    fn test_deserialize_bad_length() {
+        // Claims to be sha512, but provides only 4 hex chars (2 bytes)
+        let json = "\"sha512:ffff\"";
+        let result: Result<AsfaloadHashes, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("SHA512 must be 64 bytes"));
+    }
+
+    #[test]
+    fn test_deserialize_invalid_hex() {
+        // Contains 'z', which is not valid hex
+        let json = "\"sha512:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\"";
+        let result: Result<AsfaloadHashes, _> = serde_json::from_str(json);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid hex string")
+        );
+    }
+
+    #[test]
+    fn test_deserialize_case_insensitivity() {
+        // Algorithm prefix should ideally be case-insensitive (our impl converts to lowercase)
+        // Hex content handles mixed case via the `hex` crate automatically.
+        let json = "\"SHA512:6c1ec408e1814783c405a01486c1ee439a5e567ce992b5e8077a41583df26ac9f50aa178d05c6bbdc6ccf40761aa1741d652d48c02b446f06b4aa9f3e73b5b6f\"";
+        let result: AsfaloadHashes =
+            serde_json::from_str(json).expect("Should parse uppercase algo");
+
+        let AsfaloadHashes::Sha512(bytes) = result;
+        assert_eq!(bytes[0], 0x6c);
     }
 }

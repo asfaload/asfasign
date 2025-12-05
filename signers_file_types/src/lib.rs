@@ -1,3 +1,4 @@
+pub mod revocation;
 use std::collections::HashSet;
 
 use common::errors::keys::KeyError;
@@ -37,10 +38,11 @@ pub struct SignersConfig<APK: AsfaloadPublicKeyTrait> {
     pub version: u32,
     pub initial_version: InitialVersion,
     pub artifact_signers: Vec<SignerGroup<APK>>,
-    pub master_keys: Vec<SignerGroup<APK>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     // FIXME: make private, but causes trouble in tests of aggregate signature definitions
     pub admin_keys: Option<Vec<SignerGroup<APK>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub master_keys: Option<Vec<SignerGroup<APK>>>,
 }
 
 impl<APK> SignersConfig<APK>
@@ -51,8 +53,8 @@ where
     pub fn new(
         version: u32,
         artifact_signers: Vec<SignerGroup<APK>>,
-        master_keys: Vec<SignerGroup<APK>>,
         admin_keys: Option<Vec<SignerGroup<APK>>>,
+        master_keys: Option<Vec<SignerGroup<APK>>>,
     ) -> Self {
         Self {
             version,
@@ -87,8 +89,8 @@ where
     pub fn with_keys(
         version: u32,
         (artifact_signers, artifact_threshold): (Vec<APK>, u32),
-        (master_keys, master_threshold): (Vec<APK>, u32),
         admin_keys: Option<(Vec<APK>, u32)>,
+        master_keys: Option<(Vec<APK>, u32)>,
     ) -> Result<Self, SignersConfigError> {
         // Helper function to create a SignerGroup from a vector of public key strings
         // Create the artifact signers group
@@ -98,15 +100,15 @@ where
             vec![Self::create_group(artifact_signers, artifact_threshold)?]
         };
 
-        // Create the master signers group
-        let master_keys = if master_keys.is_empty() {
-            vec![]
-        } else {
-            vec![Self::create_group(master_keys, master_threshold)?]
-        };
-
         // Create the admin signers group
         let admin_keys = match admin_keys {
+            Some((keys, _threshold)) if keys.is_empty() => None,
+            Some((keys, threshold)) => Some(vec![Self::create_group(keys, threshold)?]),
+            None => None,
+        };
+
+        // Create the master signers group
+        let master_keys = match master_keys {
             Some((keys, _threshold)) if keys.is_empty() => None,
             Some((keys, threshold)) => Some(vec![Self::create_group(keys, threshold)?]),
             None => None,
@@ -115,8 +117,8 @@ where
         Ok(Self::new(
             version,
             artifact_signers,
-            master_keys,
             admin_keys,
+            master_keys,
         ))
     }
 
@@ -124,7 +126,7 @@ where
         version: u32,
         artifact_signers_and_threshold: (Vec<APK>, u32),
     ) -> Result<Self, SignersConfigError> {
-        Self::with_keys(version, artifact_signers_and_threshold, (vec![], 0), None)
+        Self::with_keys(version, artifact_signers_and_threshold, None, None)
     }
 
     pub fn admin_keys(&self) -> &Vec<SignerGroup<APK>> {
@@ -133,8 +135,8 @@ where
             _ => &self.artifact_signers,
         }
     }
-    pub fn master_keys(&self) -> &Vec<SignerGroup<APK>> {
-        &self.master_keys
+    pub fn master_keys(&self) -> Option<Vec<SignerGroup<APK>>> {
+        self.master_keys.clone()
     }
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
@@ -143,7 +145,7 @@ where
     pub fn all_signer_keys(&self) -> HashSet<APK> {
         self.admin_keys()
             .iter()
-            .chain(self.master_keys().iter())
+            .chain(self.master_keys().unwrap_or_default().iter())
             .chain(self.artifact_signers.iter())
             .flat_map(|group| {
                 group

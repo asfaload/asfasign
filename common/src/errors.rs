@@ -9,6 +9,16 @@ pub enum SignedFileError {
 }
 
 #[derive(Debug, Error)]
+pub enum RevocationError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("JSON error: {0}")]
+    JsonError(#[from] serde_json::Error),
+    #[error("Signature error: {0}")]
+    Signature(String),
+}
+
+#[derive(Debug, Error)]
 pub enum AggregateSignatureError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),

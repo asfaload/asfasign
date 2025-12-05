@@ -7,9 +7,16 @@ edition = "2024"
 minisign = "0.8.0"
 common = { path = "../common/" }
 signatures = { path = "../signatures/" }
-serde = "1.0.226"
+serde = { version = "1.0.226", features = ["derive"] }
 serde_json = "1.0.145"
 thiserror = "2.0.17"
+chrono = { version = "0.4.42", features = ["serde"] }
+tempfile = "3.23.0"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+sha2 = "0.10.9"
+test_helpers = { path = "../test_helpers/" }
+tempfile = "3.21.0"
