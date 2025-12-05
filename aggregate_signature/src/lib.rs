@@ -215,34 +215,26 @@ pub fn can_revoke<PK: AsfaloadPublicKeyTrait>(
     pubkey: &PK,
     signers_config: &SignersConfig<PK>,
 ) -> bool {
-    if !signers_config.master_keys().is_none_or(|v| v.is_empty()) {
-        return signers_config
-            .master_keys()
-            .unwrap_or_default()
-            .iter()
-            .any(|group| {
-                group
-                    .signers
-                    .iter()
-                    .any(|signer| signer.data.pubkey == *pubkey)
-            });
-    }
-
-    if let Some(admin_keys) = &signers_config.admin_keys {
-        return admin_keys.iter().any(|group| {
+    let is_in_groups = |groups: &[SignerGroup<PK>]| {
+        groups.iter().any(|group| {
             group
                 .signers
                 .iter()
                 .any(|signer| signer.data.pubkey == *pubkey)
-        });
+        })
+    };
+
+    if let Some(master_keys) = signers_config.master_keys() {
+        if !master_keys.is_empty() {
+            return is_in_groups(&master_keys);
+        }
     }
 
-    signers_config.artifact_signers.iter().any(|group| {
-        group
-            .signers
-            .iter()
-            .any(|signer| signer.data.pubkey == *pubkey)
-    })
+    // Using the admin_keys() accessor will implicitly return the
+    // artifact signers if the admin group definition is empty.
+    // It is thus sufficient to check if the key is in the vec of
+    // keys returned by admin_keys()
+    is_in_groups(signers_config.admin_keys())
 }
 
 /// Load signers configuration from a file
@@ -3787,6 +3779,21 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_can_revoke_with_explicit_empty_admin_group() -> Result<()> {
+        let (artifact_keys, admin_keys, master_keys) =
+            signers_keys_for_revocation_tests(true, true, true);
+        // Create a config with empty admin_keys list.
+        // The SignersConfig will be built with None admin_keys.
+        let config_with_all =
+            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), Some((vec![], 1)), None)?;
+
+        assert!(can_revoke(artifact_keys.first().unwrap(), &config_with_all));
+        assert!(!can_revoke(admin_keys.first().unwrap(), &config_with_all));
+        assert!(!can_revoke(master_keys.first().unwrap(), &config_with_all));
+
+        Ok(())
+    }
     #[test]
     fn test_can_revoke_with_no_master_present_in_config() -> Result<()> {
         let (artifact_keys, admin_keys, master_keys) =
