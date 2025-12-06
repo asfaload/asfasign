@@ -36,35 +36,51 @@ use errs::SignersConfigError;
 ))]
 pub struct SignersConfig<APK: AsfaloadPublicKeyTrait> {
     pub version: u32,
-    pub initial_version: InitialVersion,
+    artifact_signers: Vec<SignerGroup<APK>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    admin_keys: Option<Vec<SignerGroup<APK>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    master_keys: Option<Vec<SignerGroup<APK>>>,
+}
+
+// Introduced to make fields of SignersConfig private while:
+// - limiting changes: no need to edit field names, etc in code where
+//   a SignersConfig was constructed
+// - keeping the code clear: I first started to require the use of
+//   SignersConfig::new with arguments (version, artifact, admin,master),
+//   but in the end it was not very readable code because the function arguments don't make it
+//   clear which argument is which SignersGroup.
+// In the end, rewriting new to take this struct as argument seemed the best solution.
+// Apart from requiing the use of accessor to private fields, this does not change much at this time
+// but it enables us to add a validation step when building a SignersConfig.
+#[derive(Clone)]
+pub struct SignersConfigProposal<APK: AsfaloadPublicKeyTrait> {
+    pub version: u32,
     pub artifact_signers: Vec<SignerGroup<APK>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    // FIXME: make private, but causes trouble in tests of aggregate signature definitions
     pub admin_keys: Option<Vec<SignerGroup<APK>>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub master_keys: Option<Vec<SignerGroup<APK>>>,
 }
 
+impl<APK> SignersConfigProposal<APK>
+where
+    APK: AsfaloadPublicKeyTrait,
+{
+    // Implemented so we can call do SignersConfigProposal{...}.build()
+    // without having to assign the proposal.
+    pub fn build(&self) -> SignersConfig<APK> {
+        SignersConfig::new(self.clone())
+    }
+}
 impl<APK> SignersConfig<APK>
 where
     APK: AsfaloadPublicKeyTrait,
 {
-    // Create a new SignersConfig with the SignerGroup parameters
-    pub fn new(
-        version: u32,
-        artifact_signers: Vec<SignerGroup<APK>>,
-        admin_keys: Option<Vec<SignerGroup<APK>>>,
-        master_keys: Option<Vec<SignerGroup<APK>>>,
-    ) -> Self {
+    pub fn new(p: SignersConfigProposal<APK>) -> Self {
         Self {
-            version,
-            initial_version: InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
-            artifact_signers,
-            master_keys,
-            admin_keys,
+            version: p.version,
+            artifact_signers: p.artifact_signers,
+            master_keys: p.master_keys,
+            admin_keys: p.admin_keys,
         }
     }
 
@@ -83,6 +99,15 @@ where
             .map(Signer::from_key)
             .collect::<Result<Vec<Signer<APK>>, KeyError>>()?;
         Ok(SignerGroup { signers, threshold })
+    }
+
+    pub fn as_proposal(&self) -> SignersConfigProposal<APK> {
+        SignersConfigProposal {
+            version: self.version,
+            artifact_signers: self.artifact_signers.clone(),
+            master_keys: self.master_keys.clone(),
+            admin_keys: self.admin_keys.clone(),
+        }
     }
 
     // Create a SignersConfig with the given public keys as strings and threshold for different groups
@@ -114,12 +139,12 @@ where
             None => None,
         };
 
-        Ok(Self::new(
+        Ok(Self::new(SignersConfigProposal {
             version,
             artifact_signers,
             admin_keys,
             master_keys,
-        ))
+        }))
     }
 
     pub fn with_artifact_signers_only(
@@ -129,6 +154,9 @@ where
         Self::with_keys(version, artifact_signers_and_threshold, None, None)
     }
 
+    pub fn artifact_signers(&self) -> Vec<SignerGroup<APK>> {
+        self.artifact_signers.clone()
+    }
     pub fn admin_keys(&self) -> &Vec<SignerGroup<APK>> {
         match &self.admin_keys {
             Some(v) if !v.is_empty() => v,

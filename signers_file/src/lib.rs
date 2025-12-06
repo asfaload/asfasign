@@ -542,15 +542,14 @@ mod tests {
         let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(json_str).expect("Failed to parse JSON");
         assert_eq!(config.version, 1);
+        assert_eq!(config.artifact_signers().len(), 1);
+        assert_eq!(config.artifact_signers()[0].threshold, 2);
         assert_eq!(
-            config.initial_version.permalink,
-            "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json"
+            config.artifact_signers()[0].signers[0].kind,
+            SignerKind::Key
         );
-        assert_eq!(config.artifact_signers.len(), 1);
-        assert_eq!(config.artifact_signers[0].threshold, 2);
-        assert_eq!(config.artifact_signers[0].signers[0].kind, SignerKind::Key);
         assert_eq!(
-            config.artifact_signers[0].signers[0].data.format,
+            config.artifact_signers()[0].signers[0].data.format,
             KeyFormat::Minisign
         );
         assert_eq!(config.master_keys().unwrap_or_default().len(), 1);
@@ -559,7 +558,6 @@ mod tests {
             config.master_keys().unwrap_or_default()[0].signers[0].kind,
             SignerKind::Key
         );
-        assert!(config.admin_keys.is_some());
         let admin_keys = config.admin_keys();
         assert_eq!(admin_keys[0].threshold, 3);
         assert_eq!(admin_keys[0].signers[0].kind, SignerKind::Key);
@@ -597,18 +595,17 @@ mod tests {
         let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(json_str).expect("Failed to parse JSON");
         assert_eq!(config.version, 1);
+        assert_eq!(config.artifact_signers().len(), 1);
+        assert_eq!(config.artifact_signers()[0].threshold, 3);
         assert_eq!(
-            config.initial_version.permalink,
-            "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json"
+            config.artifact_signers()[0].signers[0].kind,
+            SignerKind::Key
         );
-        assert_eq!(config.artifact_signers.len(), 1);
-        assert_eq!(config.artifact_signers[0].threshold, 3);
-        assert_eq!(config.artifact_signers[0].signers[0].kind, SignerKind::Key);
         assert_eq!(
-            config.artifact_signers[0].signers[0].data.format,
+            config.artifact_signers()[0].signers[0].data.format,
             KeyFormat::Minisign
         );
-        assert_eq!(config.admin_keys(), &config.artifact_signers);
+        assert_eq!(config.admin_keys(), &config.artifact_signers());
 
         let json_str_with_invalid_b64_keys = r#"
     {
@@ -810,7 +807,7 @@ mod tests {
         assert!(result.is_ok());
         let config = result.unwrap();
         // Check admin_keys holds an one element array
-        assert_eq!(config.admin_keys(), &config.artifact_signers);
+        assert_eq!(config.admin_keys(), &config.artifact_signers());
 
         let json_str_with_zero_threshold = r#"
     {
@@ -1564,11 +1561,12 @@ mod tests {
         assert_eq!(history.entries.len(), 1);
 
         // Verify the old configuration is in the history
-        let old_config_in_history = &history.entries[0].signers_file;
-        assert_eq!(
-            old_config_in_history.initial_version.permalink,
-            "https://old.example.com"
-        );
+        // FIXME: restore test when we add a timestamp in the SignersConfig
+        // let old_config_ip_history = &history.entries[0].signers_file;
+        //assert_eq!(
+        //    old_config_in_history.timestamp,
+        //    expected_timestamp
+        //);
 
         // Verify the new configuration is active
         let new_active_content = fs::read_to_string(active_dir.join(SIGNERS_FILE))?;
@@ -2285,13 +2283,9 @@ mod tests {
 
         assert_eq!(entry.obsoleted_at, timestamp);
         assert_eq!(entry.signers_file.version, 1);
-        assert_eq!(
-            entry.signers_file.initial_version.permalink,
-            "https://example.com"
-        );
-        assert_eq!(entry.signers_file.artifact_signers.len(), 1);
-        assert_eq!(entry.signers_file.artifact_signers[0].threshold, 2);
-        assert_eq!(entry.signers_file.artifact_signers[0].signers.len(), 2);
+        assert_eq!(entry.signers_file.artifact_signers().len(), 1);
+        assert_eq!(entry.signers_file.artifact_signers()[0].threshold, 2);
+        assert_eq!(entry.signers_file.artifact_signers()[0].signers.len(), 2);
         assert_eq!(entry.signatures.len(), 2);
     }
 
@@ -2476,23 +2470,16 @@ mod tests {
         assert_eq!(
             history_file.entries()[0]
                 .signers_file
-                .initial_version
-                .permalink,
-            "https://example.com"
-        );
-        assert_eq!(
-            history_file.entries()[0]
-                .signers_file
-                .artifact_signers
+                .artifact_signers()
                 .len(),
             1
         );
         assert_eq!(
-            history_file.entries()[0].signers_file.artifact_signers[0].threshold,
+            history_file.entries()[0].signers_file.artifact_signers()[0].threshold,
             2
         );
         assert_eq!(
-            history_file.entries()[0].signers_file.artifact_signers[0]
+            history_file.entries()[0].signers_file.artifact_signers()[0]
                 .signers
                 .len(),
             2
@@ -2500,14 +2487,14 @@ mod tests {
 
         // Verify the public keys in the signers file
         assert_eq!(
-            history_file.entries()[0].signers_file.artifact_signers[0].signers[0]
+            history_file.entries()[0].signers_file.artifact_signers()[0].signers[0]
                 .data
                 .pubkey
                 .to_base64(),
             pubkey0
         );
         assert_eq!(
-            history_file.entries()[0].signers_file.artifact_signers[0].signers[1]
+            history_file.entries()[0].signers_file.artifact_signers()[0].signers[1]
                 .data
                 .pubkey
                 .to_base64(),
@@ -4462,8 +4449,9 @@ mod tests {
         let test_keys = TestKeys::new(2);
 
         // Create a test signers file with threshold 1
-        let mut signers_config = create_test_signers_config(&test_keys);
-        signers_config.artifact_signers[0].threshold = 1;
+        let mut signers_config_proposal = create_test_signers_config(&test_keys).as_proposal();
+        signers_config_proposal.artifact_signers[0].threshold = 1;
+        let signers_config = signers_config_proposal.build();
         let signers_content = signers_config.to_json()?;
         let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
 
