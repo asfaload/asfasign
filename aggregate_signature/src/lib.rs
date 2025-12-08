@@ -620,11 +620,8 @@ mod tests {
         // Create signers config JSON string
         let json_config_template = r#"
     {
+      "timestamp": "TIMESTAMP",
       "version": 1,
-      "initial_version": {
-        "permalink": "https://example.com",
-        "mirrors": []
-      },
       "artifact_signers": [
         {
           "signers": [
@@ -639,10 +636,12 @@ mod tests {
     }
     "#;
 
-        // Replace placeholders with actual public keys
-        let json_config = json_config_template.replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64());
-        let json_config = json_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
-        let json_config = json_config.replace("THRESHOLD_PLACEHOLDER", "1");
+        // Replace placeholders with actual timestamp and public keys
+        let json_config = json_config_template
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64())
+            .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64())
+            .replace("THRESHOLD_PLACEHOLDER", "1");
 
         // Parse signers config from JSON
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
@@ -652,11 +651,11 @@ mod tests {
         assert!(agg_sig.is_artifact_complete(&signers_config, &data));
 
         // Should be incomplete with threshold 2
-        let high_threshold_config =
-            json_config_template.replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64());
-        let high_threshold_config =
-            high_threshold_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
-        let high_threshold_config = high_threshold_config.replace("THRESHOLD_PLACEHOLDER", "2");
+        let high_threshold_config = json_config_template
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64())
+            .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64())
+            .replace("THRESHOLD_PLACEHOLDER", "2");
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             signers_file_types::parse_signers_config(&high_threshold_config).unwrap();
         assert!(!agg_sig.is_artifact_complete(&signers_config, &data));
@@ -706,6 +705,7 @@ mod tests {
             threshold: 1,
         };
         let signers_config_proposal = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![group.clone()],
             master_keys: None,
@@ -807,11 +807,8 @@ mod tests {
         // Create signers config JSON string with two groups
         let json_config = r#"
     {
+      "timestamp": "TIMESTAMP",
       "version": 1,
-      "initial_version": {
-        "permalink": "https://example.com",
-        "mirrors": []
-      },
       "artifact_signers": [
         {
           "signers": [
@@ -832,8 +829,10 @@ mod tests {
     "#;
 
         // Replace placeholders with actual public keys
-        let json_config = json_config.replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64());
-        let json_config = json_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
+        let json_config = json_config
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64())
+            .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
 
         // Parse signers config from JSON
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
@@ -845,11 +844,8 @@ mod tests {
         // Test mixed configuration (one group in artifact_signers, one in master_keys)
         let json_config_mixed = r#"
     {
+      "timestamp": "TIMESTAMP",
       "version": 1,
-      "initial_version": {
-        "permalink": "https://example.com",
-        "mirrors": []
-      },
       "artifact_signers": [
         {
           "signers": [
@@ -870,11 +866,11 @@ mod tests {
     }
     "#;
 
-        // Replace placeholders with actual public keys
-        let json_config_mixed =
-            json_config_mixed.replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64());
-        let json_config_mixed =
-            json_config_mixed.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
+        // Replace placeholders with actual timestamp and public keys
+        let json_config_mixed = json_config_mixed
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64())
+            .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
 
         // Parse mixed signers config from JSON
         let signers_config_mixed: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
@@ -1379,6 +1375,7 @@ mod tests {
 
         // Create signers configuration with threshold 2
         let signers_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![SignerGroup {
                 signers: vec![
@@ -1501,10 +1498,6 @@ mod tests {
         let global_signers_file = signers_dir.join(SIGNERS_FILE);
         let global_content = r#"{
             "version": 1,
-            "initial_version": {
-                "permalink": "https://example.com",
-                "mirrors": []
-            },
             "artifact_signers": [],
             "master_keys": [],
             "admin_keys": null
@@ -1573,10 +1566,6 @@ mod tests {
         let global_signers_file = signers_dir.join(SIGNERS_FILE);
         let global_content = r#"{
             "version": 1,
-            "initial_version": {
-                "permalink": "https://example.com",
-                "mirrors": []
-            },
             "artifact_signers": [],
             "master_keys": [],
             "admin_keys": null
@@ -1667,7 +1656,7 @@ mod tests {
         let signers_dir = root.join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir).unwrap();
         let global_signers_file = signers_dir.join(SIGNERS_FILE);
-        let global_content = r#"{"version": 1, "initial_version": {"permalink": "https://example.com", "mirrors": []}}"#;
+        let global_content = r#"{"version": 1}"#;
         fs::write(&global_signers_file, global_content).unwrap();
 
         // Create a test file in the nested project
@@ -1711,6 +1700,7 @@ mod tests {
 
         // Create a signers configuration with threshold 1
         let signers_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![SignerGroup {
                 signers: vec![Signer {
@@ -1898,6 +1888,7 @@ mod tests {
 
         // Create signers configuration with threshold 2
         let signers_config_proposal = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![SignerGroup {
                 signers: vec![
@@ -2040,6 +2031,7 @@ mod tests {
 
         // Create current (global) signers configuration with specific admin and master keys
         let current_signers_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![],
             master_keys: Some(vec![SignerGroup {
@@ -2072,6 +2064,7 @@ mod tests {
 
         // Create new signers configuration with different admin and master keys
         let new_signers_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![SignerGroup {
                 signers: vec![Signer {
@@ -2232,6 +2225,7 @@ mod tests {
 
         // Create current (global) signers configuration with specific admin and master keys
         let current_signers_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             master_keys: None,
             artifact_signers: vec![SignerGroup {
@@ -2264,6 +2258,7 @@ mod tests {
 
         // Create new signers configuration with different admin and master keys
         let new_signers_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             master_keys: None,
             artifact_signers: vec![SignerGroup {
@@ -2363,6 +2358,7 @@ mod tests {
         // Scenario 1: Only artifact_signers group
         {
             let config = SignersConfigProposal {
+                timestamp: chrono::Utc::now(),
                 version: 1,
                 artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
                 master_keys: None,
@@ -2388,6 +2384,7 @@ mod tests {
         // Scenario 2: Artifact_signers with 2 subgroups
         {
             let config = SignersConfigProposal {
+                timestamp: chrono::Utc::now(),
                 version: 1,
                 artifact_signers: vec![
                     create_group(vec![create_signer(pubkey0.clone())], 1),
@@ -2413,6 +2410,7 @@ mod tests {
         // Scenario 3: Admin_keys present
         {
             let config = SignersConfigProposal {
+                timestamp: chrono::Utc::now(),
                 version: 1,
                 artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
                 master_keys: None,
@@ -2435,6 +2433,7 @@ mod tests {
         // Scenario 4: Master_keys present
         {
             let config = SignersConfigProposal {
+                timestamp: chrono::Utc::now(),
                 version: 1,
                 artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
                 master_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
@@ -2457,6 +2456,7 @@ mod tests {
         // Scenario 5: Key in both artifact_signers and admin_keys
         {
             let config = SignersConfigProposal {
+                timestamp: chrono::Utc::now(),
                 version: 1,
                 artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
                 master_keys: None,
@@ -2477,6 +2477,7 @@ mod tests {
         // Scenario 6: Complex scenario with all key types and overlapping keys
         {
             let config = SignersConfigProposal {
+                timestamp: chrono::Utc::now(),
                 version: 1,
                 artifact_signers: vec![
                     create_group(vec![create_signer(pubkey0.clone())], 1),
@@ -2510,6 +2511,7 @@ mod tests {
         // Scenario 7: Test with threshold > 1
         {
             let config = SignersConfigProposal {
+                timestamp: chrono::Utc::now(),
                 version: 1,
                 artifact_signers: vec![create_group(
                     vec![
@@ -2538,6 +2540,7 @@ mod tests {
         // Scenario 8: Test with empty configuration
         {
             let config = SignersConfigProposal {
+                timestamp: chrono::Utc::now(),
                 version: 1,
                 artifact_signers: vec![],
                 master_keys: None,
@@ -2554,6 +2557,7 @@ mod tests {
         // Scenario 9: Test with invalid signature
         {
             let config = SignersConfigProposal {
+                timestamp: chrono::Utc::now(),
                 version: 1,
                 artifact_signers: vec![create_group(
                     vec![
@@ -2862,6 +2866,7 @@ mod tests {
             .collect();
 
         SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![SignerGroup { signers, threshold }],
             master_keys: None,
@@ -3349,6 +3354,7 @@ mod tests {
     fn test_no_new_signers_identical_configs() {
         let test_keys = TestKeys::new(3);
         let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
@@ -3366,6 +3372,7 @@ mod tests {
     fn test_no_new_signers_reordered_groups() {
         let test_keys = TestKeys::new(3);
         let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
@@ -3374,6 +3381,7 @@ mod tests {
         .build();
 
         let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
@@ -3389,6 +3397,7 @@ mod tests {
     fn test_new_signer_in_artifact_signers() {
         let test_keys = TestKeys::new(3);
         let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
@@ -3397,6 +3406,7 @@ mod tests {
         .build();
 
         let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)], // Added key 1
             master_keys: None,
@@ -3413,6 +3423,7 @@ mod tests {
     fn test_new_signer_in_master_keys() {
         let test_keys = TestKeys::new(3);
         let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
@@ -3421,6 +3432,7 @@ mod tests {
         .build();
 
         let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
@@ -3437,6 +3449,7 @@ mod tests {
     fn test_new_signer_in_admin_keys() {
         let test_keys = TestKeys::new(3);
         let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
@@ -3445,6 +3458,7 @@ mod tests {
         .build();
 
         let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
@@ -3461,6 +3475,7 @@ mod tests {
     fn test_new_signers_and_removed_signers() {
         let test_keys = TestKeys::new(10);
         let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
@@ -3469,6 +3484,7 @@ mod tests {
         .build();
 
         let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0, 5, 8], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![2, 6, 9], 2)]),
@@ -3494,6 +3510,7 @@ mod tests {
     fn test_all_signers_are_new() {
         let test_keys = TestKeys::new(3);
         let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![],
             master_keys: None,
@@ -3502,6 +3519,7 @@ mod tests {
         .build();
 
         let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
@@ -3521,6 +3539,7 @@ mod tests {
     fn test_all_signers_are_removed() {
         let test_keys = TestKeys::new(3);
         let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
@@ -3529,6 +3548,7 @@ mod tests {
         .build();
 
         let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![],
             master_keys: None,

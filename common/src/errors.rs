@@ -53,6 +53,8 @@ pub enum SignersFileError {
     JsonError(#[from] serde_json::Error),
     #[error("Invalid signer: {0}")]
     InvalidSigner(String),
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
     #[error("Signature verification failed: {0}")]
     SignatureVerificationFailed(String),
     #[error("Signature operation failed: {0}")]

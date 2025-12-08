@@ -1,6 +1,7 @@
 pub mod revocation;
 use std::collections::HashSet;
 
+use chrono::{DateTime, Utc};
 use common::errors::keys::KeyError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use signatures::keys::AsfaloadPublicKeyTrait;
@@ -35,7 +36,8 @@ use errs::SignersConfigError;
     deserialize = "APK: AsfaloadPublicKeyTrait"
 ))]
 pub struct SignersConfig<APK: AsfaloadPublicKeyTrait> {
-    pub version: u32,
+    version: u32,
+    timestamp: DateTime<Utc>,
     artifact_signers: Vec<SignerGroup<APK>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     admin_keys: Option<Vec<SignerGroup<APK>>>,
@@ -53,9 +55,14 @@ pub struct SignersConfig<APK: AsfaloadPublicKeyTrait> {
 // In the end, rewriting new to take this struct as argument seemed the best solution.
 // Apart from requiing the use of accessor to private fields, this does not change much at this time
 // but it enables us to add a validation step when building a SignersConfig.
-#[derive(Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(bound(
+    serialize = "APK: AsfaloadPublicKeyTrait",
+    deserialize = "APK: AsfaloadPublicKeyTrait"
+))]
 pub struct SignersConfigProposal<APK: AsfaloadPublicKeyTrait> {
     pub version: u32,
+    pub timestamp: DateTime<Utc>,
     pub artifact_signers: Vec<SignerGroup<APK>>,
     pub admin_keys: Option<Vec<SignerGroup<APK>>>,
     pub master_keys: Option<Vec<SignerGroup<APK>>>,
@@ -77,6 +84,7 @@ where
 {
     pub fn new(p: SignersConfigProposal<APK>) -> Self {
         Self {
+            timestamp: p.timestamp,
             version: p.version,
             artifact_signers: p.artifact_signers,
             master_keys: p.master_keys,
@@ -103,6 +111,7 @@ where
 
     pub fn as_proposal(&self) -> SignersConfigProposal<APK> {
         SignersConfigProposal {
+            timestamp: self.timestamp,
             version: self.version,
             artifact_signers: self.artifact_signers.clone(),
             master_keys: self.master_keys.clone(),
@@ -140,6 +149,7 @@ where
         };
 
         Ok(Self::new(SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version,
             artifact_signers,
             admin_keys,
@@ -165,6 +175,14 @@ where
     }
     pub fn master_keys(&self) -> Option<Vec<SignerGroup<APK>>> {
         self.master_keys.clone()
+    }
+
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        self.timestamp
     }
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
@@ -340,5 +358,11 @@ where
 pub fn parse_signers_config<APK: AsfaloadPublicKeyTrait>(
     json_str: &str,
 ) -> Result<SignersConfig<APK>, serde_json::Error> {
+    serde_json::from_str(json_str)
+}
+
+pub fn parse_signers_config_proposal<APK: AsfaloadPublicKeyTrait>(
+    json_str: &str,
+) -> Result<SignersConfigProposal<APK>, serde_json::Error> {
     serde_json::from_str(json_str)
 }

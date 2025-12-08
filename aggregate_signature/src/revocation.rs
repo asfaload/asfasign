@@ -642,6 +642,7 @@ mod tests {
             }]
         });
         let signers_config_proposal = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![SignerGroup {
                 signers: artifact_signers,

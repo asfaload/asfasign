@@ -9,7 +9,9 @@ use common::{
     },
 };
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
-use signers_file_types::{SignersConfig, parse_signers_config};
+use signers_file_types::{
+    SignersConfig, SignersConfigProposal, parse_signers_config, parse_signers_config_proposal,
+};
 use std::{borrow::Borrow, collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
 //
 
@@ -286,6 +288,14 @@ where
     let active_content = fs::read_to_string(&active_signers_file)?;
     let active_config: SignersConfig<K> = parse_signers_config(&active_content)?;
 
+    let proposed_update: SignersConfigProposal<K> = parse_signers_config_proposal(json_content)?;
+    if proposed_update.timestamp <= active_config.timestamp() {
+        return Err(SignersFileError::InvalidData(format!(
+            "Timestamp of update is smaller than active signers file's: update:{} <= active:{}",
+            proposed_update.timestamp,
+            active_config.timestamp()
+        )));
+    }
     // Check if the provided pubkey is in the admin_keys or master_keys groups
     let validator = || is_valid_signer_for_update_of(pubkey, &active_config);
 
@@ -503,10 +513,7 @@ mod tests {
         let json_str = r#"
     {
       "version": 1,
-      "initial_version": {
-        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
-        "mirrors": []
-      },
+      "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
@@ -538,10 +545,10 @@ mod tests {
         }
       ]
     }
-    "#;
+    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
         let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(json_str).expect("Failed to parse JSON");
-        assert_eq!(config.version, 1);
+            parse_signers_config(json_str.as_str()).expect("Failed to parse JSON");
+        assert_eq!(config.version(), 1);
         assert_eq!(config.artifact_signers().len(), 1);
         assert_eq!(config.artifact_signers()[0].threshold, 2);
         assert_eq!(
@@ -566,10 +573,7 @@ mod tests {
         let json_str = r#"
     {
       "version": 1,
-      "initial_version": {
-        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
-        "mirrors": []
-      },
+          "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
@@ -591,10 +595,10 @@ mod tests {
         }
       ]
     }
-    "#;
+    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
         let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(json_str).expect("Failed to parse JSON");
-        assert_eq!(config.version, 1);
+            parse_signers_config(json_str.as_str()).expect("Failed to parse JSON");
+        assert_eq!(config.version(), 1);
         assert_eq!(config.artifact_signers().len(), 1);
         assert_eq!(config.artifact_signers()[0].threshold, 3);
         assert_eq!(
@@ -610,10 +614,7 @@ mod tests {
         let json_str_with_invalid_b64_keys = r#"
     {
       "version": 1,
-      "initial_version": {
-        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
-        "mirrors": []
-      },
+      "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
@@ -635,26 +636,23 @@ mod tests {
         }
       ]
     }
-    "#;
+    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
         let config: Result<
             SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
             serde_json::Error,
-        > = parse_signers_config(json_str_with_invalid_b64_keys);
+        > = parse_signers_config(json_str_with_invalid_b64_keys.as_str());
         assert!(config.is_err());
         let error = config.err().unwrap();
-        assert_eq!(
-            error.to_string(),
-            "Problem parsing pubkey base64: RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyvinvalid at line 12 column 139"
+        assert!(
+            error.to_string().starts_with(
+            "Problem parsing pubkey base64: RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyvinvalid at line ")
         );
 
         // Test the threshold validation
         let json_str_with_invalid_threshold = r#"
     {
       "version": 1,
-      "initial_version": {
-        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
-        "mirrors": []
-      },
+          "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
@@ -676,11 +674,11 @@ mod tests {
         }
       ]
     }
-    "#;
+    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
         let config: Result<
             SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
             serde_json::Error,
-        > = parse_signers_config(json_str_with_invalid_threshold);
+        > = parse_signers_config(&json_str_with_invalid_threshold);
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert!(
@@ -692,10 +690,7 @@ mod tests {
         let json_str_with_empty_master_signers_group = r#"
     {
       "version": 1,
-      "initial_version": {
-        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
-        "mirrors": []
-      },
+          "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
@@ -718,11 +713,11 @@ mod tests {
       ],
       "master_keys" : [ { "signers" : [] , "threshold" : 0}]
     }
-    "#;
+    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
         let config: Result<
             SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
             serde_json::Error,
-        > = parse_signers_config(json_str_with_empty_master_signers_group);
+        > = parse_signers_config(&json_str_with_empty_master_signers_group);
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert!(
@@ -736,10 +731,7 @@ mod tests {
         let json_str_with_empty_master_array = r#"
     {
       "version": 1,
-      "initial_version": {
-        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
-        "mirrors": []
-      },
+          "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
@@ -761,11 +753,11 @@ mod tests {
         }
       ],
       "master_keys" : []}
-    "#;
+    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
         let config: Result<
             SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
             serde_json::Error,
-        > = parse_signers_config(json_str_with_empty_master_array);
+        > = parse_signers_config(&json_str_with_empty_master_array);
         assert!(config.is_ok());
 
         // Test empty admin array
@@ -774,10 +766,7 @@ mod tests {
         let json_str_with_empty_admin_array = r#"
     {
       "version": 1,
-      "initial_version": {
-        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
-        "mirrors": []
-      },
+          "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
@@ -799,11 +788,11 @@ mod tests {
         }
       ],
       "admin_keys" : []}
-    "#;
+    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
         let result: Result<
             SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
             serde_json::Error,
-        > = parse_signers_config(json_str_with_empty_admin_array);
+        > = parse_signers_config(&json_str_with_empty_admin_array);
         assert!(result.is_ok());
         let config = result.unwrap();
         // Check admin_keys holds an one element array
@@ -812,10 +801,7 @@ mod tests {
         let json_str_with_zero_threshold = r#"
     {
       "version": 1,
-      "initial_version": {
-        "permalink": "https://raw.githubusercontent.com/asfaload/asfald/13e1a1cae656e8d4d04ec55fa33e802f560b6b5d/asfaload.initial_signers.json",
-        "mirrors": []
-      },
+          "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
@@ -834,11 +820,11 @@ mod tests {
         }
       ]
     }
-    "#;
+    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
         let config: Result<
             SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
             serde_json::Error,
-        > = parse_signers_config(json_str_with_zero_threshold);
+        > = parse_signers_config(&json_str_with_zero_threshold);
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert!(
@@ -858,10 +844,7 @@ mod tests {
         let json_content_template = r#"
 {
   "version": 1,
-  "initial_version": {
-    "permalink": "https://example.com",
-    "mirrors": []
-  },
+  "timestamp": "TIMESTAMP",
   "artifact_signers": [
     {
       "signers": [
@@ -876,7 +859,9 @@ mod tests {
 }
 "#;
 
-        let json_content = &test_keys.substitute_keys(json_content_template.to_string());
+        let json_content = &test_keys
+            .substitute_keys(json_content_template.to_string())
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
         let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         // Get keys we work with here
@@ -1071,10 +1056,7 @@ mod tests {
         let json_content = r#"
     {
       "version": 1,
-      "initial_version": {
-        "permalink": "https://example.com",
-        "mirrors": []
-      },
+      "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
@@ -1086,7 +1068,7 @@ mod tests {
       "master_keys": [],
       "admin_keys": null
     }
-    "#;
+    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         // Generate a different keypair (not in the config)
         // Get keys we work with here
@@ -1100,7 +1082,11 @@ mod tests {
         // Call the function - should fail due to invalid signer
         let result = initialize_signers_file(dir_path, json_content, &signature, pubkey);
         assert!(result.is_err());
-        assert!(matches!(result, Err(SignersFileError::InvalidSigner(_))));
+        match result {
+            Err(SignersFileError::InvalidSigner(_)) => (), //expected
+            Err(e) => panic!("Expected SignersFileError::InvalidSigner(_) but got {}", e),
+            Ok(_) => panic!("Expected SignersFileError::InvalidSigner(_) but got a success value!"),
+        }
 
         // Ensure the pending file was not created
         let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -1457,8 +1443,7 @@ mod tests {
 
         // Verify the content is preserved
         let active_content = fs::read_to_string(&active_signers_file)?;
-        let expected_content = create_test_signers_config(&test_keys);
-        assert_eq!(active_content, expected_content.to_json()?);
+        assert_eq!(active_content, signers_content.to_json()?);
 
         Ok(())
     }
@@ -1482,10 +1467,7 @@ mod tests {
         let existing_content_template = r#"
 {
   "version": 1,
-  "initial_version": {
-    "permalink": "https://old.example.com",
-    "mirrors": []
-  },
+  "timestamp": "TIMESTAMP",
   "artifact_signers": [
     {
       "signers": [
@@ -1500,7 +1482,10 @@ mod tests {
 "#;
 
         // Substitute the placeholder with an actual public key from existing_keys
-        let existing_content = existing_keys.substitute_keys(existing_content_template.to_string());
+        let config_timestamp = chrono::Utc::now();
+        let existing_content = existing_keys
+            .substitute_keys(existing_content_template.to_string())
+            .replace("TIMESTAMP", config_timestamp.to_string().as_str());
         fs::write(&existing_signers_file, existing_content)?;
 
         // Create the signatures file for the existing signers file
@@ -1561,12 +1546,8 @@ mod tests {
         assert_eq!(history.entries.len(), 1);
 
         // Verify the old configuration is in the history
-        // FIXME: restore test when we add a timestamp in the SignersConfig
-        // let old_config_ip_history = &history.entries[0].signers_file;
-        //assert_eq!(
-        //    old_config_in_history.timestamp,
-        //    expected_timestamp
-        //);
+        let old_config_in_history = &history.entries[0].signers_file;
+        assert_eq!(old_config_in_history.timestamp(), config_timestamp);
 
         // Verify the new configuration is active
         let new_active_content = fs::read_to_string(active_dir.join(SIGNERS_FILE))?;
@@ -1727,9 +1708,7 @@ mod tests {
 
         // Verify the content is preserved
         let active_content = fs::read_to_string(&active_signers_file)?;
-        let expected_config = create_test_signers_config(&test_keys);
-        let expected_content = expected_config.to_json()?;
-        assert_eq!(active_content, expected_content);
+        assert_eq!(active_content, signers_config.to_json()?);
 
         Ok(())
     }
@@ -1833,15 +1812,14 @@ mod tests {
         let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
 
         // Create existing history file
+        // Note the timestamp of the history entry is earlier than its obsoleted_at field,
+        // which makes it a consistent entry
         let existing_entry: HistoryEntry<_> = serde_json::from_str(
             r#"{
             "obsoleted_at": "2023-01-01T00:00:00Z",
             "signers_file": {
                 "version": 1,
-                "initial_version": {
-                    "permalink": "https://old.example.com",
-                    "mirrors": []
-                },
+                "timestamp": "2022-12-19T16:39:57Z",
                 "artifact_signers": [
                     {
                     "signers": [
@@ -1929,15 +1907,14 @@ mod tests {
             "obsoleted_at": "2023-01-01T00:00:00Z",
             "signers_file": {
                 "version": 1,
-                "initial_version": {
-                    "permalink": "https://old1.example.com",
-                    "mirrors": []
-                },
+                "timestamp": "TIMESTAMP",
                 "artifact_signers": [],
                 "master_keys": []
             },
             "signatures": {"key1": "sig1"}
-        }"#,
+        }"#
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .as_str(),
         )?;
 
         let entry2 = serde_json::from_str(
@@ -1945,15 +1922,14 @@ mod tests {
             "obsoleted_at": "2023-02-01T00:00:00Z",
             "signers_file": {
                 "version": 2,
-                "initial_version": {
-                    "permalink": "https://old2.example.com",
-                    "mirrors": []
-                },
+                "timestamp": "TIMESTAMP",
                 "artifact_signers": [],
                 "master_keys": []
             },
             "signatures": {"key2": "sig2"}
-        }"#,
+        }"#
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .as_str(),
         )?;
 
         let mut existing_history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
@@ -2282,7 +2258,7 @@ mod tests {
         let entry = create_test_history_entry(&test_keys, timestamp);
 
         assert_eq!(entry.obsoleted_at, timestamp);
-        assert_eq!(entry.signers_file.version, 1);
+        assert_eq!(entry.signers_file.version(), 1);
         assert_eq!(entry.signers_file.artifact_signers().len(), 1);
         assert_eq!(entry.signers_file.artifact_signers()[0].threshold, 2);
         assert_eq!(entry.signers_file.artifact_signers()[0].signers.len(), 2);
@@ -2398,10 +2374,7 @@ mod tests {
       "obsoleted_at": "2023-01-01T00:00:00Z",
       "signers_file": {
         "version": 1,
-        "initial_version": {
-          "permalink": "https://example.com",
-          "mirrors": []
-        },
+        "timestamp": "TIMESTAMP",
         "artifact_signers": [
           {
             "signers": [
@@ -2451,6 +2424,7 @@ mod tests {
 
         // Replace placeholders in the template
         let json_content = json_template
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
             .replace("PUBKEY0_PLACEHOLDER", &pubkey0)
             .replace("PUBKEY1_PLACEHOLDER", &pubkey1)
             .replace("SIGNATURE0_PLACEHOLDER", &signature0_b64)
@@ -2466,7 +2440,7 @@ mod tests {
             history_file.entries()[0].obsoleted_at,
             "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
-        assert_eq!(history_file.entries()[0].signers_file.version, 1);
+        assert_eq!(history_file.entries()[0].signers_file.version(), 1);
         assert_eq!(
             history_file.entries()[0]
                 .signers_file
@@ -2538,10 +2512,7 @@ mod tests {
     "obsoleted_at": "2023-01-01T00:00:00Z",
     "signers_file": {
       "version": "invalid",  // Should be a number
-      "initial_version": {
-        "permalink": "https://example.com",
-        "mirrors": []
-      },
+          "timestamp": "TIMESTAMP",
       "artifact_signers": [],
       "master_keys": [],
       "admin_keys": null
@@ -2550,10 +2521,11 @@ mod tests {
   }
 ]
 }
-"#;
+"#
+        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let result: Result<HistoryFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            parse_history_file(invalid_json);
+            parse_history_file(&invalid_json);
 
         assert!(result.is_err());
     }
@@ -2586,7 +2558,7 @@ mod tests {
             loaded_history_file.entries()[0].obsoleted_at,
             "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
-        assert_eq!(loaded_history_file.entries()[0].signers_file.version, 1);
+        assert_eq!(loaded_history_file.entries()[0].signers_file.version(), 1);
         assert_eq!(loaded_history_file.entries()[0].signatures.len(), 2);
     }
 
@@ -2743,10 +2715,7 @@ mod tests {
         let mut template = r#"
 {
   "version": 1,
-  "initial_version": {
-    "permalink": "https://example.com",
-    "mirrors": []
-  },
+  "timestamp": "TIMESTAMP",
   "artifact_signers": [
     {
       "signers": [
@@ -2757,7 +2726,7 @@ mod tests {
     }
   ]
   "#
-        .to_string();
+        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
         let mut key_index = 2;
 
         if master_count > 0 {
@@ -2910,10 +2879,7 @@ mod tests {
         let template = r#"
 {
   "version": 2,
-  "initial_version": {
-    "permalink": "https://example.com",
-    "mirrors": []
-  },
+          "timestamp": "TIMESTAMP",
   "artifact_signers": [
     {
       "signers": [
@@ -2926,7 +2892,8 @@ mod tests {
   "master_keys": [],
   "admin_keys": null
 }
-"#;
+"#
+        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         // Substitute placeholders with actual keys
         let content = test_keys.substitute_keys(template.to_string());
@@ -2981,6 +2948,37 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_propose_signers_file_wrong_timestamp() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(4);
+
+        // Create a proposal signed by an admin key before we setup the active signers file
+        // This means that the timestamp of the update will be smaller than the active signers
+        // file, which we reject
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+
+        // Create active signers with admin keys
+        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
+
+        // Propose the new signers file
+        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+
+        match result {
+            Err(SignersFileError::InvalidData(s)) => {
+                assert!(s.starts_with("Timestamp of update is smaller than active signers file's:"))
+            }
+            Err(e) => panic!(
+                "Expected InvalidaData(Timestamp of update is smaller than active signers file's), but got {} ",
+                e
+            ),
+            Ok(_) => panic!(
+                "Expected InvalidaData(Timestamp of update is smaller than active signers file's) but got a success result!"
+            ),
+        }
+        Ok(())
+    }
     #[test]
     fn test_propose_signers_file_with_multiple_admin_signers() -> Result<()> {
         let temp_dir = TempDir::new()?;
@@ -3386,10 +3384,7 @@ mod tests {
         let json_content_template = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+      "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -3410,7 +3405,8 @@ mod tests {
             }
           ]
         }
-        "#;
+        "#
+        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content = test_keys.substitute_keys(json_content_template.to_string());
         let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
@@ -3439,10 +3435,7 @@ mod tests {
         let json_content_no_admin = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+      "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -3454,7 +3447,8 @@ mod tests {
           ],
           "master_keys": []
         }
-        "#;
+        "#
+        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content_no_admin = test_keys.substitute_keys(json_content_no_admin.to_string());
         let config_no_admin: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
@@ -3484,10 +3478,7 @@ mod tests {
         let json_content_template = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+      "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -3514,7 +3505,8 @@ mod tests {
             }
           ]
         }
-        "#;
+        "#
+        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content = test_keys.substitute_keys(json_content_template.to_string());
         let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
@@ -3558,10 +3550,7 @@ mod tests {
         let json_content_no_admin = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+      "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -3580,7 +3569,8 @@ mod tests {
             }
           ]
         }
-        "#;
+        "#
+        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content_no_admin = test_keys.substitute_keys(json_content_no_admin.to_string());
         let config_no_admin: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
@@ -3620,10 +3610,7 @@ mod tests {
         let json_content_template = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+      "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -3636,7 +3623,8 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#
+        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content = test_keys.substitute_keys(json_content_template.to_string());
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
@@ -3702,10 +3690,7 @@ mod tests {
         let json_content_template = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+      "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -3717,7 +3702,8 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#
+        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content = test_keys.substitute_keys(json_content_template.to_string());
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
@@ -3771,10 +3757,7 @@ mod tests {
         let json_content = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+      "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -3786,7 +3769,7 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let pubkey = test_keys.pub_key(0).unwrap();
@@ -3796,8 +3779,13 @@ mod tests {
         let validator = || Ok(());
 
         // Should fail
-        let result =
-            write_valid_signers_file(dir_path, json_content, &signature, pubkey, validator);
+        let result = write_valid_signers_file(
+            dir_path,
+            json_content.as_str(),
+            &signature,
+            pubkey,
+            validator,
+        );
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InitialisationError(msg) => {
@@ -3829,10 +3817,7 @@ mod tests {
         let json_content = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+      "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -3844,7 +3829,7 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let pubkey = test_keys.pub_key(0).unwrap();
@@ -3854,8 +3839,13 @@ mod tests {
         let validator = || Ok(());
 
         // Should fail
-        let result =
-            write_valid_signers_file(dir_path, json_content, &signature, pubkey, validator);
+        let result = write_valid_signers_file(
+            dir_path,
+            json_content.as_str(),
+            &signature,
+            pubkey,
+            validator,
+        );
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InitialisationError(msg) => {
@@ -3886,10 +3876,7 @@ mod tests {
         let json_content = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+          "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -3901,7 +3888,7 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let pubkey = test_keys.pub_key(0).unwrap();
@@ -3911,8 +3898,13 @@ mod tests {
         let signer_validator = || Ok(());
 
         // Should fail
-        let result =
-            write_valid_signers_file(dir_path, json_content, &signature, pubkey, signer_validator);
+        let result = write_valid_signers_file(
+            dir_path,
+            json_content.as_str(),
+            &signature,
+            pubkey,
+            signer_validator,
+        );
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InitialisationError(msg) => {
@@ -3937,10 +3929,7 @@ mod tests {
         let invalid_json = r#"
         {
           "version": "invalid",
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+          "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -3952,7 +3941,7 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let hash = common::sha512_for_content(invalid_json.as_bytes().to_vec())?;
         let pubkey = test_keys.pub_key(0).unwrap();
@@ -3962,8 +3951,13 @@ mod tests {
         let signer_validator = || Ok(());
 
         // Should fail
-        let result =
-            write_valid_signers_file(dir_path, invalid_json, &signature, pubkey, signer_validator);
+        let result = write_valid_signers_file(
+            dir_path,
+            &invalid_json,
+            &signature,
+            pubkey,
+            signer_validator,
+        );
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::JsonError(_) => {} // Expected
@@ -3986,10 +3980,7 @@ mod tests {
         let json_content = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+          "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -4001,7 +3992,7 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let pubkey = test_keys.pub_key(0).unwrap();
@@ -4012,8 +4003,13 @@ mod tests {
         let signer_validator = || Err(SignersFileError::InvalidSigner("test error".to_string()));
 
         // Should fail
-        let result =
-            write_valid_signers_file(dir_path, json_content, &signature, pubkey, signer_validator);
+        let result = write_valid_signers_file(
+            dir_path,
+            &json_content,
+            &signature,
+            pubkey,
+            signer_validator,
+        );
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InvalidSigner(msg) => {
@@ -4038,10 +4034,7 @@ mod tests {
         let json_content = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+          "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -4053,7 +4046,7 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         // Sign wrong data
         let wrong_hash = common::sha512_for_content(b"wrong data".to_vec())?;
@@ -4066,7 +4059,7 @@ mod tests {
         // Should fail
         let result = write_valid_signers_file(
             dir_path,
-            json_content,
+            &json_content,
             &invalid_signature,
             pubkey,
             signer_validator,
@@ -4094,10 +4087,7 @@ mod tests {
         let json_content = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+          "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -4109,7 +4099,7 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let pubkey = test_keys.pub_key(0).unwrap();
@@ -4121,7 +4111,7 @@ mod tests {
         // Should succeed
         write_valid_signers_file(
             &nested_dir,
-            json_content,
+            &json_content,
             &signature,
             pubkey,
             signer_validator,
@@ -4154,10 +4144,7 @@ mod tests {
         let json_content = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+          "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -4169,7 +4156,7 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let pubkey = test_keys.pub_key(0).unwrap();
@@ -4179,8 +4166,13 @@ mod tests {
         let signer_validator = || Ok(());
 
         // Should fail with IO error
-        let result =
-            write_valid_signers_file(dir_path, json_content, &signature, pubkey, signer_validator);
+        let result = write_valid_signers_file(
+            dir_path,
+            &json_content,
+            &signature,
+            pubkey,
+            signer_validator,
+        );
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::IoError(_) => {} // Expected
@@ -4208,10 +4200,7 @@ mod tests {
         let json_content = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+          "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -4223,7 +4212,7 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let pubkey = test_keys.pub_key(0).unwrap();
@@ -4233,7 +4222,7 @@ mod tests {
         let validator = || Ok(());
 
         // Should succeed
-        write_valid_signers_file(dir_path, json_content, &signature, pubkey, validator)?;
+        write_valid_signers_file(dir_path, &json_content, &signature, pubkey, validator)?;
 
         // Verify files were created
         let pending_file = pending_dir.join(SIGNERS_FILE);
@@ -4252,10 +4241,7 @@ mod tests {
         let json_content = r#"
         {
           "version": 1,
-          "initial_version": {
-            "permalink": "https://example.com",
-            "mirrors": []
-          },
+          "timestamp": "TIMESTAMP",
           "artifact_signers": [
             {
               "signers": [
@@ -4267,7 +4253,7 @@ mod tests {
           "master_keys": [],
           "admin_keys": null
         }
-        "#;
+        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let pubkey = test_keys.pub_key(0).unwrap();
@@ -4279,7 +4265,7 @@ mod tests {
         // Pass path that already ends with PENDING_SIGNERS_DIR
         write_valid_signers_file(
             &pending_dir,
-            json_content,
+            &json_content,
             &signature,
             pubkey,
             signer_validator,
