@@ -318,7 +318,7 @@ where
                 local_signers_path_for(file_path)
             }?;
             let signers_config = load_signers_config::<PK>(&signers_file_path)?;
-            check_groups(&signers_config.artifact_signers, &signatures, &file_hash)
+            check_groups(signers_config.artifact_signers(), &signatures, &file_hash)
         }
         SignedFileWithKind::SignersFile(_) => {
             // For signers updates, we need to
@@ -417,7 +417,7 @@ where
     ) -> bool {
         // Check artifact_signers groups
         check_groups(
-            &signers_config.artifact_signers,
+            signers_config.artifact_signers(),
             &self.signatures,
             artifact_data,
         )
@@ -576,7 +576,8 @@ mod tests {
     use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
     use signers_file_types::{
-        InitialVersion, KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig,
+        KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig,
+        SignersConfigProposal,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -704,16 +705,13 @@ mod tests {
             signers: vec![signer, signer2],
             threshold: 1,
         };
-        let signers_config = SignersConfig {
+        let signers_config_proposal = SignersConfigProposal {
             version: 1,
-            initial_version: signers_file_types::InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
             artifact_signers: vec![group.clone()],
             master_keys: None,
             admin_keys: None,
         };
+        let signers_config = signers_config_proposal.build();
         // Write signers configuration
         let signers_dir = temp_dir.path().join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir).unwrap();
@@ -750,10 +748,11 @@ mod tests {
         // in global signers file as local file still has threshold 1
         let mut high_threshold_group = group.clone();
         high_threshold_group.threshold = 2;
-        let high_threshold_config = SignersConfig {
+        let high_threshold_config = SignersConfigProposal {
             artifact_signers: vec![high_threshold_group],
-            ..signers_config.clone()
-        };
+            ..signers_config_proposal.clone()
+        }
+        .build();
 
         let config_json = serde_json::to_string_pretty(&high_threshold_config).unwrap();
         fs::write(&signers_file, config_json).unwrap();
@@ -1379,12 +1378,8 @@ mod tests {
         let seckey2 = test_keys.sec_key(1).unwrap();
 
         // Create signers configuration with threshold 2
-        let signers_config = SignersConfig {
+        let signers_config = SignersConfigProposal {
             version: 1,
-            initial_version: InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
             artifact_signers: vec![SignerGroup {
                 signers: vec![
                     Signer {
@@ -1406,7 +1401,8 @@ mod tests {
             }],
             master_keys: None,
             admin_keys: None,
-        };
+        }
+        .build();
 
         // Write signers configuration
         let signers_file = signers_dir.join(SIGNERS_FILE);
@@ -1714,12 +1710,8 @@ mod tests {
         let signature = seckey.sign(&hash_for_content).unwrap();
 
         // Create a signers configuration with threshold 1
-        let signers_config = SignersConfig {
+        let signers_config = SignersConfigProposal {
             version: 1,
-            initial_version: InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
             artifact_signers: vec![SignerGroup {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
@@ -1732,7 +1724,8 @@ mod tests {
             }],
             master_keys: None,
             admin_keys: None,
-        };
+        }
+        .build();
 
         // Create global signers directory and file
         let signers_dir = root.join(SIGNERS_DIR);
@@ -1904,12 +1897,8 @@ mod tests {
         let seckey2 = test_keys.sec_key(1).unwrap();
 
         // Create signers configuration with threshold 2
-        let signers_config = SignersConfig {
+        let signers_config_proposal = SignersConfigProposal {
             version: 1,
-            initial_version: InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
             artifact_signers: vec![SignerGroup {
                 signers: vec![
                     Signer {
@@ -1932,6 +1921,7 @@ mod tests {
             master_keys: None,
             admin_keys: None,
         };
+        let signers_config = signers_config_proposal.build();
 
         // Write signers configuration
         let signers_file = signers_dir.join(SIGNERS_FILE);
@@ -1997,8 +1987,9 @@ mod tests {
         assert!(!res.unwrap()); // Should be incomplete with invalid signature
 
         // Test with threshold 1 (should be complete with just one valid signature)
-        let mut low_threshold_config = signers_config.clone();
-        low_threshold_config.artifact_signers[0].threshold = 1;
+        let mut low_threshold_config_proposal = signers_config_proposal.clone();
+        low_threshold_config_proposal.artifact_signers[0].threshold = 1;
+        let low_threshold_config = low_threshold_config_proposal.build();
 
         // Overwrite the global signers file as it is the one looked at for pending signatures.
         let config_json = serde_json::to_string_pretty(&low_threshold_config).unwrap();
@@ -2048,12 +2039,8 @@ mod tests {
         let seckey4 = test_keys.sec_key(4).unwrap();
 
         // Create current (global) signers configuration with specific admin and master keys
-        let current_signers_config = SignersConfig {
+        let current_signers_config = SignersConfigProposal {
             version: 1,
-            initial_version: InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
             artifact_signers: vec![],
             master_keys: Some(vec![SignerGroup {
                 signers: vec![Signer {
@@ -2075,7 +2062,8 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
-        };
+        }
+        .build();
 
         // Write current (global) signers configuration
         let global_signers_file = signers_dir.join(SIGNERS_FILE);
@@ -2083,12 +2071,8 @@ mod tests {
         fs::write(&global_signers_file, config_json).unwrap();
 
         // Create new signers configuration with different admin and master keys
-        let new_signers_config = SignersConfig {
+        let new_signers_config = SignersConfigProposal {
             version: 1,
-            initial_version: InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
             artifact_signers: vec![SignerGroup {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
@@ -2119,7 +2103,8 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
-        };
+        }
+        .build();
 
         // Write new signers configuration to a file in the pending signers directory
         let pending_signers_dir = root.join(PENDING_SIGNERS_DIR);
@@ -2246,12 +2231,8 @@ mod tests {
         let seckey2 = test_keys.sec_key(2).unwrap();
 
         // Create current (global) signers configuration with specific admin and master keys
-        let current_signers_config = SignersConfig {
+        let current_signers_config = SignersConfigProposal {
             version: 1,
-            initial_version: InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
             master_keys: None,
             artifact_signers: vec![SignerGroup {
                 signers: vec![Signer {
@@ -2273,7 +2254,8 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
-        };
+        }
+        .build();
 
         // Write current (global) signers configuration
         let global_signers_file = signers_dir.join(SIGNERS_FILE);
@@ -2281,12 +2263,8 @@ mod tests {
         fs::write(&global_signers_file, config_json).unwrap();
 
         // Create new signers configuration with different admin and master keys
-        let new_signers_config = SignersConfig {
+        let new_signers_config = SignersConfigProposal {
             version: 1,
-            initial_version: InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
             master_keys: None,
             artifact_signers: vec![SignerGroup {
                 signers: vec![Signer {
@@ -2308,7 +2286,8 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
-        };
+        }
+        .build();
 
         // Write new signers configuration to a file in the pending signers directory
         let pending_signers_dir = root.join(PENDING_SIGNERS_DIR);
@@ -2383,16 +2362,13 @@ mod tests {
 
         // Scenario 1: Only artifact_signers group
         {
-            let config = SignersConfig {
+            let config = SignersConfigProposal {
                 version: 1,
-                initial_version: InitialVersion {
-                    permalink: "https://example.com".to_string(),
-                    mirrors: vec![],
-                },
                 artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
                 master_keys: None,
                 admin_keys: None,
-            };
+            }
+            .build();
 
             // Test with valid signature
             let mut signatures = HashMap::new();
@@ -2411,19 +2387,16 @@ mod tests {
 
         // Scenario 2: Artifact_signers with 2 subgroups
         {
-            let config = SignersConfig {
+            let config = SignersConfigProposal {
                 version: 1,
-                initial_version: InitialVersion {
-                    permalink: "https://example.com".to_string(),
-                    mirrors: vec![],
-                },
                 artifact_signers: vec![
                     create_group(vec![create_signer(pubkey0.clone())], 1),
                     create_group(vec![create_signer(pubkey1.clone())], 1),
                 ],
                 master_keys: None,
                 admin_keys: None,
-            };
+            }
+            .build();
 
             // Test with valid signatures for both groups
             let mut signatures = HashMap::new();
@@ -2439,16 +2412,13 @@ mod tests {
 
         // Scenario 3: Admin_keys present
         {
-            let config = SignersConfig {
+            let config = SignersConfigProposal {
                 version: 1,
-                initial_version: InitialVersion {
-                    permalink: "https://example.com".to_string(),
-                    mirrors: vec![],
-                },
                 artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
                 master_keys: None,
                 admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
-            };
+            }
+            .build();
 
             // Test with valid signature
             let mut signatures = HashMap::new();
@@ -2464,16 +2434,13 @@ mod tests {
 
         // Scenario 4: Master_keys present
         {
-            let config = SignersConfig {
+            let config = SignersConfigProposal {
                 version: 1,
-                initial_version: InitialVersion {
-                    permalink: "https://example.com".to_string(),
-                    mirrors: vec![],
-                },
                 artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
                 master_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
                 admin_keys: None,
-            };
+            }
+            .build();
 
             // Test with valid signature
             let mut signatures = HashMap::new();
@@ -2489,16 +2456,13 @@ mod tests {
 
         // Scenario 5: Key in both artifact_signers and admin_keys
         {
-            let config = SignersConfig {
+            let config = SignersConfigProposal {
                 version: 1,
-                initial_version: InitialVersion {
-                    permalink: "https://example.com".to_string(),
-                    mirrors: vec![],
-                },
                 artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
                 master_keys: None,
                 admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
-            };
+            }
+            .build();
 
             // Test with valid signature (should satisfy both groups)
             let mut signatures = HashMap::new();
@@ -2512,12 +2476,8 @@ mod tests {
 
         // Scenario 6: Complex scenario with all key types and overlapping keys
         {
-            let config = SignersConfig {
+            let config = SignersConfigProposal {
                 version: 1,
-                initial_version: InitialVersion {
-                    permalink: "https://example.com".to_string(),
-                    mirrors: vec![],
-                },
                 artifact_signers: vec![
                     create_group(vec![create_signer(pubkey0.clone())], 1),
                     create_group(vec![create_signer(pubkey1.clone())], 1),
@@ -2527,7 +2487,8 @@ mod tests {
                     create_group(vec![create_signer(pubkey0.clone())], 1),
                     create_group(vec![create_signer(pubkey3.clone())], 1),
                 ]),
-            };
+            }
+            .build();
 
             // Test with overlapping key (pubkey0) satisfying both artifact and admin groups
             let mut signatures = HashMap::new();
@@ -2548,12 +2509,8 @@ mod tests {
 
         // Scenario 7: Test with threshold > 1
         {
-            let config = SignersConfig {
+            let config = SignersConfigProposal {
                 version: 1,
-                initial_version: InitialVersion {
-                    permalink: "https://example.com".to_string(),
-                    mirrors: vec![],
-                },
                 artifact_signers: vec![create_group(
                     vec![
                         create_signer(pubkey0.clone()),
@@ -2563,7 +2520,8 @@ mod tests {
                 )],
                 master_keys: None,
                 admin_keys: None,
-            };
+            }
+            .build();
 
             // Test with both signatures
             let mut signatures = HashMap::new();
@@ -2579,16 +2537,13 @@ mod tests {
 
         // Scenario 8: Test with empty configuration
         {
-            let config = SignersConfig {
+            let config = SignersConfigProposal {
                 version: 1,
-                initial_version: InitialVersion {
-                    permalink: "https://example.com".to_string(),
-                    mirrors: vec![],
-                },
                 artifact_signers: vec![],
                 master_keys: None,
                 admin_keys: None,
-            };
+            }
+            .build();
 
             // Even with signatures, should return false for empty config
             let mut signatures = HashMap::new();
@@ -2598,12 +2553,8 @@ mod tests {
 
         // Scenario 9: Test with invalid signature
         {
-            let config = SignersConfig {
+            let config = SignersConfigProposal {
                 version: 1,
-                initial_version: InitialVersion {
-                    permalink: "https://example.com".to_string(),
-                    mirrors: vec![],
-                },
                 artifact_signers: vec![create_group(
                     vec![
                         create_signer(pubkey0.clone()),
@@ -2613,7 +2564,8 @@ mod tests {
                 )],
                 master_keys: None,
                 admin_keys: None,
-            };
+            }
+            .build();
 
             // Test with invalid signature (signed for different data)
             let other_data = common::sha512_for_content(b"other data".to_vec())?;
@@ -2909,16 +2861,13 @@ mod tests {
             })
             .collect();
 
-        SignersConfig {
+        SignersConfigProposal {
             version: 1,
-            initial_version: InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
             artifact_signers: vec![SignerGroup { signers, threshold }],
             master_keys: None,
             admin_keys: None,
         }
+        .build()
     }
 
     // Helper function to sign a file and write its signature to disk
@@ -3399,13 +3348,13 @@ mod tests {
     #[test]
     fn test_no_new_signers_identical_configs() {
         let test_keys = TestKeys::new(3);
-        let old_config = SignersConfig {
+        let old_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
-        };
+        }
+        .build();
 
         let new_config = old_config.clone();
 
@@ -3416,21 +3365,21 @@ mod tests {
     #[test]
     fn test_no_new_signers_reordered_groups() {
         let test_keys = TestKeys::new(3);
-        let old_config = SignersConfig {
+        let old_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
-        };
+        }
+        .build();
 
-        let new_config = SignersConfig {
+        let new_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             artifact_signers: vec![create_group(&test_keys, vec![1, 0], 2)], // Reordered
-        };
+        }
+        .build();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert!(new_signers.is_empty());
@@ -3439,21 +3388,21 @@ mod tests {
     #[test]
     fn test_new_signer_in_artifact_signers() {
         let test_keys = TestKeys::new(3);
-        let old_config = SignersConfig {
+        let old_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: None,
-        };
+        }
+        .build();
 
-        let new_config = SignersConfig {
+        let new_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)], // Added key 1
             master_keys: None,
             admin_keys: None,
-        };
+        }
+        .build();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert_eq!(new_signers.len(), 1);
@@ -3463,21 +3412,21 @@ mod tests {
     #[test]
     fn test_new_signer_in_master_keys() {
         let test_keys = TestKeys::new(3);
-        let old_config = SignersConfig {
+        let old_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: None,
-        };
+        }
+        .build();
 
-        let new_config = SignersConfig {
+        let new_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
             admin_keys: None,
-        };
+        }
+        .build();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert_eq!(new_signers.len(), 1);
@@ -3487,21 +3436,21 @@ mod tests {
     #[test]
     fn test_new_signer_in_admin_keys() {
         let test_keys = TestKeys::new(3);
-        let old_config = SignersConfig {
+        let old_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: None,
-        };
+        }
+        .build();
 
-        let new_config = SignersConfig {
+        let new_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
-        };
+        }
+        .build();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert_eq!(new_signers.len(), 1);
@@ -3511,21 +3460,21 @@ mod tests {
     #[test]
     fn test_new_signers_and_removed_signers() {
         let test_keys = TestKeys::new(10);
-        let old_config = SignersConfig {
+        let old_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
-        };
+        }
+        .build();
 
-        let new_config = SignersConfig {
+        let new_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0, 5, 8], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![2, 6, 9], 2)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![7], 2)]),
-        };
+        }
+        .build();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         let new_signers_set: std::collections::HashSet<_> = new_signers.into_iter().collect();
@@ -3544,21 +3493,21 @@ mod tests {
     #[test]
     fn test_all_signers_are_new() {
         let test_keys = TestKeys::new(3);
-        let old_config = SignersConfig {
+        let old_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![],
             master_keys: None,
             admin_keys: None,
-        };
+        }
+        .build();
 
-        let new_config = SignersConfig {
+        let new_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
-        };
+        }
+        .build();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert_eq!(new_signers.len(), 3);
@@ -3571,21 +3520,21 @@ mod tests {
     #[test]
     fn test_all_signers_are_removed() {
         let test_keys = TestKeys::new(3);
-        let old_config = SignersConfig {
+        let old_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
-        };
+        }
+        .build();
 
-        let new_config = SignersConfig {
+        let new_config = SignersConfigProposal {
             version: 1,
-            initial_version: Default::default(),
             artifact_signers: vec![],
             master_keys: None,
             admin_keys: None,
-        };
+        }
+        .build();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert!(new_signers.is_empty());

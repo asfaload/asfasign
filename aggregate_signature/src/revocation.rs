@@ -568,7 +568,7 @@ mod tests {
     };
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signers_file_types::{
-        InitialVersion, KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig,
+        KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfigProposal,
     };
     use std::collections::HashMap;
     use std::fs;
@@ -641,12 +641,8 @@ mod tests {
                 threshold: indices.len() as u32,
             }]
         });
-        let signers_config = SignersConfig {
+        let signers_config_proposal = SignersConfigProposal {
             version: 1,
-            initial_version: InitialVersion {
-                permalink: "https://example.com".to_string(),
-                mirrors: vec![],
-            },
             artifact_signers: vec![SignerGroup {
                 signers: artifact_signers,
                 threshold: 2,
@@ -654,6 +650,8 @@ mod tests {
             master_keys: master_keys.clone(),
             admin_keys: admin_keys.clone(),
         };
+
+        let signers_config = signers_config_proposal.build();
 
         // Write signers configuration
         let config_json = serde_json::to_string_pretty(&signers_config)?;
