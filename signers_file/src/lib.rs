@@ -1473,9 +1473,9 @@ mod tests {
 
         // Substitute the placeholder with an actual public key from existing_keys
         let config_timestamp = chrono::Utc::now();
-        let existing_content = existing_keys.substitute_keys(existing_content_template.to_string());
-        let existing_content =
-            existing_content.replace("TIMESTAMP", config_timestamp.to_string().as_str());
+        let existing_content = existing_keys
+            .substitute_keys(existing_content_template.to_string())
+            .replace("TIMESTAMP", config_timestamp.to_string().as_str());
         fs::write(&existing_signers_file, existing_content)?;
 
         // Create the signatures file for the existing signers file

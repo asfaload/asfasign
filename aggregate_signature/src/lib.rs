@@ -637,11 +637,11 @@ mod tests {
     "#;
 
         // Replace placeholders with actual timestamp and public keys
-        let json_config =
-            json_config_template.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let json_config = json_config.replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64());
-        let json_config = json_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
-        let json_config = json_config.replace("THRESHOLD_PLACEHOLDER", "1");
+        let json_config = json_config_template
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64())
+            .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64())
+            .replace("THRESHOLD_PLACEHOLDER", "1");
 
         // Parse signers config from JSON
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
@@ -651,13 +651,11 @@ mod tests {
         assert!(agg_sig.is_artifact_complete(&signers_config, &data));
 
         // Should be incomplete with threshold 2
-        let high_threshold_config =
-            json_config_template.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let high_threshold_config =
-            high_threshold_config.replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64());
-        let high_threshold_config =
-            high_threshold_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
-        let high_threshold_config = high_threshold_config.replace("THRESHOLD_PLACEHOLDER", "2");
+        let high_threshold_config = json_config_template
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64())
+            .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64())
+            .replace("THRESHOLD_PLACEHOLDER", "2");
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             signers_file_types::parse_signers_config(&high_threshold_config).unwrap();
         assert!(!agg_sig.is_artifact_complete(&signers_config, &data));
@@ -831,9 +829,10 @@ mod tests {
     "#;
 
         // Replace placeholders with actual public keys
-        let json_config = json_config.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let json_config = json_config.replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64());
-        let json_config = json_config.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
+        let json_config = json_config
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64())
+            .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
 
         // Parse signers config from JSON
         let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
@@ -868,12 +867,10 @@ mod tests {
     "#;
 
         // Replace placeholders with actual timestamp and public keys
-        let json_config_mixed =
-            json_config_mixed.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let json_config_mixed =
-            json_config_mixed.replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64());
-        let json_config_mixed =
-            json_config_mixed.replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
+        let json_config_mixed = json_config_mixed
+            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64())
+            .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
 
         // Parse mixed signers config from JSON
         let signers_config_mixed: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
