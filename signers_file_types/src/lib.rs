@@ -55,7 +55,11 @@ pub struct SignersConfig<APK: AsfaloadPublicKeyTrait> {
 // In the end, rewriting new to take this struct as argument seemed the best solution.
 // Apart from requiing the use of accessor to private fields, this does not change much at this time
 // but it enables us to add a validation step when building a SignersConfig.
-#[derive(Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(bound(
+    serialize = "APK: AsfaloadPublicKeyTrait",
+    deserialize = "APK: AsfaloadPublicKeyTrait"
+))]
 pub struct SignersConfigProposal<APK: AsfaloadPublicKeyTrait> {
     pub version: u32,
     pub timestamp: DateTime<Utc>,
@@ -354,5 +358,11 @@ where
 pub fn parse_signers_config<APK: AsfaloadPublicKeyTrait>(
     json_str: &str,
 ) -> Result<SignersConfig<APK>, serde_json::Error> {
+    serde_json::from_str(json_str)
+}
+
+pub fn parse_signers_config_proposal<APK: AsfaloadPublicKeyTrait>(
+    json_str: &str,
+) -> Result<SignersConfigProposal<APK>, serde_json::Error> {
     serde_json::from_str(json_str)
 }

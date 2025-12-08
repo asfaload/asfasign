@@ -9,7 +9,9 @@ use common::{
     },
 };
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
-use signers_file_types::{SignersConfig, parse_signers_config};
+use signers_file_types::{
+    SignersConfig, SignersConfigProposal, parse_signers_config, parse_signers_config_proposal,
+};
 use std::{borrow::Borrow, collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
 //
 
@@ -286,6 +288,14 @@ where
     let active_content = fs::read_to_string(&active_signers_file)?;
     let active_config: SignersConfig<K> = parse_signers_config(&active_content)?;
 
+    let proposed_update: SignersConfigProposal<K> = parse_signers_config_proposal(json_content)?;
+    if proposed_update.timestamp <= active_config.timestamp() {
+        return Err(SignersFileError::InvalidData(format!(
+            "Timestamp of update is smaller than active signers file's: update:{} <= active:{}",
+            proposed_update.timestamp,
+            active_config.timestamp()
+        )));
+    }
     // Check if the provided pubkey is in the admin_keys or master_keys groups
     let validator = || is_valid_signer_for_update_of(pubkey, &active_config);
 
@@ -2938,6 +2948,37 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_propose_signers_file_wrong_timestamp() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let test_keys = TestKeys::new(4);
+
+        // Create a proposal signed by an admin key before we setup the active signers file
+        // This means that the timestamp of the update will be smaller than the active signers
+        // file, which we reject
+        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+
+        // Create active signers with admin keys
+        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
+
+        // Propose the new signers file
+        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+
+        match result {
+            Err(SignersFileError::InvalidData(s)) => {
+                assert!(s.starts_with("Timestamp of update is smaller than active signers file's:"))
+            }
+            Err(e) => panic!(
+                "Expected InvalidaData(Timestamp of update is smaller than active signers file's), but got {} ",
+                e
+            ),
+            Ok(_) => panic!(
+                "Expected InvalidaData(Timestamp of update is smaller than active signers file's) but got a success result!"
+            ),
+        }
+        Ok(())
+    }
     #[test]
     fn test_propose_signers_file_with_multiple_admin_signers() -> Result<()> {
         let temp_dir = TempDir::new()?;
