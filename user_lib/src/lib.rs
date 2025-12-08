@@ -1,7 +1,12 @@
-use common::SignedFileWithKind;
+use std::path::{Path, PathBuf};
+
 pub use common::{
     ArtifactMarker, InitialSignersFileMarker, SignedFile, SignersFileMarker,
     errors::SignedFileError,
+};
+use common::{
+    SignedFileWithKind,
+    fs::names::{find_global_signers_for, pending_signers_file_in_dir},
 };
 use signatures::keys::{
     AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
@@ -136,5 +141,20 @@ where
             SignedFileWithKind::SignersFile(sf) => sf.is_signed(),
             SignedFileWithKind::Artifact(sf) => sf.is_signed(),
         }
+    }
+}
+
+pub trait SignersFileTrait {
+    fn find_for_path<P: AsRef<Path>>(path_in: P) -> Result<PathBuf, std::io::Error>;
+    fn find_pending_in_dir<P: AsRef<Path>>(path_in: P) -> Result<PathBuf, std::io::Error>;
+}
+
+pub struct SignersFile;
+impl SignersFileTrait for SignersFile {
+    fn find_for_path<P: AsRef<Path>>(path_in: P) -> Result<PathBuf, std::io::Error> {
+        find_global_signers_for(path_in.as_ref())
+    }
+    fn find_pending_in_dir<P: AsRef<Path>>(path_in: P) -> Result<PathBuf, std::io::Error> {
+        pending_signers_file_in_dir(path_in)
     }
 }
