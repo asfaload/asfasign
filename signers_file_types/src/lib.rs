@@ -35,7 +35,7 @@ use errs::SignersConfigError;
     deserialize = "APK: AsfaloadPublicKeyTrait"
 ))]
 pub struct SignersConfig<APK: AsfaloadPublicKeyTrait> {
-    pub version: u32,
+    version: u32,
     artifact_signers: Vec<SignerGroup<APK>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     admin_keys: Option<Vec<SignerGroup<APK>>>,
@@ -165,6 +165,10 @@ where
     }
     pub fn master_keys(&self) -> Option<Vec<SignerGroup<APK>>> {
         self.master_keys.clone()
+    }
+
+    pub fn version(&self) -> u32 {
+        self.version
     }
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)

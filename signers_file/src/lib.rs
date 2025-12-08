@@ -541,7 +541,7 @@ mod tests {
     "#;
         let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(json_str).expect("Failed to parse JSON");
-        assert_eq!(config.version, 1);
+        assert_eq!(config.version(), 1);
         assert_eq!(config.artifact_signers().len(), 1);
         assert_eq!(config.artifact_signers()[0].threshold, 2);
         assert_eq!(
@@ -594,7 +594,7 @@ mod tests {
     "#;
         let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
             parse_signers_config(json_str).expect("Failed to parse JSON");
-        assert_eq!(config.version, 1);
+        assert_eq!(config.version(), 1);
         assert_eq!(config.artifact_signers().len(), 1);
         assert_eq!(config.artifact_signers()[0].threshold, 3);
         assert_eq!(
@@ -2282,7 +2282,7 @@ mod tests {
         let entry = create_test_history_entry(&test_keys, timestamp);
 
         assert_eq!(entry.obsoleted_at, timestamp);
-        assert_eq!(entry.signers_file.version, 1);
+        assert_eq!(entry.signers_file.version(), 1);
         assert_eq!(entry.signers_file.artifact_signers().len(), 1);
         assert_eq!(entry.signers_file.artifact_signers()[0].threshold, 2);
         assert_eq!(entry.signers_file.artifact_signers()[0].signers.len(), 2);
@@ -2466,7 +2466,7 @@ mod tests {
             history_file.entries()[0].obsoleted_at,
             "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
-        assert_eq!(history_file.entries()[0].signers_file.version, 1);
+        assert_eq!(history_file.entries()[0].signers_file.version(), 1);
         assert_eq!(
             history_file.entries()[0]
                 .signers_file
@@ -2586,7 +2586,7 @@ mod tests {
             loaded_history_file.entries()[0].obsoleted_at,
             "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
-        assert_eq!(loaded_history_file.entries()[0].signers_file.version, 1);
+        assert_eq!(loaded_history_file.entries()[0].signers_file.version(), 1);
         assert_eq!(loaded_history_file.entries()[0].signatures.len(), 2);
     }
 
