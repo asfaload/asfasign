@@ -605,7 +605,7 @@ mod tests {
             config.artifact_signers()[0].signers[0].data.format,
             KeyFormat::Minisign
         );
-        assert_eq!(config.admin_keys(), &config.artifact_signers());
+        assert_eq!(config.admin_keys(), config.artifact_signers());
 
         let json_str_with_invalid_b64_keys = r#"
     {
@@ -807,7 +807,7 @@ mod tests {
         assert!(result.is_ok());
         let config = result.unwrap();
         // Check admin_keys holds an one element array
-        assert_eq!(config.admin_keys(), &config.artifact_signers());
+        assert_eq!(config.admin_keys(), config.artifact_signers());
 
         let json_str_with_zero_threshold = r#"
     {

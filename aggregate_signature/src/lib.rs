@@ -318,7 +318,7 @@ where
                 local_signers_path_for(file_path)
             }?;
             let signers_config = load_signers_config::<PK>(&signers_file_path)?;
-            check_groups(&signers_config.artifact_signers(), &signatures, &file_hash)
+            check_groups(signers_config.artifact_signers(), &signatures, &file_hash)
         }
         SignedFileWithKind::SignersFile(_) => {
             // For signers updates, we need to
@@ -417,7 +417,7 @@ where
     ) -> bool {
         // Check artifact_signers groups
         check_groups(
-            &signers_config.artifact_signers(),
+            signers_config.artifact_signers(),
             &self.signatures,
             artifact_data,
         )

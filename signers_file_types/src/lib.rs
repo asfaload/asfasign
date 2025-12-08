@@ -154,10 +154,10 @@ where
         Self::with_keys(version, artifact_signers_and_threshold, None, None)
     }
 
-    pub fn artifact_signers(&self) -> Vec<SignerGroup<APK>> {
-        self.artifact_signers.clone()
+    pub fn artifact_signers(&self) -> &[SignerGroup<APK>] {
+        &self.artifact_signers
     }
-    pub fn admin_keys(&self) -> &Vec<SignerGroup<APK>> {
+    pub fn admin_keys(&self) -> &[SignerGroup<APK>] {
         match &self.admin_keys {
             Some(v) if !v.is_empty() => v,
             _ => &self.artifact_signers,
