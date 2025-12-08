@@ -74,6 +74,25 @@ pub fn find_global_signers_for(file_path: &Path) -> Result<PathBuf, std::io::Err
     }
 }
 
+pub fn pending_signers_file_in_dir<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    let path = path_in.as_ref();
+    if !path.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Looking for pending signers file in dir only works with a directory",
+        ));
+    }
+    let p = path.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
+    if p.exists() && p.is_file() {
+        Ok(p)
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Pending signers file not found or is directory",
+        ))
+    }
+}
+
 pub fn create_local_signers_for<P: AsRef<Path>>(
     file_path_in: P,
 ) -> Result<PathBuf, std::io::Error> {
@@ -167,7 +186,7 @@ pub fn signatures_path_on_disk_for<P: AsRef<Path>>(path_in: P) -> Result<PathBuf
 #[cfg(test)]
 mod asfaload_index_tests {
 
-    use std::str::FromStr;
+    use std::{fs, str::FromStr};
 
     use anyhow::Result;
     use std::io::Write;
@@ -227,6 +246,111 @@ mod asfaload_index_tests {
                 )
             }
         }
+        Ok(())
+    }
+    // test pending_signers_file_in_dir
+    // --------------------------------
+    #[test]
+    fn test_pending_signers_file_in_dir_success() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+
+        let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let pending_file = pending_dir.join(SIGNERS_FILE);
+        fs::write(&pending_file, "{}")?;
+
+        let result = pending_signers_file_in_dir(dir_path)?;
+
+        let expected_path = pending_dir.join(SIGNERS_FILE);
+        assert_eq!(result, expected_path);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pending_signers_file_in_dir_path_is_a_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let file_path = temp_dir.path().join("not_a_dir.txt");
+        fs::write(&file_path, "content")?;
+
+        let result = pending_signers_file_in_dir(&file_path);
+
+        // Should return an error
+        match result.unwrap_err().kind() {
+            std::io::ErrorKind::InvalidInput => {}
+            k => panic!("Expected InvalidInput error, got {}", k),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pending_signers_file_in_dir_missing_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+
+        let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        // We don't create the PENDING_SIGNERS_FILE
+
+        // Call the function
+        let result = pending_signers_file_in_dir(dir_path);
+
+        // Should return an error
+        assert!(result.is_err());
+        match result.unwrap_err().kind() {
+            std::io::ErrorKind::NotFound => {}
+            _ => panic!("Expected NotFound error"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pending_signers_file_in_dir_file_is_directory() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+
+        // Create the directory structure but make the pending file a directory
+        let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let pending_file = pending_dir.join(SIGNERS_FILE);
+        fs::create_dir(&pending_file)?; // Create as directory instead of file
+
+        // Call the function
+        let result = pending_signers_file_in_dir(dir_path);
+
+        // Should return an error
+        assert!(result.is_err());
+        match result.unwrap_err().kind() {
+            std::io::ErrorKind::NotFound => {} // It should report as not found since it's not a file
+            _ => panic!("Expected NotFound error"),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pending_signers_file_in_dir_nested_path() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.path();
+        let nested_dir = root_dir.join("nested");
+        fs::create_dir_all(&nested_dir)?;
+
+        // Create the expected directory structure in the nested directory
+        let pending_dir = nested_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let pending_file = pending_dir.join(SIGNERS_FILE);
+        fs::write(&pending_file, "{}")?;
+
+        // Call the function with the nested directory
+        let result = pending_signers_file_in_dir(&nested_dir)?;
+
+        // Verify the result
+        let expected_path = pending_dir.join(SIGNERS_FILE);
+        assert_eq!(result, expected_path);
+
         Ok(())
     }
 }

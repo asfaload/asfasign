@@ -1,7 +1,5 @@
 use anyhow::Result;
 use common::SignedFileLoader;
-use common::fs::names::PENDING_SIGNERS_DIR;
-use common::fs::names::SIGNERS_FILE;
 use common::sha512_for_content;
 use common::sha512_for_file;
 use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
@@ -12,6 +10,8 @@ use tempfile::TempDir;
 use test_helpers::TestKeys;
 use user_lib::SignatureWithState;
 use user_lib::SignedFileWithKindTrait;
+use user_lib::SignersFile;
+use user_lib::SignersFileTrait;
 
 #[test]
 fn basic_flow() -> Result<()> {
@@ -61,12 +61,10 @@ fn basic_flow() -> Result<()> {
     // It reads the content of the signers file proposed by user1
     {
         // Signers2 scope for signing the signers file
-        let signers_file = root_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
+        let signers_file = SignersFile::find_pending_in_dir(root_dir)?;
         let signed_file = SignedFileLoader::load(&signers_file);
-        let signers_file_content_read = std::fs::read_to_string(&signers_file)?;
         // It computes the hash of the content
-        let signers_file_hash_for_user2 =
-            sha512_for_content(signers_file_content_read.as_bytes().to_vec())?;
+        let signers_file_hash_for_user2 = sha512_for_file(&signers_file)?;
         // Then it signs it
         let signature2 = user2_keypair
             .secret_key("password")?
