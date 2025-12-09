@@ -2,16 +2,16 @@ use anyhow::Result;
 use common::SignedFileLoader;
 use common::sha512_for_content;
 use common::sha512_for_file;
+use features_lib::SignatureWithState;
+use features_lib::SignedFileWithKindTrait;
+use features_lib::SignersFile;
+use features_lib::SignersFileTrait;
 use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
 use signers_file::initialize_signers_file;
 use signers_file_types::SignersConfig;
 use std::fs;
 use tempfile::TempDir;
 use test_helpers::TestKeys;
-use user_lib::SignatureWithState;
-use user_lib::SignedFileWithKindTrait;
-use user_lib::SignersFile;
-use user_lib::SignersFileTrait;
 
 #[test]
 fn basic_flow() -> Result<()> {
