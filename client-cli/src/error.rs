@@ -8,6 +8,9 @@ pub enum ClientCliError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    #[error("Password confirmation does not match")]
+    PasswordConfirmationError,
+
     #[error("Key generation error: {0}")]
     KeyGeneration(String),
 

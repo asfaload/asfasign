@@ -20,6 +20,14 @@ pub enum Commands {
         /// Directory to store the key
         #[arg(long)]
         output_dir: PathBuf,
+
+        /// Password for the key (conflicts with password_file)
+        #[arg(long, conflicts_with = "password_file")]
+        password: Option<String>,
+
+        /// Path to a file containing the password (conflicts with password)
+        #[arg(long, conflicts_with = "password")]
+        password_file: Option<PathBuf>,
     },
     /// Operations related to signers file
     NewSignersFile {
