@@ -16,6 +16,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             output_dir,
             password,
             password_file,
+            accept_weak_password,
         } => {
             let password = get_password(
                 password.clone(),
@@ -23,6 +24,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
+                *accept_weak_password,
             )?;
             keys::handle_new_keys_command(name, output_dir, password)?;
         }
@@ -32,6 +34,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             output_file,
             password,
             password_file,
+            accept_weak_password,
         } => {
             let password = get_password(
                 password.clone(),
@@ -39,6 +42,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
+                *accept_weak_password,
             )?;
             sign_file::handle_sign_file_command(
                 file_to_sign,

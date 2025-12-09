@@ -122,6 +122,7 @@ pub fn get_password(
     env_var_password: &str,
     env_var_password_file: &str,
     prompt_message: &str,
+    accept_weak_password: bool,
 ) -> Result<String> {
     let unvalidated_password = get_unvalidated_password(
         password_arg,
@@ -130,6 +131,10 @@ pub fn get_password(
         env_var_password_file,
         prompt_message,
     )?;
-    let validated_password = validate_password(unvalidated_password.as_str())?;
-    Ok(validated_password)
+    if accept_weak_password {
+        Ok(unvalidated_password)
+    } else {
+        let validated_password = validate_password(unvalidated_password.as_str())?;
+        Ok(validated_password)
+    }
 }

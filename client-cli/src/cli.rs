@@ -28,6 +28,10 @@ pub enum Commands {
         /// Path to a file containing the password (conflicts with password)
         #[arg(long, conflicts_with = "password")]
         password_file: Option<PathBuf>,
+        ///
+        /// Accept week passwords, bypassing password strength validations (INSECURE!)
+        #[arg(long)]
+        accept_weak_password: bool,
     },
 
     /// Sign a file with your private key
@@ -51,6 +55,10 @@ pub enum Commands {
         /// Path to a file containing the password (conflicts with password)
         #[arg(long, conflicts_with = "password")]
         password_file: Option<PathBuf>,
+
+        /// Accept week passwords, bypassing password strength validations (INSECURE!)
+        #[arg(long)]
+        accept_weak_password: bool,
     },
 
     /// Operations related to signers files
