@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+pub use common::errors;
 pub use common::{
     ArtifactMarker, InitialSignersFileMarker, SignedFile, SignersFileMarker,
     errors::SignedFileError,
@@ -9,12 +10,18 @@ use common::{
     errors::keys::KeyError,
     fs::names::{find_global_signers_for, pending_signers_file_in_dir},
 };
+
+pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file};
+
 use signatures::keys::{
-    AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature,
-    AsfaloadSignatureTrait,
+    AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSecretKey,
+    AsfaloadSignature,
 };
 
+pub use signatures::keys::AsfaloadSecretKeyTrait as SecretKeyTrait;
+
 use signatures::keys::AsfaloadKeyPair;
+pub use signatures::keys::AsfaloadSignatureTrait;
 use signers_file::sign_signers_file;
 
 // In this type argument we constrain the type argument of the SignatureWithState type
@@ -178,5 +185,22 @@ where
         let location = dir.as_ref().join(name);
         keypair.save(&location)?;
         Ok(KeyPair::<M> { keypair, location })
+    }
+}
+
+pub struct SecretKey<M> {
+    pub location: PathBuf,
+    pub key: AsfaloadSecretKey<M>,
+}
+impl<M> SecretKey<M>
+where
+    AsfaloadSecretKey<M>: SecretKeyTrait,
+{
+    pub fn from_file<P: AsRef<Path>>(location: P, password: &str) -> Result<Self, KeyError> {
+        let key = AsfaloadSecretKey::from_file(&location, password)?;
+        Ok(SecretKey::<M> {
+            key,
+            location: location.as_ref().to_path_buf(),
+        })
     }
 }

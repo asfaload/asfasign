@@ -1,6 +1,10 @@
-use crate::cli::{Cli, Commands};
+use crate::{
+    cli::{Cli, Commands},
+    utils::get_password,
+};
 
 pub mod keys;
+pub mod sign_file;
 pub mod signers_file;
 use anyhow::Result;
 
@@ -13,12 +17,35 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password,
             password_file,
         } => {
-            keys::handle_new_keys_command(
-                name,
-                output_dir,
+            let password = get_password(
                 password.clone(),
                 password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
             )?;
+            keys::handle_new_keys_command(name, output_dir, password)?;
+        }
+        Commands::SignFile {
+            file_to_sign,
+            secret_key,
+            output_file,
+            password,
+            password_file,
+        } => {
+            let password = get_password(
+                password.clone(),
+                password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
+            )?;
+            sign_file::handle_sign_file_command(
+                file_to_sign,
+                secret_key,
+                password.as_str(),
+                output_file,
+            )?
         }
         Commands::NewSignersFile {
             artifact_signer,

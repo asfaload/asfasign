@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::utils::{ensure_dir_exists, get_password};
+use crate::utils::ensure_dir_exists;
 use anyhow::Result;
 use features_lib::KeyPair;
 
@@ -13,21 +13,8 @@ use features_lib::KeyPair;
 ///
 /// # Returns
 /// * `Result<()>` - Ok if the command was handled successfully, Err otherwise
-pub fn handle_new_keys_command(
-    name: &str,
-    output_dir: &Path,
-    password: Option<String>,
-    password_file: Option<&Path>,
-) -> Result<()> {
+pub fn handle_new_keys_command(name: &str, output_dir: &Path, password: String) -> Result<()> {
     ensure_dir_exists(output_dir)?;
-
-    let password = get_password(
-        password,
-        password_file,
-        "ASFALOAD_NEW_KEYS_PASSWORD",
-        "ASFALOAD_NEW_KEYS_PASSWORD_FILE",
-        "Enter password: ",
-    )?;
 
     println!(
         "Generating keypair with name '{}' in directory {:?}",
