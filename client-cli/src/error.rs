@@ -15,6 +15,9 @@ pub enum ClientCliError {
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
+    #[error("Password is too week")]
+    PasswordStrengthError(String),
+
     #[error("Password confirmation does not match")]
     PasswordConfirmationError,
 

@@ -1,5 +1,7 @@
 use std::io::Read;
 use std::path::Path;
+use zxcvbn::{zxcvbn, Score};
+use ClientCliError::PasswordStrengthError;
 
 use crate::error::{ClientCliError, Result};
 
@@ -44,7 +46,7 @@ pub fn read_password_from_file(file_path: &Path) -> Result<String> {
 /// 3. Environment variable ASFALOAD_NEW_KEYS_PASSWORD
 /// 4. Environment variable ASFALOAD_NEW_KEYS_PASSWORD_FILE
 /// 5. Interactive prompt
-pub fn get_password(
+fn get_unvalidated_password(
     password_arg: Option<String>,
     password_file_arg: Option<&Path>,
     env_var_password: &str,
@@ -74,12 +76,6 @@ pub fn get_password(
     let password = rpassword::read_password()
         .map_err(|e| ClientCliError::InvalidInput(format!("Failed to read password: {}", e)))?;
 
-    if password.len() < 8 {
-        return Err(ClientCliError::InvalidInput(
-            "Password too short".to_string(),
-        ));
-    }
-
     eprint!("Confirmation:");
     let password_confirmation = rpassword::read_password()
         .map_err(|e| ClientCliError::InvalidInput(format!("Failed to read password: {}", e)))?;
@@ -89,4 +85,51 @@ pub fn get_password(
     } else {
         Err(ClientCliError::PasswordConfirmationError)
     }
+}
+
+fn validate_password(password: &str) -> Result<String> {
+    let estimate = zxcvbn(password, &[]);
+
+    // Check score
+    match estimate.score() {
+        Score::Zero | Score::One | Score::Two => {
+            return Err(PasswordStrengthError("Password is too weak".to_string()))
+        }
+        // The enum is marked non-exhaustive, so we only match on the weaker ones, the rest is ok
+        _ => {}
+    }
+
+    // Check warnings
+    if let Some(feedback) = estimate.feedback() {
+        if let Some(warning) = feedback.warning() {
+            return Err(PasswordStrengthError(format!(
+                "Password warning: {}",
+                warning
+            )));
+        }
+        if !feedback.suggestions().is_empty() {
+            for suggestion in feedback.suggestions() {
+                eprintln!("  • {}", suggestion);
+            }
+        }
+    }
+
+    Ok(password.to_string())
+}
+pub fn get_password(
+    password_arg: Option<String>,
+    password_file_arg: Option<&Path>,
+    env_var_password: &str,
+    env_var_password_file: &str,
+    prompt_message: &str,
+) -> Result<String> {
+    let unvalidated_password = get_unvalidated_password(
+        password_arg,
+        password_file_arg,
+        env_var_password,
+        env_var_password_file,
+        prompt_message,
+    )?;
+    let validated_password = validate_password(unvalidated_password.as_str())?;
+    Ok(validated_password)
 }
