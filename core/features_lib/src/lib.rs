@@ -6,11 +6,15 @@ pub use common::{
 };
 use common::{
     SignedFileWithKind,
+    errors::keys::KeyError,
     fs::names::{find_global_signers_for, pending_signers_file_in_dir},
 };
 use signatures::keys::{
-    AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
+    AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature,
+    AsfaloadSignatureTrait,
 };
+
+use signatures::keys::AsfaloadKeyPair;
 use signers_file::sign_signers_file;
 
 // In this type argument we constrain the type argument of the SignatureWithState type
@@ -156,5 +160,23 @@ impl SignersFileTrait for SignersFile {
     }
     fn find_pending_in_dir<P: AsRef<Path>>(path_in: P) -> Result<PathBuf, std::io::Error> {
         pending_signers_file_in_dir(path_in)
+    }
+}
+
+pub struct KeyPair<M> {
+    pub location: PathBuf,
+    pub keypair: AsfaloadKeyPair<M>,
+}
+impl<M> KeyPair<M>
+where
+    // This Higher-Rank Trait Bound states that AsfaloadKeyPair<M> must implement
+    // AsfaloadKeyPairTrait for *any* lifetime 'a.
+    AsfaloadKeyPair<M>: for<'a> AsfaloadKeyPairTrait<'a>,
+{
+    pub fn new<P: AsRef<Path>>(dir: P, name: &str, password: &str) -> Result<Self, KeyError> {
+        let keypair = AsfaloadKeyPair::new(password)?;
+        let location = dir.as_ref().join(name);
+        keypair.save(&location)?;
+        Ok(KeyPair::<M> { keypair, location })
     }
 }

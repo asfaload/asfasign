@@ -8,6 +8,7 @@ clap = { version = "4.5.53", features = ["derive"] }
 thiserror = "2.0.17"
 anyhow = "1.0.100"
 rpassword = "7.4.0"
+features_lib = { path = "../core/features_lib/" }
 
 [lints]
 workspace = true

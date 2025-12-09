@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::utils::{ensure_dir_exists, get_password};
 use anyhow::Result;
+use features_lib::KeyPair;
 
 /// Handles the `keys` command.
 ///
@@ -28,15 +29,16 @@ pub fn handle_new_keys_command(
         "Enter password: ",
     )?;
 
-    // TODO: Implement key generation logic using the password
     println!(
-        "Generating key with name '{}' in directory {:?}",
+        "Generating keypair with name '{}' in directory {:?}",
         name, output_dir
     );
-    println!(
-        "Password retrieved successfully (length: {})",
-        password.len()
-    );
+    let kp = KeyPair::new(output_dir, name, password.as_str())?;
 
+    println!(
+        "Public key saved at {}.pub and secret key at {}",
+        kp.location.to_string_lossy(),
+        kp.location.to_string_lossy()
+    );
     Ok(())
 }
