@@ -1,13 +1,13 @@
 [workspace]
 members = [
-  "signatures",
-  "signers_file",
-  "aggregate_signature",
-  "test_helpers",
-  "common",
-  "signers_file_types",
-  "integration_tests",
-  "user_lib",
+  "core/signatures",
+  "core/signers_file",
+  "core/aggregate_signature",
+  "core/test_helpers",
+  "core/common",
+  "core/signers_file_types",
+  "core/integration_tests",
+  "core/features_lib", "client-cli",
 ]
 
 [workspace.lints.clippy]
