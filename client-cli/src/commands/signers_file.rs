@@ -11,14 +11,14 @@ use features_lib::SignersConfig;
 fn get_group_info<P: PublicKeyTrait>(
     keys: &[String],
     threshold: Option<u32>,
-) -> std::result::Result<(Vec<P>, Option<u32>), ClientCliError> {
+) -> std::result::Result<Option<(Vec<P>, u32)>, ClientCliError> {
     if keys.is_empty() {
-        Ok((vec![], None))
+        Ok(None)
     } else {
         let parsed_admin_keys = parse_public_keys::<P>(keys)?;
         if let Some(threshold) = threshold {
             validate_threshold(threshold, parsed_admin_keys.len())?;
-            Ok((parsed_admin_keys, Some(threshold)))
+            Ok(Some((parsed_admin_keys, threshold)))
         } else {
             Err(crate::error::ClientCliError::InvalidInput(
                 "Admin threshold is required when admin keys are provided".to_string(),
@@ -87,26 +87,18 @@ pub fn handle_new_signers_file_command(
 
     // Combine string and file-based admin keys
     let all_admin_keys = combine_key_sources(admin_key, admin_key_file)?;
-    let (admin_keys, admin_threshold) = get_group_info(&all_admin_keys, admin_threshold)?;
+    let admin_group_info = get_group_info(&all_admin_keys, admin_threshold)?;
 
     // Combine string and file-based master keys
     let all_master_keys = combine_key_sources(master_key, master_key_file)?;
-    let (master_keys, master_threshold_value) = get_group_info(&all_master_keys, master_threshold)?;
+    let master_group_info = get_group_info(&all_master_keys, master_threshold)?;
     //
     // Create signers config using the with_keys method
     let signers_config = SignersConfig::with_keys(
         1, // version
         (artifact_signers, artifact_threshold),
-        if admin_keys.is_empty() {
-            None
-        } else {
-            Some((admin_keys, admin_threshold.unwrap()))
-        },
-        if master_keys.is_empty() {
-            None
-        } else {
-            Some((master_keys, master_threshold_value.unwrap()))
-        },
+        admin_group_info,
+        master_group_info,
     )
     .map_err(|e| {
         crate::error::ClientCliError::SignersFile(format!("Failed to create signers config: {}", e))
