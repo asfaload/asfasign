@@ -20,10 +20,11 @@ use features_lib::SignersConfig;
 /// * `master_key` - List of master public keys (base64 strings)
 /// * `master_key_file` - List of master public key files (.pub files)
 /// * `master_threshold` - Threshold for master keys (optional)
-/// * `output_dir` - Directory to store the signers file
+/// * `output_file` - Path to the output signers file
 ///
 /// # Returns
 /// * `Result<()>` - Ok if the command was handled successfully, Err otherwise
+#[allow(clippy::too_many_arguments)]
 pub fn handle_new_signers_file_command(
     artifact_signer: &[String],
     artifact_signer_file: &[PathBuf],
@@ -34,10 +35,28 @@ pub fn handle_new_signers_file_command(
     master_key: &[String],
     master_key_file: &[PathBuf],
     master_threshold: Option<u32>,
-    output_dir: &Path,
+    output_file: &Path,
 ) -> Result<()> {
-    // Ensure output directory exists
-    ensure_dir_exists(output_dir)?;
+    // We do not geve a default name to the file, so we cannot work
+    // with the path to a dir.
+    if output_file.is_dir() {
+        return Err(crate::error::ClientCliError::InvalidInput(format!(
+            "Output file {:?} is a directory but it must be the path to a new file.",
+            output_file
+        )));
+    }
+    // Check if the output file already exists
+    if output_file.exists() {
+        return Err(crate::error::ClientCliError::InvalidInput(format!(
+            "Output file {:?} already exists, refusing to overwrite",
+            output_file
+        )));
+    }
+
+    // Get parent directory and create it if it doesn't exist
+    if let Some(parent_dir) = output_file.parent() {
+        ensure_dir_exists(parent_dir)?;
+    }
 
     // Combine string and file-based artifact signers
     let all_artifact_signers = combine_key_sources(artifact_signer, artifact_signer_file)?;
@@ -112,8 +131,7 @@ pub fn handle_new_signers_file_command(
     })?;
 
     // Write to file
-    let output_path = output_dir.join("signers.json");
-    let mut file = fs::File::create(&output_path).map_err(|e| {
+    let mut file = fs::File::create(output_file).map_err(|e| {
         crate::error::ClientCliError::SignersFile(format!("Failed to create signers file: {}", e))
     })?;
 
@@ -121,7 +139,7 @@ pub fn handle_new_signers_file_command(
         crate::error::ClientCliError::SignersFile(format!("Failed to write signers file: {}", e))
     })?;
 
-    println!("Signers file created successfully at: {:?}", output_path);
+    println!("Signers file created successfully at: {:?}", output_file);
     println!(
         "Artifact signers: {} (threshold: {})",
         all_artifact_signers.len(),

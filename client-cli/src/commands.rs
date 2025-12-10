@@ -68,7 +68,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             master_key,
             master_key_file,
             master_threshold,
-            output_dir,
+            output_file,
         } => {
             signers_file::handle_new_signers_file_command(
                 artifact_signer,
@@ -80,7 +80,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 master_key,
                 master_key_file,
                 master_threshold.as_ref().copied(),
-                output_dir,
+                output_file,
             )?;
         }
         Commands::VerifySig {

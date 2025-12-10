@@ -95,9 +95,9 @@ pub enum Commands {
         #[arg(long, short = 'M')]
         master_threshold: Option<u32>,
 
-        /// Directory to store the signers file
+        /// Path to the signers file to be created
         #[arg(long, short)]
-        output_dir: PathBuf,
+        output_file: PathBuf,
     },
     /// Verify a signature for a file
     VerifySig {
