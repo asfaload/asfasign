@@ -4,10 +4,9 @@ use std::path::Path;
 
 use crate::error::Result;
 use crate::utils::{ensure_dir_exists, validate_threshold};
-use signatures::keys::minisign::PublicKey;
-use signatures::keys::AsfaloadPublicKey as AsfaloadPublicKeyWrapper;
-use signatures::keys::AsfaloadPublicKeyTrait;
-use signers_file_types::SignersConfig;
+use features_lib::PublicKey;
+use features_lib::PublicKeyTrait;
+use features_lib::SignersConfig;
 
 /// Handles the `signers_file` command.
 ///
@@ -38,15 +37,13 @@ pub fn handle_new_signers_file_command(
     validate_threshold(artifact_threshold, artifact_signer.len())?;
 
     // Parse public keys from strings
-    let artifact_signers =
-        parse_public_keys::<AsfaloadPublicKeyWrapper<PublicKey>>(artifact_signer)?;
+    let artifact_signers = parse_public_keys::<PublicKey<_>>(artifact_signer)?;
 
     // Handle admin keys and threshold
     let (admin_keys, admin_threshold) = if admin_key.is_empty() {
         (vec![], None)
     } else {
-        let parsed_admin_keys =
-            parse_public_keys::<AsfaloadPublicKeyWrapper<PublicKey>>(admin_key)?;
+        let parsed_admin_keys = parse_public_keys::<PublicKey<_>>(admin_key)?;
         if let Some(threshold) = admin_threshold {
             validate_threshold(threshold, parsed_admin_keys.len())?;
             (parsed_admin_keys, Some(threshold))
@@ -61,8 +58,7 @@ pub fn handle_new_signers_file_command(
     let (master_keys, master_threshold_value) = if master_key.is_empty() {
         (vec![], None)
     } else {
-        let parsed_master_keys =
-            parse_public_keys::<AsfaloadPublicKeyWrapper<PublicKey>>(master_key)?;
+        let parsed_master_keys = parse_public_keys::<PublicKey<_>>(master_key)?;
         if let Some(threshold) = master_threshold {
             validate_threshold(threshold, parsed_master_keys.len())?;
             (parsed_master_keys, Some(threshold))
@@ -131,7 +127,7 @@ pub fn handle_new_signers_file_command(
 }
 
 /// Parse public keys from string representations
-fn parse_public_keys<P: AsfaloadPublicKeyTrait>(key_strings: &[String]) -> Result<Vec<P>> {
+fn parse_public_keys<P: PublicKeyTrait>(key_strings: &[String]) -> Result<Vec<P>> {
     key_strings
         .iter()
         .enumerate()

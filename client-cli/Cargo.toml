@@ -10,8 +10,6 @@ anyhow = "1.0.100"
 rpassword = "7.4.0"
 features_lib = { path = "../core/features_lib/" }
 zxcvbn = "3.1.0"
-signers_file_types = { path = "../core/signers_file_types/" }
-signatures = { path = "../core/signatures/" }
 serde_json = "1.0"
 chrono = "0.4"
 
