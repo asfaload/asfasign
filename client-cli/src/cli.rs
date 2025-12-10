@@ -38,15 +38,15 @@ pub enum Commands {
     SignFile {
         /// Path to the file to be signed
         #[arg(long, short)]
-        file_to_sign: String,
+        file_to_sign: PathBuf,
 
         /// Path to the secret key file
         #[arg(long, short = 'K')]
-        secret_key: String,
+        secret_key: PathBuf,
 
         /// Path where the signature file has to be written
         #[arg(long, short)]
-        output_file: String,
+        output_file: PathBuf,
 
         /// Password for the key (conflicts with password_file)
         #[arg(long, conflicts_with = "password_file")]
@@ -91,15 +91,15 @@ pub enum Commands {
     VerifySig {
         /// Path to the signed file
         #[arg(long, short = 'f')]
-        signed_file: String,
+        signed_file: PathBuf,
 
         /// Path to the signature file
         #[arg(long, short = 'x')]
-        signature: String,
+        signature: PathBuf,
 
         /// Path to the public key file
         #[arg(long, short = 'k')]
-        public_key: String,
+        public_key: PathBuf,
     },
 }
 
