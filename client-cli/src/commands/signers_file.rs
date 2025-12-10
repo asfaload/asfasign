@@ -9,16 +9,15 @@ use features_lib::PublicKeyTrait;
 use features_lib::SignersConfig;
 
 fn get_group_info<P: PublicKeyTrait>(
-    keys: &[String],
+    keys: Vec<P>,
     threshold: Option<u32>,
 ) -> std::result::Result<Option<(Vec<P>, u32)>, ClientCliError> {
     if keys.is_empty() {
         Ok(None)
     } else {
-        let parsed_admin_keys = parse_public_keys::<P>(keys)?;
         if let Some(threshold) = threshold {
-            validate_threshold(threshold, parsed_admin_keys.len())?;
-            Ok(Some((parsed_admin_keys, threshold)))
+            validate_threshold(threshold, keys.len())?;
+            Ok(Some((keys, threshold)))
         } else {
             Err(crate::error::ClientCliError::InvalidInput(
                 "Admin threshold is required when admin keys are provided".to_string(),
@@ -77,26 +76,32 @@ pub fn handle_new_signers_file_command(
     }
 
     // Combine string and file-based artifact signers
-    let all_artifact_signers = combine_key_sources(artifact_signer, artifact_signer_file)?;
+    let all_artifact_signers: Vec<PublicKey<_>> =
+        combine_key_sources(artifact_signer, artifact_signer_file)?;
+    let all_artifact_signers_count = all_artifact_signers.len();
 
+    if all_artifact_signers_count == 0 {
+        return Err(crate::error::ClientCliError::InvalidInput(
+            "At least one artifact signer must be provided.".to_string(),
+        ));
+    }
     // Validate artifact threshold
     validate_threshold(artifact_threshold, all_artifact_signers.len())?;
 
-    // Parse public keys from strings and files
-    let artifact_signers = parse_public_keys::<PublicKey<_>>(&all_artifact_signers)?;
-
     // Combine string and file-based admin keys
     let all_admin_keys = combine_key_sources(admin_key, admin_key_file)?;
-    let admin_group_info = get_group_info(&all_admin_keys, admin_threshold)?;
+    let all_admin_keys_count = all_admin_keys.len();
+    let admin_group_info = get_group_info(all_admin_keys, admin_threshold)?;
 
     // Combine string and file-based master keys
     let all_master_keys = combine_key_sources(master_key, master_key_file)?;
-    let master_group_info = get_group_info(&all_master_keys, master_threshold)?;
+    let all_master_keys_count = all_master_keys.len();
+    let master_group_info = get_group_info(all_master_keys, master_threshold)?;
     //
     // Create signers config using the with_keys method
     let signers_config = SignersConfig::with_keys(
         1, // version
-        (artifact_signers, artifact_threshold),
+        (all_artifact_signers, artifact_threshold),
         admin_group_info,
         master_group_info,
     )
@@ -124,17 +129,16 @@ pub fn handle_new_signers_file_command(
     println!("Signers file created successfully at: {:?}", output_file);
     println!(
         "Artifact signers: {} (threshold: {})",
-        all_artifact_signers.len(),
-        artifact_threshold
+        all_artifact_signers_count, artifact_threshold
     );
     println!(
         "Admin keys: {} (threshold: {})",
-        all_admin_keys.len(),
+        all_admin_keys_count,
         admin_threshold.map_or("none".to_string(), |t| t.to_string())
     );
     println!(
         "Master keys: {} (threshold: {})",
-        all_master_keys.len(),
+        all_master_keys_count,
         master_threshold.map_or("none".to_string(), |t| t.to_string())
     );
 
@@ -142,42 +146,12 @@ pub fn handle_new_signers_file_command(
 }
 
 /// Combine string-based keys and file-based keys into a single Vec of strings
-fn combine_key_sources(string_keys: &[String], file_keys: &[PathBuf]) -> Result<Vec<String>> {
-    let mut combined = Vec::new();
-
-    // Add string keys
-    combined.extend(string_keys.iter().cloned());
-
-    // Add file keys by reading the public key from each file
-    for file_path in file_keys {
-        let key_content = fs::read_to_string(file_path).map_err(|e| {
-            crate::error::ClientCliError::SignersFile(format!(
-                "Failed to read public key file {:?}: {}",
-                file_path, e
-            ))
-        })?;
-
-        // Extract the second line which contains the base64-encoded public key
-        let public_key_line = key_content
-            .lines()
-            .nth(1)
-            .ok_or_else(|| {
-                crate::error::ClientCliError::SignersFile(format!(
-                    "Public key file {:?} does not contain a second line with the key",
-                    file_path
-                ))
-            })?
-            .to_string();
-
-        combined.push(public_key_line);
-    }
-
-    Ok(combined)
-}
-
-/// Parse public keys from string representations
-fn parse_public_keys<P: PublicKeyTrait>(key_strings: &[String]) -> Result<Vec<P>> {
-    key_strings
+fn combine_key_sources<P: PublicKeyTrait>(
+    string_keys: &[String],
+    file_keys: &[PathBuf],
+) -> Result<Vec<P>> {
+    // Collect public keys from base64 strings we got
+    let mut combined: Vec<Result<P>> = string_keys
         .iter()
         .enumerate()
         .map(|(i, key_str)| {
@@ -189,5 +163,19 @@ fn parse_public_keys<P: PublicKeyTrait>(key_strings: &[String]) -> Result<Vec<P>
                 ))
             })
         })
-        .collect()
+        .collect();
+
+    // Add file keys by reading the public key from each file we got
+    for file_path in file_keys {
+        let key_result = P::from_file(file_path).map_err(|e| {
+            crate::error::ClientCliError::SignersFile(format!(
+                "Failed to read public key from file {:?}: {}",
+                file_path, e
+            ))
+        });
+
+        combined.push(key_result);
+    }
+
+    combined.into_iter().collect()
 }
