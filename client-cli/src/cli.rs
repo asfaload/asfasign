@@ -14,19 +14,19 @@ pub enum Commands {
     /// Create a new key pair in the directory of your choice
     NewKeys {
         /// Name of the key
-        #[arg(long)]
+        #[arg(long, short)]
         name: String,
 
         /// Directory to store the key
-        #[arg(long)]
+        #[arg(long, short)]
         output_dir: PathBuf,
 
         /// Password for the key (conflicts with password_file)
-        #[arg(long, conflicts_with = "password_file")]
+        #[arg(long, short, conflicts_with = "password_file")]
         password: Option<String>,
 
         /// Path to a file containing the password (conflicts with password)
-        #[arg(long, conflicts_with = "password")]
+        #[arg(long, short = 'P', conflicts_with = "password")]
         password_file: Option<PathBuf>,
         ///
         /// Accept week passwords, bypassing password strength validations (INSECURE!)
@@ -37,15 +37,15 @@ pub enum Commands {
     /// Sign a file with your private key
     SignFile {
         /// Path to the file to be signed
-        #[arg(long)]
+        #[arg(long, short)]
         file_to_sign: String,
 
         /// Path to the secret key file
-        #[arg(long)]
+        #[arg(long, short = 'K')]
         secret_key: String,
 
         /// Path where the signature file has to be written
-        #[arg(long)]
+        #[arg(long, short)]
         output_file: String,
 
         /// Password for the key (conflicts with password_file)
@@ -53,52 +53,52 @@ pub enum Commands {
         password: Option<String>,
 
         /// Path to a file containing the password (conflicts with password)
-        #[arg(long, conflicts_with = "password")]
+        #[arg(long, short = 'P', conflicts_with = "password")]
         password_file: Option<PathBuf>,
     },
 
     /// Operations related to signers files
     NewSignersFile {
         /// Artifact signer public key (can be repeated)
-        #[arg(long)]
+        #[arg(long, short)]
         artifact_signer: Vec<String>,
 
         /// Threshold for artifact signers
-        #[arg(long)]
+        #[arg(long, short = 'A')]
         artifact_threshold: u32,
 
         /// Admin public key (can be repeated)
-        #[arg(long)]
+        #[arg(long, short = 'd')]
         admin_key: Vec<String>,
 
         /// Threshold for admin keys
-        #[arg(long)]
+        #[arg(long, short = 'D')]
         admin_threshold: u32,
 
         /// Master public key (can be repeated)
-        #[arg(long)]
+        #[arg(long, short)]
         master_key: Vec<String>,
 
         /// Threshold for master keys
-        #[arg(long)]
+        #[arg(long, short = 'M')]
         master_threshold: u32,
 
         /// Directory to store the signers file
-        #[arg(long)]
+        #[arg(long, short)]
         output_dir: PathBuf,
     },
     /// Verify a signature for a file
     VerifySig {
         /// Path to the signed file
-        #[arg(long)]
+        #[arg(long, short = 'f')]
         signed_file: String,
 
         /// Path to the signature file
-        #[arg(long)]
+        #[arg(long, short = 'x')]
         signature: String,
 
         /// Path to the public key file
-        #[arg(long)]
+        #[arg(long, short = 'k')]
         public_key: String,
     },
 }
