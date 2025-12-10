@@ -1,11 +1,13 @@
 use crate::{
     cli::{Cli, Commands},
     utils::get_password,
+    utils::PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
 };
 
 pub mod keys;
 pub mod sign_file;
 pub mod signers_file;
+pub mod verify_sig;
 use anyhow::Result;
 
 /// Dispatches the command to the appropriate handler
@@ -24,6 +26,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
+                RequireConfirmation,
                 *accept_weak_password,
             )?;
             keys::handle_new_keys_command(name, output_dir, password)?;
@@ -34,7 +37,6 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             output_file,
             password,
             password_file,
-            accept_weak_password,
         } => {
             let password = get_password(
                 password.clone(),
@@ -42,7 +44,12 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
-                *accept_weak_password,
+                // As this is the use of a password, and not the setup,
+                // we don't ask for a confirmation
+                WithoutConfirmation,
+                // We accept weak password because this the use of a
+                // password, makes no sense to prevent use of weak password here
+                true,
             )?;
             sign_file::handle_sign_file_command(
                 file_to_sign,
@@ -69,6 +76,13 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 *master_threshold,
                 output_dir,
             )?;
+        }
+        Commands::VerifySig {
+            signed_file,
+            signature,
+            public_key,
+        } => {
+            verify_sig::handle_verify_sig_command(signed_file, signature, public_key)?;
         }
     }
     Ok(())

@@ -192,7 +192,14 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         Ok(AsfaloadSignature { signature: s })
     }
 
+    fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<&Self, SignatureError> {
+        // We save the signature field of the struct to a file as string
+        let sig_string = self.signature.to_string();
+        std::fs::write(path, sig_string)?;
+        Ok(self)
+    }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, SignatureError> {
+        // We read the signature from a string in the file, and build our struct
         let s = minisign::SignatureBox::from_file(path)?;
         Ok(AsfaloadSignature { signature: s })
     }
@@ -281,6 +288,7 @@ mod asfaload_index_tests {
 
     use anyhow::{Context, Result};
     use common::fs::names::PENDING_SIGNATURES_SUFFIX;
+    use tempfile::TempDir;
 
     use super::*;
     //------------------------------------------------------------
@@ -463,6 +471,16 @@ mod asfaload_index_tests {
         let sig_b64 = sig.to_base64();
         let sig_from_b64 = AsfaloadSignature::from_base64(&sig_b64)?;
         pk.verify(&sig_from_b64, &data)?;
+
+        // Saving signature to file
+        let temp_dir = TempDir::new()?;
+        let root_dir = temp_dir.as_ref();
+        let sig_path = root_dir.join("signature");
+        sig.to_file(&sig_path)?;
+
+        // Reading signature from file
+        let sig_from_file = AsfaloadSignature::from_file(sig_path)?;
+        pk.verify(&sig_from_file, &data)?;
 
         Ok(())
     }
