@@ -2,12 +2,30 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use crate::error::Result;
+use crate::error::{ClientCliError, Result};
 use crate::utils::{ensure_dir_exists, validate_threshold};
 use features_lib::PublicKey;
 use features_lib::PublicKeyTrait;
 use features_lib::SignersConfig;
 
+fn get_group_info<P: PublicKeyTrait>(
+    keys: &[String],
+    threshold: Option<u32>,
+) -> std::result::Result<(Vec<P>, Option<u32>), ClientCliError> {
+    if keys.is_empty() {
+        Ok((vec![], None))
+    } else {
+        let parsed_admin_keys = parse_public_keys::<P>(keys)?;
+        if let Some(threshold) = threshold {
+            validate_threshold(threshold, parsed_admin_keys.len())?;
+            Ok((parsed_admin_keys, Some(threshold)))
+        } else {
+            Err(crate::error::ClientCliError::InvalidInput(
+                "Admin threshold is required when admin keys are provided".to_string(),
+            ))
+        }
+    }
+}
 /// Handles the `signers_file` command.
 ///
 /// # Arguments
@@ -69,40 +87,12 @@ pub fn handle_new_signers_file_command(
 
     // Combine string and file-based admin keys
     let all_admin_keys = combine_key_sources(admin_key, admin_key_file)?;
-
-    // Handle admin keys and threshold
-    let (admin_keys, admin_threshold) = if all_admin_keys.is_empty() {
-        (vec![], None)
-    } else {
-        let parsed_admin_keys = parse_public_keys::<PublicKey<_>>(&all_admin_keys)?;
-        if let Some(threshold) = admin_threshold {
-            validate_threshold(threshold, parsed_admin_keys.len())?;
-            (parsed_admin_keys, Some(threshold))
-        } else {
-            return Err(crate::error::ClientCliError::InvalidInput(
-                "Admin threshold is required when admin keys are provided".to_string(),
-            ));
-        }
-    };
+    let (admin_keys, admin_threshold) = get_group_info(&all_admin_keys, admin_threshold)?;
 
     // Combine string and file-based master keys
     let all_master_keys = combine_key_sources(master_key, master_key_file)?;
-
-    // Handle master keys and threshold
-    let (master_keys, master_threshold_value) = if all_master_keys.is_empty() {
-        (vec![], None)
-    } else {
-        let parsed_master_keys = parse_public_keys::<PublicKey<_>>(&all_master_keys)?;
-        if let Some(threshold) = master_threshold {
-            validate_threshold(threshold, parsed_master_keys.len())?;
-            (parsed_master_keys, Some(threshold))
-        } else {
-            return Err(crate::error::ClientCliError::InvalidInput(
-                "Master threshold is required when master keys are provided".to_string(),
-            ));
-        }
-    };
-
+    let (master_keys, master_threshold_value) = get_group_info(&all_master_keys, master_threshold)?;
+    //
     // Create signers config using the with_keys method
     let signers_config = SignersConfig::with_keys(
         1, // version
