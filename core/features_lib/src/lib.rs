@@ -24,6 +24,8 @@ pub use signatures::keys::AsfaloadSecretKeyTrait as SecretKeyTrait;
 pub use signatures::keys::AsfaloadSignature as Signature;
 pub use signatures::keys::AsfaloadSignatureTrait as SignatureTrait;
 
+pub use signers_file_types::SignersConfig;
+
 use signatures::keys::AsfaloadKeyPair;
 pub use signatures::keys::AsfaloadSignatureTrait;
 use signers_file::sign_signers_file;

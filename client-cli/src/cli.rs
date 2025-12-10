@@ -59,33 +59,45 @@ pub enum Commands {
 
     /// Operations related to signers files
     NewSignersFile {
-        /// Artifact signer public key (can be repeated)
+        /// Artifact signer public key as base64 string (can be repeated)
         #[arg(long, short)]
         artifact_signer: Vec<String>,
+
+        /// Artifact signer public key file (can be repeated, combines with --artifact-signer)
+        #[arg(long)]
+        artifact_signer_file: Vec<PathBuf>,
 
         /// Threshold for artifact signers
         #[arg(long, short = 'A')]
         artifact_threshold: u32,
 
-        /// Admin public key (can be repeated)
+        /// Admin public key string as base64 string (can be repeated)
         #[arg(long, short = 'd')]
         admin_key: Vec<String>,
 
-        /// Threshold for admin keys
-        #[arg(long, short = 'D')]
-        admin_threshold: u32,
+        /// Admin public key file (can be repeated, combines with --admin-key)
+        #[arg(long)]
+        admin_key_file: Vec<PathBuf>,
 
-        /// Master public key (can be repeated)
+        /// Threshold for admin keys (required if admin keys are provided)
+        #[arg(long, short = 'D')]
+        admin_threshold: Option<u32>,
+
+        /// Master public key string as base64 string (can be repeated)
         #[arg(long, short)]
         master_key: Vec<String>,
 
-        /// Threshold for master keys
-        #[arg(long, short = 'M')]
-        master_threshold: u32,
+        /// Master public key file (can be repeated, combines with --master-key)
+        #[arg(long)]
+        master_key_file: Vec<PathBuf>,
 
-        /// Directory to store the signers file
+        /// Threshold for master keys (required if master keys are provided)
+        #[arg(long, short = 'M')]
+        master_threshold: Option<u32>,
+
+        /// Path to the signers file to be created
         #[arg(long, short)]
-        output_dir: PathBuf,
+        output_file: PathBuf,
     },
     /// Verify a signature for a file
     VerifySig {

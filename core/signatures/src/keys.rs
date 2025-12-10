@@ -62,6 +62,7 @@ pub struct AsfaloadSecretKey<K> {
 pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone + std::fmt::Debug {
     type Signature: AsfaloadSignatureTrait;
     type KeyType;
+    type SecretKeyType;
 
     fn verify(&self, signature: &Self::Signature, data: &AsfaloadHashes)
     -> Result<(), VerifyError>;
@@ -78,6 +79,7 @@ pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone + std::fm
         Self::from_bytes(&s.into_bytes())
     }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError>;
+    fn from_secret_key(sk: AsfaloadSecretKey<Self::SecretKeyType>) -> Result<Self, KeyError>;
     fn key_format(&self) -> KeyFormat;
     fn key(&self) -> Self::KeyType;
 }
