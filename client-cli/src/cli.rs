@@ -113,6 +113,27 @@ pub enum Commands {
         #[arg(long, short = 'k')]
         public_key: PathBuf,
     },
+    /// Add a signature to the aggregate signature for a file.
+    /// If you add your signature to an existing aggregate signature,
+    /// its file name must be identitical to the signed file, but with
+    /// added suffix .signatures.json.pending.
+    AddToAggregate {
+        /// Path to the signed file
+        #[arg(long, short = 'f')]
+        signed_file: PathBuf,
+
+        /// Path to the secret key file
+        #[arg(long, short = 'K')]
+        secret_key: PathBuf,
+
+        /// Password for the key (conflicts with password_file)
+        #[arg(long, short, conflicts_with = "password_file")]
+        password: Option<String>,
+
+        /// Path to a file containing the password (conflicts with password)
+        #[arg(long, short = 'P', conflicts_with = "password")]
+        password_file: Option<PathBuf>,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -138,6 +159,7 @@ impl Commands {
             Self::NewSignersFile { .. } => "NEW_SIGNERS_FILE",
             Self::NewKeys { .. } => "NEW_KEYS",
             Self::VerifySig { .. } => "VERIFY_SIG",
+            Self::AddToAggregate { .. } => "ADD_TO_AGGREGATE",
         }
     }
 

@@ -115,9 +115,11 @@ pub trait AsfaloadSignatureTrait: Sized {
     fn from_base64(s: &str) -> Result<Self, SignatureError>;
 
     fn to_base64(&self) -> String;
-    // FIXME: this only add the file to a pending signatures file, but it does not transition
-    // to complete if needed. So the way to add a signature to an aggregate should be by
+    // Warning: this only adds the file to a pending signatures file, but it does not transition
+    // to complete if needed. So the way to add a signature to an aggregate on the backend should be by
     // calling AggregateSignature::add_individual_signature.
+    // This method is useful for use on the client though, where the signers file used to
+    // evaluate completeness is not available.
     fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait<Signature = Self>>(
         &self,
         dir: P,

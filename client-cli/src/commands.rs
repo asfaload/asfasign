@@ -8,6 +8,7 @@ pub mod keys;
 pub mod sign_file;
 pub mod signers_file;
 pub mod verify_sig;
+pub mod add_to_aggregate;
 use anyhow::Result;
 
 /// Dispatches the command to the appropriate handler
@@ -89,6 +90,27 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             public_key,
         } => {
             verify_sig::handle_verify_sig_command(signed_file, signature, public_key)?;
+        }
+        Commands::AddToAggregate {
+            signed_file,
+            secret_key,
+            password,
+            password_file,
+        } => {
+            let password = get_password(
+                password.clone(),
+                password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
+                WithoutConfirmation,
+                true,
+            )?;
+            add_to_aggregate::handle_add_to_aggregate_command(
+                signed_file,
+                secret_key,
+                password.as_str(),
+            )?;
         }
     }
     Ok(())
