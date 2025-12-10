@@ -231,7 +231,6 @@ dependencies = [
  "clap",
  "features_lib",
  "rpassword",
- "signatures",
  "thiserror",
  "zxcvbn",
 ]

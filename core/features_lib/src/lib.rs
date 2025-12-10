@@ -18,7 +18,11 @@ use signatures::keys::{
     AsfaloadSignature,
 };
 
+pub use signatures::keys::AsfaloadPublicKey as PublicKey;
+pub use signatures::keys::AsfaloadPublicKeyTrait as PublicKeyTrait;
 pub use signatures::keys::AsfaloadSecretKeyTrait as SecretKeyTrait;
+pub use signatures::keys::AsfaloadSignature as Signature;
+pub use signatures::keys::AsfaloadSignatureTrait as SignatureTrait;
 
 use signatures::keys::AsfaloadKeyPair;
 pub use signatures::keys::AsfaloadSignatureTrait;
