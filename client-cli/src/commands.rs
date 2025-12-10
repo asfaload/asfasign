@@ -60,19 +60,25 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::NewSignersFile {
             artifact_signer,
+            artifact_signer_file,
             artifact_threshold,
             admin_key,
+            admin_key_file,
             admin_threshold,
             master_key,
+            master_key_file,
             master_threshold,
             output_dir,
         } => {
             signers_file::handle_new_signers_file_command(
                 artifact_signer,
+                artifact_signer_file,
                 *artifact_threshold,
                 admin_key,
+                admin_key_file,
                 admin_threshold.as_ref().copied(),
                 master_key,
+                master_key_file,
                 master_threshold.as_ref().copied(),
                 output_dir,
             )?;

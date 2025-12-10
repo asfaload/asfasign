@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 use crate::utils::{ensure_dir_exists, validate_threshold};
@@ -11,11 +11,14 @@ use features_lib::SignersConfig;
 /// Handles the `signers_file` command.
 ///
 /// # Arguments
-/// * `artifact_signer` - List of artifact signer public keys
+/// * `artifact_signer` - List of artifact signer public keys (base64 strings)
+/// * `artifact_signer_file` - List of artifact signer public key files (.pub files)
 /// * `artifact_threshold` - Threshold for artifact signers
-/// * `admin_key` - List of admin public keys
+/// * `admin_key` - List of admin public keys (base64 strings)
+/// * `admin_key_file` - List of admin public key files (.pub files)
 /// * `admin_threshold` - Threshold for admin keys (optional)
-/// * `master_key` - List of master public keys
+/// * `master_key` - List of master public keys (base64 strings)
+/// * `master_key_file` - List of master public key files (.pub files)
 /// * `master_threshold` - Threshold for master keys (optional)
 /// * `output_dir` - Directory to store the signers file
 ///
@@ -23,27 +26,36 @@ use features_lib::SignersConfig;
 /// * `Result<()>` - Ok if the command was handled successfully, Err otherwise
 pub fn handle_new_signers_file_command(
     artifact_signer: &[String],
+    artifact_signer_file: &[PathBuf],
     artifact_threshold: u32,
     admin_key: &[String],
+    admin_key_file: &[PathBuf],
     admin_threshold: Option<u32>,
     master_key: &[String],
+    master_key_file: &[PathBuf],
     master_threshold: Option<u32>,
     output_dir: &Path,
 ) -> Result<()> {
     // Ensure output directory exists
     ensure_dir_exists(output_dir)?;
 
-    // Validate artifact threshold
-    validate_threshold(artifact_threshold, artifact_signer.len())?;
+    // Combine string and file-based artifact signers
+    let all_artifact_signers = combine_key_sources(artifact_signer, artifact_signer_file)?;
 
-    // Parse public keys from strings
-    let artifact_signers = parse_public_keys::<PublicKey<_>>(artifact_signer)?;
+    // Validate artifact threshold
+    validate_threshold(artifact_threshold, all_artifact_signers.len())?;
+
+    // Parse public keys from strings and files
+    let artifact_signers = parse_public_keys::<PublicKey<_>>(&all_artifact_signers)?;
+
+    // Combine string and file-based admin keys
+    let all_admin_keys = combine_key_sources(admin_key, admin_key_file)?;
 
     // Handle admin keys and threshold
-    let (admin_keys, admin_threshold) = if admin_key.is_empty() {
+    let (admin_keys, admin_threshold) = if all_admin_keys.is_empty() {
         (vec![], None)
     } else {
-        let parsed_admin_keys = parse_public_keys::<PublicKey<_>>(admin_key)?;
+        let parsed_admin_keys = parse_public_keys::<PublicKey<_>>(&all_admin_keys)?;
         if let Some(threshold) = admin_threshold {
             validate_threshold(threshold, parsed_admin_keys.len())?;
             (parsed_admin_keys, Some(threshold))
@@ -54,11 +66,14 @@ pub fn handle_new_signers_file_command(
         }
     };
 
+    // Combine string and file-based master keys
+    let all_master_keys = combine_key_sources(master_key, master_key_file)?;
+
     // Handle master keys and threshold
-    let (master_keys, master_threshold_value) = if master_key.is_empty() {
+    let (master_keys, master_threshold_value) = if all_master_keys.is_empty() {
         (vec![], None)
     } else {
-        let parsed_master_keys = parse_public_keys::<PublicKey<_>>(master_key)?;
+        let parsed_master_keys = parse_public_keys::<PublicKey<_>>(&all_master_keys)?;
         if let Some(threshold) = master_threshold {
             validate_threshold(threshold, parsed_master_keys.len())?;
             (parsed_master_keys, Some(threshold))
@@ -109,21 +124,55 @@ pub fn handle_new_signers_file_command(
     println!("Signers file created successfully at: {:?}", output_path);
     println!(
         "Artifact signers: {} (threshold: {})",
-        artifact_signer.len(),
+        all_artifact_signers.len(),
         artifact_threshold
     );
     println!(
         "Admin keys: {} (threshold: {})",
-        admin_key.len(),
+        all_admin_keys.len(),
         admin_threshold.map_or("none".to_string(), |t| t.to_string())
     );
     println!(
         "Master keys: {} (threshold: {})",
-        master_key.len(),
+        all_master_keys.len(),
         master_threshold.map_or("none".to_string(), |t| t.to_string())
     );
 
     Ok(())
+}
+
+/// Combine string-based keys and file-based keys into a single Vec of strings
+fn combine_key_sources(string_keys: &[String], file_keys: &[PathBuf]) -> Result<Vec<String>> {
+    let mut combined = Vec::new();
+
+    // Add string keys
+    combined.extend(string_keys.iter().cloned());
+
+    // Add file keys by reading the public key from each file
+    for file_path in file_keys {
+        let key_content = fs::read_to_string(file_path).map_err(|e| {
+            crate::error::ClientCliError::SignersFile(format!(
+                "Failed to read public key file {:?}: {}",
+                file_path, e
+            ))
+        })?;
+
+        // Extract the second line which contains the base64-encoded public key
+        let public_key_line = key_content
+            .lines()
+            .nth(1)
+            .ok_or_else(|| {
+                crate::error::ClientCliError::SignersFile(format!(
+                    "Public key file {:?} does not contain a second line with the key",
+                    file_path
+                ))
+            })?
+            .to_string();
+
+        combined.push(public_key_line);
+    }
+
+    Ok(combined)
 }
 
 /// Parse public keys from string representations
