@@ -51,6 +51,7 @@ fn get_unvalidated_password(
     password_file_arg: Option<&Path>,
     env_var_password: &str,
     env_var_password_file: &str,
+    password_confirmation: PasswordConfirmation,
     prompt_message: &str,
 ) -> Result<String> {
     if let Some(password) = password_arg {
@@ -76,14 +77,20 @@ fn get_unvalidated_password(
     let password = rpassword::read_password()
         .map_err(|e| ClientCliError::InvalidInput(format!("Failed to read password: {}", e)))?;
 
-    eprint!("Confirmation:");
-    let password_confirmation = rpassword::read_password()
-        .map_err(|e| ClientCliError::InvalidInput(format!("Failed to read password: {}", e)))?;
+    match password_confirmation {
+        PasswordConfirmation::RequireConfirmation => {
+            eprint!("Confirmation:");
+            let password_confirmation = rpassword::read_password().map_err(|e| {
+                ClientCliError::InvalidInput(format!("Failed to read password: {}", e))
+            })?;
 
-    if password_confirmation == password {
-        Ok(password)
-    } else {
-        Err(ClientCliError::PasswordConfirmationError)
+            if password_confirmation == password {
+                Ok(password)
+            } else {
+                Err(ClientCliError::PasswordConfirmationError)
+            }
+        }
+        PasswordConfirmation::WithoutConfirmation => Ok(password),
     }
 }
 
@@ -116,12 +123,17 @@ fn validate_password(password: &str) -> Result<String> {
 
     Ok(password.to_string())
 }
+pub enum PasswordConfirmation {
+    RequireConfirmation,
+    WithoutConfirmation,
+}
 pub fn get_password(
     password_arg: Option<String>,
     password_file_arg: Option<&Path>,
     env_var_password: &str,
     env_var_password_file: &str,
     prompt_message: &str,
+    password_confirmation: PasswordConfirmation,
     accept_weak_password: bool,
 ) -> Result<String> {
     let unvalidated_password = get_unvalidated_password(
@@ -129,6 +141,7 @@ pub fn get_password(
         password_file_arg,
         env_var_password,
         env_var_password_file,
+        password_confirmation,
         prompt_message,
     )?;
     if accept_weak_password {
