@@ -1,4 +1,4 @@
-use features_lib::errors::keys::{KeyError, SignError};
+use features_lib::errors::keys::{KeyError, SignError, VerifyError, SignatureError};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -11,6 +11,12 @@ pub enum ClientCliError {
 
     #[error("Sign error: {0}")]
     SignError(#[from] SignError),
+
+    #[error("Verify error: {0}")]
+    VerifyError(#[from] VerifyError),
+
+    #[error("Signature error: {0}")]
+    SignatureError(#[from] SignatureError),
 
     #[error("Invalid input: {0}")]
     InvalidInput(String),

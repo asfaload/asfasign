@@ -14,7 +14,6 @@ pub fn handle_sign_file_command<P: AsRef<Path>>(
     let secret_key = SecretKey::from_file(secret_key, password)?;
     let data_to_sign = sha512_for_file(file_to_sign)?;
     let signature = secret_key.key.sign(&data_to_sign)?;
-    let b64 = signature.to_base64();
-    std::fs::write(output_file, b64)?;
+    signature.to_file(output_file)?;
     Ok(())
 }

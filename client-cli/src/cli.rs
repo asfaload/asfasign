@@ -91,6 +91,20 @@ pub enum Commands {
         #[arg(long)]
         output_dir: PathBuf,
     },
+    /// Verify a signature for a file
+    VerifySig {
+        /// Path to the signed file
+        #[arg(long)]
+        signed_file: String,
+
+        /// Path to the signature file
+        #[arg(long)]
+        signature: String,
+
+        /// Path to the public key file
+        #[arg(long)]
+        public_key: String,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -115,6 +129,7 @@ impl Commands {
             Self::SignFile { .. } => "SIGN_FILE",
             Self::NewSignersFile { .. } => "NEW_SIGNERS_FILE",
             Self::NewKeys { .. } => "NEW_KEYS",
+            Self::VerifySig { .. } => "VERIFY_SIG",
         }
     }
 

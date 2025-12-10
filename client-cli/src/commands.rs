@@ -6,6 +6,7 @@ use crate::{
 pub mod keys;
 pub mod sign_file;
 pub mod signers_file;
+pub mod verify_sig;
 use anyhow::Result;
 
 /// Dispatches the command to the appropriate handler
@@ -69,6 +70,13 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 *master_threshold,
                 output_dir,
             )?;
+        }
+        Commands::VerifySig {
+            signed_file,
+            signature,
+            public_key,
+        } => {
+            verify_sig::handle_verify_sig_command(signed_file, signature, public_key)?;
         }
     }
     Ok(())
