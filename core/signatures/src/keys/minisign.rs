@@ -132,6 +132,7 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
 impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     type Signature = AsfaloadSignature<minisign::SignatureBox>;
     type KeyType = minisign::PublicKey;
+    type SecretKeyType = minisign::SecretKey;
 
     fn verify(
         &self,
@@ -173,6 +174,10 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         Ok(AsfaloadPublicKey { key: k })
     }
 
+    fn from_secret_key(sk: AsfaloadSecretKey<Self::SecretKeyType>) -> Result<Self, KeyError> {
+        let k = PublicKey::from_secret_key(&sk.key)?;
+        Ok(AsfaloadPublicKey { key: k })
+    }
     fn key_format(&self) -> KeyFormat {
         KeyFormat::Minisign
     }
@@ -614,6 +619,17 @@ mod asfaload_index_tests {
         // This seems to be reported as IO error by minisign
         let r = AsfaloadSignature::from_string("invalid");
         assert!(matches!(r, Err(SignatureError::IoError(_))));
+        Ok(())
+    }
+
+    #[test]
+    fn test_public_key_from_secret_key() -> Result<()> {
+        let kp = AsfaloadKeyPair::new("mypass")?;
+        let pubkey = kp.public_key();
+        let seckey = kp.secret_key("mypass")?;
+
+        let derived_pubkey = AsfaloadPublicKey::from_secret_key(seckey)?;
+        assert_eq!(derived_pubkey.to_base64(), pubkey.to_base64());
         Ok(())
     }
 }
