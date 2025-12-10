@@ -14,15 +14,13 @@ fn get_group_info<P: PublicKeyTrait>(
 ) -> std::result::Result<Option<(Vec<P>, u32)>, ClientCliError> {
     if keys.is_empty() {
         Ok(None)
+    } else if let Some(threshold) = threshold {
+        validate_threshold(threshold, keys.len())?;
+        Ok(Some((keys, threshold)))
     } else {
-        if let Some(threshold) = threshold {
-            validate_threshold(threshold, keys.len())?;
-            Ok(Some((keys, threshold)))
-        } else {
-            Err(crate::error::ClientCliError::InvalidInput(
-                "Admin threshold is required when admin keys are provided".to_string(),
-            ))
-        }
+        Err(crate::error::ClientCliError::InvalidInput(
+            "Grouo threshold is required when keys are provided for a group".to_string(),
+        ))
     }
 }
 /// Handles the `signers_file` command.
