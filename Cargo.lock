@@ -228,9 +228,13 @@ name = "client-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "features_lib",
  "rpassword",
+ "serde_json",
+ "signatures",
+ "signers_file_types",
  "thiserror",
  "zxcvbn",
 ]

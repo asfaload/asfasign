@@ -71,9 +71,9 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 artifact_signer,
                 *artifact_threshold,
                 admin_key,
-                *admin_threshold,
+                admin_threshold.as_ref().copied(),
                 master_key,
-                *master_threshold,
+                master_threshold.as_ref().copied(),
                 output_dir,
             )?;
         }

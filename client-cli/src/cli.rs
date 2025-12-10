@@ -59,7 +59,7 @@ pub enum Commands {
 
     /// Operations related to signers files
     NewSignersFile {
-        /// Artifact signer public key (can be repeated)
+        /// Artifact signer public key as base64 string (can be repeated)
         #[arg(long, short)]
         artifact_signer: Vec<String>,
 
@@ -67,21 +67,21 @@ pub enum Commands {
         #[arg(long, short = 'A')]
         artifact_threshold: u32,
 
-        /// Admin public key (can be repeated)
+        /// Admin public key string as base64 string (can be repeated)
         #[arg(long, short = 'd')]
         admin_key: Vec<String>,
 
-        /// Threshold for admin keys
-        #[arg(long, short = 'D')]
-        admin_threshold: u32,
+        /// Threshold for admin keys (required if admin keys are provided)
+        #[arg(long, short = 'D', requires = "admin_key")]
+        admin_threshold: Option<u32>,
 
-        /// Master public key (can be repeated)
+        /// Master public key string as base64 string (can be repeated)
         #[arg(long, short)]
         master_key: Vec<String>,
 
-        /// Threshold for master keys
-        #[arg(long, short = 'M')]
-        master_threshold: u32,
+        /// Threshold for master keys (required if master keys are provided)
+        #[arg(long, short = 'M', requires = "master_key")]
+        master_threshold: Option<u32>,
 
         /// Directory to store the signers file
         #[arg(long, short)]
