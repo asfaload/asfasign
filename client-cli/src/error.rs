@@ -1,4 +1,5 @@
-use features_lib::errors::keys::{KeyError, SignError, VerifyError, SignatureError};
+use features_lib::errors::keys::{KeyError, SignError, SignatureError, VerifyError};
+use features_lib::errors::AggregateSignatureError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -17,6 +18,9 @@ pub enum ClientCliError {
 
     #[error("Signature error: {0}")]
     SignatureError(#[from] SignatureError),
+
+    #[error("AggregateSignature error: {0}")]
+    AggregateSignatureError(#[from] AggregateSignatureError),
 
     #[error("Invalid input: {0}")]
     InvalidInput(String),

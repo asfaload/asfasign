@@ -2,11 +2,11 @@ use std::path::{Path, PathBuf};
 
 pub use common::errors;
 pub use common::{
-    ArtifactMarker, InitialSignersFileMarker, SignedFile, SignersFileMarker,
+    ArtifactMarker, FileType, InitialSignersFileMarker, SignedFile, SignersFileMarker,
     errors::SignedFileError,
 };
+pub use common::{SignedFileLoader, SignedFileWithKind};
 use common::{
-    SignedFileWithKind,
     errors::keys::KeyError,
     fs::names::{find_global_signers_for, pending_signers_file_in_dir},
 };
@@ -208,5 +208,28 @@ where
             key,
             location: location.as_ref().to_path_buf(),
         })
+    }
+}
+
+pub mod aggregate_signature_helpers {
+    use std::{collections::HashMap, path::Path};
+
+    use aggregate_signature::get_individual_signatures as get_individual_signatures_ori;
+    pub use aggregate_signature::{check_groups, load_signers_config};
+    use common::errors::AggregateSignatureError;
+    use signatures::keys::{
+        AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
+    };
+
+    pub fn get_individual_signatures<P: AsRef<Path>, MP: Clone, MS: Clone>(
+        sig_file_path: P,
+    ) -> Result<HashMap<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>, AggregateSignatureError>
+    where
+        AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
+        AsfaloadSignature<MS>: AsfaloadSignatureTrait,
+    {
+        get_individual_signatures_ori::<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>, _>(
+            sig_file_path,
+        )
     }
 }
