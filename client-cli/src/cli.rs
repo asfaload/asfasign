@@ -134,6 +134,20 @@ pub enum Commands {
         #[arg(long, short = 'P', conflicts_with = "password")]
         password_file: Option<PathBuf>,
     },
+    /// Check if the aggregate signature for a file is complete
+    IsAggComplete {
+        /// Path to the signed file
+        #[arg(long, short = 'f')]
+        signed_file: PathBuf,
+
+        /// Path to the signatures file
+        #[arg(long, short = 'x')]
+        signatures_file: PathBuf,
+
+        /// Path to the signers file
+        #[arg(long, short = 's')]
+        signers_file: PathBuf,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -160,6 +174,7 @@ impl Commands {
             Self::NewKeys { .. } => "NEW_KEYS",
             Self::VerifySig { .. } => "VERIFY_SIG",
             Self::AddToAggregate { .. } => "ADD_TO_AGGREGATE",
+            Self::IsAggComplete { .. } => "IS_AGG_COMPLETE",
         }
     }
 

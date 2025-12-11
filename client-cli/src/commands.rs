@@ -4,11 +4,12 @@ use crate::{
     utils::PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
 };
 
+pub mod add_to_aggregate;
+pub mod is_agg_complete;
 pub mod keys;
 pub mod sign_file;
 pub mod signers_file;
 pub mod verify_sig;
-pub mod add_to_aggregate;
 use anyhow::Result;
 
 /// Dispatches the command to the appropriate handler
@@ -110,6 +111,17 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 signed_file,
                 secret_key,
                 password.as_str(),
+            )?;
+        }
+        Commands::IsAggComplete {
+            signed_file,
+            signatures_file,
+            signers_file,
+        } => {
+            is_agg_complete::handle_is_agg_complete_command(
+                signed_file,
+                signatures_file,
+                signers_file,
             )?;
         }
     }

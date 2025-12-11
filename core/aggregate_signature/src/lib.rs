@@ -183,7 +183,7 @@ where
 
 // Load individual signatures from the file.
 // If the file does not exist, act as if no signature was collected yet.
-fn get_individual_signatures<P, S, PP: AsRef<Path>>(
+pub fn get_individual_signatures<P, S, PP: AsRef<Path>>(
     sig_file_path: PP,
 ) -> Result<HashMap<P, S>, AggregateSignatureError>
 where
@@ -238,7 +238,7 @@ pub fn can_revoke<PK: AsfaloadPublicKeyTrait>(
 }
 
 /// Load signers configuration from a file
-fn load_signers_config<P>(
+pub fn load_signers_config<P>(
     signers_file_path: &Path,
 ) -> Result<SignersConfig<P>, AggregateSignatureError>
 where
