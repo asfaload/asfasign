@@ -35,9 +35,9 @@ pub fn handle_is_agg_complete_command<P: AsRef<Path>>(
 
     if is_complete {
         println!("Aggregate signature is complete");
+        Ok(())
     } else {
         println!("Aggregate signature is not complete");
+        Err(crate::error::ClientCliError::AggregateSignatureIncompleteError)
     }
-
-    Ok(())
 }

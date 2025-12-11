@@ -3,7 +3,7 @@
 # This script demonstrates the aggregate signing workflow
 # It creates keypairs, a file to sign, a signers file, and tests the aggregate signature functionality
 
-set -e  # Exit on error
+set -e # Exit on error
 
 # Clean up any existing test files
 rm -rf /tmp/new-keys
@@ -21,60 +21,58 @@ cargo run --quiet -- new-keys --name key3 --output-dir /tmp/new-keys --password 
 
 # 2. Create a small random text file to be signed
 echo "2. Creating file to sign..."
-echo "This is a test file for aggregate signing" > /tmp/file-to-sign.txt
-echo "It contains some random text for demonstration purposes" >> /tmp/file-to-sign.txt
+echo "This is a test file for aggregate signing" >/tmp/file-to-sign.txt
+echo "It contains some random text for demonstration purposes" >>/tmp/file-to-sign.txt
 
 # 3. Create signers file with the 3 public keys and threshold of 2
 echo "3. Creating signers file..."
 cargo run --quiet -- new-signers-file \
-    --artifact-signer-file /tmp/new-keys/key1.pub \
-    --artifact-signer-file /tmp/new-keys/key2.pub \
-    --artifact-signer-file /tmp/new-keys/key3.pub \
-    --artifact-threshold 2 \
-    --output-file /tmp/new-signers-file
+  --artifact-signer-file /tmp/new-keys/key1.pub \
+  --artifact-signer-file /tmp/new-keys/key2.pub \
+  --artifact-signer-file /tmp/new-keys/key3.pub \
+  --artifact-threshold 2 \
+  --output-file /tmp/new-signers-file
 
 # 4. Add first keypair's signature to aggregate
 echo "4. Adding first signature to aggregate..."
 cargo run --quiet -- add-to-aggregate \
-    --signed-file /tmp/file-to-sign.txt \
-    --secret-key /tmp/new-keys/key1 \
-    --password password
+  --signed-file /tmp/file-to-sign.txt \
+  --secret-key /tmp/new-keys/key1 \
+  --password password
 
 # 5. Check if aggregate is complete (should be false)
 echo "5. Checking if aggregate is complete (should be false)..."
-AGG_OUTPUT=$(cargo run --quiet -- is-agg-complete \
-    --signed-file /tmp/file-to-sign.txt \
-    --signatures-file /tmp/file-to-sign.txt.signatures.json.pending \
-    --signers-file /tmp/new-signers-file)
 
-if [[ "$AGG_OUTPUT" == *"not complete"* ]]; then
-    echo "✓ Aggregate signature is not complete as expected (only 1/2 signatures)"
+if ! cargo run --quiet -- is-agg-complete \
+  --signed-file /tmp/file-to-sign.txt \
+  --signatures-file /tmp/file-to-sign.txt.signatures.json.pending \
+  --signers-file /tmp/new-signers-file; then
+  echo "✓ Aggregate signature is not complete as expected (only 1/2 signatures)"
 else
-    echo "✗ Error: Aggregate signature should not be complete yet"
-    echo "Output was: $AGG_OUTPUT"
-    exit 1
+  echo "✗ Error: Aggregate signature should not be complete yet"
+  echo "Output was: $AGG_OUTPUT"
+  exit 1
 fi
 
 # 6. Add second keypair's signature to aggregate
 echo "6. Adding second signature to aggregate..."
 cargo run --quiet -- add-to-aggregate \
-    --signed-file /tmp/file-to-sign.txt \
-    --secret-key /tmp/new-keys/key2 \
-    --password password
+  --signed-file /tmp/file-to-sign.txt \
+  --secret-key /tmp/new-keys/key2 \
+  --password password
 
 # 7. Check if aggregate is complete (should be true now)
 echo "7. Checking if aggregate is complete (should be true)..."
-AGG_OUTPUT=$(cargo run --quiet -- is-agg-complete \
-    --signed-file /tmp/file-to-sign.txt \
-    --signatures-file /tmp/file-to-sign.txt.signatures.json.pending \
-    --signers-file /tmp/new-signers-file)
 
-if [[ "$AGG_OUTPUT" == *"complete"* ]]; then
-    echo "✓ Aggregate signature is complete as expected (2/2 signatures)"
+if cargo run --quiet -- is-agg-complete \
+  --signed-file /tmp/file-to-sign.txt \
+  --signatures-file /tmp/file-to-sign.txt.signatures.json.pending \
+  --signers-file /tmp/new-signers-file; then
+  echo "✓ Aggregate signature is complete as expected (2/2 signatures)"
 else
-    echo "✗ Error: Aggregate signature should be complete now"
-    echo "Output was: $AGG_OUTPUT"
-    exit 1
+  echo "✗ Error: Aggregate signature should be complete now"
+  echo "Output was: $AGG_OUTPUT"
+  exit 1
 fi
 
 echo ""
@@ -85,3 +83,4 @@ echo "- Created test file: /tmp/file-to-sign.txt"
 echo "- Created signers file: /tmp/new-signers-file (threshold: 2)"
 echo "- Added signatures from key1 and key2"
 echo "- Verified aggregate signature completion workflow"
+
