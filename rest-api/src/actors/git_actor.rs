@@ -112,7 +112,7 @@ impl Actor for GitActor {
 mod tests {
     use super::*;
     use anyhow::Result;
-    use rest_api_test_helpers::{init_git_repo, write_git_hook};
+    use rest_api_test_helpers::{init_git_repo, make_git_commit_fail};
     use std::path::PathBuf;
     use tempfile::TempDir;
     use tokio::fs::File;
@@ -126,12 +126,7 @@ mod tests {
         init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
 
         // Create a pre-commit hook that will fail
-        write_git_hook(
-            repo_path_buf.clone(),
-            "pre-commit",
-            "#!/bin/sh\necho 'Simulating commit failure'; exit 1",
-        )
-        .await?;
+        make_git_commit_fail(repo_path_buf.clone()).await?;
 
         // Create a GitActor
         let git_actor = GitActor::new(repo_path_buf.to_path_buf());

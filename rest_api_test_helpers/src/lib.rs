@@ -167,3 +167,13 @@ pub async fn write_git_hook(repo_path_buf: PathBuf, name: &str, code: &str) -> R
     }
     Ok(())
 }
+
+pub async fn make_git_commit_fail(repo_path_buf: PathBuf) -> Result<()> {
+    write_git_hook(
+        repo_path_buf.clone(),
+        "pre-commit",
+        "#!/bin/sh\necho 'Simulating commit failure'; exit 1",
+    )
+    .await?;
+    Ok(())
+}
