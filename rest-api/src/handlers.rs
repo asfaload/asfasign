@@ -4,8 +4,7 @@ use crate::models::{AddFileRequest, AddFileResponse};
 use crate::state::AppState;
 use axum::{Json, extract::State};
 use log::info;
-use std::fs;
-use std::io::Write;
+use tokio::io::AsyncWriteExt;
 
 pub async fn add_file_handler(
     State(state): State<AppState>,
@@ -20,25 +19,34 @@ pub async fn add_file_handler(
         ));
     }
 
-    // Create the full path by joining with git repo path
-    let full_path = state.git_repo_path.join(&request.file_path);
+    // Validate and sanitize the file path
+    let file_path = std::path::PathBuf::from(&request.file_path);
+    if file_path.is_absolute()
+        || file_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(ApiError::InvalidFilePath(
+            "Path traversal attempt detected".to_string(),
+        ));
+    }
+    let full_path = state.git_repo_path.join(file_path);
 
     // Create parent directories if they don't exist
-    if let Some(parent) = full_path.parent()
-        && !parent.exists()
-    {
-        fs::create_dir_all(parent).map_err(|e| {
+    if let Some(parent) = full_path.parent() {
+        tokio::fs::create_dir_all(parent).await.map_err(|e| {
             ApiError::DirectoryCreationFailed(format!("Failed to create directories: {}", e))
         })?;
     }
 
     // Write the file content
-    let mut file = fs::File::create(&full_path)
+    let mut file = tokio::fs::File::create(&full_path)
+        .await
         .map_err(|e| ApiError::FileWriteFailed(format!("Failed to create file: {}", e)))?;
 
     file.write_all(request.content.as_bytes())
+        .await
         .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write file content: {}", e)))?;
-
     // Send commit message to git actor with the requested format
     let commit_message = format!("added file at /{}", request.file_path);
     let commit_msg = CommitFile {
