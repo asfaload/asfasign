@@ -10,16 +10,15 @@ use tokio::{fs::File, time::Instant};
 
 //
 // Helper function to initialize a git repository in a temporary directory
-pub fn init_git_repo(repo_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub fn init_git_repo(repo_path: &Path) -> Result<(), ApiError> {
     // Initialize git repo
     let output = Command::new("git").arg("init").arg(repo_path).output()?;
 
     if !output.status.success() {
-        return Err(format!(
+        return Err(ApiError::GitOperationFailed(format!(
             "git init failed: {}",
             String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        )));
     }
 
     // Set user name and email for commits
@@ -28,7 +27,7 @@ pub fn init_git_repo(repo_path: &Path) -> Result<(), Box<dyn std::error::Error>>
             "-C",
             repo_path
                 .to_str()
-                .ok_or_else(|| "Path is not valid UTF-8".to_string())?,
+                .ok_or_else(|| ApiError::InvalidFilePath("Path is not valid UTF-8".to_string()))?,
             "config",
             "user.name",
             "Test User",
@@ -36,11 +35,10 @@ pub fn init_git_repo(repo_path: &Path) -> Result<(), Box<dyn std::error::Error>>
         .output()?;
 
     if !output.status.success() {
-        return Err(format!(
+        return Err(ApiError::GitOperationFailed(format!(
             "git config user.name failed: {}",
             String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        )));
     }
 
     let output = Command::new("git")
@@ -48,7 +46,7 @@ pub fn init_git_repo(repo_path: &Path) -> Result<(), Box<dyn std::error::Error>>
             "-C",
             repo_path
                 .to_str()
-                .ok_or_else(|| "Path is not valid UTF-8".to_string())?,
+                .ok_or_else(|| ApiError::InvalidFilePath("Path is not valid UTF-8".to_string()))?,
             "config",
             "user.email",
             "test@example.com",
@@ -56,24 +54,23 @@ pub fn init_git_repo(repo_path: &Path) -> Result<(), Box<dyn std::error::Error>>
         .output()?;
 
     if !output.status.success() {
-        return Err(format!(
+        return Err(ApiError::GitOperationFailed(format!(
             "git config user.email failed: {}",
             String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        )));
     }
 
     Ok(())
 }
 
 // Helper function to get the latest commit message
-pub fn get_latest_commit(repo_path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+pub fn get_latest_commit(repo_path: &Path) -> Result<String, ApiError> {
     let output = Command::new("git")
         .args([
             "-C",
-            repo_path
-                .to_str()
-                .ok_or_else(|| "Path is not valid UTF-8".to_string())?,
+            repo_path.to_str().ok_or_else(|| {
+                ApiError::GitOperationFailed("Path is not valid UTF-8".to_string())
+            })?,
             "log",
             "--oneline",
             "-1",
@@ -82,11 +79,10 @@ pub fn get_latest_commit(repo_path: &Path) -> Result<String, Box<dyn std::error:
         .output()?;
 
     if !output.status.success() {
-        return Err(format!(
+        return Err(ApiError::GitOperationFailed(format!(
             "git log failed: {}",
             String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        )));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -98,10 +94,7 @@ pub fn file_exists_in_repo(repo_path: &Path, file_path: &str) -> bool {
 }
 
 // Helper function to read file content
-pub fn read_file_content(
-    repo_path: &Path,
-    file_path: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+pub fn read_file_content(repo_path: &Path, file_path: &str) -> Result<String, ApiError> {
     let content = fs::read_to_string(repo_path.join(file_path))?;
     Ok(content)
 }
@@ -130,7 +123,7 @@ pub async fn wait_for_commit(
     test_repo_path_buf: PathBuf,
     commit_message: &str,
     deadline_in: Option<Instant>,
-) -> Result<()> {
+) -> Result<(), ApiError> {
     let deadline =
         deadline_in.unwrap_or(tokio::time::Instant::now() + tokio::time::Duration::from_secs(5));
     loop {
@@ -140,14 +133,20 @@ pub async fn wait_for_commit(
             return Ok(());
         }
         if tokio::time::Instant::now() > deadline {
-            return Err(anyhow::Error::msg("Test timed out waiting for commit"));
+            return Err(ApiError::GitOperationFailed(
+                "Test timed out waiting for commit".to_string(),
+            ));
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 }
 
 use tokio::io::AsyncWriteExt;
-pub async fn write_git_hook(repo_path_buf: PathBuf, name: &str, code: &str) -> Result<()> {
+pub async fn write_git_hook(
+    repo_path_buf: PathBuf,
+    name: &str,
+    code: &str,
+) -> Result<(), ApiError> {
     // Create a pre-commit hook that will fail
     let hooks_dir = repo_path_buf.join(".git").join("hooks");
     fs::create_dir_all(&hooks_dir).unwrap();
@@ -168,7 +167,7 @@ pub async fn write_git_hook(repo_path_buf: PathBuf, name: &str, code: &str) -> R
     Ok(())
 }
 
-pub async fn make_git_commit_fail(repo_path_buf: PathBuf) -> Result<()> {
+pub async fn make_git_commit_fail(repo_path_buf: PathBuf) -> Result<(), ApiError> {
     write_git_hook(
         repo_path_buf.clone(),
         "pre-commit",

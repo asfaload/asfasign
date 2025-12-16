@@ -10,6 +10,9 @@ pub mod errors {
         #[error("Git repository path not set in environment")]
         GitRepoPathNotSet,
 
+        #[error("Failed git operation: {0}")]
+        GitOperationFailed(String),
+
         #[error("Failed to create directories: {0}")]
         DirectoryCreationFailed(String),
 
@@ -39,6 +42,7 @@ pub mod errors {
                 ApiError::InvalidFilePath(_) => StatusCode::BAD_REQUEST,
                 ApiError::ServerSetupError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::PortInvalid(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::GitOperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }
