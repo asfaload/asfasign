@@ -26,12 +26,7 @@ pub mod tests {
         let env = build_env(&repo_path_buf, port);
 
         // Start the server in the background
-        let server_handle = tokio::spawn(async move {
-            // Set the environment variable for the git repository path
-
-            run_server(env).await
-            // Import and run the main function
-        });
+        let server_handle = tokio::spawn(async move { run_server(env).await });
 
         // Create a client to send requests
         let client = reqwest::Client::new();
