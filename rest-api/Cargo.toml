@@ -15,5 +15,13 @@ thiserror = "2.0.17"
 log = "0.4"
 env_logger = "0.11.8"
 
+[dev-dependencies]
+reqwest = { version = "0.12.26", features = ["json"] }
+tempfile = "3.4"
+tokio = { version = "1.0", features = ["full"] }
+tokio-test = "0.4"
+test_helpers = { path = "../core/test_helpers/" }
+anyhow = "1.0.100"
+
 [lints]
 workspace = true
