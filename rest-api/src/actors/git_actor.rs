@@ -107,3 +107,50 @@ impl Actor for GitActor {
         Ok(Self::new(args))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use rest_api_test_helpers::{init_git_repo, write_git_hook};
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+    use tokio::fs::File;
+    use tokio::io::AsyncWriteExt;
+
+    #[tokio::test]
+    async fn test_git_actor_commit_file_failure() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let repo_path_buf = temp_dir.path().to_path_buf();
+
+        init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
+
+        // Create a pre-commit hook that will fail
+        write_git_hook(
+            repo_path_buf.clone(),
+            "pre-commit",
+            "#!/bin/sh\necho 'Simulating commit failure'; exit 1",
+        )
+        .await?;
+
+        // Create a GitActor
+        let git_actor = GitActor::new(repo_path_buf.to_path_buf());
+
+        // Create a test file
+        let test_file_path = PathBuf::from("test_file.txt");
+        let full_test_file_path = repo_path_buf.join(&test_file_path);
+        let mut test_file = File::create(&full_test_file_path).await.unwrap();
+        test_file.write_all(b"Test content").await.unwrap();
+        test_file.flush().await.unwrap();
+
+        // Try to commit the file - this should fail due to our hook
+        let result = git_actor
+            .commit_file(&test_file_path, "Test commit message")
+            .await;
+
+        // Verify that the commit failed
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Git commit failed"));
+        Ok(())
+    }
+}

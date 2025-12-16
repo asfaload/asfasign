@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 use rest_api_types::{environment::Environment, errors::ApiError};
-use tokio::time::Instant;
+use tokio::{fs::File, time::Instant};
 
 //
 // Helper function to initialize a git repository in a temporary directory
@@ -144,4 +144,26 @@ pub async fn wait_for_commit(
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
+}
+
+use tokio::io::AsyncWriteExt;
+pub async fn write_git_hook(repo_path_buf: PathBuf, name: &str, code: &str) -> Result<()> {
+    // Create a pre-commit hook that will fail
+    let hooks_dir = repo_path_buf.join(".git").join("hooks");
+    fs::create_dir_all(&hooks_dir).unwrap();
+
+    let hook_path = hooks_dir.join(name);
+    let mut hook_file = File::create(&hook_path).await?;
+    hook_file.write_all(code.as_bytes()).await?;
+    hook_file.flush().await?;
+
+    // Make the hook executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&hook_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&hook_path, perms)?;
+    }
+    Ok(())
 }
