@@ -32,7 +32,7 @@ pub async fn add_file_handler(
             "Path traversal attempt detected".to_string(),
         ));
     }
-    let full_path = state.git_repo_path.join(file_path);
+    let full_path = state.git_repo_path.join(&file_path);
 
     // Create parent directories if they don't exist
     if let Some(parent) = full_path.parent() {
@@ -52,7 +52,7 @@ pub async fn add_file_handler(
     // Send commit message to git actor with the requested format
     let commit_message = format!("added file at /{}", request.file_path);
     let commit_msg = CommitFile {
-        file_path: full_path.clone(),
+        file_path,
         commit_message: commit_message.clone(),
     };
 

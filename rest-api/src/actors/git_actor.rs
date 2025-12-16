@@ -6,6 +6,7 @@ use std::process::Command;
 
 #[derive(Debug, Clone)]
 pub struct CommitFile {
+    // File path is relative to the git root
     pub file_path: PathBuf,
     pub commit_message: String,
 }
@@ -83,14 +84,7 @@ impl Message<CommitFile> for GitActor {
         );
         info!("Commit message: {}", msg.commit_message);
 
-        // Make the file path relative to the git repo
-        let relative_path = msg
-            .file_path
-            .strip_prefix(&self.repo_path)
-            .map_err(|e| format!("Failed to make path relative: {}", e))?;
-
-        self.commit_file(&relative_path.to_path_buf(), &msg.commit_message)
-            .await
+        self.commit_file(&msg.file_path, &msg.commit_message).await
     }
 }
 
