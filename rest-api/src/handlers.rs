@@ -1,7 +1,6 @@
 use crate::actors::git_actor::CommitFile;
-use crate::state::AppState;
-
 use crate::models::{AddFileRequest, AddFileResponse, ErrorResponse};
+use crate::state::AppState;
 use axum::{Json, extract::State};
 use log::info;
 use std::fs;
