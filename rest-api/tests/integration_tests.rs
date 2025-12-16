@@ -1,5 +1,6 @@
 use anyhow::Result;
 use axum::http::StatusCode;
+use rest_api::environment::Environment;
 use rest_api::{error::ApiError, server::run_server};
 use serde_json::{Value, json};
 use std::fs;
@@ -113,6 +114,13 @@ fn url_for(action: &str, port: u16) -> String {
     format!("http://localhost:{port}/{action}")
 }
 
+fn build_env(git_repo_path: &Path, server_port: u16) -> Environment {
+    Environment {
+        git_repo_path: git_repo_path.to_path_buf(),
+        server_port,
+    }
+}
+
 // Test case: Successfully add a file to the repository
 #[tokio::test]
 async fn test_add_file_success() -> Result<()> {
@@ -125,11 +133,13 @@ async fn test_add_file_success() -> Result<()> {
     // Initialize git repository
     init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
 
+    let env = build_env(&repo_path_buf, port);
+
     // Start the server in the background
     let server_handle = tokio::spawn(async move {
         // Set the environment variable for the git repository path
 
-        run_server(repo_path_buf.to_path_buf(), port).await
+        run_server(env).await
         // Import and run the main function
     });
 
@@ -201,9 +211,9 @@ async fn test_add_file_empty_path() -> Result<()> {
     // Initialize git repository
     init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
 
+    let env = build_env(&repo_path_buf, port);
     // Start the server in the background
-    let server_handle =
-        tokio::spawn(async move { run_server(repo_path_buf.to_path_buf(), port).await });
+    let server_handle = tokio::spawn(async move { run_server(env).await });
 
     // Give the server time to start
     sleep(Duration::from_millis(500)).await;
@@ -249,9 +259,9 @@ async fn test_add_file_to_subdirectory() -> Result<()> {
     init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
 
     let port = get_random_port().await?;
+    let env = build_env(&repo_path_buf, port);
     // Start the server in the background
-    let server_handle =
-        tokio::spawn(async move { run_server(repo_path_buf.to_path_buf(), port).await });
+    let server_handle = tokio::spawn(async move { run_server(env).await });
 
     // Give the server time to start
     sleep(Duration::from_millis(500)).await;
