@@ -1,17 +1,11 @@
-use crate::git_actor::{CommitFile, GitActor};
+use crate::git_actor::CommitFile;
+use crate::state::AppState;
+
 use crate::models::{AddFileRequest, AddFileResponse, ErrorResponse};
 use axum::{Json, extract::State};
-use kameo::prelude::ActorRef;
 use log::info;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub git_repo_path: PathBuf,
-    pub git_actor: ActorRef<GitActor>,
-}
 
 pub async fn add_file_handler(
     State(state): State<AppState>,

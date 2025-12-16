@@ -1,26 +1,25 @@
 use axum::{Router, routing::post};
-use std::env;
-use std::path::PathBuf;
-use std::net::SocketAddr;
-use log::{info, LevelFilter};
 use env_logger::Builder;
-use kameo::prelude::Spawn;
+use log::{LevelFilter, info};
+use std::env;
+use std::net::SocketAddr;
+use std::path::PathBuf;
 
 mod error;
-mod models;
-mod handlers;
 mod git_actor;
+mod handlers;
+mod models;
+mod state;
 
 use error::ApiError;
-use handlers::{add_file_handler, AppState};
-use git_actor::GitActor;
+use handlers::add_file_handler;
+
+use crate::state::init_state;
 
 #[tokio::main]
 async fn main() {
     // Initialize logging
-    Builder::new()
-        .filter_level(LevelFilter::Info)
-        .init();
+    Builder::new().filter_level(LevelFilter::Info).init();
 
     // Get git repo path from environment
     let git_repo_path = env::var("ASFALOAD_GIT_REPO_PATH")
@@ -28,17 +27,12 @@ async fn main() {
         .map_err(|_| ApiError::GitRepoPathNotSet)
         .expect("ASFALOAD_GIT_REPO_PATH environment variable must be set");
 
-    info!("Starting REST API server with git repo at: {:?}", git_repo_path);
+    info!(
+        "Starting REST API server with git repo at: {:?}",
+        git_repo_path
+    );
 
-    // Create git actor using spawn
-    let git_actor = GitActor::spawn(git_repo_path.clone());
-
-    // Create app state
-    let app_state = AppState {
-        git_repo_path,
-        git_actor,
-    };
-
+    let app_state = init_state(git_repo_path);
     // Build the router
     let app = Router::new()
         .route("/add-file", post(add_file_handler))
