@@ -5,7 +5,13 @@ edition = "2024"
 
 [dependencies]
 axum = { version = "0.8.7", features = ["json"] }
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.0", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "fs",
+  "io-util",
+] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 kameo = "0.19.2"
@@ -19,7 +25,13 @@ rest_api_types = { path = "../rest_api_types/" }
 [dev-dependencies]
 reqwest = { version = "0.12.26", features = ["json"] }
 tempfile = "3.4"
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.0", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "fs",
+  "io-util",
+] }
 tokio-test = "0.4"
 test_helpers = { path = "../core/test_helpers/" }
 anyhow = "1.0.100"
