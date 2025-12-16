@@ -58,7 +58,7 @@ pub async fn add_file_handler(
 
     state
         .git_actor
-        .tell(commit_msg)
+        .ask(commit_msg)
         .await
         .map_err(|e| ApiError::ActorMessageFailed(e.to_string()))?;
 

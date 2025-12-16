@@ -6,7 +6,7 @@ pub mod tests {
     use rest_api::server::run_server;
     use rest_api_test_helpers::{
         build_env, file_exists_in_repo, get_latest_commit, get_random_port, init_git_repo,
-        read_file_content, url_for, wait_for_commit,
+        make_git_commit_fail, read_file_content, url_for, wait_for_commit,
     };
     use serde_json::{Value, json};
     use tempfile::TempDir;
@@ -200,6 +200,51 @@ pub mod tests {
         assert!(
             commit_msg.contains(&commit_message),
             "Commit message doesn't match"
+        );
+
+        // Clean up - abort the server task
+        server_handle.abort();
+        Ok(())
+    }
+
+    // Test case: Error in git operation
+    #[tokio::test]
+    async fn test_add_file_with_git_error() -> Result<()> {
+        // Create a temporary directory for the git repository
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let repo_path_buf = temp_dir.path().to_path_buf();
+
+        let port = get_random_port().await?;
+        // Initialize git repository
+        init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
+        make_git_commit_fail(repo_path_buf.clone()).await?;
+
+        let env = build_env(&repo_path_buf, port);
+        // Start the server in the background
+        let server_handle = tokio::spawn(async move { run_server(env).await });
+
+        // Create a client to send requests
+        let client = reqwest::Client::new();
+
+        // Send the request with an empty file path
+        let response = client
+            .post(url_for("add-file", port))
+            .json(&json!({
+                "file_path": "my-new-file",
+                "content": "This should fail"
+            }))
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        // Check the response status
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        // Parse the response body
+        let response_body: Value = response.json().await.expect("Failed to parse response");
+        assert_eq!(
+            response_body["error"],
+            "Failed to send message to git actor: Git commit failed: Simulating commit failure\n"
         );
 
         // Clean up - abort the server task
