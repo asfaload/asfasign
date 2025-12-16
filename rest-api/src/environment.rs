@@ -1,12 +1,6 @@
 use std::{env, path::PathBuf};
 
-use crate::error::ApiError;
-
-// Structure to hold environment in which the server runs.:which gg
-pub struct Environment {
-    pub git_repo_path: PathBuf,
-    pub server_port: u16,
-}
+use rest_api_types::{environment::Environment, errors::ApiError};
 
 pub fn init_env() -> Result<Environment, ApiError> {
     // Get git repo path from environment

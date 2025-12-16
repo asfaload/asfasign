@@ -1,9 +1,11 @@
 use crate::actors::git_actor::CommitFile;
-use crate::error::ApiError;
-use crate::models::{AddFileRequest, AddFileResponse};
 use crate::state::AppState;
 use axum::{Json, extract::State};
 use log::info;
+use rest_api_types::{
+    errors::ApiError,
+    models::{AddFileRequest, AddFileResponse},
+};
 use tokio::io::AsyncWriteExt;
 
 pub async fn add_file_handler(

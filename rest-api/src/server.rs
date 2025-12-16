@@ -1,8 +1,7 @@
-use crate::environment::Environment;
-use crate::error::ApiError;
 use crate::{handlers::add_file_handler, state::init_state};
 use axum::{Router, routing::post};
 use log::info;
+use rest_api_types::{environment::Environment, errors::ApiError};
 use std::net::SocketAddr;
 
 pub async fn run_server(env: Environment) -> Result<(), ApiError> {

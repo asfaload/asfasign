@@ -1554,6 +1554,8 @@ dependencies = [
  "kameo",
  "log",
  "reqwest",
+ "rest_api_test_helpers",
+ "rest_api_types",
  "serde",
  "serde_json",
  "tempfile",
@@ -1561,6 +1563,25 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
+]
+
+[[package]]
+name = "rest_api_test_helpers"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rest_api_types",
+ "tokio",
+]
+
+[[package]]
+name = "rest_api_types"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

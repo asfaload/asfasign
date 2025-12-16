@@ -1,14 +1,13 @@
-pub mod api_test_helpers;
 #[cfg(test)]
 pub mod tests {
 
-    use crate::api_test_helpers::backend::{
-        build_env, file_exists_in_repo, get_latest_commit, get_random_port, init_git_repo,
-        read_file_content, url_for, wait_for_commit,
-    };
     use anyhow::Result;
     use axum::http::StatusCode;
     use rest_api::server::run_server;
+    use rest_api_test_helpers::{
+        build_env, file_exists_in_repo, get_latest_commit, get_random_port, init_git_repo,
+        read_file_content, url_for, wait_for_commit,
+    };
     use serde_json::{Value, json};
     use tempfile::TempDir;
 
