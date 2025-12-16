@@ -4,10 +4,10 @@ use rest_api::environment::Environment;
 use rest_api::{error::ApiError, server::run_server};
 use serde_json::{Value, json};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
-use tokio::time::{Duration, sleep};
+use tokio::time::Instant;
 
 //
 // Helper function to initialize a git repository in a temporary directory
@@ -121,6 +121,26 @@ fn build_env(git_repo_path: &Path, server_port: u16) -> Environment {
     }
 }
 
+async fn wait_for_commit(
+    test_repo_path_buf: PathBuf,
+    commit_message: &str,
+    deadline_in: Option<Instant>,
+) -> Result<()> {
+    let deadline =
+        deadline_in.unwrap_or(tokio::time::Instant::now() + tokio::time::Duration::from_secs(5));
+    loop {
+        if let Ok(msg) = get_latest_commit(&test_repo_path_buf)
+            && msg.contains(commit_message)
+        {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() > deadline {
+            return Err(anyhow::Error::msg("Test timed out waiting for commit"));
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
+
 // Test case: Successfully add a file to the repository
 #[tokio::test]
 async fn test_add_file_success() -> Result<()> {
@@ -142,9 +162,6 @@ async fn test_add_file_success() -> Result<()> {
         run_server(env).await
         // Import and run the main function
     });
-
-    // Give the server time to start
-    sleep(Duration::from_millis(500)).await;
 
     // Create a client to send requests
     let client = reqwest::Client::new();
@@ -175,7 +192,7 @@ async fn test_add_file_success() -> Result<()> {
     assert_eq!(response_body["file_path"], file_path);
 
     // Give the server time to process the git commit
-    sleep(Duration::from_millis(500)).await;
+    wait_for_commit(test_repo_path_buf.clone(), &commit_message, None).await?;
 
     // Verify the file was created on disk
     assert!(
@@ -214,9 +231,6 @@ async fn test_add_file_empty_path() -> Result<()> {
     let env = build_env(&repo_path_buf, port);
     // Start the server in the background
     let server_handle = tokio::spawn(async move { run_server(env).await });
-
-    // Give the server time to start
-    sleep(Duration::from_millis(500)).await;
 
     // Create a client to send requests
     let client = reqwest::Client::new();
@@ -263,9 +277,6 @@ async fn test_add_file_to_subdirectory() -> Result<()> {
     // Start the server in the background
     let server_handle = tokio::spawn(async move { run_server(env).await });
 
-    // Give the server time to start
-    sleep(Duration::from_millis(500)).await;
-
     // Create a client to send requests
     let client = reqwest::Client::new();
 
@@ -294,8 +305,7 @@ async fn test_add_file_to_subdirectory() -> Result<()> {
     assert_eq!(response_body["message"], "File added successfully");
     assert_eq!(response_body["file_path"], file_path);
 
-    // Give the server time to process the git commit
-    sleep(Duration::from_millis(500)).await;
+    wait_for_commit(test_repo_path_buf.clone(), &commit_message, None).await?;
 
     // Verify the file was created on disk
     assert!(
