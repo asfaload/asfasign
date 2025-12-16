@@ -24,14 +24,14 @@ pub async fn add_file_handler(
     let full_path = state.git_repo_path.join(&request.file_path);
 
     // Create parent directories if they don't exist
-    if let Some(parent) = full_path.parent() {
-        if !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| {
-                Json(ErrorResponse {
-                    error: format!("Failed to create directories: {}", e),
-                })
-            })?;
-        }
+    if let Some(parent) = full_path.parent()
+        && !parent.exists()
+    {
+        fs::create_dir_all(parent).map_err(|e| {
+            Json(ErrorResponse {
+                error: format!("Failed to create directories: {}", e),
+            })
+        })?;
     }
 
     // Write the file content
