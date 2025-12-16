@@ -1,4 +1,4 @@
-use crate::git_actor::CommitFile;
+use crate::actors::git_actor::CommitFile;
 use crate::state::AppState;
 
 use crate::models::{AddFileRequest, AddFileResponse, ErrorResponse};

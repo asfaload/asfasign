@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use kameo::actor::{ActorRef, Spawn};
 
-use crate::git_actor::GitActor;
+use crate::actors::git_actor::GitActor;
 
 #[derive(Clone)]
 pub struct AppState {

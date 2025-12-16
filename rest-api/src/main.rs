@@ -5,8 +5,8 @@ use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+mod actors;
 mod error;
-mod git_actor;
 mod handlers;
 mod models;
 mod state;
