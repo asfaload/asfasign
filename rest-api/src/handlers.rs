@@ -1,5 +1,5 @@
-use crate::actors::git_actor::CommitFile;
 use crate::state::AppState;
+use crate::{actors::git_actor::CommitFile, path_validation::build_normalised_absolute_path};
 use axum::{Json, extract::State};
 use log::info;
 use rest_api_types::{
@@ -22,16 +22,7 @@ pub async fn add_file_handler(
     }
 
     // Validate and sanitize the file path
-    let file_path = std::path::PathBuf::from(&request.file_path);
-    if file_path.is_absolute()
-        || file_path
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return Err(ApiError::InvalidFilePath(
-            "Path traversal attempt detected".to_string(),
-        ));
-    }
+    let file_path = build_normalised_absolute_path(&state.git_repo_path, &request.file_path)?;
     let full_path = state.git_repo_path.join(&file_path);
 
     // Create parent directories if they don't exist
