@@ -19,8 +19,14 @@ pub mod errors {
         #[error("Failed to write file: {0}")]
         FileWriteFailed(String),
 
+        #[error("TokioJoinError: {0}")]
+        TokioJoinError(#[from] tokio::task::JoinError),
+
         #[error("Failed to send message to git actor: {0}")]
         ActorMessageFailed(String),
+
+        #[error("Actor encountered an error: {0}")]
+        ActorOperationFailed(String),
 
         #[error("Invalid file path: {0}")]
         InvalidFilePath(String),
@@ -43,6 +49,8 @@ pub mod errors {
                 ApiError::ServerSetupError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::PortInvalid(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::GitOperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::ActorOperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::TokioJoinError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }

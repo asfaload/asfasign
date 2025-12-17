@@ -1,13 +1,16 @@
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use log::{error, info};
+use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
 use std::process::Command;
+
+use crate::path_validation::NormalisedPaths;
 
 #[derive(Debug, Clone)]
 pub struct CommitFile {
     // File path is relative to the git root
-    pub file_path: PathBuf,
+    pub file_paths: NormalisedPaths,
     pub commit_message: String,
 }
 
@@ -20,13 +23,25 @@ impl GitActor {
         info!("GitActor created with repo path: {:?}", repo_path);
         Self { repo_path }
     }
-    async fn commit_file(&self, file_path: &PathBuf, commit_message: &str) -> Result<(), String> {
+    async fn commit_file(
+        &self,
+        file_paths: NormalisedPaths,
+        commit_message: &str,
+    ) -> Result<(), ApiError> {
+        if file_paths.base_dir() != self.repo_path {
+            return Err(ApiError::GitOperationFailed(format!(
+                "File's base_dir ({}) != actor's git dir ({})",
+                file_paths.base_dir().to_string_lossy(),
+                self.repo_path.to_string_lossy()
+            )));
+        }
         info!(
             "Attempting to commit file: {:?} with message: {}",
-            file_path, commit_message
+            file_paths.absolute_path(),
+            commit_message
         );
         let repo_path = self.repo_path.clone();
-        let file_path = file_path.clone();
+        let file_path = file_paths.relative_path();
         let commit_message = commit_message.to_string();
 
         tokio::task::spawn_blocking(move || {
@@ -38,12 +53,17 @@ impl GitActor {
                 .arg("--")
                 .arg(&file_path)
                 .output()
-                .map_err(|e| format!("Failed to execute git add: {}", e))?;
+                .map_err(|e| {
+                    ApiError::ActorOperationFailed(format!("Failed to execute git add: {}", e))
+                })?;
 
             if !output.status.success() {
                 let error_msg = String::from_utf8_lossy(&output.stderr);
                 error!("Git add failed: {}", error_msg);
-                return Err(format!("Git add failed: {}", error_msg));
+                return Err(ApiError::GitOperationFailed(format!(
+                    "Git add failed: {}",
+                    error_msg
+                )));
             }
 
             // Commit the changes
@@ -54,24 +74,29 @@ impl GitActor {
                 .arg("-m")
                 .arg(commit_message)
                 .output()
-                .map_err(|e| format!("Failed to execute git commit: {}", e))?;
+                .map_err(|e| {
+                    ApiError::ActorOperationFailed(format!("Failed to execute git commit: {}", e))
+                })?;
 
             if !output.status.success() {
                 let error_msg = String::from_utf8_lossy(&output.stderr);
                 error!("Git commit failed: {}", error_msg);
-                return Err(format!("Git commit failed: {}", error_msg));
+                return Err(ApiError::ActorOperationFailed(format!(
+                    "Git commit failed: {}",
+                    error_msg
+                )));
             }
 
             info!("Successfully committed file: {:?}", file_path);
             Ok(())
         })
         .await
-        .map_err(|e| format!("Task join error: {}", e))?
+        .map_err(|e| ApiError::ActorOperationFailed(format!("Task join error: {}", e)))?
     }
 }
 // GitActor implements Message<CommitFile> - the actor handles CommitFile messages
 impl Message<CommitFile> for GitActor {
-    type Reply = Result<(), String>;
+    type Reply = Result<(), ApiError>;
 
     async fn handle(
         &mut self,
@@ -80,11 +105,11 @@ impl Message<CommitFile> for GitActor {
     ) -> Self::Reply {
         info!(
             "GitActor received commit request for file: {:?}",
-            msg.file_path
+            msg.file_paths.relative_path()
         );
         info!("Commit message: {}", msg.commit_message);
 
-        self.commit_file(&msg.file_path, &msg.commit_message).await
+        self.commit_file(msg.file_paths, &msg.commit_message).await
     }
 }
 
@@ -132,14 +157,20 @@ mod tests {
         test_file.write_all(b"Test content").await.unwrap();
         test_file.flush().await.unwrap();
 
+        let normalised_paths = NormalisedPaths::new(repo_path_buf, test_file_path)?;
         // Try to commit the file - this should fail due to our hook
         let result = git_actor
-            .commit_file(&test_file_path, "Test commit message")
+            .commit_file(normalised_paths, "Test commit message")
             .await;
 
         // Verify that the commit failed
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Git commit failed"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Git commit failed")
+        );
         Ok(())
     }
 }

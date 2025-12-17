@@ -238,8 +238,8 @@ pub mod tests {
         // Parse the response body
         let response_body: Value = response.json().await.expect("Failed to parse response");
         assert_eq!(
-            response_body["error"],
-            "Failed to send message to git actor: Git commit failed: Simulating commit failure\n"
+            response_body["error"].as_str().unwrap(),
+            "Failed to send message to git actor: Actor encountered an error: Git commit failed: Simulating commit failure\n"
         );
 
         // Clean up - abort the server task

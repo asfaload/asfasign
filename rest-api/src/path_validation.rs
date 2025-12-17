@@ -6,15 +6,44 @@ use std::{
 use normalize_path::NormalizePath;
 use rest_api_types::errors::ApiError;
 
+#[derive(Debug, Clone)]
+pub struct NormalisedPaths {
+    // The directory in which we want to add a file
+    base_dir: PathBuf,
+    // The absolute path to the file to add under base_dir
+    absolute_path: PathBuf,
+    // The path to the file relative to the base_dir
+    relative_path: PathBuf,
+}
+
+impl NormalisedPaths {
+    pub fn new<P1: AsRef<Path>, P2: AsRef<Path>>(
+        base_repo_path: P1,
+        requested_path: P2,
+    ) -> Result<Self, ApiError> {
+        let r = build_normalised_absolute_path(base_repo_path, requested_path)?;
+        Ok(r)
+    }
+    pub fn base_dir(&self) -> PathBuf {
+        self.base_dir.clone()
+    }
+    pub fn absolute_path(&self) -> PathBuf {
+        self.absolute_path.clone()
+    }
+    pub fn relative_path(&self) -> PathBuf {
+        self.relative_path.clone()
+    }
+}
+
 /// Build the absolute path for the requested_path relative to the base_repo_path.
 /// Note that the base_repo_path must exist.
-pub fn build_normalised_absolute_path<P: AsRef<Path>>(
-    base_repo_path: P,
-    requested_path: &str,
-) -> Result<PathBuf, ApiError> {
+fn build_normalised_absolute_path<P1: AsRef<Path>, P2: AsRef<Path>>(
+    base_repo_path: P1,
+    requested_path: P2,
+) -> Result<NormalisedPaths, ApiError> {
     // Create and validate the requested path
     // Replace backslashes with forward slashes for cross-platform compatibility
-    let requested_path_str = requested_path.replace('\\', "/");
+    let requested_path_str = requested_path.as_ref().to_string_lossy().replace('\\', "/");
     let requested_path = PathBuf::from(requested_path_str);
 
     // If we get an absolute path, make it relative
@@ -98,7 +127,11 @@ pub fn build_normalised_absolute_path<P: AsRef<Path>>(
     }
 
     // Return the normalized requested path (preserving the original path structure)
-    Ok(security_check_path)
+    Ok(NormalisedPaths {
+        base_dir: canonical_base,
+        absolute_path: security_check_path,
+        relative_path: normalized_requested,
+    })
 }
 
 #[cfg(test)]
@@ -113,9 +146,15 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "valid/path/file.txt");
+        let result = build_normalised_absolute_path(base_path, Path::new("valid/path/file.txt"));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), base_path.join("valid/path/file.txt"));
+        let NormalisedPaths {
+            absolute_path,
+            relative_path,
+            base_dir: _,
+        } = result.unwrap();
+        assert_eq!(absolute_path, base_path.join("valid/path/file.txt"));
+        assert_eq!(relative_path, Path::new("valid/path/file.txt"));
     }
 
     #[test]
@@ -123,9 +162,16 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "file.txt");
+        let result = build_normalised_absolute_path(base_path, Path::new("file.txt"));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), base_path.join("file.txt"));
+
+        let NormalisedPaths {
+            absolute_path,
+            relative_path,
+            base_dir: _,
+        } = result.unwrap();
+        assert_eq!(absolute_path, base_path.join("file.txt"));
+        assert_eq!(relative_path, Path::new("file.txt"));
     }
 
     #[test]
@@ -133,9 +179,15 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "");
+        let result = build_normalised_absolute_path(base_path, Path::new(""));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), base_path);
+        let NormalisedPaths {
+            absolute_path,
+            relative_path,
+            base_dir: _,
+        } = result.unwrap();
+        assert_eq!(absolute_path, base_path);
+        assert_eq!(relative_path, Path::new(""));
     }
 
     #[test]
@@ -144,9 +196,9 @@ mod tests {
         let base_path = temp_dir.path();
         let absolute_path = Path::new("/etc/passwd").to_string_lossy().to_string();
 
-        let result = build_normalised_absolute_path(base_path, &absolute_path);
+        let result = build_normalised_absolute_path(base_path, Path::new(&absolute_path));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), base_path.join("etc/passwd"));
+        assert_eq!(result.unwrap().absolute_path, base_path.join("etc/passwd"));
     }
 
     #[test]
@@ -154,7 +206,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "../../../etc/passwd");
+        let result = build_normalised_absolute_path(base_path, Path::new("../../../etc/passwd"));
 
         match result {
             Err(ApiError::InvalidFilePath(s)) => {
@@ -170,9 +222,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "./file.txt");
+        let result = build_normalised_absolute_path(base_path, Path::new("./file.txt"));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), base_path.join("file.txt"));
+        assert_eq!(result.unwrap().absolute_path, base_path.join("file.txt"));
     }
 
     #[test]
@@ -180,7 +232,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "valid/../../../etc/passwd");
+        let result =
+            build_normalised_absolute_path(base_path, Path::new("valid/../../../etc/passwd"));
         match result {
             Err(ApiError::InvalidFilePath(s)) => {
                 assert_eq!(s, "Path traversal attempt through parent dir")
@@ -195,10 +248,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "folder\\subfolder\\file.txt");
+        let result =
+            build_normalised_absolute_path(base_path, Path::new("folder\\subfolder\\file.txt"));
         assert!(result.is_ok());
         // Note: The exact behavior might depend on the OS but we target Linux-like OSs
-        assert_eq!(result.unwrap(), base_path.join("folder/subfolder/file.txt"));
+        assert_eq!(
+            result.unwrap().absolute_path,
+            base_path.join("folder/subfolder/file.txt")
+        );
     }
 
     #[test]
@@ -206,10 +263,11 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "folder with spaces/file (1).txt");
+        let result =
+            build_normalised_absolute_path(base_path, Path::new("folder with spaces/file (1).txt"));
         assert!(result.is_ok());
         assert_eq!(
-            result.unwrap(),
+            result.unwrap().absolute_path,
             base_path.join("folder with spaces/file (1).txt")
         );
     }
@@ -219,9 +277,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "文件夹/文件.txt");
+        let result = build_normalised_absolute_path(base_path, Path::new("文件夹/文件.txt"));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), base_path.join("文件夹/文件.txt"));
+        assert_eq!(
+            result.unwrap().absolute_path,
+            base_path.join("文件夹/文件.txt")
+        );
     }
 
     #[test]
@@ -229,7 +290,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "folder/./subfolder/../file.txt");
+        let result =
+            build_normalised_absolute_path(base_path, Path::new("folder/./subfolder/../file.txt"));
         match result {
             Err(ApiError::InvalidFilePath(s)) => {
                 assert_eq!(s, "Path traversal attempt through parent dir")
@@ -244,9 +306,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "./././file.txt");
+        let result = build_normalised_absolute_path(base_path, Path::new("./././file.txt"));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), base_path.join("file.txt"));
+        assert_eq!(result.unwrap().absolute_path, base_path.join("file.txt"));
     }
 
     #[test]
@@ -257,7 +319,8 @@ mod tests {
         // Create some directories
         fs::create_dir_all(base_path.join("a/b/c")).unwrap();
 
-        let result = build_normalised_absolute_path(base_path, "a/b/c/../../../file.txt");
+        let result =
+            build_normalised_absolute_path(base_path, Path::new("a/b/c/../../../file.txt"));
 
         match result {
             Err(ApiError::InvalidFilePath(s)) => {
@@ -283,9 +346,12 @@ mod tests {
             std::os::unix::fs::symlink(base_path.join("target"), base_path.join("symlink"))
                 .unwrap();
 
-            let result = build_normalised_absolute_path(base_path, "symlink/file.txt");
+            let result = build_normalised_absolute_path(base_path, Path::new("symlink/file.txt"));
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), base_path.join("target/file.txt"));
+            assert_eq!(
+                result.unwrap().absolute_path,
+                base_path.join("target/file.txt")
+            );
         }
 
         #[cfg(windows)]
@@ -295,7 +361,7 @@ mod tests {
 
             let result = build_normalised_absolute_path(base_path, "symlink/file.txt");
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), PathBuf::from("symlink/file.txt"));
+            assert_eq!(result.unwrap(), base_path.join("target/file.txt"));
         }
     }
 
@@ -313,7 +379,7 @@ mod tests {
         {
             std::os::unix::fs::symlink(outside_dir.path(), base_path.join("symlink")).unwrap();
 
-            let result = build_normalised_absolute_path(base_path, "symlink/file.txt");
+            let result = build_normalised_absolute_path(base_path, Path::new("symlink/file.txt"));
             match result {
                 Err(ApiError::InvalidFilePath(s)) => {
                     assert_eq!(s, "Symlink points outside repository")
@@ -338,7 +404,7 @@ mod tests {
     fn test_nonexistent_base_path() {
         let nonexistent_path = PathBuf::from("/this/path/does/not/exist");
 
-        let result = build_normalised_absolute_path(&nonexistent_path, "file.txt");
+        let result = build_normalised_absolute_path(&nonexistent_path, Path::new("file.txt"));
         match result {
             Err(ApiError::InvalidFilePath(s)) => {
                 assert_eq!(
@@ -356,7 +422,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
 
-        let result = build_normalised_absolute_path(base_path, "folder\0/file.txt");
+        let result = build_normalised_absolute_path(base_path, Path::new("folder\0/file.txt"));
         assert!(result.is_ok());
     }
 
@@ -371,9 +437,9 @@ mod tests {
             long_component, long_component, long_component, "file.txt"
         );
 
-        let result = build_normalised_absolute_path(base_path, &long_path);
+        let result = build_normalised_absolute_path(base_path, Path::new(&long_path));
         assert_eq!(
-            result.unwrap(),
+            result.unwrap().absolute_path,
             base_path
                 .join(&long_component)
                 .join(&long_component)
@@ -389,7 +455,7 @@ mod tests {
 
         let result = build_normalised_absolute_path(base_path, "folder/");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), base_path.join("folder"));
+        assert_eq!(result.unwrap().absolute_path, base_path.join("folder"));
     }
 
     #[test]
@@ -399,6 +465,9 @@ mod tests {
 
         let result = build_normalised_absolute_path(base_path, "folder//subfolder///file.txt");
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), base_path.join("folder/subfolder/file.txt"));
+        assert_eq!(
+            result.unwrap().absolute_path,
+            base_path.join("folder/subfolder/file.txt")
+        );
     }
 }

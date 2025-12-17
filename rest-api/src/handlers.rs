@@ -1,5 +1,8 @@
+use std::{path::PathBuf, str::FromStr};
+
+use crate::actors::git_actor::CommitFile;
+use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
-use crate::{actors::git_actor::CommitFile, path_validation::build_normalised_absolute_path};
 use axum::{Json, extract::State};
 use log::info;
 use rest_api_types::{
@@ -22,8 +25,12 @@ pub async fn add_file_handler(
     }
 
     // Validate and sanitize the file path
-    let file_path = build_normalised_absolute_path(&state.git_repo_path, &request.file_path)?;
-    let full_path = state.git_repo_path.join(&file_path);
+    let normalised_paths = NormalisedPaths::new(
+        state.git_repo_path,
+        // Using unwrap because it is a Result<_,Infallible>
+        PathBuf::from_str(request.file_path.as_ref()).unwrap(),
+    )?;
+    let full_path = normalised_paths.absolute_path();
 
     // Create parent directories if they don't exist
     if let Some(parent) = full_path.parent() {
@@ -40,10 +47,14 @@ pub async fn add_file_handler(
     file.write_all(request.content.as_bytes())
         .await
         .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write file content: {}", e)))?;
+
     // Send commit message to git actor with the requested format
-    let commit_message = format!("added file at /{}", request.file_path);
+    let commit_message = format!(
+        "added file at /{}",
+        normalised_paths.relative_path().display()
+    );
     let commit_msg = CommitFile {
-        file_path,
+        file_paths: normalised_paths,
         commit_message: commit_message.clone(),
     };
 
