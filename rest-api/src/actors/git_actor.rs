@@ -157,7 +157,7 @@ mod tests {
         test_file.write_all(b"Test content").await.unwrap();
         test_file.flush().await.unwrap();
 
-        let normalised_paths = NormalisedPaths::new(repo_path_buf, test_file_path)?;
+        let normalised_paths = NormalisedPaths::new(repo_path_buf, test_file_path).await?;
         // Try to commit the file - this should fail due to our hook
         let result = git_actor
             .commit_file(normalised_paths, "Test commit message")

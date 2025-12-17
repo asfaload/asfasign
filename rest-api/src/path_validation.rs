@@ -17,12 +17,15 @@ pub struct NormalisedPaths {
 }
 
 impl NormalisedPaths {
-    pub fn new<P1: AsRef<Path>, P2: AsRef<Path>>(
+    pub async fn new<P1: AsRef<Path>, P2: AsRef<Path>>(
         base_repo_path: P1,
         requested_path: P2,
     ) -> Result<Self, ApiError> {
-        let r = build_normalised_absolute_path(base_repo_path, requested_path)?;
-        Ok(r)
+        let base_path = base_repo_path.as_ref().to_path_buf();
+        let req_path = requested_path.as_ref().to_path_buf();
+        tokio::task::spawn_blocking(move || build_normalised_absolute_path(base_path, req_path))
+            .await
+            .map_err(ApiError::from)?
     }
     pub fn base_dir(&self) -> PathBuf {
         self.base_dir.clone()

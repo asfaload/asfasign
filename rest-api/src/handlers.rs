@@ -29,7 +29,8 @@ pub async fn add_file_handler(
         state.git_repo_path,
         // Using unwrap because it is a Result<_,Infallible>
         PathBuf::from_str(request.file_path.as_ref()).unwrap(),
-    )?;
+    )
+    .await?;
     let full_path = normalised_paths.absolute_path();
 
     // Create parent directories if they don't exist
