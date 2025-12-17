@@ -75,6 +75,7 @@ pub mod environment {
     use std::path::PathBuf;
 
     // Structure to hold environment in which the server runs.
+    #[derive(Clone)]
     pub struct Environment {
         pub git_repo_path: PathBuf,
         pub server_port: u16,

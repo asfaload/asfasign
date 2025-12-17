@@ -11,5 +11,5 @@ async fn main() -> Result<(), ApiError> {
 
     let env = init_env()?;
 
-    run_server(env).await
+    run_server(&env).await
 }

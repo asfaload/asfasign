@@ -4,7 +4,7 @@ use log::info;
 use rest_api_types::{environment::Environment, errors::ApiError};
 use std::net::SocketAddr;
 
-pub async fn run_server(env: Environment) -> Result<(), ApiError> {
+pub async fn run_server(env: &Environment) -> Result<(), ApiError> {
     info!(
         "Starting REST API server with git repo at: {:?}",
         env.git_repo_path

@@ -6,7 +6,7 @@ pub mod tests {
     use rest_api::server::run_server;
     use rest_api_test_helpers::{
         build_env, file_exists_in_repo, get_latest_commit, get_random_port, init_git_repo,
-        make_git_commit_fail, read_file_content, url_for, wait_for_commit,
+        make_git_commit_fail, read_file_content, url_for, wait_for_commit, wait_for_server,
     };
     use serde_json::{Value, json};
     use tempfile::TempDir;
@@ -26,7 +26,11 @@ pub mod tests {
         let env = build_env(&repo_path_buf, port);
 
         // Start the server in the background
-        let server_handle = tokio::spawn(async move { run_server(env).await });
+        let env_clone = env.clone();
+        let server_handle = tokio::spawn(async move { run_server(&env_clone).await });
+        wait_for_server(&env, None).await?;
+
+        wait_for_server(&env, None).await?;
 
         // Create a client to send requests
         let client = reqwest::Client::new();
@@ -96,7 +100,9 @@ pub mod tests {
 
         let env = build_env(&repo_path_buf, port);
         // Start the server in the background
-        let server_handle = tokio::spawn(async move { run_server(env).await });
+        let env_clone = env.clone();
+        let server_handle = tokio::spawn(async move { run_server(&env_clone).await });
+        wait_for_server(&env, None).await?;
 
         // Create a client to send requests
         let client = reqwest::Client::new();
@@ -141,7 +147,9 @@ pub mod tests {
         let port = get_random_port().await?;
         let env = build_env(&repo_path_buf, port);
         // Start the server in the background
-        let server_handle = tokio::spawn(async move { run_server(env).await });
+        let env_clone = env.clone();
+        let server_handle = tokio::spawn(async move { run_server(&env_clone).await });
+        wait_for_server(&env, None).await?;
 
         // Create a client to send requests
         let client = reqwest::Client::new();
@@ -216,7 +224,9 @@ pub mod tests {
 
         let env = build_env(&repo_path_buf, port);
         // Start the server in the background
-        let server_handle = tokio::spawn(async move { run_server(env).await });
+        let env_clone = env.clone();
+        let server_handle = tokio::spawn(async move { run_server(&env_clone).await });
+        wait_for_server(&env, None).await?;
 
         // Create a client to send requests
         let client = reqwest::Client::new();

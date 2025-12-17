@@ -2,11 +2,16 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
+    time::Duration,
 };
 
 use anyhow::Result;
 use rest_api_types::{environment::Environment, errors::ApiError};
-use tokio::{fs::File, time::Instant};
+use tokio::{
+    fs::File,
+    net::TcpStream,
+    time::{Instant, timeout},
+};
 
 //
 // Helper function to initialize a git repository in a temporary directory
@@ -119,6 +124,46 @@ pub fn build_env(git_repo_path: &Path, server_port: u16) -> Environment {
     }
 }
 
+pub async fn wait_for_server(
+    env: &Environment,
+    timeout_in_sec: Option<u64>,
+) -> Result<(), ApiError> {
+    let address = format!("127.0.0.1:{}", env.server_port);
+
+    let deadline =
+        tokio::time::Instant::now() + tokio::time::Duration::from_secs(timeout_in_sec.unwrap_or(2));
+
+    // Attempt to connect within a 2-second timeout.
+    // `timeout` returns a Result, where Err means the operation timed out.
+    loop {
+        match timeout(
+            Duration::from_secs(timeout_in_sec.unwrap_or(2)),
+            TcpStream::connect(&address),
+        )
+        .await
+        {
+            Ok(Ok(_)) => {
+                // Connection succeeded before the timeout.
+                return Ok(());
+            }
+            Ok(Err(e)) => {
+                // Connection failed (e.g., connection refused).
+                if tokio::time::Instant::now() > deadline {
+                    return Err(ApiError::ServerSetupError(e));
+                }
+            }
+            Err(_) => {
+                // The `timeout` elapsed, so we assume the port is filtered.
+                if tokio::time::Instant::now() > deadline {
+                    return Err(ApiError::ServerSetupError(std::io::Error::other(
+                        "Timeout connecting server",
+                    )));
+                }
+            }
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
 pub async fn wait_for_commit(
     test_repo_path_buf: PathBuf,
     commit_message: &str,
