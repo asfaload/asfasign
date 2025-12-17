@@ -9,8 +9,10 @@ pub async fn run_server(env: Environment) -> Result<(), ApiError> {
         "Starting REST API server with git repo at: {:?}",
         env.git_repo_path
     );
-
-    let app_state = init_state(env.git_repo_path);
+    let canonical_repo_path = tokio::fs::canonicalize(&env.git_repo_path)
+        .await
+        .map_err(|e| ApiError::InvalidFilePath(format!("Invalid git repo path: {}", e)))?;
+    let app_state = init_state(canonical_repo_path);
     // Build the router
     let app = Router::new()
         .route("/add-file", post(add_file_handler))
