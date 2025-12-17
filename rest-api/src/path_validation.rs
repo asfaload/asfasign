@@ -44,7 +44,11 @@ fn build_normalised_absolute_path<P1: AsRef<Path>, P2: AsRef<Path>>(
     base_repo_path: P1,
     requested_path: P2,
 ) -> Result<NormalisedPaths, ApiError> {
-    // Create and validate the requested path
+    if requested_path.as_ref().to_string_lossy().contains('\0') {
+        return Err(ApiError::InvalidFilePath(
+            "Path must not contain null bytes".to_string(),
+        ));
+    }
     // Replace backslashes with forward slashes for cross-platform compatibility
     let requested_path_str = requested_path.as_ref().to_string_lossy().replace('\\', "/");
     let requested_path = PathBuf::from(requested_path_str);
@@ -426,7 +430,13 @@ mod tests {
         let base_path = temp_dir.path();
 
         let result = build_normalised_absolute_path(base_path, Path::new("folder\0/file.txt"));
-        assert!(result.is_ok());
+        match result {
+            Err(ApiError::InvalidFilePath(s)) => {
+                assert_eq!(s, "Path must not contain null bytes")
+            }
+            Err(e) => panic!("Expected InvalidFilePath, got {}", e),
+            Ok(_) => panic!("Expected InvalidFilePath, got ok result"),
+        }
     }
 
     #[test]
