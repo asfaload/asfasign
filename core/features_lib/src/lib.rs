@@ -7,7 +7,7 @@ pub use common::{
 };
 pub use common::{SignedFileLoader, SignedFileWithKind};
 use common::{
-    errors::keys::KeyError,
+    errors::keys::{KeyError, SignError},
     fs::names::{find_global_signers_for, pending_signers_file_in_dir},
 };
 
@@ -207,6 +207,53 @@ where
         Ok(SecretKey::<M> {
             key,
             location: location.as_ref().to_path_buf(),
+        })
+    }
+}
+
+// Implement SecretKeyTrait for SecretKey to make it compatible with AuthSignature::new
+impl<M> SecretKeyTrait for SecretKey<M>
+where
+    AsfaloadSecretKey<M>: SecretKeyTrait,
+{
+    type SecretKey = M;
+    type Signature = <AsfaloadSecretKey<M> as SecretKeyTrait>::Signature;
+
+    fn sign(&self, data: &AsfaloadHashes) -> Result<Self::Signature, SignError> {
+        self.key.sign(data)
+    }
+
+    fn from_bytes(data: &[u8]) -> Result<Self, KeyError>
+    where
+        Self: Sized,
+    {
+        let key = AsfaloadSecretKey::from_bytes(data)?;
+        Ok(SecretKey {
+            key,
+            location: PathBuf::new(), // Default location for bytes-based creation
+        })
+    }
+
+    fn from_string(s: String) -> Result<Self, KeyError>
+    where
+        Self: Sized,
+    {
+        let key = AsfaloadSecretKey::from_string(s)?;
+        Ok(SecretKey {
+            key,
+            location: PathBuf::new(), // Default location for string-based creation
+        })
+    }
+
+    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError>
+    where
+        Self: Sized,
+    {
+        let path_ref = path.as_ref();
+        let key = AsfaloadSecretKey::from_file(path_ref, password)?;
+        Ok(SecretKey {
+            key,
+            location: path_ref.to_path_buf(),
         })
     }
 }
