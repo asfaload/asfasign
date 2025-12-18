@@ -29,7 +29,7 @@ impl GitActor {
         commit_message: &str,
     ) -> Result<(), ApiError> {
         if file_paths.base_dir() != self.repo_path {
-            return Err(ApiError::GitOperationFailed(format!(
+            return Err(ApiError::InvalidFilePath(format!(
                 "File's base_dir ({}) != actor's git dir ({})",
                 file_paths.base_dir().to_string_lossy(),
                 self.repo_path.to_string_lossy()
@@ -151,7 +151,7 @@ mod tests {
         // Verify that the commit failed
         assert!(result.is_err());
         match result {
-            Err(ApiError::Git2OperationFailed(e)) => {
+            Err(ApiError::GitOperationFailed(e)) => {
                 assert!(e.to_string().starts_with("could not find repository at"))
             }
             Err(e) => panic!("Got unexpected error type back: {}", e),

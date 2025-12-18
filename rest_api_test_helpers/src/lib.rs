@@ -1,11 +1,11 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
     time::Duration,
 };
 
 use anyhow::Result;
+use git2::Repository;
 use rest_api_types::{environment::Environment, errors::ApiError};
 use tokio::{
     fs::File,
@@ -16,81 +16,34 @@ use tokio::{
 //
 // Helper function to initialize a git repository in a temporary directory
 pub fn init_git_repo(repo_path: &Path) -> Result<(), ApiError> {
-    // Initialize git repo
-    let output = Command::new("git").arg("init").arg(repo_path).output()?;
+    // Initialize git repo using git2
+    let repo = Repository::init(repo_path)?;
 
-    if !output.status.success() {
-        return Err(ApiError::GitOperationFailed(format!(
-            "git init failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-
-    // Set user name and email for commits
-    let output = Command::new("git")
-        .args([
-            "-C",
-            repo_path
-                .to_str()
-                .ok_or_else(|| ApiError::InvalidFilePath("Path is not valid UTF-8".to_string()))?,
-            "config",
-            "user.name",
-            "Test User",
-        ])
-        .output()?;
-
-    if !output.status.success() {
-        return Err(ApiError::GitOperationFailed(format!(
-            "git config user.name failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-
-    let output = Command::new("git")
-        .args([
-            "-C",
-            repo_path
-                .to_str()
-                .ok_or_else(|| ApiError::InvalidFilePath("Path is not valid UTF-8".to_string()))?,
-            "config",
-            "user.email",
-            "test@example.com",
-        ])
-        .output()?;
-
-    if !output.status.success() {
-        return Err(ApiError::GitOperationFailed(format!(
-            "git config user.email failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
+    // Set user name and email for commits using git2
+    let mut config = repo.config()?;
+    config.set_str("user.name", "Test User")?;
+    config.set_str("user.email", "test@example.com")?;
 
     Ok(())
 }
 
 // Helper function to get the latest commit message
 pub fn get_latest_commit(repo_path: &Path) -> Result<String, ApiError> {
-    let output = Command::new("git")
-        .args([
-            "-C",
-            repo_path.to_str().ok_or_else(|| {
-                ApiError::GitOperationFailed("Path is not valid UTF-8".to_string())
-            })?,
-            "log",
-            "--oneline",
-            "-1",
-            "--abbrev-commit",
-        ])
-        .output()?;
+    let repo = Repository::open(repo_path)?;
+    let head = repo.head()?;
+    let commit = head.peel_to_commit()?;
 
-    if !output.status.success() {
-        return Err(ApiError::GitOperationFailed(format!(
-            "git log failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
+    // Get the commit message and shorten the commit hash
+    let commit_id = commit.id();
+    let short_id = format!("{}", commit_id).chars().take(7).collect::<String>();
+    let message = commit
+        .message()
+        .unwrap_or("")
+        .split('\n')
+        .next()
+        .unwrap_or("");
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(format!("{} {}", short_id, message.trim()))
 }
 
 // Helper function to check if a file exists in the repo
@@ -168,7 +121,7 @@ pub async fn wait_for_commit(
     test_repo_path_buf: PathBuf,
     commit_message: &str,
     deadline_in: Option<Instant>,
-) -> Result<(), ApiError> {
+) -> Result<()> {
     let deadline =
         deadline_in.unwrap_or(tokio::time::Instant::now() + tokio::time::Duration::from_secs(5));
     loop {
@@ -178,7 +131,7 @@ pub async fn wait_for_commit(
             return Ok(());
         }
         if tokio::time::Instant::now() > deadline {
-            return Err(ApiError::GitOperationFailed(
+            return Err(anyhow::Error::msg(
                 "Test timed out waiting for commit".to_string(),
             ));
         }
