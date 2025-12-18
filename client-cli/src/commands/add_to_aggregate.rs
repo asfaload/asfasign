@@ -21,11 +21,10 @@ pub fn handle_add_to_aggregate_command<P: AsRef<Path>>(
     let signature = secret_key.key.sign(&data_to_sign)?;
 
     // Derive the public key from the secret key
-    let public_key = PublicKey::from_secret_key(secret_key.key)?;
+    let public_key = PublicKey::<minisign::PublicKey>::from_secret_key(secret_key.key)?;
 
     // Add the signature to the aggregate for the file
     signature.add_to_aggregate_for_file(signed_file, &public_key)?;
 
     Ok(())
 }
-

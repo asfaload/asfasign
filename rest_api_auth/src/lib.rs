@@ -34,9 +34,9 @@ pub struct AuthInfo {
     payload: String,
 }
 
-pub struct AuthSignature<MP, MS>
+pub struct AuthSignature<MP, MS, MSK>
 where
-    PublicKey<MP>: PublicKeyTrait,
+    PublicKey<MP>: PublicKeyTrait<SecretKeyType = MSK>,
     Signature<MS>: SignatureTrait,
     MP: Clone,
     MS: Clone,
@@ -68,16 +68,15 @@ impl AuthInfo {
     }
 }
 
-impl<MP, MS> AuthSignature<MP, MS>
+impl<MP, MS, MSK> AuthSignature<MP, MS, MSK>
 where
-    PublicKey<MP>: PublicKeyTrait,
+    PublicKey<MP>: PublicKeyTrait<SecretKeyType = MSK>,
     Signature<MS>: SignatureTrait,
     MP: Clone,
     MS: Clone,
 {
-    pub fn new<MSK>(auth_info: AuthInfo, secret_key: SecretKey<MSK>) -> Result<Self, AuthError>
+    pub fn new(auth_info: AuthInfo, secret_key: SecretKey<MSK>) -> Result<Self, AuthError>
     where
-        PublicKey<MP>: PublicKeyTrait<SecretKeyType = MSK>,
         SecretKey<MSK>: SecretKeyTrait<Signature = Signature<MS>, SecretKey = MSK>,
     {
         let hash = sha512_for_content(auth_info.to_string().as_bytes().to_vec())?;

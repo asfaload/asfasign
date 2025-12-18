@@ -39,6 +39,9 @@ pub enum ClientCliError {
 
     #[error("Signers file error: {0}")]
     SignersFile(String),
+
+    #[error("Authentication error: {0}")]
+    AuthError(String),
 }
 
 pub type Result<T> = std::result::Result<T, ClientCliError>;

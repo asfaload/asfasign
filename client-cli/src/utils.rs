@@ -4,6 +4,9 @@ use zxcvbn::{zxcvbn, Score};
 use ClientCliError::PasswordStrengthError;
 
 use crate::error::{ClientCliError, Result};
+use features_lib::{SecretKey, SecretKeyTrait, SignatureTrait};
+use reqwest::header::{HeaderMap, HeaderValue};
+use rest_api_auth::AuthSignature;
 
 /// Ensures a directory exists, creating it if necessary
 pub fn ensure_dir_exists(path: &Path) -> Result<()> {
@@ -150,4 +153,68 @@ pub fn get_password(
         let validated_password = validate_password(unvalidated_password.as_str())?;
         Ok(validated_password)
     }
+}
+
+/// Creates authentication headers for REST API requests
+///
+/// # Arguments
+///
+/// * `payload` - The JSON payload as a string that will be sent in the request
+/// * `secret_key` - The secret key used to sign the authentication data
+///
+/// # Returns
+///
+/// A HeaderMap containing the authentication headers:
+/// - X-asfld-timestamp: RFC3339 timestamp
+/// - X-asfld-nonce: UUID v4
+/// - X-asfld-sig: Signature of the auth info
+/// - X-asfld-pk: Public key in base64
+pub fn create_auth_headers<MSK>(payload: &str, secret_key: SecretKey<MSK>) -> Result<HeaderMap>
+where
+    SecretKey<MSK>: SecretKeyTrait<SecretKey = MSK>,
+    MSK: Clone,
+{
+    use rest_api_auth::AuthInfo;
+
+    // Create authentication info
+    let auth_info = AuthInfo::new(payload.to_string());
+
+    // Create authentication signature
+    // Now SecretKey implements SecretKeyTrait, so it should work directly
+    // We need to specify the type parameters for AuthSignature
+    let auth_signature = AuthSignature::new(auth_info, secret_key)
+        .map_err(|e| ClientCliError::AuthError(e.to_string()))?;
+
+    // Create headers
+    let mut headers = HeaderMap::new();
+
+    // Add timestamp header
+    headers.insert(
+        "X-asfld-timestamp",
+        HeaderValue::from_str(&auth_signature.auth_info().timestamp().to_rfc3339())
+            .map_err(|e| ClientCliError::AuthError(e.to_string()))?,
+    );
+
+    // Add nonce header
+    headers.insert(
+        "X-asfld-nonce",
+        HeaderValue::from_str(&auth_signature.auth_info().nonce())
+            .map_err(|e| ClientCliError::AuthError(e.to_string()))?,
+    );
+
+    // Add signature header
+    headers.insert(
+        "X-asfld-sig",
+        HeaderValue::from_str(&auth_signature.signature().to_base64())
+            .map_err(|e| ClientCliError::AuthError(e.to_string()))?,
+    );
+
+    // Add public key header
+    headers.insert(
+        "X-asfld-pk",
+        HeaderValue::from_str(&auth_signature.public_key())
+            .map_err(|e| ClientCliError::AuthError(e.to_string()))?,
+    );
+
+    Ok(headers)
 }
