@@ -11,7 +11,7 @@ members = [
   "client-cli",
   "rest-api",
   "rest_api_test_helpers",
-  "rest_api_types",
+  "rest_api_types", "rest_api_auth",
 ]
 
 [workspace.lints.clippy]
