@@ -11,10 +11,6 @@ pub enum KeyFormat {
     Minisign,
 }
 
-pub enum AsfaloadKeyPairs {
-    Minisign(minisign::KeyPair),
-}
-
 // Trait that we will implement for keypairs we support. Initially only minisign::KeyPair
 pub trait AsfaloadKeyPairTrait<'a>: Sized {
     type PublicKey;
@@ -55,6 +51,7 @@ pub trait AsfaloadSecretKeyTrait: Sized {
 
 // Struct to store a secret key immediately usable.
 // This means that for minisign, it holds the non-encrypted secret key.
+#[derive(Debug)]
 pub struct AsfaloadSecretKey<K> {
     // Keep it private as for minisign it is the decrypted key, i.e. non password protected.
     key: K,
@@ -79,7 +76,7 @@ pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone + std::fm
         Self::from_bytes(&s.into_bytes())
     }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError>;
-    fn from_secret_key(sk: AsfaloadSecretKey<Self::SecretKeyType>) -> Result<Self, KeyError>;
+    fn from_secret_key(sk: Self::SecretKeyType) -> Result<Self, KeyError>;
     fn key_format(&self) -> KeyFormat;
     fn key(&self) -> Self::KeyType;
 }

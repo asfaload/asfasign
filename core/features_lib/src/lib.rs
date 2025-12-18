@@ -13,41 +13,40 @@ use common::{
 
 pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file};
 
+use signatures::keys::minisign;
 use signatures::keys::{
-    AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSecretKey,
-    AsfaloadSignature,
+    AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+};
+use signatures::types::{
+    AsfaloadKeyPairs, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatures,
 };
 
-pub use signatures::keys::AsfaloadPublicKey as PublicKey;
 pub use signatures::keys::AsfaloadPublicKeyTrait as PublicKeyTrait;
 pub use signatures::keys::AsfaloadSecretKeyTrait as SecretKeyTrait;
-pub use signatures::keys::AsfaloadSignature as Signature;
 pub use signatures::keys::AsfaloadSignatureTrait as SignatureTrait;
+pub use signatures::types::AsfaloadPublicKeys as PublicKey;
+pub use signatures::types::AsfaloadSecretKeys as SecretKeyType;
+pub use signatures::types::AsfaloadSignatures as Signature;
 
+use signers_file::sign_signers_file;
 pub use signers_file_types::SignersConfig;
 
-use signatures::keys::AsfaloadKeyPair;
-pub use signatures::keys::AsfaloadSignatureTrait;
-use signers_file::sign_signers_file;
-
-// In this type argument we constrain the type argument of the SignatureWithState type
-// to AsfaloadPublicKey and AsfaloadSignature. Doing this allows the user of this
-// type to not specify the type arguments, makeing the code more succint.
-pub type SignatureWithState<MP, MS> =
-    aggregate_signature::SignatureWithState<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>;
+// In this type argument we use AsfaloadPublicKeys and AsfaloadSignatures directly.
+// This allows the user of this type to not specify any type arguments.
+pub type SignatureWithState = aggregate_signature::SignatureWithState;
 
 // We define and implement this trait in the user_lib as it depends on traits defined in other crates,
 // which we want to avoid in common.
-pub trait SignedFileTrait<MP, MS>
+pub trait SignedFileTrait
 where
-    AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
-    AsfaloadSignature<MS>: AsfaloadSignatureTrait,
+    AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+    AsfaloadSignatures: AsfaloadSignatureTrait,
 {
     fn add_signature(
         &self,
-        sig: AsfaloadSignature<MS>,
-        pubkey: AsfaloadPublicKey<MP>,
-    ) -> Result<SignatureWithState<MP, MS>, SignedFileError>;
+        sig: AsfaloadSignatures,
+        pubkey: AsfaloadPublicKeys,
+    ) -> Result<SignatureWithState, SignedFileError>;
     fn is_signed(&self) -> Result<bool, SignedFileError>;
 }
 
@@ -60,43 +59,39 @@ pub trait SignableFileMarker {}
 impl SignableFileMarker for InitialSignersFileMarker {}
 impl SignableFileMarker for SignersFileMarker {}
 
-impl<MP, MS, T> SignedFileTrait<MP, MS> for SignedFile<T>
+impl<T> SignedFileTrait for SignedFile<T>
 where
     T: SignableFileMarker,
-    MP: Clone,
-    MS: Clone,
-    AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
-    AsfaloadSignature<MS>: AsfaloadSignatureTrait,
+    AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+    AsfaloadSignatures: AsfaloadSignatureTrait,
 {
     fn add_signature(
         &self,
-        sig: AsfaloadSignature<MS>,
-        pubkey: AsfaloadPublicKey<MP>,
-    ) -> Result<SignatureWithState<MP, MS>, SignedFileError> {
+        sig: AsfaloadSignatures,
+        pubkey: AsfaloadPublicKeys,
+    ) -> Result<SignatureWithState, SignedFileError> {
         sign_signers_file(&self.location, &sig, &pubkey).map_err(|e| e.into())
     }
 
     fn is_signed(&self) -> Result<bool, SignedFileError> {
-        let r = SignatureWithState::<MP, MS>::load_for_file(&self.location)?
+        let r = SignatureWithState::load_for_file(&self.location)?
             .get_complete()
             .is_some();
         Ok(r)
     }
 }
 
-impl<MP, MS> SignedFileTrait<MP, MS> for SignedFile<ArtifactMarker>
+impl SignedFileTrait for SignedFile<ArtifactMarker>
 where
-    MP: Clone,
-    MS: Clone,
-    AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
-    AsfaloadSignature<MS>: AsfaloadSignatureTrait,
+    AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+    AsfaloadSignatures: AsfaloadSignatureTrait,
 {
     fn add_signature(
         &self,
-        sig: AsfaloadSignature<MS>,
-        pubkey: AsfaloadPublicKey<MP>,
-    ) -> Result<SignatureWithState<MP, MS>, SignedFileError> {
-        let agg_sig_with_state = SignatureWithState::<MP, MS>::load_for_file(&self.location)?;
+        sig: AsfaloadSignatures,
+        pubkey: AsfaloadPublicKeys,
+    ) -> Result<SignatureWithState, SignedFileError> {
+        let agg_sig_with_state = SignatureWithState::load_for_file(&self.location)?;
         if let Some(pending_sig) = agg_sig_with_state.get_pending() {
             pending_sig
                 .add_individual_signature(&sig, &pubkey)
@@ -118,33 +113,29 @@ where
     }
 }
 
-pub trait SignedFileWithKindTrait<MP, MS>
+pub trait SignedFileWithKindTrait
 where
-    MP: Clone,
-    MS: Clone,
-    AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
-    AsfaloadSignature<MS>: AsfaloadSignatureTrait,
+    AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+    AsfaloadSignatures: AsfaloadSignatureTrait,
 {
     fn add_signature(
         &self,
-        sig: AsfaloadSignature<MS>,
-        pubkey: AsfaloadPublicKey<MP>,
-    ) -> Result<SignatureWithState<MP, MS>, SignedFileError>;
+        sig: AsfaloadSignatures,
+        pubkey: AsfaloadPublicKeys,
+    ) -> Result<SignatureWithState, SignedFileError>;
     fn is_signed(&self) -> Result<bool, SignedFileError>;
 }
 
-impl<MP, MS> SignedFileWithKindTrait<MP, MS> for SignedFileWithKind
+impl SignedFileWithKindTrait for SignedFileWithKind
 where
-    MP: Clone,
-    MS: Clone,
-    AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
-    AsfaloadSignature<MS>: AsfaloadSignatureTrait,
+    AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+    AsfaloadSignatures: AsfaloadSignatureTrait,
 {
     fn add_signature(
         &self,
-        sig: AsfaloadSignature<MS>,
-        pubkey: AsfaloadPublicKey<MP>,
-    ) -> Result<SignatureWithState<MP, MS>, SignedFileError> {
+        sig: AsfaloadSignatures,
+        pubkey: AsfaloadPublicKeys,
+    ) -> Result<SignatureWithState, SignedFileError> {
         match self {
             SignedFileWithKind::InitialSignersFile(sf) => sf.add_signature(sig, pubkey),
             SignedFileWithKind::SignersFile(sf) => sf.add_signature(sig, pubkey),
@@ -176,35 +167,27 @@ impl SignersFileTrait for SignersFile {
     }
 }
 
-pub struct KeyPair<M> {
+pub struct KeyPair {
     pub location: PathBuf,
-    pub keypair: AsfaloadKeyPair<M>,
+    pub keypair: AsfaloadKeyPairs,
 }
-impl<M> KeyPair<M>
-where
-    // This Higher-Rank Trait Bound states that AsfaloadKeyPair<M> must implement
-    // AsfaloadKeyPairTrait for *any* lifetime 'a.
-    AsfaloadKeyPair<M>: for<'a> AsfaloadKeyPairTrait<'a>,
-{
+impl KeyPair {
     pub fn new<P: AsRef<Path>>(dir: P, name: &str, password: &str) -> Result<Self, KeyError> {
-        let keypair = AsfaloadKeyPair::new(password)?;
+        let keypair = AsfaloadKeyPairs::new(password)?;
         let location = dir.as_ref().join(name);
         keypair.save(&location)?;
-        Ok(KeyPair::<M> { keypair, location })
+        Ok(KeyPair { keypair, location })
     }
 }
 
-pub struct SecretKey<M> {
+pub struct SecretKey {
     pub location: PathBuf,
-    pub key: AsfaloadSecretKey<M>,
+    pub key: AsfaloadSecretKeys,
 }
-impl<M> SecretKey<M>
-where
-    AsfaloadSecretKey<M>: SecretKeyTrait,
-{
+impl SecretKey {
     pub fn from_file<P: AsRef<Path>>(location: P, password: &str) -> Result<Self, KeyError> {
-        let key = AsfaloadSecretKey::from_file(&location, password)?;
-        Ok(SecretKey::<M> {
+        let key = AsfaloadSecretKeys::from_file(&location, password)?;
+        Ok(SecretKey {
             key,
             location: location.as_ref().to_path_buf(),
         })
@@ -212,12 +195,9 @@ where
 }
 
 // Implement SecretKeyTrait for SecretKey to make it compatible with AuthSignature::new
-impl<M> SecretKeyTrait for SecretKey<M>
-where
-    AsfaloadSecretKey<M>: SecretKeyTrait,
-{
-    type SecretKey = M;
-    type Signature = <AsfaloadSecretKey<M> as SecretKeyTrait>::Signature;
+impl SecretKeyTrait for SecretKey {
+    type SecretKey = minisign::SecretKey;
+    type Signature = AsfaloadSignatures;
 
     fn sign(&self, data: &AsfaloadHashes) -> Result<Self::Signature, SignError> {
         self.key.sign(data)
@@ -227,7 +207,7 @@ where
     where
         Self: Sized,
     {
-        let key = AsfaloadSecretKey::from_bytes(data)?;
+        let key = AsfaloadSecretKeys::from_bytes(data)?;
         Ok(SecretKey {
             key,
             location: PathBuf::new(), // Default location for bytes-based creation
@@ -238,7 +218,7 @@ where
     where
         Self: Sized,
     {
-        let key = AsfaloadSecretKey::from_string(s)?;
+        let key = AsfaloadSecretKeys::from_string(s)?;
         Ok(SecretKey {
             key,
             location: PathBuf::new(), // Default location for string-based creation
@@ -250,7 +230,7 @@ where
         Self: Sized,
     {
         let path_ref = path.as_ref();
-        let key = AsfaloadSecretKey::from_file(path_ref, password)?;
+        let key = AsfaloadSecretKeys::from_file(path_ref, password)?;
         Ok(SecretKey {
             key,
             location: path_ref.to_path_buf(),
@@ -264,19 +244,16 @@ pub mod aggregate_signature_helpers {
     use aggregate_signature::get_individual_signatures as get_individual_signatures_ori;
     pub use aggregate_signature::{check_groups, load_signers_config};
     use common::errors::AggregateSignatureError;
-    use signatures::keys::{
-        AsfaloadPublicKey, AsfaloadPublicKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-    };
+    use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+    use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 
-    pub fn get_individual_signatures<P: AsRef<Path>, MP: Clone, MS: Clone>(
+    pub fn get_individual_signatures<P: AsRef<Path>>(
         sig_file_path: P,
-    ) -> Result<HashMap<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>>, AggregateSignatureError>
+    ) -> Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, AggregateSignatureError>
     where
-        AsfaloadPublicKey<MP>: AsfaloadPublicKeyTrait<Signature = AsfaloadSignature<MS>>,
-        AsfaloadSignature<MS>: AsfaloadSignatureTrait,
+        AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+        AsfaloadSignatures: AsfaloadSignatureTrait,
     {
-        get_individual_signatures_ori::<AsfaloadPublicKey<MP>, AsfaloadSignature<MS>, _>(
-            sig_file_path,
-        )
+        get_individual_signatures_ori::<AsfaloadPublicKeys, AsfaloadSignatures, _>(sig_file_path)
     }
 }

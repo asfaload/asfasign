@@ -8,7 +8,10 @@ use common::{
         find_global_signers_for, pending_signatures_path_for, signatures_path_for,
     },
 };
-use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signatures::{
+    keys::AsfaloadPublicKeyTrait,
+    types::{AsfaloadPublicKeys, AsfaloadSignatures},
+};
 use signers_file_types::{
     SignersConfig, SignersConfigProposal, parse_signers_config, parse_signers_config_proposal,
 };
@@ -17,9 +20,9 @@ use std::{borrow::Borrow, collections::HashMap, ffi::OsStr, fs, io::Write, path:
 
 // Helper function used to validate the signer of a signers file
 // initialisation, i.e. when no existing signers file is active.
-fn is_valid_signer_for_signer_init<P: AsfaloadPublicKeyTrait + Eq>(
-    pubkey: &P,
-    config: &SignersConfig<P>,
+fn is_valid_signer_for_signer_init(
+    pubkey: &AsfaloadPublicKeys,
+    config: &SignersConfig,
 ) -> Result<(), SignersFileError> {
     let is_valid = config.admin_keys().iter().any(|group| {
         group
@@ -39,9 +42,9 @@ fn is_valid_signer_for_signer_init<P: AsfaloadPublicKeyTrait + Eq>(
 // Helper function used to validate the signer of a signers file
 // initialisation, i.e. when there is an existing signers file active,
 // which influences the validation.
-fn is_valid_signer_for_update_of<P: AsfaloadPublicKeyTrait + Eq>(
-    pubkey: &P,
-    active_config: &SignersConfig<P>,
+fn is_valid_signer_for_update_of(
+    pubkey: &AsfaloadPublicKeys,
+    active_config: &SignersConfig,
 ) -> Result<(), SignersFileError> {
     // Only an admin key or a master key can propose a new signers file.
     let is_valid = active_config.admin_keys().iter().any(|group| {
@@ -72,7 +75,7 @@ pub fn sign_signers_file<P, S, K>(
     signers_file_path: P,
     signature: &S,
     pubkey: &K,
-) -> Result<SignatureWithState<K, S>, SignersFileError>
+) -> Result<SignatureWithState, SignersFileError>
 where
     P: AsRef<Path>,
     K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
@@ -92,7 +95,7 @@ where
     // This will succeed only if the signature is complete, and it is fine
     // if it returns an error reporting an incomplete signature for which the
     // transition cannot occur.
-    let agg_sig: SignatureWithState<K, S> = SignatureWithState::load_for_file(&signers_file_path)?;
+    let agg_sig: SignatureWithState = SignatureWithState::load_for_file(&signers_file_path)?;
     match agg_sig {
         SignatureWithState::Pending(pending_sig) => {
             match pending_sig.try_transition_to_complete() {
@@ -184,7 +187,7 @@ where
         )));
     }
     // First, validate the JSON by parsing it
-    let _signers_config: SignersConfig<K> = parse_signers_config(json_content)?;
+    let _signers_config: SignersConfig = parse_signers_config(json_content)?;
 
     validator()?;
 
@@ -212,16 +215,12 @@ where
     Ok(())
 }
 
-pub fn initialize_signers_file<P: AsRef<Path>, S, K>(
+pub fn initialize_signers_file<P: AsRef<Path>>(
     dir_path_in: P,
     json_content_in: impl AsRef<str>,
-    signature: &S,
-    pubkey: &K,
-) -> Result<(), SignersFileError>
-where
-    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
-    S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
-{
+    signature: &AsfaloadSignatures,
+    pubkey: &AsfaloadPublicKeys,
+) -> Result<(), SignersFileError> {
     let json_content = json_content_in.as_ref();
     if dir_path_in.as_ref().join(SIGNERS_DIR).exists()
         || dir_path_in.as_ref().join(PENDING_SIGNERS_DIR).exists()
@@ -231,7 +230,7 @@ where
             dir_path_in.as_ref().to_string_lossy(),
         )));
     }
-    let signers_config: SignersConfig<K> = parse_signers_config(json_content)?;
+    let signers_config: SignersConfig = parse_signers_config(json_content)?;
     let validator = || is_valid_signer_for_signer_init(pubkey, &signers_config);
     write_valid_signers_file(
         dir_path_in.as_ref(),
@@ -257,15 +256,13 @@ where
 /// # Returns
 /// * `Ok(())` if the pending file was successfully created
 /// * `Err(SignersFileError)` if there was an error validating the signature or creating the file
-pub fn propose_signers_file<P: AsRef<Path>, S, K>(
+pub fn propose_signers_file<P: AsRef<Path>>(
     dir_path: P,
     json_content: &str,
-    signature: &S,
-    pubkey: &K,
+    signature: &AsfaloadSignatures,
+    pubkey: &AsfaloadPublicKeys,
 ) -> Result<(), SignersFileError>
 where
-    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
-    S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
     // Determine the path to the active signers file
     let active_signers_file = find_global_signers_for(dir_path.as_ref()).map_err(|e| {
@@ -286,9 +283,9 @@ where
 
     // Parse the active signers file
     let active_content = fs::read_to_string(&active_signers_file)?;
-    let active_config: SignersConfig<K> = parse_signers_config(&active_content)?;
+    let active_config: SignersConfig = parse_signers_config(&active_content)?;
 
-    let proposed_update: SignersConfigProposal<K> = parse_signers_config_proposal(json_content)?;
+    let proposed_update: SignersConfigProposal = parse_signers_config_proposal(json_content)?;
     if proposed_update.timestamp <= active_config.timestamp() {
         return Err(SignersFileError::InvalidData(format!(
             "Timestamp of update is smaller than active signers file's: update:{} <= active:{}",
@@ -303,9 +300,7 @@ where
     write_valid_signers_file(dir_path, json_content, signature, pubkey, validator)
 }
 
-fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
-    dir: Pa,
-) -> Result<(), SignersFileError> {
+fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), SignersFileError> {
     let root_dir = dir.as_ref();
     let active_signers_dir = root_dir.join(SIGNERS_DIR);
     let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
@@ -313,7 +308,7 @@ fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
 
     // Read existing active signers configuration
     let existing_content = fs::read_to_string(&active_signers_file)?;
-    let existing_config: SignersConfig<K> = parse_signers_config(&existing_content)?;
+    let existing_config: SignersConfig = parse_signers_config(&existing_content)?;
 
     // Read the signatures file for the active signers
     let signatures_file_path = signatures_path_for(&active_signers_file)?;
@@ -331,7 +326,7 @@ fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
     };
 
     // Read or create history file
-    let mut history_file: HistoryFile<K> = if history_file_path.exists() {
+    let mut history_file: HistoryFile = if history_file_path.exists() {
         let history_content = fs::read_to_string(&history_file_path)?;
         if history_content.trim().is_empty() {
             HistoryFile::new()
@@ -353,11 +348,9 @@ fn move_current_signers_to_history<K: AsfaloadPublicKeyTrait, Pa: AsRef<Path>>(
     Ok(())
 }
 
-pub fn activate_signers_file<K, S, A>(agg_sig: A) -> Result<(), SignersFileError>
+pub fn activate_signers_file<A>(agg_sig: A) -> Result<(), SignersFileError>
 where
-    K: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait + Clone,
-    A: Borrow<AggregateSignature<K, S, CompleteSignature>>,
+    A: Borrow<AggregateSignature<CompleteSignature>>,
 {
     let agg_sig = agg_sig.borrow();
     if agg_sig.subject().is_artifact() {
@@ -389,7 +382,7 @@ where
     let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
 
     if active_signers_file.exists() {
-        move_current_signers_to_history::<K, _>(root_dir)?;
+        move_current_signers_to_history(root_dir)?;
     }
 
     // Rename pending directory to active directory
@@ -400,33 +393,22 @@ where
 
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
-))]
-pub struct HistoryEntry<P: AsfaloadPublicKeyTrait> {
+pub struct HistoryEntry {
     /// ISO8601 formatted UTC date and time
     pub obsoleted_at: DateTime<Utc>,
     /// Content of the signers file
-    pub signers_file: SignersConfig<P>,
+    pub signers_file: SignersConfig,
     /// Content of the signatures file (map from public key string to signature string)
     pub signatures: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(bound(
-    serialize = "P: AsfaloadPublicKeyTrait",
-    deserialize = "P: AsfaloadPublicKeyTrait"
-))]
-pub struct HistoryFile<P: AsfaloadPublicKeyTrait> {
+pub struct HistoryFile {
     /// Array of history entries, sorted chronologically
-    pub entries: Vec<HistoryEntry<P>>,
+    pub entries: Vec<HistoryEntry>,
 }
 
-impl<PK> HistoryFile<PK>
-where
-    PK: AsfaloadPublicKeyTrait,
-{
+impl HistoryFile {
     /// Create a new empty history file
     pub fn new() -> Self {
         Self {
@@ -435,17 +417,17 @@ where
     }
 
     /// Add a new entry to the history file
-    pub fn add_entry(&mut self, entry: HistoryEntry<PK>) {
+    pub fn add_entry(&mut self, entry: HistoryEntry) {
         self.entries.push(entry);
     }
 
     /// Get all entries in the history file
-    pub fn entries(&self) -> &Vec<HistoryEntry<PK>> {
+    pub fn entries(&self) -> &Vec<HistoryEntry> {
         &self.entries
     }
 
     /// Get the most recent entry in the history file
-    pub fn latest_entry(&self) -> Option<&HistoryEntry<PK>> {
+    pub fn latest_entry(&self) -> Option<&HistoryEntry> {
         self.entries.last()
     }
 
@@ -474,19 +456,14 @@ where
     }
 }
 
-impl<P> Default for HistoryFile<P>
-where
-    P: AsfaloadPublicKeyTrait,
-{
+impl Default for HistoryFile {
     fn default() -> Self {
         Self::new()
     }
 }
 
 /// Helper function to parse a history file from JSON string
-pub fn parse_history_file<P: AsfaloadPublicKeyTrait>(
-    json_str: &str,
-) -> Result<HistoryFile<P>, serde_json::Error> {
+pub fn parse_history_file(json_str: &str) -> Result<HistoryFile, serde_json::Error> {
     HistoryFile::from_json(json_str)
 }
 
@@ -501,7 +478,7 @@ mod tests {
     use common::sha512_for_file;
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
-    use signatures::keys::AsfaloadSignature;
+    use signatures::keys::AsfaloadSignatureTrait;
     use signers_file_types::KeyFormat;
     use signers_file_types::SignerKind;
     use std::path::PathBuf;
@@ -546,7 +523,7 @@ mod tests {
       ]
     }
     "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        let config: SignersConfig =
             parse_signers_config(json_str.as_str()).expect("Failed to parse JSON");
         assert_eq!(config.version(), 1);
         assert_eq!(config.artifact_signers().len(), 1);
@@ -596,7 +573,7 @@ mod tests {
       ]
     }
     "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        let config: SignersConfig =
             parse_signers_config(json_str.as_str()).expect("Failed to parse JSON");
         assert_eq!(config.version(), 1);
         assert_eq!(config.artifact_signers().len(), 1);
@@ -637,10 +614,8 @@ mod tests {
       ]
     }
     "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: Result<
-            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
-            serde_json::Error,
-        > = parse_signers_config(json_str_with_invalid_b64_keys.as_str());
+        let config: Result<SignersConfig, serde_json::Error> =
+            parse_signers_config(json_str_with_invalid_b64_keys.as_str());
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert!(
@@ -675,10 +650,8 @@ mod tests {
       ]
     }
     "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: Result<
-            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
-            serde_json::Error,
-        > = parse_signers_config(&json_str_with_invalid_threshold);
+        let config: Result<SignersConfig, serde_json::Error> =
+            parse_signers_config(&json_str_with_invalid_threshold);
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert!(
@@ -714,10 +687,8 @@ mod tests {
       "master_keys" : [ { "signers" : [] , "threshold" : 0}]
     }
     "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: Result<
-            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
-            serde_json::Error,
-        > = parse_signers_config(&json_str_with_empty_master_signers_group);
+        let config: Result<SignersConfig, serde_json::Error> =
+            parse_signers_config(&json_str_with_empty_master_signers_group);
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert!(
@@ -754,10 +725,8 @@ mod tests {
       ],
       "master_keys" : []}
     "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: Result<
-            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
-            serde_json::Error,
-        > = parse_signers_config(&json_str_with_empty_master_array);
+        let config: Result<SignersConfig, serde_json::Error> =
+            parse_signers_config(&json_str_with_empty_master_array);
         assert!(config.is_ok());
 
         // Test empty admin array
@@ -789,10 +758,8 @@ mod tests {
       ],
       "admin_keys" : []}
     "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let result: Result<
-            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
-            serde_json::Error,
-        > = parse_signers_config(&json_str_with_empty_admin_array);
+        let result: Result<SignersConfig, serde_json::Error> =
+            parse_signers_config(&json_str_with_empty_admin_array);
         assert!(result.is_ok());
         let config = result.unwrap();
         // Check admin_keys holds an one element array
@@ -821,10 +788,8 @@ mod tests {
       ]
     }
     "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: Result<
-            SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
-            serde_json::Error,
-        > = parse_signers_config(&json_str_with_zero_threshold);
+        let config: Result<SignersConfig, serde_json::Error> =
+            parse_signers_config(&json_str_with_zero_threshold);
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert!(
@@ -887,8 +852,7 @@ mod tests {
         // Check the content
         let content = fs::read_to_string(&pending_file_path).unwrap();
         // We don't compare exactly because of formatting, but we can parse it again to validate
-        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&content).unwrap();
+        let _config: SignersConfig = parse_signers_config(&content).unwrap();
 
         // Check that the signature does not exist as the aggregate
         // signature is not complete
@@ -953,8 +917,7 @@ mod tests {
         // Check the content
         let content = fs::read_to_string(&pending_file_path).unwrap();
         // We don't compare exactly because of formatting, but we can parse it again to validate
-        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&content).unwrap();
+        let _config: SignersConfig = parse_signers_config(&content).unwrap();
 
         // Check that the signature does not exist as the aggregate
         // signature is not complete
@@ -1017,8 +980,7 @@ mod tests {
         // Check the content
         let content = fs::read_to_string(&active_file_path).unwrap();
         // We don't compare exactly because of formatting, but we can parse it again to validate
-        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&content).unwrap();
+        let _config: SignersConfig = parse_signers_config(&content).unwrap();
 
         // Check that the signature does not exist as the aggregate
         // signature is not complete
@@ -1368,14 +1330,7 @@ mod tests {
     fn create_test_aggregate_signature(
         signed_file_path: &Path,
         test_keys: &TestKeys,
-    ) -> Result<
-        AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-            CompleteSignature,
-        >,
-        SignersFileError,
-    > {
+    ) -> Result<AggregateSignature<CompleteSignature>, SignersFileError> {
         // Compute the hash of the signers file
         let hash = common::sha512_for_file(signed_file_path)?;
 
@@ -1541,8 +1496,7 @@ mod tests {
         assert!(history_file_path.exists());
 
         // Verify the history contains the old configuration
-        let history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::load_from_file(&history_file_path)?;
+        let history: HistoryFile = HistoryFile::load_from_file(&history_file_path)?;
         assert_eq!(history.entries.len(), 1);
 
         // Verify the old configuration is in the history
@@ -1763,7 +1717,7 @@ mod tests {
 
         // Read the original signers file content
         let original_signers_content = fs::read_to_string(&signers_file_path)?;
-        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        let original_signers_config: SignersConfig =
             parse_signers_config(&original_signers_content)?;
 
         // Read the original signatures file content
@@ -1776,7 +1730,7 @@ mod tests {
         assert!(!history_file_path.exists());
 
         // Move to history
-        move_current_signers_to_history::<AsfaloadPublicKey<_>, _>(root_dir)?;
+        move_current_signers_to_history(root_dir)?;
 
         // Verify history file was created
         assert!(history_file_path.exists());
@@ -1787,7 +1741,7 @@ mod tests {
 
         // Verify history content
         let history_content = fs::read_to_string(&history_file_path)?;
-        let history_file: HistoryFile<_> = serde_json::from_str(&history_content)?;
+        let history_file: HistoryFile = serde_json::from_str(&history_content)?;
         let history_entries = history_file.entries;
         assert_eq!(history_entries.len(), 1);
 
@@ -1814,7 +1768,7 @@ mod tests {
         // Create existing history file
         // Note the timestamp of the history entry is earlier than its obsoleted_at field,
         // which makes it a consistent entry
-        let existing_entry: HistoryEntry<_> = serde_json::from_str(
+        let existing_entry: HistoryEntry = serde_json::from_str(
             r#"{
             "obsoleted_at": "2023-01-01T00:00:00Z",
             "signers_file": {
@@ -1835,8 +1789,7 @@ mod tests {
         }"#,
         )?;
 
-        let mut existing_history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::new();
+        let mut existing_history: HistoryFile = HistoryFile::new();
         existing_history.add_entry(existing_entry);
         fs::write(
             &history_file_path,
@@ -1845,7 +1798,7 @@ mod tests {
 
         // Read the existing history content before the move
         let original_history_content = fs::read_to_string(&history_file_path)?;
-        let original_history: HistoryFile<_> = serde_json::from_str(&original_history_content)?;
+        let original_history: HistoryFile = serde_json::from_str(&original_history_content)?;
         let original_history_entries = original_history.entries;
         assert_eq!(original_history_entries.len(), 1);
 
@@ -1854,7 +1807,7 @@ mod tests {
 
         // Read the original signers file content
         let original_signers_content = fs::read_to_string(&signers_file_path)?;
-        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        let original_signers_config: SignersConfig =
             parse_signers_config(&original_signers_content)?;
 
         // Read the original signatures file content
@@ -1864,11 +1817,11 @@ mod tests {
             serde_json::from_str(&original_signatures_content)?;
 
         // Move to history
-        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+        move_current_signers_to_history(root_dir)?;
 
         // Verify history content
         let history_content = fs::read_to_string(&history_file_path)?;
-        let history_file: HistoryFile<_> = serde_json::from_str(&history_content)?;
+        let history_file: HistoryFile = serde_json::from_str(&history_content)?;
         let history_entries = history_file.entries;
         assert_eq!(history_entries.len(), 2);
 
@@ -1932,8 +1885,7 @@ mod tests {
             .as_str(),
         )?;
 
-        let mut existing_history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::new();
+        let mut existing_history: HistoryFile = HistoryFile::new();
         existing_history.add_entry(entry1);
         existing_history.add_entry(entry2);
         fs::write(
@@ -1948,7 +1900,7 @@ mod tests {
 
         // Read the original signers file content
         let original_signers_content = fs::read_to_string(&signers_file_path)?;
-        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        let original_signers_config: SignersConfig =
             parse_signers_config(&original_signers_content)?;
 
         // Read the original signatures file content
@@ -1958,7 +1910,7 @@ mod tests {
             serde_json::from_str(&original_signatures_content)?;
 
         // Move to history
-        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+        move_current_signers_to_history(root_dir)?;
 
         // Verify history content
         let history = HistoryFile::load_from_file(&history_file_path)?;
@@ -2003,14 +1955,13 @@ mod tests {
         let before_time = Utc::now();
 
         // Move to history
-        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+        move_current_signers_to_history(root_dir)?;
 
         // Record time after operation
         let after_time = Utc::now();
 
         // Verify history content
-        let history: HistoryFile<AsfaloadPublicKey<_>> =
-            HistoryFile::load_from_file(&history_file_path)?;
+        let history: HistoryFile = HistoryFile::load_from_file(&history_file_path)?;
         assert_eq!(history.entries.len(), 1);
 
         let entry = &history.entries[0];
@@ -2039,12 +1990,11 @@ mod tests {
             serde_json::from_str(&original_signatures_content)?;
 
         // Move to history
-        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+        move_current_signers_to_history(root_dir)?;
 
         // Verify history content
         let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
-        let history: HistoryFile<AsfaloadPublicKey<_>> =
-            HistoryFile::load_from_file(&history_file_path)?;
+        let history: HistoryFile = HistoryFile::load_from_file(&history_file_path)?;
         assert_eq!(history.entries.len(), 1);
 
         let entry = &history.entries[0];
@@ -2067,7 +2017,7 @@ mod tests {
         let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
         let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z".parse().unwrap());
 
-        let mut existing_history: HistoryFile<AsfaloadPublicKey<_>> = HistoryFile::new();
+        let mut existing_history: HistoryFile = HistoryFile::new();
         existing_history.add_entry(entry1);
         existing_history.add_entry(entry2);
         existing_history.save_to_file(&history_file_path)?;
@@ -2079,11 +2029,10 @@ mod tests {
         let before_time = Utc::now();
 
         // Move to history
-        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+        move_current_signers_to_history(root_dir)?;
 
         // Verify history content
-        let history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::load_from_file(&history_file_path)?;
+        let history: HistoryFile = HistoryFile::load_from_file(&history_file_path)?;
         assert_eq!(history.entries.len(), 3);
 
         // Verify entries are sorted chronologically
@@ -2107,8 +2056,7 @@ mod tests {
         let root_dir = temp_dir.path();
 
         // Don't create active signers directory
-        let result =
-            move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir);
+        let result = move_current_signers_to_history(root_dir);
 
         // Should fail with IO error
         assert!(result.is_err());
@@ -2136,8 +2084,7 @@ mod tests {
         fs::write(&signers_file_path, signers_content)?;
 
         // Try to move to history
-        let result =
-            move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir);
+        let result = move_current_signers_to_history(root_dir);
 
         // Should fail with IO error
         assert!(result.is_err());
@@ -2168,7 +2115,7 @@ mod tests {
 
         // Read the original signers file content
         let original_signers_content = fs::read_to_string(&signers_file_path)?;
-        let original_signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        let original_signers_config: SignersConfig =
             parse_signers_config(&original_signers_content)?;
 
         // Read the original signatures file content
@@ -2178,11 +2125,10 @@ mod tests {
             serde_json::from_str(&original_signatures_content)?;
 
         // Move to history
-        move_current_signers_to_history::<AsfaloadPublicKey<minisign::PublicKey>, _>(root_dir)?;
+        move_current_signers_to_history(root_dir)?;
 
         // Verify history content
-        let history: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::load_from_file(&history_file_path)?;
+        let history: HistoryFile = HistoryFile::load_from_file(&history_file_path)?;
         assert_eq!(history.entries.len(), 1);
 
         let entry = &history.entries[0];
@@ -2203,9 +2149,7 @@ mod tests {
     // --------------------------------
 
     // Helper function to create a test signers config
-    fn create_test_signers_config(
-        test_keys: &TestKeys,
-    ) -> SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>
+    fn create_test_signers_config(test_keys: &TestKeys) -> SignersConfig
     where
         AsfaloadPublicKey<minisign::PublicKey>: AsfaloadPublicKeyTrait,
     {
@@ -2239,10 +2183,7 @@ mod tests {
     }
 
     // Helper function to create a test history entry
-    fn create_test_history_entry(
-        test_keys: &TestKeys,
-        timestamp: DateTime<Utc>,
-    ) -> HistoryEntry<AsfaloadPublicKey<minisign::PublicKey>> {
+    fn create_test_history_entry(test_keys: &TestKeys, timestamp: DateTime<Utc>) -> HistoryEntry {
         HistoryEntry {
             obsoleted_at: timestamp,
             signers_file: create_test_signers_config(test_keys),
@@ -2267,15 +2208,14 @@ mod tests {
 
     #[test]
     fn test_history_file_new() {
-        let history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> = HistoryFile::new();
+        let history_file: HistoryFile = HistoryFile::new();
 
         assert!(history_file.entries().is_empty());
     }
 
     #[test]
     fn test_history_file_default() {
-        let history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::default();
+        let history_file: HistoryFile = HistoryFile::default();
 
         assert!(history_file.entries().is_empty());
     }
@@ -2283,8 +2223,7 @@ mod tests {
     #[test]
     fn test_history_file_add_entry() {
         let test_keys = TestKeys::new(2);
-        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::new();
+        let mut history_file: HistoryFile = HistoryFile::new();
 
         let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
         let entry2 = create_test_history_entry(&test_keys, "2023-02-01T00:00:00Z".parse().unwrap());
@@ -2306,8 +2245,7 @@ mod tests {
     #[test]
     fn test_history_file_latest_entry() {
         let test_keys = TestKeys::new(2);
-        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::new();
+        let mut history_file: HistoryFile = HistoryFile::new();
 
         // Empty history file
         assert!(history_file.latest_entry().is_none());
@@ -2338,8 +2276,7 @@ mod tests {
     #[test]
     fn test_history_file_to_json() {
         let test_keys = TestKeys::new(2);
-        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::new();
+        let mut history_file: HistoryFile = HistoryFile::new();
 
         let entry = create_test_history_entry(
             &test_keys,
@@ -2431,8 +2368,7 @@ mod tests {
             .replace("SIGNATURE1_PLACEHOLDER", &signature1_b64);
 
         // Parse the history file
-        let history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_history_file(&json_content).unwrap();
+        let history_file: HistoryFile = parse_history_file(&json_content).unwrap();
 
         // Verify the content
         assert_eq!(history_file.entries().len(), 1);
@@ -2524,8 +2460,7 @@ mod tests {
 "#
         .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
-        let result: Result<HistoryFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            parse_history_file(&invalid_json);
+        let result: Result<HistoryFile, _> = parse_history_file(&invalid_json);
 
         assert!(result.is_err());
     }
@@ -2535,8 +2470,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("history.json");
         let test_keys = TestKeys::new(2);
-        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::new();
+        let mut history_file: HistoryFile = HistoryFile::new();
 
         let entry = create_test_history_entry(
             &test_keys,
@@ -2549,8 +2483,7 @@ mod tests {
         assert!(file_path.exists());
 
         // Load from file
-        let loaded_history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::load_from_file(&file_path).unwrap();
+        let loaded_history_file: HistoryFile = HistoryFile::load_from_file(&file_path).unwrap();
 
         // Verify content
         assert_eq!(loaded_history_file.entries().len(), 1);
@@ -2567,8 +2500,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("nonexistent.json");
 
-        let result: Result<HistoryFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            HistoryFile::load_from_file(&file_path);
+        let result: Result<HistoryFile, _> = HistoryFile::load_from_file(&file_path);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -2583,8 +2515,7 @@ mod tests {
         let nonexistent_dir = temp_dir.path().join("nonexistent");
         let file_path = nonexistent_dir.join("history.json");
         let test_keys = TestKeys::new(2);
-        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::new();
+        let mut history_file: HistoryFile = HistoryFile::new();
 
         let entry = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
         history_file.add_entry(entry);
@@ -2602,8 +2533,7 @@ mod tests {
     #[test]
     fn test_history_file_multiple_entries() {
         let test_keys = TestKeys::new(2);
-        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::new();
+        let mut history_file: HistoryFile = HistoryFile::new();
 
         // Add multiple entries with different timestamps
         let entry1 = create_test_history_entry(
@@ -2643,8 +2573,7 @@ mod tests {
     #[test]
     fn test_history_file_roundtrip() {
         let test_keys = TestKeys::new(2);
-        let mut original_history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::new();
+        let mut original_history_file: HistoryFile = HistoryFile::new();
 
         // Add multiple entries
         let entry1 = create_test_history_entry(&test_keys, "2023-01-01T00:00:00Z".parse().unwrap());
@@ -2655,8 +2584,7 @@ mod tests {
 
         // Convert to JSON and back
         let json = original_history_file.to_json().unwrap();
-        let deserialized_history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_history_file(&json).unwrap();
+        let deserialized_history_file: HistoryFile = parse_history_file(&json).unwrap();
 
         // Verify they are identical
         assert_eq!(
@@ -2678,8 +2606,7 @@ mod tests {
     #[test]
     fn test_history_file_with_empty_signatures() {
         let test_keys = TestKeys::new(2);
-        let mut history_file: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            HistoryFile::new();
+        let mut history_file: HistoryFile = HistoryFile::new();
 
         // Create an entry with empty signatures
         let entry = HistoryEntry {
@@ -2692,8 +2619,7 @@ mod tests {
 
         // Verify it serializes and deserializes correctly
         let json = history_file.to_json().unwrap();
-        let deserialized: HistoryFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_history_file(&json).unwrap();
+        let deserialized: HistoryFile = parse_history_file(&json).unwrap();
 
         assert_eq!(deserialized.entries().len(), 1);
         assert_eq!(deserialized.entries()[0].signatures.len(), 0);
@@ -2870,11 +2796,7 @@ mod tests {
     fn create_test_proposal(
         test_keys: &TestKeys,
         signer_index: usize,
-    ) -> (
-        String,
-        AsfaloadSignature<minisign::SignatureBox>,
-        &AsfaloadPublicKey<minisign::PublicKey>,
-    ) {
+    ) -> (String, AsfaloadSignatures, &AsfaloadPublicKeys) {
         // Create a template for the proposal
         let template = r#"
 {
@@ -2928,8 +2850,7 @@ mod tests {
 
         // Verify the content
         let content = fs::read_to_string(&pending_file_path)?;
-        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&content)?;
+        let _config: SignersConfig = parse_signers_config(&content)?;
 
         // Verify the pending signature is not there as signature is complete
         let pending_sig_file_path = root_dir.join(format!(
@@ -3000,8 +2921,7 @@ mod tests {
 
         // Verify the content
         let content = fs::read_to_string(&pending_file_path)?;
-        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&content)?;
+        let _config: SignersConfig = parse_signers_config(&content)?;
 
         // Verify the pending signature is there as signature is incomplete
         let pending_sig_file_path = root_dir.join(format!(
@@ -3041,8 +2961,7 @@ mod tests {
 
         // Verify the content
         let content = fs::read_to_string(&pending_file_path)?;
-        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&content)?;
+        let _config: SignersConfig = parse_signers_config(&content)?;
 
         // Verify the pending signature not there as signature is incomplete
         let pending_sig_file_path = root_dir.join(format!(
@@ -3087,8 +3006,7 @@ mod tests {
 
         // Verify the content
         let content = fs::read_to_string(&pending_file_path)?;
-        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&content)?;
+        let _config: SignersConfig = parse_signers_config(&content)?;
 
         // Verify the pending signature is there (previous signers have not signed!)
         let pending_signatures_file_path = root_dir.join(format!(
@@ -3361,8 +3279,7 @@ mod tests {
 
         // Verify the content
         let content = fs::read_to_string(&pending_file_path)?;
-        let _config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&content)?;
+        let _config: SignersConfig = parse_signers_config(&content)?;
 
         // Check the signature was transitioned to complete
         let pending_signature_path = nested_dir.join(format!(
@@ -3409,8 +3326,7 @@ mod tests {
         .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content = test_keys.substitute_keys(json_content_template.to_string());
-        let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&json_content).unwrap();
+        let config: SignersConfig = parse_signers_config(&json_content).unwrap();
 
         // Test with a valid admin signer
         let admin_pubkey = test_keys.pub_key(2).unwrap();
@@ -3451,8 +3367,7 @@ mod tests {
         .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content_no_admin = test_keys.substitute_keys(json_content_no_admin.to_string());
-        let config_no_admin: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&json_content_no_admin).unwrap();
+        let config_no_admin: SignersConfig = parse_signers_config(&json_content_no_admin).unwrap();
 
         // Test with a valid artifact signer (when admin_keys is not present)
         let artifact_pubkey = test_keys.pub_key(0).unwrap();
@@ -3509,8 +3424,7 @@ mod tests {
         .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content = test_keys.substitute_keys(json_content_template.to_string());
-        let config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&json_content).unwrap();
+        let config: SignersConfig = parse_signers_config(&json_content).unwrap();
 
         // Test with a valid admin signer
         let admin_pubkey = test_keys.pub_key(3).unwrap();
@@ -3573,8 +3487,7 @@ mod tests {
         .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content_no_admin = test_keys.substitute_keys(json_content_no_admin.to_string());
-        let config_no_admin: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
-            parse_signers_config(&json_content_no_admin).unwrap();
+        let config_no_admin: SignersConfig = parse_signers_config(&json_content_no_admin).unwrap();
 
         // Test with a valid artifact signer (when admin_keys is not present, artifact_signers are used as admin)
         let artifact_pubkey = test_keys.pub_key(0).unwrap();

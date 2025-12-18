@@ -9,7 +9,7 @@ use common::{
     errors::keys::*,
     fs::names::{pending_signatures_path_for, signatures_path_for},
 };
-pub use minisign::{KeyPair, PublicKey};
+pub use minisign::{KeyPair, PublicKey, SecretKey, SignatureBox};
 use serde_json;
 use std::{
     ffi::OsString,
@@ -132,7 +132,7 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
 impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     type Signature = AsfaloadSignature<minisign::SignatureBox>;
     type KeyType = minisign::PublicKey;
-    type SecretKeyType = minisign::SecretKey;
+    type SecretKeyType = AsfaloadSecretKey<minisign::SecretKey>;
 
     fn verify(
         &self,
@@ -174,7 +174,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         Ok(AsfaloadPublicKey { key: k })
     }
 
-    fn from_secret_key(sk: AsfaloadSecretKey<Self::SecretKeyType>) -> Result<Self, KeyError> {
+    fn from_secret_key(sk: Self::SecretKeyType) -> Result<Self, KeyError> {
         let k = PublicKey::from_secret_key(&sk.key)?;
         Ok(AsfaloadPublicKey { key: k })
     }

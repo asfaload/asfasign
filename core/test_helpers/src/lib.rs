@@ -1,12 +1,12 @@
-use signatures::keys::AsfaloadKeyPair;
 use signatures::keys::AsfaloadKeyPairTrait;
-use signatures::keys::AsfaloadPublicKey;
 use signatures::keys::AsfaloadPublicKeyTrait;
-use signatures::keys::AsfaloadSecretKey;
+use signatures::types::AsfaloadKeyPairs;
+use signatures::types::AsfaloadPublicKeys;
+use signatures::types::AsfaloadSecretKeys;
 pub struct TestKeys {
-    key_pairs: Vec<AsfaloadKeyPair<minisign::KeyPair>>,
-    pub_keys: Vec<AsfaloadPublicKey<minisign::PublicKey>>,
-    sec_keys: Vec<AsfaloadSecretKey<minisign::SecretKey>>,
+    key_pairs: Vec<AsfaloadKeyPairs>,
+    pub_keys: Vec<AsfaloadPublicKeys>,
+    sec_keys: Vec<AsfaloadSecretKeys>,
 }
 
 impl TestKeys {
@@ -17,7 +17,7 @@ impl TestKeys {
             sec_keys: Vec::with_capacity(n),
         };
         for _ in 0..n {
-            let key_pair = AsfaloadKeyPair::new("password").unwrap();
+            let key_pair = AsfaloadKeyPairs::new("password").unwrap();
             let pub_key = key_pair.public_key();
             let sec_key = key_pair.secret_key("password").unwrap();
             r.key_pairs.push(key_pair);
@@ -28,13 +28,13 @@ impl TestKeys {
         r
     }
 
-    pub fn pub_key(&self, n: usize) -> Option<&AsfaloadPublicKey<minisign::PublicKey>> {
+    pub fn pub_key(&self, n: usize) -> Option<&AsfaloadPublicKeys> {
         self.pub_keys.get(n)
     }
-    pub fn sec_key(&self, n: usize) -> Option<&AsfaloadSecretKey<minisign::SecretKey>> {
+    pub fn sec_key(&self, n: usize) -> Option<&AsfaloadSecretKeys> {
         self.sec_keys.get(n)
     }
-    pub fn key_pair(&self, n: usize) -> Option<&AsfaloadKeyPair<minisign::KeyPair>> {
+    pub fn key_pair(&self, n: usize) -> Option<&AsfaloadKeyPairs> {
         self.key_pairs.get(n)
     }
 

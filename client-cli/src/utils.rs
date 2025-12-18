@@ -4,7 +4,7 @@ use zxcvbn::{zxcvbn, Score};
 use ClientCliError::PasswordStrengthError;
 
 use crate::error::{ClientCliError, Result};
-use features_lib::{SecretKey, SecretKeyTrait, SignatureTrait};
+use features_lib::{SecretKey, SignatureTrait};
 use reqwest::header::{HeaderMap, HeaderValue};
 use rest_api_auth::AuthSignature;
 
@@ -169,11 +169,7 @@ pub fn get_password(
 /// - X-asfld-nonce: UUID v4
 /// - X-asfld-sig: Signature of the auth info
 /// - X-asfld-pk: Public key in base64
-pub fn create_auth_headers<MSK>(payload: &str, secret_key: SecretKey<MSK>) -> Result<HeaderMap>
-where
-    SecretKey<MSK>: SecretKeyTrait<SecretKey = MSK>,
-    MSK: Clone,
-{
+pub fn create_auth_headers(payload: &str, secret_key: SecretKey) -> Result<HeaderMap> {
     use rest_api_auth::AuthInfo;
 
     // Create authentication info
@@ -181,7 +177,6 @@ where
 
     // Create authentication signature
     // Now SecretKey implements SecretKeyTrait, so it should work directly
-    // We need to specify the type parameters for AuthSignature
     let auth_signature = AuthSignature::new(auth_info, secret_key)
         .map_err(|e| ClientCliError::AuthError(e.to_string()))?;
 

@@ -11,7 +11,9 @@ members = [
   "client-cli",
   "rest-api",
   "rest_api_test_helpers",
-  "rest_api_types", "rest_api_auth",
+  "rest_api_types",
+  "rest_api_auth",
 ]
+exclude = ["rest_api_auth", "client_cli"]
 
 [workspace.lints.clippy]

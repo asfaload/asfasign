@@ -74,7 +74,7 @@ pub fn handle_new_signers_file_command(
     }
 
     // Combine string and file-based artifact signers
-    let all_artifact_signers: Vec<PublicKey<_>> =
+    let all_artifact_signers: Vec<PublicKey> =
         combine_key_sources(artifact_signer, artifact_signer_file)?;
     let all_artifact_signers_count = all_artifact_signers.len();
 

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use features_lib::{
-    PublicKey, PublicKeyTrait, SecretKey, SecretKeyTrait, Signature, SignatureTrait,
+    PublicKey, PublicKeyTrait, SecretKey, SecretKeyTrait, Signature,
     errors::keys::{KeyError, SignError},
     sha512_for_content,
 };
@@ -34,18 +34,12 @@ pub struct AuthInfo {
     payload: String,
 }
 
-pub struct AuthSignature<MP, MS, MSK>
-where
-    PublicKey<MP>: PublicKeyTrait<SecretKeyType = MSK>,
-    Signature<MS>: SignatureTrait,
-    MP: Clone,
-    MS: Clone,
-{
+pub struct AuthSignature {
     auth_info: AuthInfo,
     // Will be set by client as X-asfld-sig
-    signature: Signature<MS>,
+    signature: Signature,
     // Will be set by client as X-asfld-pk
-    public_key: PublicKey<MP>,
+    public_key: PublicKey,
 }
 
 impl AuthInfo {
@@ -68,17 +62,8 @@ impl AuthInfo {
     }
 }
 
-impl<MP, MS, MSK> AuthSignature<MP, MS, MSK>
-where
-    PublicKey<MP>: PublicKeyTrait<SecretKeyType = MSK>,
-    Signature<MS>: SignatureTrait,
-    MP: Clone,
-    MS: Clone,
-{
-    pub fn new(auth_info: AuthInfo, secret_key: SecretKey<MSK>) -> Result<Self, AuthError>
-    where
-        SecretKey<MSK>: SecretKeyTrait<Signature = Signature<MS>, SecretKey = MSK>,
-    {
+impl AuthSignature {
+    pub fn new(auth_info: AuthInfo, secret_key: SecretKey) -> Result<Self, AuthError> {
         let hash = sha512_for_content(auth_info.to_string().as_bytes().to_vec())?;
         let signature = secret_key.sign(&hash)?;
         let public_key = PublicKey::from_secret_key(secret_key.key)?;
@@ -92,7 +77,7 @@ where
     pub fn auth_info(&self) -> AuthInfo {
         self.auth_info.clone()
     }
-    pub fn signature(&self) -> Signature<MS> {
+    pub fn signature(&self) -> Signature {
         self.signature.clone()
     }
     pub fn public_key(&self) -> String {
