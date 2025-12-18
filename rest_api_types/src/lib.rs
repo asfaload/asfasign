@@ -13,6 +13,10 @@ pub mod errors {
         #[error("Failed git operation: {0}")]
         GitOperationFailed(String),
 
+        // Errors raised specifically by the use of git2-rs
+        #[error("Git2 error: {0}")]
+        Git2OperationFailed(#[from] git2::Error),
+
         #[error("Failed to create directories: {0}")]
         DirectoryCreationFailed(String),
 
@@ -51,6 +55,7 @@ pub mod errors {
                 ApiError::GitOperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::ActorOperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::TokioJoinError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::Git2OperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }
