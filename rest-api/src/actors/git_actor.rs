@@ -14,6 +14,9 @@ pub struct CommitFile {
     pub commit_message: String,
 }
 
+const ACTOR_NAME: &str = "git-actor";
+const GIT_USER_EMAIL: &str = "git-actor@rest-api.asfaload.com";
+
 pub struct GitActor {
     repo_path: PathBuf,
 }
@@ -49,7 +52,7 @@ impl GitActor {
             let repo = Repository::open(&repo_path)?;
 
             // Create a signature for the commit
-            let signature = Signature::now("git-actor", "git-actor@rest-api.asfaload.com")?;
+            let signature = Signature::now(ACTOR_NAME, GIT_USER_EMAIL)?;
 
             // Add the file to the index
             let mut index = repo.index()?;
