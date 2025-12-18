@@ -7,7 +7,11 @@ members = [
   "core/common",
   "core/signers_file_types",
   "core/integration_tests",
-  "core/features_lib", "client-cli",
+  "core/features_lib",
+  "client-cli",
+  "rest-api",
+  "rest_api_test_helpers",
+  "rest_api_types",
 ]
 
 [workspace.lints.clippy]

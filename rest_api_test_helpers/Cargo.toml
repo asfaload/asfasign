@@ -1,0 +1,13 @@
+[package]
+name = "rest_api_test_helpers"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+tokio = "1.48.0"
+rest_api_types = { path = "../rest_api_types/" }
+git2 = "0.20.3"
+
+[lints]
+workspace = true
