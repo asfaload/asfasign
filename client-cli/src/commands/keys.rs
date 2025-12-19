@@ -2,8 +2,7 @@ use std::path::Path;
 
 use crate::utils::ensure_dir_exists;
 use anyhow::Result;
-use features_lib::AsfaloadKeyPairs;
-use signatures::keys::AsfaloadKeyPairTrait;
+use features_lib::{AsfaloadKeyPairs, AsfaloadKeyPairTrait};
 
 /// Handles the `keys` command.
 ///

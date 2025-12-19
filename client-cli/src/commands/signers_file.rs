@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{ClientCliError, Result};
 use crate::utils::{ensure_dir_exists, validate_threshold};
-use features_lib::{AsfaloadPublicKeys, SignersConfig};
-use signatures::keys::AsfaloadPublicKeyTrait;
+use features_lib::{AsfaloadPublicKeys, SignersConfig, AsfaloadPublicKeyTrait};
 
 fn get_group_info<P: AsfaloadPublicKeyTrait>(
     keys: Vec<P>,

@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
 use features_lib::{
     AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatures,
+    AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
     errors::keys::{KeyError, SignError},
     sha512_for_content,
 };
-use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait};
 use thiserror::Error;
 use uuid::Uuid;
 

@@ -4,10 +4,9 @@ use zxcvbn::{zxcvbn, Score};
 use ClientCliError::PasswordStrengthError;
 
 use crate::error::{ClientCliError, Result};
-use features_lib::AsfaloadSecretKeys;
+use features_lib::{AsfaloadSecretKeys, AsfaloadSignatureTrait};
 use reqwest::header::{HeaderMap, HeaderValue};
 use rest_api_auth::AuthSignature;
-use signatures::keys::AsfaloadSignatureTrait;
 
 /// Ensures a directory exists, creating it if necessary
 pub fn ensure_dir_exists(path: &Path) -> Result<()> {

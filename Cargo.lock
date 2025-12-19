@@ -1740,7 +1740,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "features_lib",
- "signatures",
  "thiserror",
  "uuid",
 ]

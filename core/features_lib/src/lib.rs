@@ -12,8 +12,11 @@ use common::{
 
 pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file};
 
-// Import traits needed for trait bounds
-use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+// Re-export traits for users
+pub use signatures::keys::AsfaloadKeyPairTrait;
+pub use signatures::keys::AsfaloadPublicKeyTrait;
+pub use signatures::keys::AsfaloadSecretKeyTrait;
+pub use signatures::keys::AsfaloadSignatureTrait;
 
 // Re-export the types directly
 pub use signatures::types::AsfaloadKeyPairs;

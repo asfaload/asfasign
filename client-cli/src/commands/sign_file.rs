@@ -1,7 +1,6 @@
 use crate::error::Result;
 use features_lib::sha512_for_file;
-use features_lib::AsfaloadSecretKeys;
-use signatures::keys::{AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
+use features_lib::{AsfaloadSecretKeys, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
 use std::path::Path;
 
 pub fn handle_sign_file_command<P: AsRef<Path>>(
