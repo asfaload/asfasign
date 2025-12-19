@@ -9,7 +9,7 @@ use common::{
     },
 };
 use signatures::{
-    keys::AsfaloadPublicKeyTrait,
+    keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
 use signers_file_types::{
@@ -71,15 +71,13 @@ fn is_valid_signer_for_update_of(
     }
 }
 
-pub fn sign_signers_file<P, S, K>(
+pub fn sign_signers_file<P>(
     signers_file_path: P,
-    signature: &S,
-    pubkey: &K,
+    signature: &AsfaloadSignatures,
+    pubkey: &AsfaloadPublicKeys,
 ) -> Result<SignatureWithState, SignersFileError>
 where
     P: AsRef<Path>,
-    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
-    S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
 {
     let signed_file = SignedFileLoader::load(&signers_file_path);
     if !(signed_file.is_initial_signers() || signed_file.is_signers()) {
@@ -137,17 +135,13 @@ where
 /// # Returns
 /// * `Ok(())` if the pending file was successfully created
 /// * `Err(SignersFileError)` if there was an error validating the JSON, signature, or writing the file
-pub fn write_valid_signers_file<P: AsRef<Path>, S, K>(
+pub fn write_valid_signers_file<P: AsRef<Path>>(
     dir_path_in: P,
     json_content: &str,
-    signature: &S,
-    pubkey: &K,
+    signature: &AsfaloadSignatures,
+    pubkey: &AsfaloadPublicKeys,
     validator: impl FnOnce() -> Result<(), SignersFileError>,
-) -> Result<(), SignersFileError>
-where
-    K: AsfaloadPublicKeyTrait<Signature = S> + std::cmp::Eq + std::clone::Clone + std::hash::Hash,
-    S: signatures::keys::AsfaloadSignatureTrait + std::clone::Clone,
-{
+) -> Result<(), SignersFileError> {
     // Ensure we work in the right directory
 
     let dir_path = {
