@@ -2,7 +2,8 @@ use std::path::Path;
 
 use crate::utils::ensure_dir_exists;
 use anyhow::Result;
-use features_lib::KeyPair;
+use features_lib::AsfaloadKeyPairs;
+use signatures::keys::AsfaloadKeyPairTrait;
 
 /// Handles the `keys` command.
 ///
@@ -20,12 +21,14 @@ pub fn handle_new_keys_command(name: &str, output_dir: &Path, password: String) 
         "Generating keypair with name '{}' in directory {:?}",
         name, output_dir
     );
-    let kp = KeyPair::new(output_dir, name, password.as_str())?;
+    let kp = AsfaloadKeyPairs::new(password.as_str())?;
+    let location = output_dir.join(name);
+    kp.save(&location)?;
 
     println!(
         "Public key saved at {}.pub and secret key at {}",
-        kp.location.to_string_lossy(),
-        kp.location.to_string_lossy()
+        location.to_string_lossy(),
+        location.to_string_lossy()
     );
     Ok(())
 }

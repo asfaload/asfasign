@@ -4,9 +4,10 @@ use zxcvbn::{zxcvbn, Score};
 use ClientCliError::PasswordStrengthError;
 
 use crate::error::{ClientCliError, Result};
-use features_lib::{SecretKey, SignatureTrait};
+use features_lib::AsfaloadSecretKeys;
 use reqwest::header::{HeaderMap, HeaderValue};
 use rest_api_auth::AuthSignature;
+use signatures::keys::AsfaloadSignatureTrait;
 
 /// Ensures a directory exists, creating it if necessary
 pub fn ensure_dir_exists(path: &Path) -> Result<()> {
@@ -169,7 +170,7 @@ pub fn get_password(
 /// - X-asfld-nonce: UUID v4
 /// - X-asfld-sig: Signature of the auth info
 /// - X-asfld-pk: Public key in base64
-pub fn create_auth_headers(payload: &str, secret_key: SecretKey) -> Result<HeaderMap> {
+pub fn create_auth_headers(payload: &str, secret_key: AsfaloadSecretKeys) -> Result<HeaderMap> {
     use rest_api_auth::AuthInfo;
 
     // Create authentication info

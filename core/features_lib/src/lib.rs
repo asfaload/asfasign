@@ -7,26 +7,21 @@ pub use common::{
 };
 pub use common::{SignedFileLoader, SignedFileWithKind};
 use common::{
-    errors::keys::{KeyError, SignError},
     fs::names::{find_global_signers_for, pending_signers_file_in_dir},
 };
 
 pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file};
 
-use signatures::keys::minisign;
-use signatures::keys::{
-    AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
-};
-use signatures::types::{
-    AsfaloadKeyPairs, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatures,
-};
+// Import traits needed for trait bounds
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 
-pub use signatures::keys::AsfaloadPublicKeyTrait as PublicKeyTrait;
-pub use signatures::keys::AsfaloadSecretKeyTrait as SecretKeyTrait;
-pub use signatures::keys::AsfaloadSignatureTrait as SignatureTrait;
-pub use signatures::types::AsfaloadPublicKeys as PublicKey;
-pub use signatures::types::AsfaloadSecretKeys as SecretKeyType;
-pub use signatures::types::AsfaloadSignatures as Signature;
+// Re-export the types directly
+pub use signatures::types::AsfaloadKeyPairs;
+pub use signatures::types::AsfaloadPublicKeys;
+pub use signatures::types::AsfaloadSecretKeys;
+pub use signatures::types::AsfaloadSignatures;
+
+
 
 use signers_file::sign_signers_file;
 pub use signers_file_types::SignersConfig;
@@ -167,76 +162,9 @@ impl SignersFileTrait for SignersFile {
     }
 }
 
-pub struct KeyPair {
-    pub location: PathBuf,
-    pub keypair: AsfaloadKeyPairs,
-}
-impl KeyPair {
-    pub fn new<P: AsRef<Path>>(dir: P, name: &str, password: &str) -> Result<Self, KeyError> {
-        let keypair = AsfaloadKeyPairs::new(password)?;
-        let location = dir.as_ref().join(name);
-        keypair.save(&location)?;
-        Ok(KeyPair { keypair, location })
-    }
-}
 
-pub struct SecretKey {
-    pub location: PathBuf,
-    pub key: AsfaloadSecretKeys,
-}
-impl SecretKey {
-    pub fn from_file<P: AsRef<Path>>(location: P, password: &str) -> Result<Self, KeyError> {
-        let key = AsfaloadSecretKeys::from_file(&location, password)?;
-        Ok(SecretKey {
-            key,
-            location: location.as_ref().to_path_buf(),
-        })
-    }
-}
 
-// Implement SecretKeyTrait for SecretKey to make it compatible with AuthSignature::new
-impl SecretKeyTrait for SecretKey {
-    type SecretKey = minisign::SecretKey;
-    type Signature = AsfaloadSignatures;
 
-    fn sign(&self, data: &AsfaloadHashes) -> Result<Self::Signature, SignError> {
-        self.key.sign(data)
-    }
-
-    fn from_bytes(data: &[u8]) -> Result<Self, KeyError>
-    where
-        Self: Sized,
-    {
-        let key = AsfaloadSecretKeys::from_bytes(data)?;
-        Ok(SecretKey {
-            key,
-            location: PathBuf::new(), // Default location for bytes-based creation
-        })
-    }
-
-    fn from_string(s: String) -> Result<Self, KeyError>
-    where
-        Self: Sized,
-    {
-        let key = AsfaloadSecretKeys::from_string(s)?;
-        Ok(SecretKey {
-            key,
-            location: PathBuf::new(), // Default location for string-based creation
-        })
-    }
-
-    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError>
-    where
-        Self: Sized,
-    {
-        let path_ref = path.as_ref();
-        let key = AsfaloadSecretKeys::from_file(path_ref, password)?;
-        Ok(SecretKey {
-            key,
-            location: path_ref.to_path_buf(),
-        })
-    }
-}
 
 pub mod aggregate_signature_helpers {
     use std::{collections::HashMap, path::Path};

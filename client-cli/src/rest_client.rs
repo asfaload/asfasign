@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::utils::create_auth_headers;
-use features_lib::{SecretKey, SecretKeyTrait};
+use features_lib::AsfaloadSecretKeys;
 use reqwest::Client;
 use serde_json::Value;
 
@@ -36,16 +36,12 @@ impl RestClient {
     ///
     /// The response from the API
     ///
-    pub async fn post_authenticated<M>(
+    pub async fn post_authenticated(
         &self,
         endpoint: &str,
         payload: &Value,
-        secret_key: SecretKey<M>,
-    ) -> Result<Value>
-    where
-        SecretKey<M>: SecretKeyTrait<SecretKey = M>,
-        M: Clone,
-    {
+        secret_key: AsfaloadSecretKeys,
+    ) -> Result<Value> {
         // Convert payload to string
         let payload_string = payload.to_string();
 
@@ -79,4 +75,3 @@ impl RestClient {
         Ok(response_json)
     }
 }
-

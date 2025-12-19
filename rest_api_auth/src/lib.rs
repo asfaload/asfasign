@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
 use features_lib::{
-    PublicKey, PublicKeyTrait, SecretKey, SecretKeyTrait, Signature,
+    AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatures,
     errors::keys::{KeyError, SignError},
     sha512_for_content,
 };
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -37,9 +38,9 @@ pub struct AuthInfo {
 pub struct AuthSignature {
     auth_info: AuthInfo,
     // Will be set by client as X-asfld-sig
-    signature: Signature,
+    signature: AsfaloadSignatures,
     // Will be set by client as X-asfld-pk
-    public_key: PublicKey,
+    public_key: AsfaloadPublicKeys,
 }
 
 impl AuthInfo {
@@ -63,10 +64,10 @@ impl AuthInfo {
 }
 
 impl AuthSignature {
-    pub fn new(auth_info: AuthInfo, secret_key: SecretKey) -> Result<Self, AuthError> {
+    pub fn new(auth_info: AuthInfo, secret_key: AsfaloadSecretKeys) -> Result<Self, AuthError> {
         let hash = sha512_for_content(auth_info.to_string().as_bytes().to_vec())?;
         let signature = secret_key.sign(&hash)?;
-        let public_key = PublicKey::from_secret_key(secret_key.key)?;
+        let public_key = AsfaloadPublicKeys::from_secret_key(secret_key)?;
         Ok(AuthSignature {
             auth_info,
             signature,
@@ -77,7 +78,7 @@ impl AuthSignature {
     pub fn auth_info(&self) -> AuthInfo {
         self.auth_info.clone()
     }
-    pub fn signature(&self) -> Signature {
+    pub fn signature(&self) -> AsfaloadSignatures {
         self.signature.clone()
     }
     pub fn public_key(&self) -> String {

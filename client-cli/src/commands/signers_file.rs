@@ -4,11 +4,10 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{ClientCliError, Result};
 use crate::utils::{ensure_dir_exists, validate_threshold};
-use features_lib::PublicKey;
-use features_lib::PublicKeyTrait;
-use features_lib::SignersConfig;
+use features_lib::{AsfaloadPublicKeys, SignersConfig};
+use signatures::keys::AsfaloadPublicKeyTrait;
 
-fn get_group_info<P: PublicKeyTrait>(
+fn get_group_info<P: AsfaloadPublicKeyTrait>(
     keys: Vec<P>,
     threshold: Option<u32>,
 ) -> std::result::Result<Option<(Vec<P>, u32)>, ClientCliError> {
@@ -74,7 +73,7 @@ pub fn handle_new_signers_file_command(
     }
 
     // Combine string and file-based artifact signers
-    let all_artifact_signers: Vec<PublicKey> =
+    let all_artifact_signers: Vec<AsfaloadPublicKeys> =
         combine_key_sources(artifact_signer, artifact_signer_file)?;
     let all_artifact_signers_count = all_artifact_signers.len();
 
@@ -87,12 +86,12 @@ pub fn handle_new_signers_file_command(
     validate_threshold(artifact_threshold, all_artifact_signers.len())?;
 
     // Combine string and file-based admin keys
-    let all_admin_keys = combine_key_sources(admin_key, admin_key_file)?;
+    let all_admin_keys: Vec<AsfaloadPublicKeys> = combine_key_sources(admin_key, admin_key_file)?;
     let all_admin_keys_count = all_admin_keys.len();
     let admin_group_info = get_group_info(all_admin_keys, admin_threshold)?;
 
     // Combine string and file-based master keys
-    let all_master_keys = combine_key_sources(master_key, master_key_file)?;
+    let all_master_keys: Vec<AsfaloadPublicKeys> = combine_key_sources(master_key, master_key_file)?;
     let all_master_keys_count = all_master_keys.len();
     let master_group_info = get_group_info(all_master_keys, master_threshold)?;
     //
@@ -144,7 +143,7 @@ pub fn handle_new_signers_file_command(
 }
 
 /// Combine string-based keys and file-based keys into a single Vec of strings
-fn combine_key_sources<P: PublicKeyTrait>(
+fn combine_key_sources<P: AsfaloadPublicKeyTrait>(
     string_keys: &[String],
     file_keys: &[PathBuf],
 ) -> Result<Vec<P>> {
