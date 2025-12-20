@@ -177,8 +177,7 @@ pub fn create_auth_headers(payload: &str, secret_key: AsfaloadSecretKeys) -> Res
 
     // Create authentication signature
     // Now SecretKey implements SecretKeyTrait, so it should work directly
-    let auth_signature = AuthSignature::new(auth_info, secret_key)
-        .map_err(|e| ClientCliError::AuthError(e.to_string()))?;
+    let auth_signature = AuthSignature::new(auth_info, secret_key)?;
 
     // Create headers
     let mut headers = HeaderMap::new();
@@ -186,29 +185,25 @@ pub fn create_auth_headers(payload: &str, secret_key: AsfaloadSecretKeys) -> Res
     // Add timestamp header
     headers.insert(
         "X-asfld-timestamp",
-        HeaderValue::from_str(&auth_signature.auth_info().timestamp().to_rfc3339())
-            .map_err(|e| ClientCliError::AuthError(e.to_string()))?,
+        HeaderValue::from_str(&auth_signature.auth_info().timestamp().to_rfc3339())?,
     );
 
     // Add nonce header
     headers.insert(
         "X-asfld-nonce",
-        HeaderValue::from_str(&auth_signature.auth_info().nonce())
-            .map_err(|e| ClientCliError::AuthError(e.to_string()))?,
+        HeaderValue::from_str(&auth_signature.auth_info().nonce())?,
     );
 
     // Add signature header
     headers.insert(
         "X-asfld-sig",
-        HeaderValue::from_str(&auth_signature.signature().to_base64())
-            .map_err(|e| ClientCliError::AuthError(e.to_string()))?,
+        HeaderValue::from_str(&auth_signature.signature().to_base64())?,
     );
 
     // Add public key header
     headers.insert(
         "X-asfld-pk",
-        HeaderValue::from_str(&auth_signature.public_key())
-            .map_err(|e| ClientCliError::AuthError(e.to_string()))?,
+        HeaderValue::from_str(&auth_signature.public_key())?,
     );
 
     Ok(headers)
