@@ -2,6 +2,8 @@
 
 set -euxo pipefail
 
+echo "using git repo path: ${1?provide path to git repo}"
+
 # Check if a git directory path was provided
 if [ -z "$1" ]; then
   echo "Error: No git directory path provided a first argument."

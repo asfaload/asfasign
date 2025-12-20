@@ -39,6 +39,13 @@ pub enum ClientCliError {
 
     #[error("Signers file error: {0}")]
     SignersFile(String),
+
+    #[error("Authentication error: {0}")]
+    AuthError(#[from] rest_api_auth::AuthError),
+
+    #[error("Reqwest header error: {0}")]
+    ReqwestHeaderError(#[from] reqwest::header::InvalidHeaderValue),
 }
 
+// FIXME: remove this, creates more confusion than necessary
 pub type Result<T> = std::result::Result<T, ClientCliError>;

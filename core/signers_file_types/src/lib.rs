@@ -4,8 +4,8 @@ use std::collections::HashSet;
 use chrono::{DateTime, Utc};
 use common::errors::keys::KeyError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use signatures::keys::AsfaloadPublicKeyTrait;
 pub use signatures::keys::KeyFormat;
+use signatures::{keys::AsfaloadPublicKeyTrait, types::AsfaloadPublicKeys};
 
 pub mod errs {
     use common::errors::keys::KeyError;
@@ -31,18 +31,19 @@ use errs::SignersConfigError;
 // Serialize` and `impl Deserialize` blocks, which only require `P: AsfaloadPublicKeyTrait`. `P`
 // itself does not need to implement `serde::Deserialize` or `serde::Serialize` directly.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(bound(
-    serialize = "APK: AsfaloadPublicKeyTrait",
-    deserialize = "APK: AsfaloadPublicKeyTrait"
-))]
-pub struct SignersConfig<APK: AsfaloadPublicKeyTrait> {
+// FIXME: check if this needs fixing
+//#[serde(bound(
+//    serialize = "APK: AsfaloadPublicKeyTrait",
+//    deserialize = "APK: AsfaloadPublicKeyTrait"
+//))]
+pub struct SignersConfig {
     version: u32,
     timestamp: DateTime<Utc>,
-    artifact_signers: Vec<SignerGroup<APK>>,
+    artifact_signers: Vec<SignerGroup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    admin_keys: Option<Vec<SignerGroup<APK>>>,
+    admin_keys: Option<Vec<SignerGroup>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    master_keys: Option<Vec<SignerGroup<APK>>>,
+    master_keys: Option<Vec<SignerGroup>>,
 }
 
 // Introduced to make fields of SignersConfig private while:
@@ -56,33 +57,27 @@ pub struct SignersConfig<APK: AsfaloadPublicKeyTrait> {
 // Apart from requiing the use of accessor to private fields, this does not change much at this time
 // but it enables us to add a validation step when building a SignersConfig.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(bound(
-    serialize = "APK: AsfaloadPublicKeyTrait",
-    deserialize = "APK: AsfaloadPublicKeyTrait"
-))]
-pub struct SignersConfigProposal<APK: AsfaloadPublicKeyTrait> {
+//#[serde(bound(
+//    serialize = "APK: AsfaloadPublicKeyTrait",
+//    deserialize = "APK: AsfaloadPublicKeyTrait"
+//))]
+pub struct SignersConfigProposal {
     pub version: u32,
     pub timestamp: DateTime<Utc>,
-    pub artifact_signers: Vec<SignerGroup<APK>>,
-    pub admin_keys: Option<Vec<SignerGroup<APK>>>,
-    pub master_keys: Option<Vec<SignerGroup<APK>>>,
+    pub artifact_signers: Vec<SignerGroup>,
+    pub admin_keys: Option<Vec<SignerGroup>>,
+    pub master_keys: Option<Vec<SignerGroup>>,
 }
 
-impl<APK> SignersConfigProposal<APK>
-where
-    APK: AsfaloadPublicKeyTrait,
-{
+impl SignersConfigProposal {
     // Implemented so we can call do SignersConfigProposal{...}.build()
     // without having to assign the proposal.
-    pub fn build(&self) -> SignersConfig<APK> {
+    pub fn build(&self) -> SignersConfig {
         SignersConfig::new(self.clone())
     }
 }
-impl<APK> SignersConfig<APK>
-where
-    APK: AsfaloadPublicKeyTrait,
-{
-    pub fn new(p: SignersConfigProposal<APK>) -> Self {
+impl SignersConfig {
+    pub fn new(p: SignersConfigProposal) -> Self {
         Self {
             timestamp: p.timestamp,
             version: p.version,
@@ -94,9 +89,9 @@ where
 
     // Helper function to create a SignerGroup from pubkeys' string representation.
     fn create_group(
-        pubkeys: Vec<APK>,
+        pubkeys: Vec<AsfaloadPublicKeys>,
         threshold: u32,
-    ) -> Result<SignerGroup<APK>, errs::SignersConfigError> {
+    ) -> Result<SignerGroup, errs::SignersConfigError> {
         if pubkeys.is_empty() {
             return Err(errs::SignersConfigError::GroupError(
                 "Empty groups cannot be built".to_string(),
@@ -105,11 +100,11 @@ where
         let signers = pubkeys
             .iter()
             .map(Signer::from_key)
-            .collect::<Result<Vec<Signer<APK>>, KeyError>>()?;
+            .collect::<Result<Vec<Signer>, KeyError>>()?;
         Ok(SignerGroup { signers, threshold })
     }
 
-    pub fn as_proposal(&self) -> SignersConfigProposal<APK> {
+    pub fn as_proposal(&self) -> SignersConfigProposal {
         SignersConfigProposal {
             timestamp: self.timestamp,
             version: self.version,
@@ -122,9 +117,9 @@ where
     // Create a SignersConfig with the given public keys as strings and threshold for different groups
     pub fn with_keys(
         version: u32,
-        (artifact_signers, artifact_threshold): (Vec<APK>, u32),
-        admin_keys: Option<(Vec<APK>, u32)>,
-        master_keys: Option<(Vec<APK>, u32)>,
+        (artifact_signers, artifact_threshold): (Vec<AsfaloadPublicKeys>, u32),
+        admin_keys: Option<(Vec<AsfaloadPublicKeys>, u32)>,
+        master_keys: Option<(Vec<AsfaloadPublicKeys>, u32)>,
     ) -> Result<Self, SignersConfigError> {
         // Helper function to create a SignerGroup from a vector of public key strings
         // Create the artifact signers group
@@ -159,21 +154,21 @@ where
 
     pub fn with_artifact_signers_only(
         version: u32,
-        artifact_signers_and_threshold: (Vec<APK>, u32),
+        artifact_signers_and_threshold: (Vec<AsfaloadPublicKeys>, u32),
     ) -> Result<Self, SignersConfigError> {
         Self::with_keys(version, artifact_signers_and_threshold, None, None)
     }
 
-    pub fn artifact_signers(&self) -> &[SignerGroup<APK>] {
+    pub fn artifact_signers(&self) -> &[SignerGroup] {
         &self.artifact_signers
     }
-    pub fn admin_keys(&self) -> &[SignerGroup<APK>] {
+    pub fn admin_keys(&self) -> &[SignerGroup] {
         match &self.admin_keys {
             Some(v) if !v.is_empty() => v,
             _ => &self.artifact_signers,
         }
     }
-    pub fn master_keys(&self) -> Option<Vec<SignerGroup<APK>>> {
+    pub fn master_keys(&self) -> Option<Vec<SignerGroup>> {
         self.master_keys.clone()
     }
 
@@ -188,7 +183,7 @@ where
         serde_json::to_string_pretty(self)
     }
     // Get all signers keys present in the SignersConfig.
-    pub fn all_signer_keys(&self) -> HashSet<APK> {
+    pub fn all_signer_keys(&self) -> HashSet<AsfaloadPublicKeys> {
         self.admin_keys()
             .iter()
             .chain(self.master_keys().unwrap_or_default().iter())
@@ -219,30 +214,27 @@ impl Default for InitialVersion {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(bound(
-    serialize = "APK: AsfaloadPublicKeyTrait",
-    deserialize = "APK: AsfaloadPublicKeyTrait"
-))]
+//#[serde(bound(
+//    serialize = "APK: AsfaloadPublicKeyTrait",
+//    deserialize = "APK: AsfaloadPublicKeyTrait"
+//))]
 #[derive(Eq, PartialEq)]
-pub struct SignerGroup<APK: AsfaloadPublicKeyTrait> {
-    pub signers: Vec<Signer<APK>>,
+pub struct SignerGroup {
+    pub signers: Vec<Signer>,
     pub threshold: u32,
 }
 
 // Custom deserializer for SignerGroup that validates threshold <= signers.len()
-impl<'de, APK> Deserialize<'de> for SignerGroup<APK>
-where
-    APK: AsfaloadPublicKeyTrait,
-{
+impl<'de> Deserialize<'de> for SignerGroup {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         // Create a helper struct that mirrors SignerGroup but without the custom Deserialize
         #[derive(Deserialize)]
-        #[serde(bound(deserialize = "APK: AsfaloadPublicKeyTrait"))]
-        struct SignerGroupHelper<APK: AsfaloadPublicKeyTrait> {
-            signers: Vec<Signer<APK>>,
+        //#[serde(bound(deserialize = "APK: AsfaloadPublicKeyTrait"))]
+        struct SignerGroupHelper {
+            signers: Vec<Signer>,
             threshold: u32,
         }
 
@@ -278,18 +270,18 @@ where
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(bound(
-    serialize = "APK: AsfaloadPublicKeyTrait",
-    deserialize = "APK: AsfaloadPublicKeyTrait"
-))]
+//#[serde(bound(
+//    serialize = "APK: AsfaloadPublicKeyTrait",
+//    deserialize = "APK: AsfaloadPublicKeyTrait"
+//))]
 #[derive(Eq, PartialEq)]
-pub struct Signer<APK: AsfaloadPublicKeyTrait> {
+pub struct Signer {
     pub kind: SignerKind,
-    pub data: SignerData<APK>,
+    pub data: SignerData,
 }
 
-impl<APK: AsfaloadPublicKeyTrait> Signer<APK> {
-    pub fn from_key(pk: &APK) -> Result<Self, KeyError> {
+impl Signer {
+    pub fn from_key(pk: &AsfaloadPublicKeys) -> Result<Self, KeyError> {
         Ok(Self {
             kind: SignerKind::Key,
             data: SignerData {
@@ -307,15 +299,12 @@ pub enum SignerKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SignerData<APK: AsfaloadPublicKeyTrait> {
+pub struct SignerData {
     pub format: KeyFormat,
-    pub pubkey: APK,
+    pub pubkey: AsfaloadPublicKeys,
 }
 
-impl<APK> Serialize for SignerData<APK>
-where
-    APK: AsfaloadPublicKeyTrait,
-{
+impl Serialize for SignerData {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -329,10 +318,7 @@ where
     }
 }
 
-impl<'de, APK> Deserialize<'de> for SignerData<APK>
-where
-    APK: AsfaloadPublicKeyTrait,
-{
+impl<'de> Deserialize<'de> for SignerData {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -345,7 +331,7 @@ where
 
         let helper = SignerDataHelper::deserialize(deserializer)?;
         // Parse the public key from string using the trait method
-        let pubkey = APK::from_base64(helper.pubkey.clone()).map_err(|_e| {
+        let pubkey = AsfaloadPublicKeys::from_base64(helper.pubkey.clone()).map_err(|_e| {
             serde::de::Error::custom(format!("Problem parsing pubkey base64: {}", helper.pubkey))
         })?;
         Ok(SignerData {
@@ -355,14 +341,12 @@ where
     }
 }
 
-pub fn parse_signers_config<APK: AsfaloadPublicKeyTrait>(
-    json_str: &str,
-) -> Result<SignersConfig<APK>, serde_json::Error> {
+pub fn parse_signers_config(json_str: &str) -> Result<SignersConfig, serde_json::Error> {
     serde_json::from_str(json_str)
 }
 
-pub fn parse_signers_config_proposal<APK: AsfaloadPublicKeyTrait>(
+pub fn parse_signers_config_proposal(
     json_str: &str,
-) -> Result<SignersConfigProposal<APK>, serde_json::Error> {
+) -> Result<SignersConfigProposal, serde_json::Error> {
     serde_json::from_str(json_str)
 }

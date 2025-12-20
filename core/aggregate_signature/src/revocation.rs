@@ -7,7 +7,10 @@ use common::{
         find_global_signers_for,
     },
 };
-use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signatures::{
+    keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
+    types::{AsfaloadPublicKeys, AsfaloadSignatures},
+};
 use signers_file_types::{SignersConfig, parse_signers_config};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -29,16 +32,14 @@ use crate::can_revoke;
 /// # Returns
 /// * `Ok(())` if revocation was successful
 /// * `Err(RevocationError)` if there was an error validating, signing, or writing files
-pub fn revoke_signed_file<P, S, K>(
+pub fn revoke_signed_file<P>(
     signed_file_path: P,
     json_content: &str,
-    signature: &S,
-    pubkey: &K,
+    signature: &AsfaloadSignatures,
+    pubkey: &AsfaloadPublicKeys,
 ) -> Result<(), RevocationError>
 where
     P: AsRef<Path>,
-    K: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait + Clone,
 {
     let signed_file_path = signed_file_path.as_ref();
 
@@ -61,7 +62,7 @@ where
     //  signing the signed file we want to revoke)
     let signers_file_path = find_global_signers_for(signed_file_path)?;
     let signers_content = fs::read_to_string(&signers_file_path)?;
-    let signers_config: SignersConfig<K> = parse_signers_config(&signers_content)?;
+    let signers_config: SignersConfig = parse_signers_config(&signers_content)?;
 
     // Check if the public key can revoke
     if !can_revoke(pubkey, &signers_config) {
@@ -71,7 +72,7 @@ where
     }
 
     //Validate the revocation JSON by parsing it
-    let _revocation_file: signers_file_types::revocation::RevocationFile<K> =
+    let _revocation_file: signers_file_types::revocation::RevocationFile =
         serde_json::from_str(json_content)?;
 
     // Compute hash and verify signature
@@ -235,7 +236,7 @@ mod tests {
         local_signers_path_for, revocation_path_for, revocation_signatures_path_for,
         revocation_signers_path_for, revoked_signatures_path_for, signatures_path_for,
     };
-    use signatures::keys::AsfaloadPublicKey;
+    use signatures::types::AsfaloadPublicKeys;
     use std::path::PathBuf;
 
     // Helper function to create a test path
@@ -742,7 +743,7 @@ mod tests {
     fn create_revocation_json(
         timestamp: chrono::DateTime<Utc>,
         subject_digest: &AsfaloadHashes,
-        initiator_pubkey: &signatures::keys::AsfaloadPublicKey<minisign::PublicKey>,
+        initiator_pubkey: &AsfaloadPublicKeys,
     ) -> Result<String, Box<dyn std::error::Error>> {
         let revocation_file = signers_file_types::revocation::RevocationFile {
             timestamp,
@@ -815,9 +816,8 @@ mod tests {
         assert!(!signatures_file.exists());
 
         // Verify revocation file content
-        let parsed_revocation = signers_file_types::revocation::RevocationFile::<
-            AsfaloadPublicKey<minisign::PublicKey>,
-        >::from_file(revocation_file_path)?;
+        let parsed_revocation =
+            signers_file_types::revocation::RevocationFile::from_file(revocation_file_path)?;
 
         assert_eq!(parsed_revocation.timestamp, timestamp);
         assert_eq!(parsed_revocation.subject_digest, subject_digest);

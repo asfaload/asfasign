@@ -4,24 +4,18 @@ use std::{fs, path::Path};
 use chrono::{DateTime, Utc};
 use common::{AsfaloadHashes, errors::RevocationError};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use signatures::keys::AsfaloadPublicKeyTrait;
+use signatures::{keys::AsfaloadPublicKeyTrait, types::AsfaloadPublicKeys};
 
 #[derive(Debug, Clone)]
-pub struct RevocationFile<APK>
-where
-    APK: AsfaloadPublicKeyTrait,
-{
+pub struct RevocationFile {
     /// ISO8601 formatted UTC date and time when the revocation was created
     pub timestamp: DateTime<Utc>,
     /// digest of the file being revoked
     pub subject_digest: AsfaloadHashes,
-    pub initiator: APK,
+    pub initiator: AsfaloadPublicKeys,
 }
 
-impl<APK> RevocationFile<APK>
-where
-    APK: AsfaloadPublicKeyTrait,
-{
+impl RevocationFile {
     pub fn from_json(json: &str) -> Result<Self, RevocationError> {
         Ok(serde_json::from_str(json)?)
     }
@@ -30,10 +24,7 @@ where
         Self::from_json(json.as_str())
     }
 }
-impl<APK> Serialize for RevocationFile<APK>
-where
-    APK: AsfaloadPublicKeyTrait,
-{
+impl Serialize for RevocationFile {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -48,10 +39,7 @@ where
     }
 }
 
-impl<'de, APK> Deserialize<'de> for RevocationFile<APK>
-where
-    APK: AsfaloadPublicKeyTrait,
-{
+impl<'de> Deserialize<'de> for RevocationFile {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -65,7 +53,7 @@ where
 
         let helper = RevocationFileHelper::deserialize(deserializer)?;
         // Parse public key from base64 string
-        let initiator = APK::from_base64(helper.initiator)
+        let initiator = AsfaloadPublicKeys::from_base64(helper.initiator)
             .map_err(|e| serde::de::Error::custom(format!("Failed to parse public key: {}", e)))?;
         Ok(RevocationFile {
             timestamp: helper.timestamp,
@@ -76,10 +64,7 @@ where
 }
 
 // Add a Display implementation for easier debugging
-impl<APK> fmt::Display for RevocationFile<APK>
-where
-    APK: AsfaloadPublicKeyTrait,
-{
+impl fmt::Display for RevocationFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -98,14 +83,14 @@ mod tests {
     use common::AsfaloadHashes;
     use serde_json;
     use sha2::{Digest, Sha512};
-    use signatures::keys::{AsfaloadPublicKey, AsfaloadPublicKeyTrait};
+    use signatures::keys::AsfaloadPublicKeyTrait;
     use test_helpers::TestKeys;
 
-    fn create_test_revocation_file<APK: AsfaloadPublicKeyTrait>(
+    fn create_test_revocation_file(
         timestamp: DateTime<Utc>,
         subject_digest: AsfaloadHashes,
-        initiator: APK,
-    ) -> RevocationFile<APK> {
+        initiator: AsfaloadPublicKeys,
+    ) -> RevocationFile {
         RevocationFile {
             timestamp,
             subject_digest,
@@ -128,8 +113,7 @@ mod tests {
         let json = serde_json::to_string(&revocation_file).unwrap();
 
         // Deserialize back
-        let deserialized: RevocationFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            serde_json::from_str(&json).unwrap();
+        let deserialized: RevocationFile = serde_json::from_str(&json).unwrap();
 
         // Verify all fields match
         assert_eq!(&deserialized.timestamp, &timestamp);
@@ -186,8 +170,7 @@ mod tests {
 
         // Serialize and deserialize
         let json = serde_json::to_string(&revocation_file).unwrap();
-        let deserialized: RevocationFile<AsfaloadPublicKey<minisign::PublicKey>> =
-            serde_json::from_str(&json).unwrap();
+        let deserialized: RevocationFile = serde_json::from_str(&json).unwrap();
 
         // Verify the hash is preserved correctly
         match (
@@ -210,8 +193,7 @@ mod tests {
         }
         "#;
 
-        let result: Result<RevocationFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            serde_json::from_str(invalid_json);
+        let result: Result<RevocationFile, _> = serde_json::from_str(invalid_json);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -234,8 +216,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            serde_json::from_str(&invalid_json);
+        let result: Result<RevocationFile, _> = serde_json::from_str(&invalid_json);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -261,8 +242,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            serde_json::from_str(&invalid_json);
+        let result: Result<RevocationFile, _> = serde_json::from_str(&invalid_json);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -289,8 +269,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            serde_json::from_str(&missing_timestamp);
+        let result: Result<RevocationFile, _> = serde_json::from_str(&missing_timestamp);
         assert!(result.is_err());
 
         match result {
@@ -310,8 +289,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            serde_json::from_str(&missing_digest);
+        let result: Result<RevocationFile, _> = serde_json::from_str(&missing_digest);
         match result {
             Err(ref e) => {
                 assert!(e.to_string().contains("missing field `subject_digest`"))
@@ -329,8 +307,7 @@ mod tests {
         }
         "#;
 
-        let result: Result<RevocationFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            serde_json::from_str(missing_initiator);
+        let result: Result<RevocationFile, _> = serde_json::from_str(missing_initiator);
         match result {
             Err(ref e) => {
                 assert!(e.to_string().contains("missing field `initiator`"))
@@ -350,8 +327,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            serde_json::from_str(&empty_timestamp);
+        let result: Result<RevocationFile, _> = serde_json::from_str(&empty_timestamp);
         assert!(result.is_err());
 
         match result {
@@ -372,8 +348,7 @@ mod tests {
         }
         "#;
 
-        let result: Result<RevocationFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            serde_json::from_str(empty_initiator);
+        let result: Result<RevocationFile, _> = serde_json::from_str(empty_initiator);
         match result {
             Err(ref e) => {
                 dbg!(e.to_string());
@@ -408,8 +383,7 @@ mod tests {
         // Test each revocation file independently
         for revocation in &revocation_files {
             let json = serde_json::to_string(revocation).unwrap();
-            let deserialized: RevocationFile<AsfaloadPublicKey<minisign::PublicKey>> =
-                serde_json::from_str(&json).unwrap();
+            let deserialized: RevocationFile = serde_json::from_str(&json).unwrap();
 
             assert_eq!(revocation.timestamp, deserialized.timestamp);
             assert_eq!(revocation.subject_digest, deserialized.subject_digest);
@@ -466,8 +440,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            serde_json::from_str(&json_with_extra);
+        let result: Result<RevocationFile, _> = serde_json::from_str(&json_with_extra);
 
         // Should succeed with extra fields being ignored
         assert!(result.is_ok());
@@ -489,8 +462,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile<AsfaloadPublicKey<minisign::PublicKey>>, _> =
-            serde_json::from_str(&json_wrong_algo);
+        let result: Result<RevocationFile, _> = serde_json::from_str(&json_wrong_algo);
 
         assert!(result.is_err());
         let error = result.unwrap_err();

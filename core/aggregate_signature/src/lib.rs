@@ -7,10 +7,17 @@ use common::fs::names::{
 };
 use common::{AsfaloadHashes, SignedFileLoader, SignedFileWithKind};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+
+// Type aliases for enum-based types to support incremental migration
+pub type EnumSignatureWithState = SignatureWithState;
+pub type EnumAggregateSignature<SS> = AggregateSignature<SS>;
+pub type EnumPendingSignature = EnumAggregateSignature<PendingSignature>;
+pub type EnumCompleteSignature = EnumAggregateSignature<CompleteSignature>;
 
 pub struct PendingSignature;
 pub struct CompleteSignature;
@@ -34,25 +41,17 @@ impl SignatureState for CompleteSignature {
     }
 }
 
-pub enum SignatureWithState<P, S>
-where
-    P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait,
-{
-    Pending(AggregateSignature<P, S, PendingSignature>),
-    Complete(AggregateSignature<P, S, CompleteSignature>),
+pub enum SignatureWithState {
+    Pending(AggregateSignature<PendingSignature>),
+    Complete(AggregateSignature<CompleteSignature>),
 }
 
-impl<P, S> SignatureWithState<P, S>
-where
-    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait,
-{
+impl SignatureWithState {
     pub fn load_for_file<PP: AsRef<Path>>(path_in: PP) -> Result<Self, AggregateSignatureError> {
         generic_load_for_file(path_in)
     }
     // Consumes self to do as get_pending
-    pub fn get_complete(self) -> Option<AggregateSignature<P, S, CompleteSignature>> {
+    pub fn get_complete(self) -> Option<AggregateSignature<CompleteSignature>> {
         match self {
             Self::Pending(_s) => None,
             Self::Complete(s) => Some(s),
@@ -61,7 +60,7 @@ where
     // Consumes self. Made so that after calling get_pending we can call add_individual_signature
     // that also consumes self, becaus it can update the agg_sig on disk, so using the old value
     // makes no sense.
-    pub fn get_pending(self) -> Option<AggregateSignature<P, S, PendingSignature>> {
+    pub fn get_pending(self) -> Option<AggregateSignature<PendingSignature>> {
         match self {
             Self::Complete(_s) => None,
             Self::Pending(s) => Some(s),
@@ -78,13 +77,10 @@ where
         !self.is_pending()
     }
 }
+
 #[derive(Clone)]
-pub struct AggregateSignature<P, S, SS>
-where
-    P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait,
-{
-    signatures: HashMap<P, S>,
+pub struct AggregateSignature<SS> {
+    signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures>,
     // The origin is a String. I originally wanted to make it a Url, but
     // then the path must be absolute, and I didn't want to set that restriction right now
     origin: String,
@@ -92,13 +88,13 @@ where
     marker: PhantomData<SS>,
 }
 
-impl<P, S, SS> AggregateSignature<P, S, SS>
-where
-    P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait,
-{
+impl<SS> AggregateSignature<SS> {
     // Function left private so it can only be used in this module
-    fn new(signatures: HashMap<P, S>, origin: String, subject: SignedFileWithKind) -> Self {
+    fn new(
+        signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures>,
+        origin: String,
+        subject: SignedFileWithKind,
+    ) -> Self {
         AggregateSignature {
             signatures,
             origin,
@@ -108,9 +104,7 @@ where
     }
 }
 
-impl<P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone, S: AsfaloadSignatureTrait, SS>
-    AggregateSignature<P, S, SS>
-{
+impl<SS> AggregateSignature<SS> {
     pub fn origin(&self) -> &str {
         self.origin.as_str()
     }
@@ -121,15 +115,11 @@ impl<P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone, S: AsfaloadSignat
 
 /// Check if all groups in a category meet their thresholds with valid signatures
 /// Note that invalid signatures are ignored, they are not reported as errors.
-pub fn check_groups<P, S>(
-    groups: &[SignerGroup<P>],
-    signatures: &HashMap<P, S>,
+pub fn check_groups(
+    groups: &[SignerGroup],
+    signatures: &HashMap<AsfaloadPublicKeys, AsfaloadSignatures>,
     data: &AsfaloadHashes,
-) -> bool
-where
-    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait,
-{
+) -> bool {
     !groups.is_empty()
         && groups.iter().all(|group| {
             let count = group
@@ -147,15 +137,11 @@ where
 
 // Check that all signers in signers config have signed.
 // This does not take the thresholds in account.
-pub fn check_all_signers<P, S>(
-    signatures: &HashMap<P, S>,
-    signers_config: &SignersConfig<P>,
+pub fn check_all_signers(
+    signatures: &HashMap<AsfaloadPublicKeys, AsfaloadSignatures>,
+    signers_config: &SignersConfig,
     admin_data: &AsfaloadHashes,
-) -> bool
-where
-    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait,
-{
+) -> bool {
     let all_signer_keys = signers_config.all_signer_keys();
     !all_signer_keys.is_empty()
         && all_signer_keys.iter().all(|pubkey| {
@@ -211,11 +197,8 @@ where
 
 // A user can revoke a signature if it is member of the most provileged
 // group defined in the SignersConfig
-pub fn can_revoke<PK: AsfaloadPublicKeyTrait>(
-    pubkey: &PK,
-    signers_config: &SignersConfig<PK>,
-) -> bool {
-    let is_in_groups = |groups: &[SignerGroup<PK>]| {
+pub fn can_revoke(pubkey: &AsfaloadPublicKeys, signers_config: &SignersConfig) -> bool {
+    let is_in_groups = |groups: &[SignerGroup]| {
         groups.iter().any(|group| {
             group
                 .signers
@@ -224,10 +207,10 @@ pub fn can_revoke<PK: AsfaloadPublicKeyTrait>(
         })
     };
 
-    if let Some(master_keys) = signers_config.master_keys() {
-        if !master_keys.is_empty() {
-            return is_in_groups(&master_keys);
-        }
+    if let Some(master_keys) = signers_config.master_keys()
+        && !master_keys.is_empty()
+    {
+        return is_in_groups(&master_keys);
     }
 
     // Using the admin_keys() accessor will implicitly return the
@@ -238,12 +221,9 @@ pub fn can_revoke<PK: AsfaloadPublicKeyTrait>(
 }
 
 /// Load signers configuration from a file
-pub fn load_signers_config<P>(
+pub fn load_signers_config(
     signers_file_path: &Path,
-) -> Result<SignersConfig<P>, AggregateSignatureError>
-where
-    P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
-{
+) -> Result<SignersConfig, AggregateSignatureError> {
     let content = std::fs::read_to_string(signers_file_path).map_err(|e| {
         std::io::Error::other(format!(
             "could not read {} at {}:{}\n {}",
@@ -263,27 +243,22 @@ where
 /// This function compares the public keys of signers in both configurations
 /// and returns a `Vec` of public keys from `new_config` that are not
 /// found in `old_config`, regardless of the groups they belong to.
-pub fn get_newly_added_signer_keys<P: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone>(
-    old_config: &SignersConfig<P>,
-    new_config: &SignersConfig<P>,
-) -> Vec<P> {
+pub fn get_newly_added_signer_keys(
+    old_config: &SignersConfig,
+    new_config: &SignersConfig,
+) -> Vec<AsfaloadPublicKeys> {
     // Create a HashSet of public keys from the old configuration for efficient lookup.
-    let old_signers: HashSet<P> = old_config.all_signer_keys();
-    let new_signers: HashSet<P> = new_config.all_signer_keys();
+    let old_signers: HashSet<AsfaloadPublicKeys> = old_config.all_signer_keys();
+    let new_signers: HashSet<AsfaloadPublicKeys> = new_config.all_signer_keys();
 
     new_signers.difference(&old_signers).cloned().collect()
 }
 
 /// Check if an aggregate signature for a file is complete
-pub fn is_aggregate_signature_complete<P: AsRef<Path>, PK>(
+pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
     file_path: P,
     look_at_pending: bool,
-) -> Result<bool, AggregateSignatureError>
-where
-    PK: AsfaloadPublicKeyTrait + Eq + std::hash::Hash + Clone,
-    <PK as signatures::keys::AsfaloadPublicKeyTrait>::Signature:
-        signatures::keys::AsfaloadSignatureTrait,
-{
+) -> Result<bool, AggregateSignatureError> {
     let file_path = file_path.as_ref();
 
     //  Determine the file type
@@ -317,7 +292,7 @@ where
             } else {
                 local_signers_path_for(file_path)
             }?;
-            let signers_config = load_signers_config::<PK>(&signers_file_path)?;
+            let signers_config = load_signers_config(&signers_file_path)?;
             check_groups(signers_config.artifact_signers(), &signatures, &file_hash)
         }
         SignedFileWithKind::SignersFile(_) => {
@@ -326,8 +301,8 @@ where
             // - Respect the new signers file
             // - Collect signatures from all new signers
             let signers_file_path = find_global_signers_for(file_path)?;
-            let signers_config = load_signers_config::<PK>(&signers_file_path)?;
-            let new_signers_config = load_signers_config::<PK>(file_path)?;
+            let signers_config = load_signers_config(&signers_file_path)?;
+            let new_signers_config = load_signers_config(file_path)?;
 
             let added_signers = get_newly_added_signer_keys(&signers_config, &new_signers_config);
             // existing signers file
@@ -349,7 +324,7 @@ where
         SignedFileWithKind::InitialSignersFile(_) => {
             // For initial signers, the config is the signers file itself,
             // and we require all signers in the file to sign it
-            let signers_config = load_signers_config::<PK>(file_path)?;
+            let signers_config = load_signers_config(file_path)?;
             check_all_signers(&signatures, &signers_config, &file_hash)
         }
     };
@@ -366,13 +341,9 @@ where
 // This is annoying but also makes no sense as a call like this one
 //   AggregateSignature<_,_,CompleteSignature>::load_for_file(...)
 // could still return a pending signature.
-fn generic_load_for_file<P, S, PP: AsRef<Path>>(
+fn generic_load_for_file<PP: AsRef<Path>>(
     path_in: PP,
-) -> Result<SignatureWithState<P, S>, AggregateSignatureError>
-where
-    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait,
-{
+) -> Result<SignatureWithState, AggregateSignatureError> {
     let signed_file = SignedFileLoader::load(&path_in);
     let file_path = path_in.as_ref();
 
@@ -384,7 +355,7 @@ where
         // We double check the signature is complete. If it is not, it
         // will return an error. If it is complete, we don't care about
         // its true return value
-        is_aggregate_signature_complete::<_, P>(file_path, false)?;
+        is_aggregate_signature_complete(file_path, false)?;
         let signatures = get_individual_signatures(&complete_sig_path)?;
         Ok(SignatureWithState::Complete(AggregateSignature::new(
             signatures,
@@ -403,16 +374,14 @@ where
         )))
     }
 }
-impl<P, S, SS> AggregateSignature<P, S, SS>
+impl<SS> AggregateSignature<SS>
 where
-    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait,
     SS: SignatureState,
 {
     /// Check if aggregate signature meets all thresholds in signers config for artifacts
     pub fn is_artifact_complete(
         &self,
-        signers_config: &SignersConfig<P>,
+        signers_config: &SignersConfig,
         artifact_data: &AsfaloadHashes,
     ) -> bool {
         // Check artifact_signers groups
@@ -426,7 +395,7 @@ where
     /// Check if aggregate signature meets all thresholds in signers config for master keys
     pub fn is_master_complete(
         &self,
-        signers_config: &SignersConfig<P>,
+        signers_config: &SignersConfig,
         master_data: &AsfaloadHashes,
     ) -> bool {
         // Check master_keys groups
@@ -440,7 +409,7 @@ where
     /// Check if aggregate signature meets all thresholds in signers config for admin keys
     pub fn is_admin_complete(
         &self,
-        signers_config: &SignersConfig<P>,
+        signers_config: &SignersConfig,
         admin_data: &AsfaloadHashes,
     ) -> bool {
         // Check admin_keys groups if present
@@ -469,14 +438,10 @@ where
     }
 }
 
-impl<P, S> AggregateSignature<P, S, PendingSignature>
-where
-    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
-    S: AsfaloadSignatureTrait + Clone,
-{
+impl AggregateSignature<PendingSignature> {
     pub fn try_transition_to_complete(
         &self,
-    ) -> Result<AggregateSignature<P, S, CompleteSignature>, AggregateSignatureError> {
+    ) -> Result<AggregateSignature<CompleteSignature>, AggregateSignatureError> {
         let pending_sig_path = pending_signatures_path_for(&self.subject)?;
         if !pending_sig_path.exists() {
             return Err({
@@ -513,7 +478,7 @@ where
                 });
             }
         }
-        if is_aggregate_signature_complete::<_, P>(&self.subject, true)? {
+        if is_aggregate_signature_complete(&self.subject, true)? {
             // For artifact signatures, we copy the signers file at the time the
             // aggregate signature is completed.
             if self.subject.is_artifact() {
@@ -527,7 +492,7 @@ where
                     e
                 )))
             })?;
-            Ok(AggregateSignature::<P, S, CompleteSignature>::new(
+            Ok(AggregateSignature::<CompleteSignature>::new(
                 self.signatures.clone(),
                 self.origin.clone(),
                 self.subject.clone(),
@@ -541,9 +506,9 @@ where
     // see https://github.com/asfaload/asfasign/pull/39#discussion_r2435860732
     pub fn add_individual_signature(
         self,
-        sig: &S,
-        pubkey: &P,
-    ) -> Result<SignatureWithState<P, S>, AggregateSignatureError> {
+        sig: &AsfaloadSignatures,
+        pubkey: &AsfaloadPublicKeys,
+    ) -> Result<SignatureWithState, AggregateSignatureError> {
         // Add the signature to the aggregate
         sig.add_to_aggregate_for_file(self.subject.location().clone(), pubkey)
             .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
@@ -572,9 +537,8 @@ mod tests {
         SIGNERS_FILE, SIGNERS_SUFFIX, create_local_signers_for,
     };
     use common::{ArtifactMarker, SignedFile};
-    use minisign::SignatureBox;
-    use signatures::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
-    use signatures::keys::{AsfaloadPublicKey, AsfaloadSignature};
+    use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
+    use signatures::types::AsfaloadKeyPairs;
     use signers_file_types::{
         KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig,
         SignersConfigProposal,
@@ -588,10 +552,10 @@ mod tests {
     #[test]
     fn test_load_and_complete() -> Result<()> {
         // Generate keypairs
-        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let keypair = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey = keypair.public_key();
         let seckey = keypair.secret_key("password").unwrap();
-        let keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let keypair2 = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey2 = keypair2.public_key();
         let _seckey2 = keypair2.secret_key("password").unwrap();
 
@@ -607,11 +571,7 @@ mod tests {
         let signed_file_path = PathBuf::from("test_file.txt");
 
         // Create pending aggregate signature manually
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-            PendingSignature,
-        > = AggregateSignature::new(
+        let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             signed_file_path.to_string_lossy().to_string(),
             SignedFileLoader::load(signed_file_path),
@@ -644,7 +604,7 @@ mod tests {
             .replace("THRESHOLD_PLACEHOLDER", "1");
 
         // Parse signers config from JSON
-        let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        let signers_config: SignersConfig =
             signers_file_types::parse_signers_config(&json_config).unwrap();
 
         // Should be complete with threshold 1
@@ -656,7 +616,7 @@ mod tests {
             .replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64())
             .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64())
             .replace("THRESHOLD_PLACEHOLDER", "2");
-        let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        let signers_config: SignersConfig =
             signers_file_types::parse_signers_config(&high_threshold_config).unwrap();
         assert!(!agg_sig.is_artifact_complete(&signers_config, &data));
         assert_eq!(agg_sig.origin, "test_file.txt");
@@ -675,11 +635,11 @@ mod tests {
         fs::create_dir_all(&dir_path).unwrap();
 
         // Generate keypairs
-        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let keypair = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey = keypair.public_key();
         let seckey = keypair.secret_key("password").unwrap();
 
-        let keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let keypair2 = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey2 = keypair2.public_key();
         let _seckey2 = keypair2.secret_key("password").unwrap();
 
@@ -757,8 +717,7 @@ mod tests {
         let config_json = serde_json::to_string_pretty(&high_threshold_config).unwrap();
         fs::write(&signers_file, config_json).unwrap();
 
-        let agg_sig: SignatureWithState<_, _> =
-            SignatureWithState::load_for_file(&signed_file_path)?;
+        let agg_sig: SignatureWithState = SignatureWithState::load_for_file(&signed_file_path)?;
         let agg_sig = agg_sig
             .get_complete()
             .ok_or(anyhow::anyhow!("Signature should have been complete"))?;
@@ -774,10 +733,10 @@ mod tests {
     #[test]
     fn test_multiple_groups() -> Result<()> {
         // Generate two keypairs
-        let keypair1 = AsfaloadKeyPair::new("password").unwrap();
+        let keypair1 = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey1 = keypair1.public_key();
         let seckey1 = keypair1.secret_key("password").unwrap();
-        let keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let keypair2 = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey2 = keypair2.public_key();
         let seckey2 = keypair2.secret_key("password").unwrap();
 
@@ -792,7 +751,7 @@ mod tests {
         signatures.insert(pubkey2.clone(), sig2);
 
         // Create aggregate signature manually
-        let agg_sig: AggregateSignature<_, _, CompleteSignature> = AggregateSignature::new(
+        let agg_sig: AggregateSignature<CompleteSignature> = AggregateSignature::new(
             signatures,
             "test_origin".to_string(),
             SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker>::new(
@@ -835,7 +794,7 @@ mod tests {
             .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
 
         // Parse signers config from JSON
-        let signers_config: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        let signers_config: SignersConfig =
             signers_file_types::parse_signers_config(&json_config).unwrap();
 
         // Should be complete with both groups
@@ -873,7 +832,7 @@ mod tests {
             .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
 
         // Parse mixed signers config from JSON
-        let signers_config_mixed: SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> =
+        let signers_config_mixed: SignersConfig =
             signers_file_types::parse_signers_config(&json_config_mixed).unwrap();
 
         // Should be complete with mixed configuration
@@ -910,16 +869,12 @@ mod tests {
         let build_groups = |tpl: String| {
             let json = test_keys.substitute_keys(tpl);
 
-            let groups: Vec<SignerGroup<AsfaloadPublicKey<minisign::PublicKey>>> =
-                serde_json::from_str(&json).unwrap();
+            let groups: Vec<SignerGroup> = serde_json::from_str(&json).unwrap();
             groups
         };
 
         let check_validity = |tpl: String,
-                              signatures: &HashMap<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<SignatureBox>,
-        >,
+                              signatures: &HashMap<AsfaloadPublicKeys, AsfaloadSignatures>,
                               expected_valid: bool| {
             let groups = build_groups(tpl);
             if expected_valid {
@@ -1295,7 +1250,7 @@ mod tests {
         // Empty groups are always incomplete
         assert!(!check_groups(
             &[],
-            &HashMap::<AsfaloadPublicKey<_>, AsfaloadSignature<_>>::new(),
+            &HashMap::<AsfaloadPublicKeys, AsfaloadSignatures>::new(),
             &data
         ));
         assert!(!check_groups(&[], &signatures_1_2_3_4, &data));
@@ -1426,7 +1381,7 @@ mod tests {
         let incomplete_json = serde_json::to_string_pretty(&incomplete_sigs).unwrap();
         fs::write(&sig_file_path, incomplete_json).unwrap();
 
-        let result = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false);
+        let result = is_aggregate_signature_complete(&test_file, false);
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap().to_string(),
@@ -1440,13 +1395,11 @@ mod tests {
         let complete_json = serde_json::to_string_pretty(&complete_sigs).unwrap();
         fs::write(&sig_file_path, complete_json).unwrap();
 
-        assert!(
-            is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false).unwrap()
-        );
+        assert!(is_aggregate_signature_complete(&test_file, false).unwrap());
 
         // Test when signature file doesn't exist
         fs::remove_file(&sig_file_path).unwrap();
-        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false);
+        let res = is_aggregate_signature_complete(&test_file, false);
         assert!(res.is_err());
         assert_eq!(
             res.err().unwrap().to_string(),
@@ -1466,7 +1419,7 @@ mod tests {
         let invalid_json = serde_json::to_string_pretty(&invalid_sigs).unwrap();
         fs::write(&sig_file_path, invalid_json).unwrap();
 
-        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, false);
+        let res = is_aggregate_signature_complete(&test_file, false);
         assert!(res.is_err());
         assert_eq!(
             res.err().unwrap().to_string(),
@@ -1691,7 +1644,7 @@ mod tests {
         fs::write(&test_file, file_content).unwrap();
 
         // Generate a keypair for signing
-        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let keypair = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey = keypair.public_key();
         let seckey = keypair.secret_key("password").unwrap();
 
@@ -1734,11 +1687,7 @@ mod tests {
         // Create an AggregateSignature in Pending state
         let mut signatures = HashMap::new();
         signatures.insert(pubkey.clone(), signature.clone());
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-            PendingSignature,
-        > = AggregateSignature::new(
+        let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
             SignedFileLoader::load(&test_file),
@@ -1783,11 +1732,7 @@ mod tests {
         fs::write(&test_file, "test content").unwrap();
 
         // Create an AggregateSignature in Pending state
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-            PendingSignature,
-        > = AggregateSignature::new(
+        let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             HashMap::new(),
             test_file.to_string_lossy().to_string(),
             SignedFileLoader::load(&test_file),
@@ -1825,11 +1770,7 @@ mod tests {
         fs::write(&complete_sig_path, r#"{"existing": "content"}"#).unwrap();
 
         // Create an AggregateSignature in Pending state
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-            PendingSignature,
-        > = AggregateSignature::new(
+        let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             HashMap::new(),
             test_file.to_string_lossy().to_string(),
             SignedFileLoader::load(&test_file),
@@ -1928,7 +1869,7 @@ mod tests {
         //assert!(result.is_ok());
 
         // Test when pending signature file doesn't exist
-        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
+        let res = is_aggregate_signature_complete(&test_file, true);
         assert!(res.is_ok());
         assert!(!res.unwrap()); // Should be incomplete when no pending file exists
 
@@ -1945,7 +1886,7 @@ mod tests {
         let incomplete_json = serde_json::to_string_pretty(&incomplete_sigs).unwrap();
         fs::write(&pending_sig_file_path, &incomplete_json).unwrap();
 
-        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
+        let res = is_aggregate_signature_complete(&test_file, true);
         assert!(res.is_ok());
         assert!(!res.unwrap()); // Should be incomplete with only one signature
 
@@ -1956,9 +1897,7 @@ mod tests {
         let complete_json = serde_json::to_string_pretty(&complete_sigs).unwrap();
         fs::write(&pending_sig_file_path, complete_json).unwrap();
 
-        assert!(
-            is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true).unwrap()
-        ); // Should be complete with both signatures
+        assert!(is_aggregate_signature_complete(&test_file, true).unwrap()); // Should be complete with both signatures
 
         // Test invalid signature (wrong content)
         let mut invalid_sigs = HashMap::new();
@@ -1973,7 +1912,7 @@ mod tests {
         let invalid_json = serde_json::to_string_pretty(&invalid_sigs).unwrap();
         fs::write(&pending_sig_file_path, invalid_json).unwrap();
 
-        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
+        let res = is_aggregate_signature_complete(&test_file, true);
         assert!(res.is_ok());
         assert!(!res.unwrap()); // Should be incomplete with invalid signature
 
@@ -1989,7 +1928,7 @@ mod tests {
         // Reset to pending signatures with one valid signature
         fs::write(&pending_sig_file_path, incomplete_json).unwrap();
 
-        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
+        let res = is_aggregate_signature_complete(&test_file, true);
         assert!(res.is_ok());
         assert!(res.unwrap()); // Should be complete with threshold 1 and one valid signature
 
@@ -1998,7 +1937,7 @@ mod tests {
         let empty_json = serde_json::to_string_pretty(&empty_sigs).unwrap();
         fs::write(&pending_sig_file_path, empty_json).unwrap();
 
-        let res = is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&test_file, true);
+        let res = is_aggregate_signature_complete(&test_file, true);
         assert!(!res.unwrap()); // Should be incomplete with empty signatures
         Ok(())
     }
@@ -2127,8 +2066,7 @@ mod tests {
 
         // With the current code, this will fail because it checks the same config twice
         // instead of checking both the current and new signers configs
-        let result =
-            is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&new_signers_file, false);
+        let result = is_aggregate_signature_complete(&new_signers_file, false);
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap().to_string(),
@@ -2142,8 +2080,7 @@ mod tests {
         let signatures_json = serde_json::to_string_pretty(&signatures).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
-        let result =
-            is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&new_signers_file, false);
+        let result = is_aggregate_signature_complete(&new_signers_file, false);
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap().to_string(),
@@ -2159,8 +2096,7 @@ mod tests {
 
         // With the current code, this will fail because it checks the same config twice
         // instead of checking both the current and new signers configs
-        let result =
-            is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&new_signers_file, false);
+        let result = is_aggregate_signature_complete(&new_signers_file, false);
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap().to_string(),
@@ -2175,8 +2111,7 @@ mod tests {
         let signatures_json = serde_json::to_string_pretty(&signatures).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
-        let result =
-            is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&new_signers_file, false);
+        let result = is_aggregate_signature_complete(&new_signers_file, false);
         assert!(result.is_ok());
         // only admin of old and all new is ok
         let mut signatures = HashMap::new();
@@ -2188,8 +2123,7 @@ mod tests {
 
         // With the current code, this will fail because it checks the same config twice
         // instead of checking both the current and new signers configs
-        let result =
-            is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&new_signers_file, false);
+        let result = is_aggregate_signature_complete(&new_signers_file, false);
         assert!(result.is_ok());
 
         Ok(())
@@ -2306,8 +2240,7 @@ mod tests {
         let signatures_json = serde_json::to_string_pretty(&signatures).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
-        let result =
-            is_aggregate_signature_complete::<_, AsfaloadPublicKey<_>>(&new_signers_file, false);
+        let result = is_aggregate_signature_complete(&new_signers_file, false);
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap().to_string(),
@@ -2343,7 +2276,7 @@ mod tests {
         let sig4 = seckey4.sign(&data).unwrap();
 
         // Helper function to create a Signer
-        let create_signer = |pubkey: AsfaloadPublicKey<minisign::PublicKey>| Signer {
+        let create_signer = |pubkey: AsfaloadPublicKeys| Signer {
             kind: SignerKind::Key,
             data: SignerData {
                 format: KeyFormat::Minisign,
@@ -2353,7 +2286,7 @@ mod tests {
 
         // Helper function to create a SignerGroup
         let create_group =
-            |signers: Vec<Signer<_>>, threshold: u32| SignerGroup { signers, threshold };
+            |signers: Vec<Signer>, threshold: u32| SignerGroup { signers, threshold };
 
         // Scenario 1: Only artifact_signers group
         {
@@ -2596,7 +2529,7 @@ mod tests {
         fs::write(&test_file, file_content)?;
 
         // Generate keypairs
-        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let keypair = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey = keypair.public_key();
         let seckey = keypair.secret_key("password").unwrap();
 
@@ -2607,11 +2540,7 @@ mod tests {
         // Create a pending aggregate signature
         let mut signatures = HashMap::new();
         signatures.insert(pubkey.clone(), signature.clone());
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-            PendingSignature,
-        > = AggregateSignature::new(
+        let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
             SignedFileLoader::load(&test_file),
@@ -2650,7 +2579,7 @@ mod tests {
         fs::write(&test_file, file_content)?;
 
         // Generate keypairs
-        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let keypair = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey = keypair.public_key();
         let seckey = keypair.secret_key("password").unwrap();
 
@@ -2661,11 +2590,7 @@ mod tests {
         // Create a complete aggregate signature
         let mut signatures = HashMap::new();
         signatures.insert(pubkey.clone(), signature.clone());
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-            CompleteSignature,
-        > = AggregateSignature::new(
+        let agg_sig: AggregateSignature<CompleteSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
             SignedFileLoader::load(&test_file),
@@ -2704,10 +2629,10 @@ mod tests {
         fs::write(&test_file, file_content)?;
 
         // Generate two keypairs
-        let keypair1 = AsfaloadKeyPair::new("password").unwrap();
+        let keypair1 = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey1 = keypair1.public_key();
         let seckey1 = keypair1.secret_key("password").unwrap();
-        let keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let keypair2 = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey2 = keypair2.public_key();
         let seckey2 = keypair2.secret_key("password").unwrap();
 
@@ -2720,11 +2645,7 @@ mod tests {
         let mut signatures = HashMap::new();
         signatures.insert(pubkey1.clone(), signature1.clone());
         signatures.insert(pubkey2.clone(), signature2.clone());
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-            PendingSignature,
-        > = AggregateSignature::new(
+        let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
             SignedFileLoader::load(&test_file),
@@ -2764,11 +2685,7 @@ mod tests {
         fs::write(&test_file, b"test content")?;
 
         // Create an empty pending aggregate signature
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-            PendingSignature,
-        > = AggregateSignature::new(
+        let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             HashMap::new(),
             test_file.to_string_lossy().to_string(),
             SignedFileLoader::load(&test_file),
@@ -2813,7 +2730,7 @@ mod tests {
         fs::write(&pending_sig_path, existing_content)?;
 
         // Generate a keypair
-        let keypair = AsfaloadKeyPair::new("password").unwrap();
+        let keypair = AsfaloadKeyPairs::new("password").unwrap();
         let pubkey = keypair.public_key();
         let seckey = keypair.secret_key("password").unwrap();
 
@@ -2824,11 +2741,7 @@ mod tests {
         // Create a pending aggregate signature
         let mut signatures = HashMap::new();
         signatures.insert(pubkey.clone(), signature.clone());
-        let agg_sig: AggregateSignature<
-            AsfaloadPublicKey<minisign::PublicKey>,
-            AsfaloadSignature<minisign::SignatureBox>,
-            PendingSignature,
-        > = AggregateSignature::new(
+        let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
             SignedFileLoader::load(&test_file),
@@ -2851,9 +2764,9 @@ mod tests {
     // ---------------------------------------
     // Helper function to create a basic signers configuration
     fn create_signers_config(
-        artifact_signers: Vec<AsfaloadPublicKey<minisign::PublicKey>>,
+        artifact_signers: Vec<AsfaloadPublicKeys>,
         threshold: u32,
-    ) -> SignersConfig<AsfaloadPublicKey<minisign::PublicKey>> {
+    ) -> SignersConfig {
         let signers = artifact_signers
             .into_iter()
             .map(|pubkey| Signer {
@@ -2878,7 +2791,7 @@ mod tests {
     // Helper function to sign a file and write its signature to disk
     fn sign_and_write_sig_file(
         file_path: &Path,
-        keypair: &AsfaloadKeyPair<minisign::KeyPair>,
+        keypair: &AsfaloadKeyPairs,
     ) -> Result<PathBuf, AggregateSignatureError> {
         let content = std::fs::read_to_string(file_path)?;
         let hash = common::sha512_for_content(content.into_bytes())?;
@@ -2913,8 +2826,8 @@ mod tests {
     //     └── test_file.txt
     fn setup_test_hierarchy(
         temp_dir: &TempDir,
-        signers_config: &SignersConfig<AsfaloadPublicKey<minisign::PublicKey>>,
-        signers_keypair: &AsfaloadKeyPair<minisign::KeyPair>,
+        signers_config: &SignersConfig,
+        signers_keypair: &AsfaloadKeyPairs,
     ) -> Result<(PathBuf, PathBuf), AggregateSignatureError> {
         let root = temp_dir.path();
 
@@ -2942,12 +2855,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Generate a keypair for signing the artifact
-        let artifact_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_keypair = AsfaloadKeyPairs::new("password").unwrap();
         let artifact_pubkey = artifact_keypair.public_key();
         let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
 
         // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
 
         // Create a signers configuration with threshold 1
         let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
@@ -2989,20 +2902,20 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Generate three keypairs for signing the artifact
-        let artifact_keypair1 = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_keypair1 = AsfaloadKeyPairs::new("password").unwrap();
         let artifact_pubkey1 = artifact_keypair1.public_key();
         let artifact_seckey1 = artifact_keypair1.secret_key("password").unwrap();
 
-        let artifact_keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_keypair2 = AsfaloadKeyPairs::new("password").unwrap();
         let artifact_pubkey2 = artifact_keypair2.public_key();
         let artifact_seckey2 = artifact_keypair2.secret_key("password").unwrap();
 
-        let artifact_keypair3 = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_keypair3 = AsfaloadKeyPairs::new("password").unwrap();
         let artifact_pubkey3 = artifact_keypair3.public_key();
         let artifact_seckey3 = artifact_keypair3.secret_key("password").unwrap();
 
         // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
 
         // Create a signers configuration with threshold 3
         let signers_config = create_signers_config(
@@ -3072,14 +2985,14 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Generate two keypairs for signing the artifact
-        let artifact_keypair1 = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_keypair1 = AsfaloadKeyPairs::new("password").unwrap();
         let artifact_pubkey1 = artifact_keypair1.public_key();
         let artifact_seckey1 = artifact_keypair1.secret_key("password").unwrap();
-        let artifact_keypair2 = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_keypair2 = AsfaloadKeyPairs::new("password").unwrap();
         let artifact_pubkey2 = artifact_keypair2.public_key();
 
         // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
 
         // Create a signers configuration with threshold 2
         let signers_config =
@@ -3120,12 +3033,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Generate a keypair for signing the artifact
-        let artifact_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_keypair = AsfaloadKeyPairs::new("password").unwrap();
         let artifact_pubkey = artifact_keypair.public_key();
         let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
 
         // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
 
         // Create a signers configuration
         let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
@@ -3176,12 +3089,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Generate a keypair for signing the artifact
-        let artifact_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_keypair = AsfaloadKeyPairs::new("password").unwrap();
         let artifact_pubkey = artifact_keypair.public_key();
         let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
 
         // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
 
         // Create a signers configuration
         let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
@@ -3220,12 +3133,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Generate a keypair for signing the artifact
-        let artifact_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_keypair = AsfaloadKeyPairs::new("password").unwrap();
         let artifact_pubkey = artifact_keypair.public_key();
         let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
 
         // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
 
         // Create a signers configuration
         let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
@@ -3269,12 +3182,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Generate a keypair for signing the artifact
-        let artifact_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let artifact_keypair = AsfaloadKeyPairs::new("password").unwrap();
         let artifact_pubkey = artifact_keypair.public_key();
         let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
 
         // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPair::new("password").unwrap();
+        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
 
         // Create a signers configuration
         let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 2);
@@ -3324,10 +3237,7 @@ mod tests {
     // ---------------------------------
 
     /// Helper function to create a Signer from a TestKeys instance.
-    fn create_signer(
-        test_keys: &TestKeys,
-        index: usize,
-    ) -> Signer<AsfaloadPublicKey<minisign::PublicKey>> {
+    fn create_signer(test_keys: &TestKeys, index: usize) -> Signer {
         Signer {
             kind: SignerKind::Key,
             data: SignerData {
@@ -3338,11 +3248,7 @@ mod tests {
     }
 
     /// Helper function to create a SignerGroup from a vector of Signer indices.
-    fn create_group(
-        test_keys: &TestKeys,
-        indices: Vec<usize>,
-        threshold: u32,
-    ) -> SignerGroup<AsfaloadPublicKey<minisign::PublicKey>> {
+    fn create_group(test_keys: &TestKeys, indices: Vec<usize>, threshold: u32) -> SignerGroup {
         let signers = indices
             .into_iter()
             .map(|i| create_signer(test_keys, i))
@@ -3591,8 +3497,8 @@ mod tests {
         let invalid_sig1 = seckey1.sign(&other_data).unwrap();
 
         // Test 1: Empty signatures and empty signers
-        let empty_signatures: HashMap<AsfaloadPublicKey<_>, AsfaloadSignature<_>> = HashMap::new();
-        let empty_signers: Vec<AsfaloadPublicKey<_>> = Vec::new();
+        let empty_signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures> = HashMap::new();
+        let empty_signers: Vec<AsfaloadPublicKeys> = Vec::new();
         assert!(check_signers(&empty_signatures, &empty_signers, &data));
 
         // Test 2: Empty signatures with non-empty signers
@@ -3691,13 +3597,10 @@ mod tests {
         with_admin: bool,
         with_master: bool,
     ) -> (
-        Vec<AsfaloadPublicKey<minisign::PublicKey>>,
-        Vec<AsfaloadPublicKey<minisign::PublicKey>>,
-        Vec<AsfaloadPublicKey<minisign::PublicKey>>,
-    )
-    where
-        AsfaloadPublicKey<minisign::PublicKey>: AsfaloadPublicKeyTrait,
-    {
+        Vec<AsfaloadPublicKeys>,
+        Vec<AsfaloadPublicKeys>,
+        Vec<AsfaloadPublicKeys>,
+    ) {
         let test_keys = TestKeys::new(6);
         let artifact_keys = if with_artifact {
             vec![
