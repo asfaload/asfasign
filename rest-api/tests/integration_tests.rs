@@ -58,8 +58,6 @@ pub mod tests {
         let server_handle = tokio::spawn(async move { run_server(&env_clone).await });
         wait_for_server(&env, None).await?;
 
-        wait_for_server(&env, None).await?;
-
         // Create a client to send requests
         let client = reqwest::Client::new();
 
@@ -207,8 +205,6 @@ pub mod tests {
         let server_handle = tokio::spawn(async move { run_server(&env_clone).await });
         wait_for_server(&env, None).await?;
 
-        wait_for_server(&env, None).await?;
-
         // Create a client to send requests
         let client = reqwest::Client::new();
 
@@ -305,8 +301,6 @@ pub mod tests {
         // Start the server in the background
         let env_clone = env.clone();
         let server_handle = tokio::spawn(async move { run_server(&env_clone).await });
-        wait_for_server(&env, None).await?;
-
         wait_for_server(&env, None).await?;
 
         // Create a client to send requests
