@@ -50,8 +50,8 @@ pub mod errors {
         #[error("Authentication failed: {0}")]
         AuthenticationFailed(String),
 
-        #[error("Timestamp validation failed")]
-        TimestampValidationFailed,
+        #[error("Timestamp validation failed: {0}")]
+        TimestampValidationFailed(String),
 
         #[error("Signature verification failed")]
         SignatureVerificationFailed,
@@ -93,7 +93,9 @@ pub mod errors {
                 rest_api_auth::AuthError::InvalidNonceFormat(_) => {
                     ApiError::AuthenticationFailed("Invalid nonce format".to_string())
                 }
-                rest_api_auth::AuthError::TimestampTooOld => ApiError::TimestampValidationFailed,
+                rest_api_auth::AuthError::TimestampInvalid(s) => {
+                    ApiError::TimestampValidationFailed(s)
+                }
                 rest_api_auth::AuthError::Base64DecodeError(_) => {
                     ApiError::AuthenticationFailed("Base64 decode error".to_string())
                 }
@@ -118,7 +120,7 @@ pub mod errors {
                 ApiError::InvalidAuthenticationHeaders => StatusCode::UNAUTHORIZED,
                 ApiError::InvalidRequestBody(_) => StatusCode::BAD_REQUEST,
                 ApiError::AuthenticationFailed(_) => StatusCode::UNAUTHORIZED,
-                ApiError::TimestampValidationFailed => StatusCode::UNAUTHORIZED,
+                ApiError::TimestampValidationFailed(_) => StatusCode::UNAUTHORIZED,
                 ApiError::SignatureVerificationFailed => StatusCode::UNAUTHORIZED,
             }
         }

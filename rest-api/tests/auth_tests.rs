@@ -119,7 +119,7 @@ pub mod auth_tests {
 
         // Parse the response body
         let response_body: Value = response.json().await.expect("Failed to parse response");
-        assert_eq!(response_body["error"], "Signature verification failed");
+        assert_eq!(response_body["error"], "Timestamp validation failed");
 
         // Invalid nonce
         // -------------
@@ -152,4 +152,3 @@ pub mod auth_tests {
         Ok(())
     }
 }
-

@@ -46,8 +46,8 @@ pub enum AuthError {
     #[error("Invalid nonce format: {0}")]
     InvalidNonceFormat(#[from] uuid::Error),
 
-    #[error("Timestamp too old")]
-    TimestampTooOld,
+    #[error("Timestamp invalid: {0}")]
+    TimestampInvalid(String),
 
     #[error("Base64 decode error: {0}")]
     Base64DecodeError(String),
@@ -120,7 +120,7 @@ impl AuthSignature {
         if now.signed_duration_since(timestamp).num_minutes() > AUTH_SIGNATURE_VALIDITY_MINUTES
             || timestamp > (now + chrono::Duration::seconds(CLIENT_CLOCK_SKEW_TOLERANCE_SECONDS))
         {
-            return Err(AuthError::TimestampTooOld);
+            return Err(AuthError::TimestampInvalid(timestamp.to_string()));
         }
 
         // Parse nonce
@@ -299,7 +299,43 @@ mod tests {
         assert!(result.is_err(), "Validation should fail with old timestamp");
         let err = result.unwrap_err();
         println!("Actual error: {:?}", err);
-        assert!(matches!(err, AuthError::TimestampTooOld));
+        assert!(matches!(err, AuthError::TimestampInvalid(_)));
+    }
+
+    #[test]
+    fn test_validate_from_headers_future_timestamp() {
+        let payload = r#"{"file_path": "test.txt", "content": "Hello World"}"#;
+
+        // Create a timestamp that's in the future
+        let future_timestamp = Utc::now() + Duration::seconds(70);
+        let nonce = uuid::Uuid::new_v4();
+
+        // Create auth info with the old timestamp
+        let auth_info = AuthInfo {
+            timestamp: future_timestamp,
+            nonce,
+            payload: payload.to_string(),
+        };
+
+        // Create a signature for this specific old timestamp using the shared keypair
+        let secret_key = TEST_KEY_PAIR.secret_key(TEST_PASSWORD).unwrap();
+        let auth_signature = AuthSignature::new(auth_info.clone(), secret_key).unwrap();
+
+        let result = AuthSignature::validate_from_headers(
+            &future_timestamp.to_rfc3339(),
+            &auth_info.nonce(),
+            &auth_signature.signature().to_base64(),
+            &auth_signature.public_key(),
+            payload,
+        );
+
+        assert!(
+            result.is_err(),
+            "Validation should fail with future timestamp"
+        );
+        let err = result.unwrap_err();
+        println!("Actual error: {:?}", err);
+        assert!(matches!(err, AuthError::TimestampInvalid(_)));
     }
 
     #[test]
