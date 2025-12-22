@@ -298,7 +298,6 @@ mod tests {
 
         assert!(result.is_err(), "Validation should fail with old timestamp");
         let err = result.unwrap_err();
-        println!("Actual error: {:?}", err);
         assert!(matches!(err, AuthError::TimestampInvalid(_)));
     }
 
@@ -334,7 +333,6 @@ mod tests {
             "Validation should fail with future timestamp"
         );
         let err = result.unwrap_err();
-        println!("Actual error: {:?}", err);
         assert!(matches!(err, AuthError::TimestampInvalid(_)));
     }
 
@@ -402,7 +400,6 @@ mod tests {
             "Validation should fail with invalid base64 signature"
         );
         let err = result.unwrap_err();
-        println!("Actual error for invalid signature: {:?}", err);
         // The error should be a Base64DecodeError or SignatureError depending on the implementation
         assert!(
             matches!(err, AuthError::Base64DecodeError(_))
@@ -428,7 +425,6 @@ mod tests {
             "Validation should fail with invalid base64 public key"
         );
         let err = result.unwrap_err();
-        println!("Actual error for invalid public key: {:?}", err);
         // The error should be a Base64DecodeError or KeyError depending on the implementation
         assert!(
             matches!(err, AuthError::Base64DecodeError(_)) || matches!(err, AuthError::KeyError(_))
