@@ -166,3 +166,268 @@ impl std::fmt::Display for AuthInfo {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Duration, Utc};
+    use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
+    use lazy_static::lazy_static;
+
+    // Shared test password
+    const TEST_PASSWORD: &str = "test_password";
+
+    // Create a single keypair that will be reused across all tests
+    lazy_static! {
+        static ref TEST_KEY_PAIR: AsfaloadKeyPairs = AsfaloadKeyPairs::new(TEST_PASSWORD).unwrap();
+    }
+
+    lazy_static! {
+        static ref TEST_KEY: AsfaloadSecretKeys = TEST_KEY_PAIR.secret_key(TEST_PASSWORD).unwrap();
+    }
+    fn setup_test_data() -> (AuthInfo, AuthSignature, String) {
+        let payload = r#"{"file_path": "test.txt", "content": "Hello World"}"#;
+        let auth_info = AuthInfo::new(payload.to_string());
+        let auth_signature = AuthSignature::new(auth_info.clone(), TEST_KEY.clone()).unwrap();
+
+        (auth_info, auth_signature, payload.to_string())
+    }
+
+    #[test]
+    fn test_validate_from_headers_success() {
+        let (auth_info, auth_signature, payload) = setup_test_data();
+
+        let result = AuthSignature::validate_from_headers(
+            &auth_info.timestamp().to_rfc3339(),
+            &auth_info.nonce(),
+            &auth_signature.signature().to_base64(),
+            &auth_signature.public_key(),
+            &payload,
+        );
+
+        assert!(
+            result.is_ok(),
+            "Validation should succeed with correct headers"
+        );
+    }
+
+    #[test]
+    fn test_validate_from_headers_wrong_payload() {
+        let (auth_info, auth_signature, _) = setup_test_data();
+        let wrong_payload = r#"{"file_path": "wrong.txt", "content": "Wrong Content"}"#;
+
+        let result = AuthSignature::validate_from_headers(
+            &auth_info.timestamp().to_rfc3339(),
+            &auth_info.nonce(),
+            &auth_signature.signature().to_base64(),
+            &auth_signature.public_key(),
+            wrong_payload,
+        );
+
+        assert!(result.is_err(), "Validation should fail with wrong payload");
+        assert!(matches!(
+            result.unwrap_err(),
+            AuthError::VerificationError(_)
+        ));
+    }
+
+    #[test]
+    fn test_validate_from_headers_wrong_signature() {
+        let (auth_info, auth_signature, payload) = setup_test_data();
+        let wrong_signature = "wrong_signature_base64";
+
+        let result = AuthSignature::validate_from_headers(
+            &auth_info.timestamp().to_rfc3339(),
+            &auth_info.nonce(),
+            wrong_signature,
+            &auth_signature.public_key(),
+            &payload,
+        );
+
+        assert!(
+            result.is_err(),
+            "Validation should fail with wrong signature"
+        );
+    }
+
+    #[test]
+    fn test_validate_from_headers_wrong_public_key() {
+        let (auth_info, auth_signature, payload) = setup_test_data();
+        let wrong_public_key = "wrong_public_key_base64";
+
+        let result = AuthSignature::validate_from_headers(
+            &auth_info.timestamp().to_rfc3339(),
+            &auth_info.nonce(),
+            &auth_signature.signature().to_base64(),
+            wrong_public_key,
+            &payload,
+        );
+
+        assert!(
+            result.is_err(),
+            "Validation should fail with wrong public key"
+        );
+    }
+
+    #[test]
+    fn test_validate_from_headers_old_timestamp() {
+        let payload = r#"{"file_path": "test.txt", "content": "Hello World"}"#;
+
+        // Create a timestamp that's too old (more than 5 minutes)
+        let old_timestamp = Utc::now() - Duration::minutes(AUTH_SIGNATURE_VALIDITY_MINUTES * 2);
+        let nonce = uuid::Uuid::new_v4();
+
+        // Create auth info with the old timestamp
+        let auth_info = AuthInfo {
+            timestamp: old_timestamp,
+            nonce,
+            payload: payload.to_string(),
+        };
+
+        // Create a signature for this specific old timestamp using the shared keypair
+        let secret_key = TEST_KEY_PAIR.secret_key(TEST_PASSWORD).unwrap();
+        let auth_signature = AuthSignature::new(auth_info.clone(), secret_key).unwrap();
+
+        let result = AuthSignature::validate_from_headers(
+            &old_timestamp.to_rfc3339(),
+            &auth_info.nonce(),
+            &auth_signature.signature().to_base64(),
+            &auth_signature.public_key(),
+            payload,
+        );
+
+        assert!(result.is_err(), "Validation should fail with old timestamp");
+        let err = result.unwrap_err();
+        println!("Actual error: {:?}", err);
+        assert!(matches!(err, AuthError::TimestampTooOld));
+    }
+
+    #[test]
+    fn test_validate_from_headers_invalid_timestamp_format() {
+        let (auth_info, auth_signature, payload) = setup_test_data();
+        let invalid_timestamp = "invalid-timestamp-format";
+
+        let result = AuthSignature::validate_from_headers(
+            invalid_timestamp,
+            &auth_info.nonce(),
+            &auth_signature.signature().to_base64(),
+            &auth_signature.public_key(),
+            &payload,
+        );
+
+        assert!(
+            result.is_err(),
+            "Validation should fail with invalid timestamp format"
+        );
+        assert!(matches!(
+            result.unwrap_err(),
+            AuthError::InvalidTimestampFormat(_)
+        ));
+    }
+
+    #[test]
+    fn test_validate_from_headers_invalid_nonce_format() {
+        let (auth_info, auth_signature, payload) = setup_test_data();
+        let invalid_nonce = "invalid-nonce-format";
+
+        let result = AuthSignature::validate_from_headers(
+            &auth_info.timestamp().to_rfc3339(),
+            invalid_nonce,
+            &auth_signature.signature().to_base64(),
+            &auth_signature.public_key(),
+            &payload,
+        );
+
+        assert!(
+            result.is_err(),
+            "Validation should fail with invalid nonce format"
+        );
+        assert!(matches!(
+            result.unwrap_err(),
+            AuthError::InvalidNonceFormat(_)
+        ));
+    }
+
+    #[test]
+    fn test_validate_from_headers_invalid_base64_signature() {
+        let (auth_info, auth_signature, payload) = setup_test_data();
+        let invalid_signature = "invalid-base64-signature!";
+
+        let result = AuthSignature::validate_from_headers(
+            &auth_info.timestamp().to_rfc3339(),
+            &auth_info.nonce(),
+            invalid_signature,
+            &auth_signature.public_key(),
+            &payload,
+        );
+
+        assert!(
+            result.is_err(),
+            "Validation should fail with invalid base64 signature"
+        );
+        let err = result.unwrap_err();
+        println!("Actual error for invalid signature: {:?}", err);
+        // The error should be a Base64DecodeError or SignatureError depending on the implementation
+        assert!(
+            matches!(err, AuthError::Base64DecodeError(_))
+                || matches!(err, AuthError::SignatureError(_))
+        );
+    }
+
+    #[test]
+    fn test_validate_from_headers_invalid_base64_public_key() {
+        let (auth_info, auth_signature, payload) = setup_test_data();
+        let invalid_public_key = "invalid-base64-public-key!";
+
+        let result = AuthSignature::validate_from_headers(
+            &auth_info.timestamp().to_rfc3339(),
+            &auth_info.nonce(),
+            &auth_signature.signature().to_base64(),
+            invalid_public_key,
+            &payload,
+        );
+
+        assert!(
+            result.is_err(),
+            "Validation should fail with invalid base64 public key"
+        );
+        let err = result.unwrap_err();
+        println!("Actual error for invalid public key: {:?}", err);
+        // The error should be a Base64DecodeError or KeyError depending on the implementation
+        assert!(
+            matches!(err, AuthError::Base64DecodeError(_)) || matches!(err, AuthError::KeyError(_))
+        );
+    }
+
+    #[test]
+    fn test_validate_from_headers_recent_timestamp() {
+        let (auth_info, _auth_signature, payload) = setup_test_data();
+
+        // Create a timestamp that's recent (within 5 minutes)
+        let recent_timestamp = Utc::now() - Duration::minutes(AUTH_SIGNATURE_VALIDITY_MINUTES / 2);
+
+        // We need to recreate the auth signature with the new timestamp
+        let new_auth_info = AuthInfo {
+            timestamp: recent_timestamp,
+            nonce: auth_info.nonce().parse().unwrap(),
+            payload: payload.clone(),
+        };
+
+        // Use the shared keypair instead of creating a new one
+        let secret_key = TEST_KEY_PAIR.secret_key(TEST_PASSWORD).unwrap();
+        let new_auth_signature = AuthSignature::new(new_auth_info.clone(), secret_key).unwrap();
+
+        let result = AuthSignature::validate_from_headers(
+            &recent_timestamp.to_rfc3339(),
+            &new_auth_info.nonce(),
+            &new_auth_signature.signature().to_base64(),
+            &new_auth_signature.public_key(),
+            &payload,
+        );
+
+        assert!(
+            result.is_ok(),
+            "Validation should succeed with recent timestamp"
+        );
+    }
+}

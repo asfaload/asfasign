@@ -123,7 +123,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AsfaloadSecretKeys {
     Minisign(AsfaloadSecretKey<minisign::SecretKey>),
 }

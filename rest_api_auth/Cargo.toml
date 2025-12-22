@@ -8,6 +8,7 @@ chrono = "0.4.42"
 uuid = { version = "1.19.0", features = ["v4"] }
 features_lib = { path = "../core/features_lib/" }
 thiserror = "2.0.17"
+lazy_static = "1.4.0"
 
 [lints]
 workspace = true

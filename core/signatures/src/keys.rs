@@ -51,7 +51,7 @@ pub trait AsfaloadSecretKeyTrait: Sized {
 
 // Struct to store a secret key immediately usable.
 // This means that for minisign, it holds the non-encrypted secret key.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AsfaloadSecretKey<K> {
     // Keep it private as for minisign it is the decrypted key, i.e. non password protected.
     key: K,
