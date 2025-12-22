@@ -1,5 +1,7 @@
 use axum::{body::Body, http::Request, middleware::Next, response::Response};
-use rest_api_auth::AuthSignature;
+use rest_api_auth::{
+    AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP,
+};
 use rest_api_types::errors::ApiError;
 
 // 1MB should be more than enough in our case
@@ -21,10 +23,10 @@ pub async fn auth_middleware(
     next: Next,
 ) -> Result<Response, ApiError> {
     // Clone header values before moving the request
-    let timestamp = get_header(&request, "X-asfld-timestamp")?;
-    let nonce = get_header(&request, "X-asfld-nonce")?;
-    let signature = get_header(&request, "X-asfld-sig")?;
-    let public_key = get_header(&request, "X-asfld-pk")?;
+    let timestamp = get_header(&request, HEADER_TIMESTAMP)?;
+    let nonce = get_header(&request, HEADER_NONCE)?;
+    let signature = get_header(&request, HEADER_SIGNATURE)?;
+    let public_key = get_header(&request, HEADER_PUBLIC_KEY)?;
 
     // Extract the request body for signature validation
     let (parts, body) = request.into_parts();

@@ -57,9 +57,9 @@ pub enum AuthError {
 // by rest clients and servers
 #[derive(Clone)]
 pub struct AuthInfo {
-    // Will be set by client as X-asfld-timestamp
+    // Will be set by client as HEADER_TIMESTAMP
     timestamp: DateTime<Utc>,
-    // Will be set by client as X-asfld-nonce
+    // Will be set by client as HEADER_NONCE
     nonce: Uuid,
     // Is the payload sent by the client to the server
     payload: String,
@@ -67,9 +67,9 @@ pub struct AuthInfo {
 
 pub struct AuthSignature {
     auth_info: AuthInfo,
-    // Will be set by client as X-asfld-sig
+    // Will be set by client as HEADER_SIGNATURE
     signature: AsfaloadSignatures,
-    // Will be set by client as X-asfld-pk
+    // Will be set by client as HEADER_PUBLIC_KEY
     public_key: AsfaloadPublicKeys,
 }
 

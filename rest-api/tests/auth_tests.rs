@@ -5,7 +5,10 @@ pub mod auth_tests {
     use axum::http::StatusCode;
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadSignatureTrait};
     use rest_api::server::run_server;
-    use rest_api_auth::{AuthInfo, AuthSignature};
+    use rest_api_auth::{
+        AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE,
+        HEADER_TIMESTAMP,
+    };
     use rest_api_test_helpers::{
         build_env, get_random_port, init_git_repo, url_for, wait_for_server,
     };
@@ -54,12 +57,12 @@ pub mod auth_tests {
         let response = client
             .post(url_for("add-file", port))
             .header(
-                "X-asfld-timestamp",
+                HEADER_TIMESTAMP,
                 auth_signature.auth_info().timestamp().to_rfc3339(),
             )
-            .header("X-asfld-nonce", auth_signature.auth_info().nonce())
-            .header("X-asfld-sig", auth_signature.signature().to_base64())
-            .header("X-asfld-pk", auth_signature.public_key())
+            .header(HEADER_NONCE, auth_signature.auth_info().nonce())
+            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
+            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
             .json(&payload)
             .send()
             .await
@@ -79,12 +82,12 @@ pub mod auth_tests {
         let response = client
             .post(url_for("add-file", port))
             .header(
-                "X-asfld-timestamp",
+                HEADER_TIMESTAMP,
                 auth_signature.auth_info().timestamp().to_rfc3339(),
             )
-            .header("X-asfld-nonce", auth_signature.auth_info().nonce())
-            .header("X-asfld-sig", "invalid_signature") // Tampered signature
-            .header("X-asfld-pk", auth_signature.public_key())
+            .header(HEADER_NONCE, auth_signature.auth_info().nonce())
+            .header(HEADER_SIGNATURE, "invalid_signature") // Tampered signature
+            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
             .json(&payload)
             .send()
             .await
@@ -105,10 +108,10 @@ pub mod auth_tests {
         let old_timestamp = auth_signature.auth_info().timestamp() - chrono::Duration::minutes(10);
         let response = client
             .post(url_for("add-file", port))
-            .header("X-asfld-timestamp", old_timestamp.to_rfc3339())
-            .header("X-asfld-nonce", auth_signature.auth_info().nonce())
-            .header("X-asfld-sig", auth_signature.signature().to_base64())
-            .header("X-asfld-pk", auth_signature.public_key())
+            .header(HEADER_TIMESTAMP, old_timestamp.to_rfc3339())
+            .header(HEADER_NONCE, auth_signature.auth_info().nonce())
+            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
+            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
             .json(&payload)
             .send()
             .await
@@ -119,19 +122,25 @@ pub mod auth_tests {
 
         // Parse the response body
         let response_body: Value = response.json().await.expect("Failed to parse response");
-        assert_eq!(response_body["error"], "Timestamp validation failed");
+        // Do not call to_string() on the Value as the generated string includes the quotes,
+        // and the starts_with test fails.
+        let error_msg = response_body["error"].as_str().unwrap();
+        let expected = "Timestamp validation failed";
+        if !error_msg.starts_with(expected) {
+            panic!("Expected error to start with \"{expected}\", but is {error_msg}");
+        }
 
         // Invalid nonce
         // -------------
         let response = client
             .post(url_for("add-file", port))
             .header(
-                "X-asfld-timestamp",
+                HEADER_TIMESTAMP,
                 auth_signature.auth_info().timestamp().to_rfc3339(),
             )
-            .header("X-asfld-nonce", "invalid")
-            .header("X-asfld-sig", auth_signature.signature().to_base64())
-            .header("X-asfld-pk", auth_signature.public_key())
+            .header(HEADER_NONCE, "invalid")
+            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
+            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
             .json(&payload)
             .send()
             .await

@@ -5,7 +5,10 @@ pub mod tests {
     use axum::http::StatusCode;
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadSignatureTrait};
     use rest_api::server::run_server;
-    use rest_api_auth::{AuthInfo, AuthSignature};
+    use rest_api_auth::{
+        AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE,
+        HEADER_TIMESTAMP,
+    };
     use rest_api_test_helpers::{
         build_env, file_exists_in_repo, get_latest_commit, get_random_port, init_git_repo,
         read_file_content, url_for, wait_for_commit, wait_for_server,
@@ -82,10 +85,10 @@ pub mod tests {
         // Send the request to add the file with authentication headers
         let response = client
             .post(url_for("add-file", port))
-            .header("X-asfld-timestamp", timestamp)
-            .header("X-asfld-nonce", nonce)
-            .header("X-asfld-sig", signature)
-            .header("X-asfld-pk", public_key)
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, signature)
+            .header(HEADER_PUBLIC_KEY, public_key)
             .json(&payload)
             .send()
             .await
@@ -163,10 +166,10 @@ pub mod tests {
         // Send the request with an empty file path and authentication headers
         let response = client
             .post(url_for("add-file", port))
-            .header("X-asfld-timestamp", timestamp)
-            .header("X-asfld-nonce", nonce)
-            .header("X-asfld-sig", signature)
-            .header("X-asfld-pk", public_key)
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, signature)
+            .header(HEADER_PUBLIC_KEY, public_key)
             .json(&payload)
             .send()
             .await
@@ -229,10 +232,10 @@ pub mod tests {
         // Send the request to add the file with authentication headers
         let response = client
             .post(url_for("add-file", port))
-            .header("X-asfld-timestamp", timestamp)
-            .header("X-asfld-nonce", nonce)
-            .header("X-asfld-sig", signature)
-            .header("X-asfld-pk", public_key)
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, signature)
+            .header(HEADER_PUBLIC_KEY, public_key)
             .json(&payload)
             .send()
             .await
@@ -322,10 +325,10 @@ pub mod tests {
         // Send the request with authentication headers
         let response = client
             .post(url_for("add-file", port))
-            .header("X-asfld-timestamp", timestamp)
-            .header("X-asfld-nonce", nonce)
-            .header("X-asfld-sig", signature)
-            .header("X-asfld-pk", public_key)
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, signature)
+            .header(HEADER_PUBLIC_KEY, public_key)
             .json(&payload)
             .send()
             .await

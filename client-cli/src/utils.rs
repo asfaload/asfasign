@@ -6,7 +6,7 @@ use ClientCliError::PasswordStrengthError;
 use crate::error::{ClientCliError, Result};
 use features_lib::{AsfaloadSecretKeys, AsfaloadSignatureTrait};
 use reqwest::header::{HeaderMap, HeaderValue};
-use rest_api_auth::AuthSignature;
+use rest_api_auth::{AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
 
 /// Ensures a directory exists, creating it if necessary
 pub fn ensure_dir_exists(path: &Path) -> Result<()> {
@@ -165,10 +165,10 @@ pub fn get_password(
 /// # Returns
 ///
 /// A HeaderMap containing the authentication headers:
-/// - X-asfld-timestamp: RFC3339 timestamp
-/// - X-asfld-nonce: UUID v4
-/// - X-asfld-sig: Signature of the auth info
-/// - X-asfld-pk: Public key in base64
+/// - HEADER_TIMESTAMP: RFC3339 timestamp
+/// - HEADER_NONCE: UUID v4
+/// - HEADER_SIGNATURE: Signature of the auth info
+/// - HEADER_PUBLIC_KEY: Public key in base64
 pub fn create_auth_headers(payload: &str, secret_key: AsfaloadSecretKeys) -> Result<HeaderMap> {
     use rest_api_auth::AuthInfo;
 
@@ -184,25 +184,25 @@ pub fn create_auth_headers(payload: &str, secret_key: AsfaloadSecretKeys) -> Res
 
     // Add timestamp header
     headers.insert(
-        "X-asfld-timestamp",
+        HEADER_TIMESTAMP,
         HeaderValue::from_str(&auth_signature.auth_info().timestamp().to_rfc3339())?,
     );
 
     // Add nonce header
     headers.insert(
-        "X-asfld-nonce",
+        HEADER_NONCE,
         HeaderValue::from_str(&auth_signature.auth_info().nonce())?,
     );
 
     // Add signature header
     headers.insert(
-        "X-asfld-sig",
+        HEADER_SIGNATURE,
         HeaderValue::from_str(&auth_signature.signature().to_base64())?,
     );
 
     // Add public key header
     headers.insert(
-        "X-asfld-pk",
+        HEADER_PUBLIC_KEY,
         HeaderValue::from_str(&auth_signature.public_key())?,
     );
 
