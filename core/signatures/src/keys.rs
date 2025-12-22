@@ -43,8 +43,8 @@ pub trait AsfaloadSecretKeyTrait: Sized {
     type Signature;
     fn sign(&self, data: &common::AsfaloadHashes) -> Result<Self::Signature, SignError>;
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError>;
-    fn from_string(s: String) -> Result<Self, KeyError> {
-        Self::from_bytes(&s.into_bytes())
+    fn from_string(s: &str) -> Result<Self, KeyError> {
+        Self::from_bytes(s.as_bytes())
     }
     fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError>;
 }
