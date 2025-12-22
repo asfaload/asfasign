@@ -174,7 +174,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         Ok(AsfaloadPublicKey { key: k })
     }
 
-    fn from_secret_key(sk: Self::SecretKeyType) -> Result<Self, KeyError> {
+    fn from_secret_key(sk: &Self::SecretKeyType) -> Result<Self, KeyError> {
         let k = PublicKey::from_secret_key(&sk.key)?;
         Ok(AsfaloadPublicKey { key: k })
     }
@@ -628,7 +628,7 @@ mod asfaload_index_tests {
         let pubkey = kp.public_key();
         let seckey = kp.secret_key("mypass")?;
 
-        let derived_pubkey = AsfaloadPublicKey::from_secret_key(seckey)?;
+        let derived_pubkey = AsfaloadPublicKey::from_secret_key(&seckey)?;
         assert_eq!(derived_pubkey.to_base64(), pubkey.to_base64());
         Ok(())
     }

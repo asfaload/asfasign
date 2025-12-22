@@ -1,6 +1,9 @@
 use crate::error::Result;
 use features_lib::sha512_for_file;
-use features_lib::{AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
+use features_lib::{
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
+    AsfaloadSignatureTrait,
+};
 use std::path::Path;
 
 pub fn handle_add_to_aggregate_command<P: AsRef<Path>>(
@@ -17,7 +20,7 @@ pub fn handle_add_to_aggregate_command<P: AsRef<Path>>(
     // Sign the data with the secret key
     let signature = secret_key.sign(&data_to_sign)?;
 
-    let public_key = AsfaloadPublicKeys::from_secret_key(secret_key)?;
+    let public_key = AsfaloadPublicKeys::from_secret_key(&secret_key)?;
 
     // Add the signature to the aggregate for the file
     signature.add_to_aggregate_for_file(signed_file, &public_key)?;

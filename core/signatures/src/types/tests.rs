@@ -318,7 +318,7 @@ fn test_public_key_from_secret_key() -> Result<()> {
     let pubkey = kp.public_key();
     let seckey = kp.secret_key("mypass")?;
 
-    let derived_pubkey = AsfaloadPublicKeys::from_secret_key(seckey)?;
+    let derived_pubkey = AsfaloadPublicKeys::from_secret_key(&seckey)?;
     assert_eq!(derived_pubkey.to_base64(), pubkey.to_base64());
     Ok(())
 }

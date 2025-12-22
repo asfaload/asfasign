@@ -76,7 +76,7 @@ pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone + std::fm
         Self::from_bytes(&s.into_bytes())
     }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError>;
-    fn from_secret_key(sk: Self::SecretKeyType) -> Result<Self, KeyError>;
+    fn from_secret_key(sk: &Self::SecretKeyType) -> Result<Self, KeyError>;
     fn key_format(&self) -> KeyFormat;
     fn key(&self) -> Self::KeyType;
 }

@@ -103,7 +103,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
         Ok(Self::Minisign(pk))
     }
 
-    fn from_secret_key(sk_in: AsfaloadSecretKeys) -> Result<Self, KeyError> {
+    fn from_secret_key(sk_in: &AsfaloadSecretKeys) -> Result<Self, KeyError> {
         match sk_in {
             AsfaloadSecretKeys::Minisign(sk) => {
                 let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_secret_key(sk)?;
