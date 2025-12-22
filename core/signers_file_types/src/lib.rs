@@ -331,7 +331,7 @@ impl<'de> Deserialize<'de> for SignerData {
 
         let helper = SignerDataHelper::deserialize(deserializer)?;
         // Parse the public key from string using the trait method
-        let pubkey = AsfaloadPublicKeys::from_base64(helper.pubkey.clone()).map_err(|_e| {
+        let pubkey = AsfaloadPublicKeys::from_base64(&helper.pubkey).map_err(|_e| {
             serde::de::Error::custom(format!("Problem parsing pubkey base64: {}", helper.pubkey))
         })?;
         Ok(SignerData {

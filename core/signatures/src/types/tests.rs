@@ -139,7 +139,7 @@ fn test_keys_methods() -> Result<()> {
             "Public key file does not contain a second line",
         ))
     })?;
-    let public_key_from_string = AsfaloadPublicKeys::from_base64(public_key_string.to_string())?;
+    let public_key_from_string = AsfaloadPublicKeys::from_base64(public_key_string)?;
     public_key_from_string.verify(&signature, &bytes_to_sign)?;
 
     // Test AsfaloadPublicKey::from_base64

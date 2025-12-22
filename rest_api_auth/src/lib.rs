@@ -134,7 +134,7 @@ impl AuthSignature {
         };
 
         // Parse public key and signature
-        let public_key = AsfaloadPublicKeys::from_base64(public_key.to_string())?;
+        let public_key = AsfaloadPublicKeys::from_base64(public_key)?;
         let signature = AsfaloadSignatures::from_base64(signature)?;
 
         // Verify signature

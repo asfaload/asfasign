@@ -94,7 +94,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
         Ok(Self::Minisign(pk))
     }
 
-    fn from_base64(s: String) -> Result<Self, KeyError> {
+    fn from_base64(s: &str) -> Result<Self, KeyError> {
         // With multiple backing algorithms, we could try one
         // after the other and return the corresponding one
         // if only one worked. If multiple attempts are successful
