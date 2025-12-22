@@ -1,4 +1,5 @@
 pub mod actors;
+pub mod auth_middleware;
 pub mod environment;
 pub mod handlers;
 pub mod path_validation;

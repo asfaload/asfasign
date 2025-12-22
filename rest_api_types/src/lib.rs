@@ -37,6 +37,68 @@ pub mod errors {
 
         #[error("Invalid port provided: {0}")]
         PortInvalid(String),
+
+        #[error("Missing authentication headers")]
+        MissingAuthenticationHeaders,
+
+        #[error("Invalid authentication headers")]
+        InvalidAuthenticationHeaders,
+
+        #[error("Invalid request body: {0}")]
+        InvalidRequestBody(String),
+
+        #[error("Authentication failed: {0}")]
+        AuthenticationFailed(String),
+
+        #[error("Timestamp validation failed")]
+        TimestampValidationFailed,
+
+        #[error("Signature verification failed")]
+        SignatureVerificationFailed,
+    }
+
+    impl From<hyper::header::ToStrError> for ApiError {
+        fn from(_error: hyper::header::ToStrError) -> Self {
+            ApiError::InvalidAuthenticationHeaders
+        }
+    }
+
+    impl From<rest_api_auth::AuthError> for ApiError {
+        fn from(error: rest_api_auth::AuthError) -> Self {
+            match error {
+                rest_api_auth::AuthError::AuthDataPreparationError(msg) => {
+                    ApiError::AuthenticationFailed(msg)
+                }
+                rest_api_auth::AuthError::IoError(_) => {
+                    ApiError::ServerSetupError(std::io::Error::other("Auth IO error"))
+                }
+                rest_api_auth::AuthError::SigningError(_) => {
+                    ApiError::AuthenticationFailed("Signing error".to_string())
+                }
+                rest_api_auth::AuthError::KeyError(_) => {
+                    ApiError::AuthenticationFailed("Key error".to_string())
+                }
+                rest_api_auth::AuthError::VerificationError(_) => {
+                    ApiError::AuthenticationFailed("Signature verification failed".to_string())
+                }
+                rest_api_auth::AuthError::SignatureError(_) => {
+                    ApiError::AuthenticationFailed("Signature error".to_string())
+                }
+                rest_api_auth::AuthError::MissingHeader(header) => {
+                    ApiError::AuthenticationFailed(format!("Missing header: {}", header))
+                }
+                rest_api_auth::AuthError::InvalidTimestampFormat(_) => {
+                    ApiError::AuthenticationFailed("Invalid timestamp format".to_string())
+                }
+                rest_api_auth::AuthError::InvalidNonceFormat(_) => {
+                    ApiError::AuthenticationFailed("Invalid nonce format".to_string())
+                }
+                rest_api_auth::AuthError::TimestampTooOld => ApiError::TimestampValidationFailed,
+                rest_api_auth::AuthError::Base64DecodeError(_) => {
+                    ApiError::AuthenticationFailed("Base64 decode error".to_string())
+                }
+            }
+        }
     }
 
     impl ApiError {
@@ -52,6 +114,12 @@ pub mod errors {
                 ApiError::ActorOperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::TokioJoinError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::GitOperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::MissingAuthenticationHeaders => StatusCode::UNAUTHORIZED,
+                ApiError::InvalidAuthenticationHeaders => StatusCode::UNAUTHORIZED,
+                ApiError::InvalidRequestBody(_) => StatusCode::BAD_REQUEST,
+                ApiError::AuthenticationFailed(_) => StatusCode::UNAUTHORIZED,
+                ApiError::TimestampValidationFailed => StatusCode::UNAUTHORIZED,
+                ApiError::SignatureVerificationFailed => StatusCode::UNAUTHORIZED,
             }
         }
     }
