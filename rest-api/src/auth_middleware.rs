@@ -1,42 +1,30 @@
-use axum::{http::Request, middleware::Next, response::Response};
+use axum::{body::Body, http::Request, middleware::Next, response::Response};
 use rest_api_auth::AuthSignature;
 use rest_api_types::errors::ApiError;
 
 // 1MB should be more than enough in our case
 const MAX_BODY_SIZE: usize = 1024 * 1024;
+
+// Heper to extract a header as string
+fn get_header(request: &Request<Body>, header_name: &str) -> Result<String, ApiError> {
+    Ok(request
+        .headers()
+        .get(header_name)
+        .ok_or(ApiError::MissingAuthenticationHeaders)?
+        .to_str()?
+        .to_string())
+}
+
 /// Middleware that validates authentication headers and signatures
 pub async fn auth_middleware(
     request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, ApiError> {
     // Clone header values before moving the request
-    let timestamp = request
-        .headers()
-        .get("X-asfld-timestamp")
-        .ok_or(ApiError::MissingAuthenticationHeaders)?
-        .to_str()?
-        .to_string();
-
-    let nonce = request
-        .headers()
-        .get("X-asfld-nonce")
-        .ok_or(ApiError::MissingAuthenticationHeaders)?
-        .to_str()?
-        .to_string();
-
-    let signature = request
-        .headers()
-        .get("X-asfld-sig")
-        .ok_or(ApiError::MissingAuthenticationHeaders)?
-        .to_str()?
-        .to_string();
-
-    let public_key = request
-        .headers()
-        .get("X-asfld-pk")
-        .ok_or(ApiError::MissingAuthenticationHeaders)?
-        .to_str()?
-        .to_string();
+    let timestamp = get_header(&request, "X-asfld-timestamp")?;
+    let nonce = get_header(&request, "X-asfld-nonce")?;
+    let signature = get_header(&request, "X-asfld-sig")?;
+    let public_key = get_header(&request, "X-asfld-pk")?;
 
     // Extract the request body for signature validation
     let (parts, body) = request.into_parts();
@@ -57,4 +45,3 @@ pub async fn auth_middleware(
     // Continue to the next middleware/handler
     Ok(next.run(request).await)
 }
-
