@@ -94,12 +94,12 @@ impl AuthInfo {
 }
 
 impl AuthSignature {
-    pub fn new(auth_info: AuthInfo, secret_key: AsfaloadSecretKeys) -> Result<Self, AuthError> {
+    pub fn new(auth_info: &AuthInfo, secret_key: &AsfaloadSecretKeys) -> Result<Self, AuthError> {
         let hash = sha512_for_content(auth_info.to_string().as_bytes().to_vec())?;
         let signature = secret_key.sign(&hash)?;
         let public_key = AsfaloadPublicKeys::from_secret_key(secret_key)?;
         Ok(AuthSignature {
-            auth_info,
+            auth_info: auth_info.clone(),
             signature,
             public_key,
         })
@@ -188,7 +188,7 @@ mod tests {
     fn setup_test_data() -> (AuthInfo, AuthSignature, String) {
         let payload = r#"{"file_path": "test.txt", "content": "Hello World"}"#;
         let auth_info = AuthInfo::new(payload.to_string());
-        let auth_signature = AuthSignature::new(auth_info.clone(), TEST_KEY.clone()).unwrap();
+        let auth_signature = AuthSignature::new(&auth_info, &TEST_KEY).unwrap();
 
         (auth_info, auth_signature, payload.to_string())
     }
@@ -286,7 +286,7 @@ mod tests {
 
         // Create a signature for this specific old timestamp using the shared keypair
         let secret_key = TEST_KEY_PAIR.secret_key(TEST_PASSWORD).unwrap();
-        let auth_signature = AuthSignature::new(auth_info.clone(), secret_key).unwrap();
+        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
 
         let result = AuthSignature::validate_from_headers(
             &old_timestamp.to_rfc3339(),
@@ -318,7 +318,7 @@ mod tests {
 
         // Create a signature for this specific old timestamp using the shared keypair
         let secret_key = TEST_KEY_PAIR.secret_key(TEST_PASSWORD).unwrap();
-        let auth_signature = AuthSignature::new(auth_info.clone(), secret_key).unwrap();
+        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
 
         let result = AuthSignature::validate_from_headers(
             &future_timestamp.to_rfc3339(),
@@ -447,7 +447,7 @@ mod tests {
 
         // Use the shared keypair instead of creating a new one
         let secret_key = TEST_KEY_PAIR.secret_key(TEST_PASSWORD).unwrap();
-        let new_auth_signature = AuthSignature::new(new_auth_info.clone(), secret_key).unwrap();
+        let new_auth_signature = AuthSignature::new(&new_auth_info, &secret_key).unwrap();
 
         let result = AuthSignature::validate_from_headers(
             &recent_timestamp.to_rfc3339(),

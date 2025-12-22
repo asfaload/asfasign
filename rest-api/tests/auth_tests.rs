@@ -51,7 +51,7 @@ pub mod auth_tests {
 
         // Create authentication info and signature
         let auth_info = AuthInfo::new(payload_string.clone());
-        let auth_signature = AuthSignature::new(auth_info, secret_key).unwrap();
+        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
 
         // Send the request with proper authentication headers
         let response = client
@@ -69,7 +69,14 @@ pub mod auth_tests {
             .expect("Failed to send request");
 
         // Check the response status - should be 200 OK
-        assert_eq!(response.status(), StatusCode::OK);
+        let status = response.status();
+        if status != StatusCode::OK {
+            let response_text = response.text().await?;
+            panic!(
+                "Expected response code Ok, go {}. Response was:\n{}",
+                status, response_text
+            )
+        }
 
         // Parse the response body
         let response_body: Value = response.json().await.expect("Failed to parse response");
@@ -79,6 +86,9 @@ pub mod auth_tests {
         // Invalid signature
         // -----------------
 
+        // Get a new auth_signature to avoid nonce reuse
+        let auth_info = AuthInfo::new(payload_string.clone());
+        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
         let response = client
             .post(url_for("add-file", port))
             .header(
@@ -105,6 +115,9 @@ pub mod auth_tests {
 
         // Invalid timestamp
         // -----------------
+        // Get a new auth_signature to avoid nonce reuse
+        let auth_info = AuthInfo::new(payload_string.clone());
+        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
         let old_timestamp = auth_signature.auth_info().timestamp() - chrono::Duration::minutes(10);
         let response = client
             .post(url_for("add-file", port))
@@ -132,6 +145,9 @@ pub mod auth_tests {
 
         // Invalid nonce
         // -------------
+        // Get a new auth_signature to avoid nonce reuse
+        let auth_info = AuthInfo::new(payload_string.clone());
+        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
         let response = client
             .post(url_for("add-file", port))
             .header(
@@ -154,6 +170,33 @@ pub mod auth_tests {
         assert_eq!(
             response_body["error"],
             "Authentication failed: Invalid nonce format"
+        );
+
+        // Nonce reuse
+        // -----------
+        // Reuse the same nonce to simulate replay
+        let response = client
+            .post(url_for("add-file", port))
+            .header(
+                HEADER_TIMESTAMP,
+                auth_signature.auth_info().timestamp().to_rfc3339(),
+            )
+            .header(HEADER_NONCE, "invalid")
+            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
+            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
+            .json(&payload)
+            .send()
+            .await
+            .expect("Failed to send request");
+
+        // Check the response status - should be 401 Unauthorized
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        // Parse the response body
+        let response_body: Value = response.json().await.expect("Failed to parse response");
+        assert_eq!(
+            response_body["error"],
+            "Replay attack detected: nonce already used"
         );
 
         // Clean up - abort the server task

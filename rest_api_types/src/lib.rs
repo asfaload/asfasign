@@ -7,6 +7,9 @@ pub mod errors {
 
     #[derive(Error, Debug)]
     pub enum ApiError {
+        #[error("State error: {0}")]
+        StateError(String),
+
         #[error("Git repository path not set in environment")]
         GitRepoPathNotSet,
 
@@ -55,6 +58,9 @@ pub mod errors {
 
         #[error("Signature verification failed")]
         SignatureVerificationFailed,
+
+        #[error("Replay attack detected: nonce already used")]
+        ReplayAttackDetected,
     }
 
     impl From<hyper::header::ToStrError> for ApiError {
@@ -122,6 +128,8 @@ pub mod errors {
                 ApiError::AuthenticationFailed(_) => StatusCode::UNAUTHORIZED,
                 ApiError::TimestampValidationFailed(_) => StatusCode::UNAUTHORIZED,
                 ApiError::SignatureVerificationFailed => StatusCode::UNAUTHORIZED,
+                ApiError::ReplayAttackDetected => StatusCode::UNAUTHORIZED,
+                ApiError::StateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }

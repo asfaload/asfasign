@@ -16,7 +16,7 @@ pub async fn run_server(env: &Environment) -> Result<(), ApiError> {
     // Build the router with authentication middleware
     let app = Router::new()
         .route("/add-file", post(add_file_handler))
-        .layer(axum::middleware::from_fn(auth_middleware))
+        .layer(axum::middleware::from_fn_with_state(app_state.clone(), auth_middleware))
         .with_state(app_state);
 
     // Start the server

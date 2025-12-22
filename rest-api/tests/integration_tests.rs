@@ -32,7 +32,7 @@ pub mod tests {
 
         // Create authentication info and signature
         let auth_info = AuthInfo::new(payload.to_string());
-        let auth_signature = AuthSignature::new(auth_info, secret_key).unwrap();
+        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
 
         TestAuthHeaders {
             timestamp: auth_signature.auth_info().timestamp().to_rfc3339(),

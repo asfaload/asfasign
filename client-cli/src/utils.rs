@@ -6,7 +6,9 @@ use ClientCliError::PasswordStrengthError;
 use crate::error::{ClientCliError, Result};
 use features_lib::{AsfaloadSecretKeys, AsfaloadSignatureTrait};
 use reqwest::header::{HeaderMap, HeaderValue};
-use rest_api_auth::{AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
+use rest_api_auth::{
+    AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP,
+};
 
 /// Ensures a directory exists, creating it if necessary
 pub fn ensure_dir_exists(path: &Path) -> Result<()> {
@@ -177,7 +179,7 @@ pub fn create_auth_headers(payload: &str, secret_key: AsfaloadSecretKeys) -> Res
 
     // Create authentication signature
     // Now SecretKey implements SecretKeyTrait, so it should work directly
-    let auth_signature = AuthSignature::new(auth_info, secret_key)?;
+    let auth_signature = AuthSignature::new(&auth_info, &secret_key)?;
 
     // Create headers
     let mut headers = HeaderMap::new();
