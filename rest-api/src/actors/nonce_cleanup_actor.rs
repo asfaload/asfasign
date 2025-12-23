@@ -6,7 +6,7 @@ use rest_api_auth::AUTH_SIGNATURE_VALIDITY_MINUTES;
 use rest_api_types::errors::ApiError;
 use sled;
 use std::path::PathBuf;
-use tokio::time;
+use tokio::{task, time};
 
 const CLEANUP_INTERVAL_MINUTES: i64 = AUTH_SIGNATURE_VALIDITY_MINUTES
     .checked_mul(2)
@@ -48,13 +48,13 @@ impl NonceCleanupActor {
     }
 
     /// Clean up expired nonces from the database
-    // FIXME: should this be made async?
-    fn cleanup_expired_nonces(&self) -> Result<usize, ApiError> {
+    /// This is a synchronous function that is blocking, so needs to be called in spawn_blocking
+    fn cleanup_expired_nonces(db: &sled::Db) -> Result<usize, ApiError> {
         let now = Utc::now();
         let mut removed_count = 0;
 
         // Iterate through all entries and remove expired ones
-        for result in self.db.iter() {
+        for result in db.iter() {
             let (key, value) =
                 result.map_err(|e| ApiError::ServerSetupError(std::io::Error::other(e)))?;
 
@@ -62,8 +62,7 @@ impl NonceCleanupActor {
                 && let Ok(expires_at) = DateTime::parse_from_rfc3339(expires_at_str)
                 && expires_at < now
             {
-                self.db
-                    .remove(&key)
+                db.remove(&key)
                     .map_err(|e| ApiError::ServerSetupError(std::io::Error::other(e)))?;
                 removed_count += 1;
             }
@@ -87,7 +86,29 @@ impl Message<NonceCleanupMessage> for NonceCleanupActor {
     ) -> Self::Reply {
         match msg {
             NonceCleanupMessage::PerformCleanup => {
-                let removed_count = self.cleanup_expired_nonces()?;
+                let db_clone = self.db.clone();
+
+                // spawn blocking operation to not block the current thread
+                let join_handle = task::spawn_blocking(move || {
+                    NonceCleanupActor::cleanup_expired_nonces(&db_clone)
+                });
+                // We get the result of the spanwed code by awaiting its join handle.
+                let cleanup_result = join_handle.await;
+                let removed_count = match cleanup_result {
+                    // Ok(inner_result) - Blocking task finished (successfully or with an inner error)
+                    Ok(inner_result) => {
+                        // Propagate the inner `Result<usize, ApiError>`
+                        inner_result
+                    }
+                    // Err(join_error) - Blocking thread panicked or was cancelled
+                    Err(join_error) => {
+                        // The error type of `Self::Reply` is `ApiError`.
+                        // We need to convert the `tokio::task::JoinError` into an `ApiError`.
+                        let err_msg =
+                            format!("Nonce cleanup spawned thread failed: {:?}", join_error);
+                        return Err(ApiError::ServerSetupError(std::io::Error::other(err_msg)));
+                    }
+                }?;
 
                 let self_ref = ctx.actor_ref().clone();
                 let cleanup_interval = self.cleanup_interval;
