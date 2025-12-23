@@ -53,7 +53,7 @@ impl<'de> Deserialize<'de> for RevocationFile {
 
         let helper = RevocationFileHelper::deserialize(deserializer)?;
         // Parse public key from base64 string
-        let initiator = AsfaloadPublicKeys::from_base64(helper.initiator)
+        let initiator = AsfaloadPublicKeys::from_base64(&helper.initiator)
             .map_err(|e| serde::de::Error::custom(format!("Failed to parse public key: {}", e)))?;
         Ok(RevocationFile {
             timestamp: helper.timestamp,

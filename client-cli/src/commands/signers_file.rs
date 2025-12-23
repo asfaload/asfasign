@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{ClientCliError, Result};
 use crate::utils::{ensure_dir_exists, validate_threshold};
-use features_lib::{AsfaloadPublicKeys, SignersConfig, AsfaloadPublicKeyTrait};
+use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig};
 
 fn get_group_info<P: AsfaloadPublicKeyTrait>(
     keys: Vec<P>,
@@ -90,7 +90,8 @@ pub fn handle_new_signers_file_command(
     let admin_group_info = get_group_info(all_admin_keys, admin_threshold)?;
 
     // Combine string and file-based master keys
-    let all_master_keys: Vec<AsfaloadPublicKeys> = combine_key_sources(master_key, master_key_file)?;
+    let all_master_keys: Vec<AsfaloadPublicKeys> =
+        combine_key_sources(master_key, master_key_file)?;
     let all_master_keys_count = all_master_keys.len();
     let master_group_info = get_group_info(all_master_keys, master_threshold)?;
     //
@@ -151,7 +152,7 @@ fn combine_key_sources<P: AsfaloadPublicKeyTrait>(
         .iter()
         .enumerate()
         .map(|(i, key_str)| {
-            P::from_base64(key_str.clone()).map_err(|e| {
+            P::from_base64(key_str).map_err(|e| {
                 crate::error::ClientCliError::SignersFile(format!(
                     "Failed to parse public key {}: {}",
                     i + 1,

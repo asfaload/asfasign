@@ -186,7 +186,7 @@ where
 
     // Parse each entry
     for (pubkey_b64, sig_b64) in signatures_map {
-        let pubkey = P::from_base64(pubkey_b64)
+        let pubkey = P::from_base64(&pubkey_b64)
             .map_err(|e| AggregateSignatureError::PublicKey(format!("{}", e)))?;
         let signature = S::from_base64(&sig_b64)
             .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;

@@ -139,7 +139,7 @@ fn test_keys_methods() -> Result<()> {
             "Public key file does not contain a second line",
         ))
     })?;
-    let public_key_from_string = AsfaloadPublicKeys::from_base64(public_key_string.to_string())?;
+    let public_key_from_string = AsfaloadPublicKeys::from_base64(public_key_string)?;
     public_key_from_string.verify(&signature, &bytes_to_sign)?;
 
     // Test AsfaloadPublicKey::from_base64
@@ -318,7 +318,7 @@ fn test_public_key_from_secret_key() -> Result<()> {
     let pubkey = kp.public_key();
     let seckey = kp.secret_key("mypass")?;
 
-    let derived_pubkey = AsfaloadPublicKeys::from_secret_key(seckey)?;
+    let derived_pubkey = AsfaloadPublicKeys::from_secret_key(&seckey)?;
     assert_eq!(derived_pubkey.to_base64(), pubkey.to_base64());
     Ok(())
 }

@@ -169,12 +169,12 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         Ok(AsfaloadPublicKey { key: k })
     }
 
-    fn from_base64(s: String) -> Result<Self, KeyError> {
-        let k = minisign::PublicKey::from_base64(s.as_str())?;
+    fn from_base64(s: &str) -> Result<Self, KeyError> {
+        let k = minisign::PublicKey::from_base64(s)?;
         Ok(AsfaloadPublicKey { key: k })
     }
 
-    fn from_secret_key(sk: Self::SecretKeyType) -> Result<Self, KeyError> {
+    fn from_secret_key(sk: &Self::SecretKeyType) -> Result<Self, KeyError> {
         let k = PublicKey::from_secret_key(&sk.key)?;
         Ok(AsfaloadPublicKey { key: k })
     }
@@ -452,7 +452,7 @@ mod asfaload_index_tests {
                 "Public key file does not contain a second line",
             ))
         })?;
-        let public_key_from_string = AsfaloadPublicKey::from_base64(public_key_string.to_string())?;
+        let public_key_from_string = AsfaloadPublicKey::from_base64(public_key_string)?;
         public_key_from_string.verify(&signature, &bytes_to_sign)?;
 
         // Test AsfaloadPublicKey::from_base64
@@ -628,7 +628,7 @@ mod asfaload_index_tests {
         let pubkey = kp.public_key();
         let seckey = kp.secret_key("mypass")?;
 
-        let derived_pubkey = AsfaloadPublicKey::from_secret_key(seckey)?;
+        let derived_pubkey = AsfaloadPublicKey::from_secret_key(&seckey)?;
         assert_eq!(derived_pubkey.to_base64(), pubkey.to_base64());
         Ok(())
     }

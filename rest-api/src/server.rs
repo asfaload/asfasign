@@ -1,4 +1,4 @@
-use crate::{handlers::add_file_handler, state::init_state};
+use crate::{auth_middleware::auth_middleware, handlers::add_file_handler, state::init_state};
 use axum::{Router, routing::post};
 use log::info;
 use rest_api_types::{environment::Environment, errors::ApiError};
@@ -13,9 +13,10 @@ pub async fn run_server(env: &Environment) -> Result<(), ApiError> {
         .await
         .map_err(|e| ApiError::InvalidFilePath(format!("Invalid git repo path: {}", e)))?;
     let app_state = init_state(canonical_repo_path);
-    // Build the router
+    // Build the router with authentication middleware
     let app = Router::new()
         .route("/add-file", post(add_file_handler))
+        .layer(axum::middleware::from_fn_with_state(app_state.clone(), auth_middleware))
         .with_state(app_state);
 
     // Start the server

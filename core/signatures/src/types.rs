@@ -94,7 +94,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
         Ok(Self::Minisign(pk))
     }
 
-    fn from_base64(s: String) -> Result<Self, KeyError> {
+    fn from_base64(s: &str) -> Result<Self, KeyError> {
         // With multiple backing algorithms, we could try one
         // after the other and return the corresponding one
         // if only one worked. If multiple attempts are successful
@@ -103,7 +103,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
         Ok(Self::Minisign(pk))
     }
 
-    fn from_secret_key(sk_in: AsfaloadSecretKeys) -> Result<Self, KeyError> {
+    fn from_secret_key(sk_in: &AsfaloadSecretKeys) -> Result<Self, KeyError> {
         match sk_in {
             AsfaloadSecretKeys::Minisign(sk) => {
                 let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_secret_key(sk)?;
@@ -123,7 +123,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AsfaloadSecretKeys {
     Minisign(AsfaloadSecretKey<minisign::SecretKey>),
 }

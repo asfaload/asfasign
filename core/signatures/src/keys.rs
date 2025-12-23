@@ -43,15 +43,15 @@ pub trait AsfaloadSecretKeyTrait: Sized {
     type Signature;
     fn sign(&self, data: &common::AsfaloadHashes) -> Result<Self::Signature, SignError>;
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError>;
-    fn from_string(s: String) -> Result<Self, KeyError> {
-        Self::from_bytes(&s.into_bytes())
+    fn from_string(s: &str) -> Result<Self, KeyError> {
+        Self::from_bytes(s.as_bytes())
     }
     fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError>;
 }
 
 // Struct to store a secret key immediately usable.
 // This means that for minisign, it holds the non-encrypted secret key.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AsfaloadSecretKey<K> {
     // Keep it private as for minisign it is the decrypted key, i.e. non password protected.
     key: K,
@@ -69,14 +69,14 @@ pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone + std::fm
     }
     fn from_filename(n: String) -> Result<Self, KeyError> {
         let b64 = n.replace("-", "+").replace("_", "/");
-        Self::from_base64(b64)
+        Self::from_base64(&b64)
     }
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError>;
-    fn from_base64(s: String) -> Result<Self, KeyError> {
-        Self::from_bytes(&s.into_bytes())
+    fn from_base64(s: &str) -> Result<Self, KeyError> {
+        Self::from_bytes(s.as_bytes())
     }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError>;
-    fn from_secret_key(sk: Self::SecretKeyType) -> Result<Self, KeyError>;
+    fn from_secret_key(sk: &Self::SecretKeyType) -> Result<Self, KeyError>;
     fn key_format(&self) -> KeyFormat;
     fn key(&self) -> Self::KeyType;
 }
@@ -92,7 +92,7 @@ where
 {
     type Error = KeyError;
     fn try_from(value: String) -> Result<AsfaloadPublicKey<K>, KeyError> {
-        Self::from_base64(value)
+        Self::from_base64(&value)
     }
 }
 
