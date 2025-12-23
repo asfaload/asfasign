@@ -28,8 +28,7 @@ pub struct NonceCacheActor {
 
 impl NonceCacheActor {
     pub fn new(db_path: PathBuf) -> Result<Self, ApiError> {
-        let db = sled::open(&db_path)
-            .map_err(|e| ApiError::ServerSetupError(std::io::Error::other(e)))?;
+        let db = sled::open(&db_path)?;
 
         info!(
             "NonceCacheActor initialized with database at: {:?}",
@@ -54,11 +53,7 @@ impl Message<NonceCacheMessage> for NonceCacheActor {
         match msg {
             NonceCacheMessage::CheckAndStoreNonce { nonce } => {
                 // Fast path: check if nonce already exists
-                if self
-                    .db
-                    .contains_key(nonce.as_bytes())
-                    .map_err(|e| ApiError::ServerSetupError(std::io::Error::other(e)))?
-                {
+                if self.db.contains_key(nonce.as_bytes())? {
                     error!("Replay attack detected: nonce {} already used", nonce);
                     return Ok(NonceCacheResponse::Refused);
                 }
@@ -66,8 +61,7 @@ impl Message<NonceCacheMessage> for NonceCacheActor {
                 // Store nonce with TTL (expiration timestamp)
                 let expires_at = Utc::now() + Duration::minutes(self.ttl_minutes);
                 self.db
-                    .insert(nonce.as_bytes(), expires_at.to_rfc3339().as_bytes())
-                    .map_err(|e| ApiError::ServerSetupError(std::io::Error::other(e)))?;
+                    .insert(nonce.as_bytes(), expires_at.to_rfc3339().as_bytes())?;
 
                 info!(
                     "Stored new nonce {} (expires at: {})",

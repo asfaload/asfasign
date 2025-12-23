@@ -61,6 +61,9 @@ pub mod errors {
 
         #[error("Replay attack detected: nonce already used")]
         ReplayAttackDetected,
+
+        #[error("Sled operation error")]
+        SledError(#[from] sled::Error),
     }
 
     impl From<hyper::header::ToStrError> for ApiError {
@@ -130,6 +133,7 @@ pub mod errors {
                 ApiError::SignatureVerificationFailed => StatusCode::UNAUTHORIZED,
                 ApiError::ReplayAttackDetected => StatusCode::UNAUTHORIZED,
                 ApiError::StateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::SledError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }

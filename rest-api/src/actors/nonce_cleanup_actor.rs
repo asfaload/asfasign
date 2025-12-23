@@ -29,8 +29,7 @@ pub struct NonceCleanupActor {
 
 impl NonceCleanupActor {
     pub fn new(db_path: PathBuf) -> Result<Self, ApiError> {
-        let db = sled::open(&db_path)
-            .map_err(|e| ApiError::ServerSetupError(std::io::Error::other(e)))?;
+        let db = sled::open(&db_path)?;
 
         info!(
             "NonceCleanupActor initialized with database at: {:?}",
@@ -55,15 +54,13 @@ impl NonceCleanupActor {
 
         // Iterate through all entries and remove expired ones
         for result in db.iter() {
-            let (key, value) =
-                result.map_err(|e| ApiError::ServerSetupError(std::io::Error::other(e)))?;
+            let (key, value) = result?;
 
             if let Ok(expires_at_str) = std::str::from_utf8(&value)
                 && let Ok(expires_at) = DateTime::parse_from_rfc3339(expires_at_str)
                 && expires_at < now
             {
-                db.remove(&key)
-                    .map_err(|e| ApiError::ServerSetupError(std::io::Error::other(e)))?;
+                db.remove(&key)?;
                 removed_count += 1;
             }
         }

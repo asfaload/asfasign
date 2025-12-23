@@ -12,6 +12,7 @@ thiserror = "2.0.17"
 tokio = "1.48.0"
 hyper = "1.0"
 rest_api_auth = { path = "../rest_api_auth/" }
+sled = "0.34.7"
 
 [lints]
 workspace = true
