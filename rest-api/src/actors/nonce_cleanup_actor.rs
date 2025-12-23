@@ -8,8 +8,9 @@ use sled;
 use std::path::PathBuf;
 use tokio::time;
 
-// FIXME: risk of overflow?
-const CLEANUP_INTERVAL_MINUTES: i64 = AUTH_SIGNATURE_VALIDITY_MINUTES * 2;
+const CLEANUP_INTERVAL_MINUTES: i64 = AUTH_SIGNATURE_VALIDITY_MINUTES
+    .checked_mul(2)
+    .expect("CLEANUP_INTERVAL_MINUTES value overflows");
 
 #[derive(Debug, Clone)]
 pub enum NonceCleanupMessage {
@@ -38,7 +39,11 @@ impl NonceCleanupActor {
 
         Ok(Self {
             db,
-            cleanup_interval: time::Duration::from_secs(CLEANUP_INTERVAL_MINUTES as u64 * 60),
+            cleanup_interval: time::Duration::from_secs(
+                (CLEANUP_INTERVAL_MINUTES as u64)
+                    .checked_mul(60)
+                    .expect("CLEANUP_INTERVAL_MINUTES values overflows when converted to seconds"),
+            ),
         })
     }
 
