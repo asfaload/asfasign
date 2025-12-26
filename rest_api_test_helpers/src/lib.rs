@@ -6,9 +6,17 @@ use std::{
 
 use anyhow::Result;
 use git2::Repository;
-use rest_api_types::{environment::Environment, errors::ApiError};
+use rest_api_types::errors::ApiError;
+
+// Structure to hold environment in which the server runs.
+#[derive(Clone)]
+pub struct Environment {
+    pub git_repo_path: PathBuf,
+    pub server_port: u16,
+}
 use tokio::{
     fs::File,
+    io::AsyncWriteExt,
     net::TcpStream,
     time::{Instant, timeout},
 };
@@ -77,6 +85,14 @@ pub fn build_env(git_repo_path: &Path, server_port: u16) -> Environment {
     }
 }
 
+/// Helper function to build a test config from environment
+pub fn build_test_config_from_env(env: &Environment) -> rest_api::config::AppConfig {
+    rest_api::config::AppConfig {
+        git_repo_path: env.git_repo_path.clone(),
+        server_port: env.server_port,
+    }
+}
+
 pub async fn wait_for_server(
     env: &Environment,
     timeout_in_sec: Option<u64>,
@@ -139,7 +155,6 @@ pub async fn wait_for_commit(
     }
 }
 
-use tokio::io::AsyncWriteExt;
 pub async fn write_git_hook(
     repo_path_buf: PathBuf,
     name: &str,
