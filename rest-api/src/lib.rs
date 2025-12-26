@@ -1,6 +1,6 @@
 pub mod actors;
 pub mod auth_middleware;
-pub mod environment;
+pub mod config;
 pub mod handlers;
 pub mod path_validation;
 pub mod server;

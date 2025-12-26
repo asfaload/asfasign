@@ -13,6 +13,7 @@ tokio = "1.48.0"
 hyper = "1.0"
 rest_api_auth = { path = "../rest_api_auth/" }
 sled = "0.34.7"
+config = "0.15.19"
 
 [lints]
 workspace = true
