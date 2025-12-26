@@ -7,13 +7,6 @@ use std::{
 use anyhow::Result;
 use git2::Repository;
 use rest_api_types::errors::ApiError;
-
-// Structure to hold environment in which the server runs.
-#[derive(Clone)]
-pub struct Environment {
-    pub git_repo_path: PathBuf,
-    pub server_port: u16,
-}
 use tokio::{
     fs::File,
     io::AsyncWriteExt,
@@ -78,26 +71,19 @@ pub fn url_for(action: &str, port: u16) -> String {
     format!("http://localhost:{port}/{action}")
 }
 
-pub fn build_env(git_repo_path: &Path, server_port: u16) -> Environment {
-    Environment {
+/// Helper function to build a test config
+pub fn build_test_config(git_repo_path: &Path, server_port: u16) -> rest_api::config::AppConfig {
+    rest_api::config::AppConfig {
         git_repo_path: git_repo_path.to_path_buf(),
         server_port,
     }
 }
 
-/// Helper function to build a test config from environment
-pub fn build_test_config_from_env(env: &Environment) -> rest_api::config::AppConfig {
-    rest_api::config::AppConfig {
-        git_repo_path: env.git_repo_path.clone(),
-        server_port: env.server_port,
-    }
-}
-
 pub async fn wait_for_server(
-    env: &Environment,
+    config: &rest_api::config::AppConfig,
     timeout_in_sec: Option<u64>,
 ) -> Result<(), ApiError> {
-    let address = format!("127.0.0.1:{}", env.server_port);
+    let address = format!("127.0.0.1:{}", config.server_port);
 
     let deadline =
         tokio::time::Instant::now() + tokio::time::Duration::from_secs(timeout_in_sec.unwrap_or(2));

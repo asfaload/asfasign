@@ -10,7 +10,7 @@ pub mod auth_tests {
         HEADER_TIMESTAMP,
     };
     use rest_api_test_helpers::{
-        build_env, build_test_config_from_env, get_random_port, init_git_repo, url_for, wait_for_server,
+        build_test_config, get_random_port, init_git_repo, url_for, wait_for_server,
     };
     use serde_json::{Value, json};
     use tempfile::TempDir;
@@ -27,13 +27,12 @@ pub mod auth_tests {
         init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
 
         let port = get_random_port().await?;
-        let env = build_env(&repo_path_buf, port);
-        let config = build_test_config_from_env(&env);
+        let config = build_test_config(&repo_path_buf, port);
 
         // Start the server in the background
         let config_clone = config.clone();
         let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
-        wait_for_server(&env, None).await?;
+        wait_for_server(&config, None).await?;
 
         // Create a client to send requests
         let client = reqwest::Client::new();

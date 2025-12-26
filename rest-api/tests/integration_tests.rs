@@ -10,7 +10,7 @@ pub mod tests {
         HEADER_TIMESTAMP,
     };
     use rest_api_test_helpers::{
-        build_env, build_test_config_from_env, file_exists_in_repo, get_latest_commit, get_random_port, init_git_repo,
+        build_test_config, file_exists_in_repo, get_latest_commit, get_random_port, init_git_repo,
         read_file_content, url_for, wait_for_commit, wait_for_server,
     };
     use serde_json::{Value, json};
@@ -54,13 +54,12 @@ pub mod tests {
         // Initialize git repository
         init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
 
-        let env = build_env(&repo_path_buf, port);
-        let config = build_test_config_from_env(&env);
+        let config = build_test_config(&repo_path_buf, port);
 
         // Start the server in the background
         let config_clone = config.clone();
         let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
-        wait_for_server(&env, None).await?;
+        wait_for_server(&config, None).await?;
 
         // Create a client to send requests
         let client = reqwest::Client::new();
@@ -142,12 +141,11 @@ pub mod tests {
         // Initialize git repository
         init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
 
-        let env = build_env(&repo_path_buf, port);
-        let config = build_test_config_from_env(&env);
+        let config = build_test_config(&repo_path_buf, port);
         // Start the server in the background
         let config_clone = config.clone();
         let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
-        wait_for_server(&env, None).await?;
+        wait_for_server(&config, None).await?;
 
         // Create a client to send requests
         let client = reqwest::Client::new();
@@ -204,12 +202,11 @@ pub mod tests {
         init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
 
         let port = get_random_port().await?;
-        let env = build_env(&repo_path_buf, port);
-        let config = build_test_config_from_env(&env);
+        let config = build_test_config(&repo_path_buf, port);
         // Start the server in the background
         let config_clone = config.clone();
         let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
-        wait_for_server(&env, None).await?;
+        wait_for_server(&config, None).await?;
 
         // Create a client to send requests
         let client = reqwest::Client::new();
@@ -303,12 +300,11 @@ pub mod tests {
         // Don't initialize git repository - this should cause the commit to fail
         // make_git_commit_fail(repo_path_buf.clone()).await?;
 
-        let env = build_env(&repo_path_buf, port);
-        let config = build_test_config_from_env(&env);
+        let config = build_test_config(&repo_path_buf, port);
         // Start the server in the background
         let config_clone = config.clone();
         let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
-        wait_for_server(&env, None).await?;
+        wait_for_server(&config, None).await?;
 
         // Create a client to send requests
         let client = reqwest::Client::new();
@@ -366,12 +362,11 @@ pub mod tests {
         init_git_repo(&repo_path_buf).expect("Failed to initialize git repo");
 
         let port = get_random_port().await?;
-        let env = build_env(&repo_path_buf, port);
-        let config = build_test_config_from_env(&env);
+        let config = build_test_config(&repo_path_buf, port);
         // Start the server in the background
         let config_clone = config.clone();
         let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
-        wait_for_server(&env, None).await?;
+        wait_for_server(&config, None).await?;
 
         // Create a client to send requests
         let client = reqwest::Client::new();
