@@ -64,6 +64,18 @@ pub mod errors {
 
         #[error("Sled operation error")]
         SledError(#[from] sled::Error),
+
+        #[error("Server configuration error: {0}")]
+        ServerConfigError(#[from] ServerConfigError),
+    }
+
+    #[derive(Error, Debug)]
+    pub enum ServerConfigError {
+        #[error("Configuration building error : {0}")]
+        BuildError(#[from] config::ConfigError),
+
+        #[error("Invalid configuration : {0}")]
+        InvalidConfig(String),
     }
 
     impl From<hyper::header::ToStrError> for ApiError {
@@ -134,6 +146,7 @@ pub mod errors {
                 ApiError::ReplayAttackDetected => StatusCode::UNAUTHORIZED,
                 ApiError::StateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::SledError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::ServerConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }

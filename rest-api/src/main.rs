@@ -1,6 +1,6 @@
 use env_logger::Builder;
 use log::LevelFilter;
-use rest_api::environment::init_env;
+use rest_api::config::get_config;
 use rest_api::server::run_server;
 use rest_api_types::errors::ApiError;
 
@@ -9,7 +9,7 @@ async fn main() -> Result<(), ApiError> {
     // Initialize logging
     Builder::new().filter_level(LevelFilter::Info).init();
 
-    let env = init_env()?;
+    let config = get_config()?;
 
-    run_server(&env).await
+    run_server(&config).await
 }

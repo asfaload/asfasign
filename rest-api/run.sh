@@ -38,7 +38,7 @@ fi
 echo "Build successful!"
 
 # Set the environment variable and start the server
-export ASFALOAD_GIT_REPO_PATH="$GIT_REPO_PATH"
+export ASFASIGN_GIT_REPO_PATH="$GIT_REPO_PATH"
 echo "Starting REST API server with git repository at: $GIT_REPO_PATH"
 
 cat <<EOF

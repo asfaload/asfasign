@@ -5,8 +5,9 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
-tokio = "1.48.0"
+tokio = { version = "1.48.0", features = ["full"] }
 rest_api_types = { path = "../rest_api_types/" }
+rest-api = { path = "../rest-api/" }
 git2 = "0.20.3"
 
 [lints]
