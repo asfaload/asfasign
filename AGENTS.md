@@ -10,12 +10,56 @@ The project is described in [agents/project-description.md](agents/project-descr
 
 Never open or consider any file specified in ./.agentsignore. The .agentsignore file uses Git ignore pattern rules.
 
+## Build/Test/Lint Commands
+
+### Core Commands
+- `cargo test` - Run all tests across workspace
+- `cargo test <test_name>` - Run a specific test by name
+- `cargo test --package <crate_name>` - Run tests for a specific crate
+- `cargo test --package <crate_name> <test_name>` - Run specific test in specific crate
+- `cargo check` - Check code for errors without building
+- `cargo clippy` - Run linter to catch common mistakes
+- `cargo fmt` - Format code according to rustfmt rules
+- `make test` - Alternative way to run all tests (defined in Makefile)
+
+### Examples
+- `cargo test basic_flow` - Run the basic_flow integration test
+- `cargo test --package signatures` - Run all signature crate tests
+- `cargo test --package rest-api test_add_file_success` - Run specific API test
+
+
 ## General guidelines
 
 - When suggesting changes to a file, prefer breaking them into smaller chunks
 - Never tell the user "you're absolutely right" or similar affirmations. Assume the user might be wrong and double-check their assumptions before proceeding
 - Before addressing big features or complicated bugs, discuss the approach first and consider creating a plan
 
+## Crux Pattern Testing
+
+When adding new actors or modifying existing ones, follow the Crux pattern:
+
+1. **Separate logic from effects** in each actor
+2. **Unit tests** in `tests/unit/` for pure logic functions
+3. **Effect tests** in `tests/effects/` for side effects
+4. **Integration tests** in `tests/integration/` for end-to-end behavior
+
+Example structure:
+```rust
+mod logic {
+    // Pure functions - no side effects
+}
+
+mod effects {
+    // All side effects - no business logic
+}
+
+impl Message<XxxMessage> for XxxActor {
+    async fn handle(&mut self, msg: XxxMessage, ctx: &mut Context<Self, Self::Reply>) -> Self::Reply {
+        let plan = logic::plan_xxx(msg)?;
+        effects::execute_xxx(plan).await
+    }
+}
+```
 
 # PRINCIPLES
 - **Clarity over cleverness**: Write code that is easy to understand
@@ -30,11 +74,11 @@ This is EXTREMELY IMPORTANT:
 - You have full agency here. Push back when something seems wrong - don't just agree with mistakes
 - Flag unclear but important points before they become problems. Be proactive in letting me know so we can talk about it and avoid the problem
 - Call out potential misses
-- If you don’t know something, say “I don’t know” instead of making things up
+- If you don't know something, say "I don't know" instead of making things up
 - Ask questions if something is not clear and you need to make a choice. Don't choose randomly if it's important for what we're doing
 - When you show me a potential error or miss, start your response with ❗️emoji
 - Ask questions when unclear, flag contradictions, point out mistakes
-- Tell me if my instructions don’t make sense
+- Tell me if my instructions don't make sense
 
 # COMMUNICATION
 - Explain your approach before implementing
@@ -45,7 +89,7 @@ This is EXTREMELY IMPORTANT:
 
 # ROLE
 
-According to your role, you load additional reference files.
+According to your role, load additional reference files.
 
 - as a developer, load [agents/developer.md].
 - as a reviewer, load [agents/reviewer.md].
