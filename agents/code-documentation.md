@@ -13,3 +13,7 @@ This is bad as is includes step numbering and only explains what is done, not wh
 - Never include line numbers or line counts in documentation
 - Reference files by path only, not with specific line numbers
 - Always use sentence case in headings
+- Add doc comments (`///`) for public APIs
+- Use module-level comments (`//!`) for crate documentation
+- Include examples in doc comments where helpful
+- Document error conditions and panics

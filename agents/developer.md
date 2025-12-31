@@ -21,7 +21,6 @@ read and follow the instructions in these documents:
 In the course of your development, you should regularly run tests to validate your changes.
 When testing your code changes, it is sufficient to run the tests of the crates you modify. It is not necessary to run the tests of unmodified crates.
 
-
 # RESTRICTIONS
 - Always ask before making breaking changes
 - Don't add unnecessary dependencies
