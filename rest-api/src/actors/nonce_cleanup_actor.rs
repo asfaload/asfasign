@@ -12,6 +12,50 @@ const CLEANUP_INTERVAL_MINUTES: i64 = AUTH_SIGNATURE_VALIDITY_MINUTES
     .checked_mul(2)
     .expect("CLEANUP_INTERVAL_MINUTES value overflows");
 
+mod logic {
+    use chrono::{DateTime, Utc};
+
+    #[derive(Debug)]
+    pub struct CleanupPlan {
+        pub current_time: DateTime<Utc>,
+    }
+
+    pub fn plan_cleanup(current_time: DateTime<Utc>) -> CleanupPlan {
+        // Pure logic - just returns current time
+        // Real filtering will happen in effects where we can access the DB
+        CleanupPlan { current_time }
+    }
+}
+
+mod effects {
+    use super::logic::CleanupPlan;
+    use super::*;
+
+    pub fn execute_cleanup(plan: CleanupPlan, db: &sled::Db) -> Result<usize, ApiError> {
+        let mut removed_count = 0;
+        let current_time = plan.current_time;
+
+        // Iterate through all entries and remove expired ones
+        for result in db.iter() {
+            let (key, value) = result?;
+
+            if let Ok(expires_at_str) = std::str::from_utf8(&value)
+                && let Ok(expires_at) = DateTime::parse_from_rfc3339(expires_at_str)
+                && expires_at < current_time
+            {
+                db.remove(&key)?;
+                removed_count += 1;
+            }
+        }
+
+        if removed_count > 0 {
+            info!("Cleaned up {} expired nonces", removed_count);
+        }
+
+        Ok(removed_count)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum NonceCleanupMessage {
     PerformCleanup,
@@ -45,32 +89,6 @@ impl NonceCleanupActor {
             ),
         })
     }
-
-    /// Clean up expired nonces from the database
-    /// This is a synchronous function that is blocking, so needs to be called in spawn_blocking
-    fn cleanup_expired_nonces(db: &sled::Db) -> Result<usize, ApiError> {
-        let now = Utc::now();
-        let mut removed_count = 0;
-
-        // Iterate through all entries and remove expired ones
-        for result in db.iter() {
-            let (key, value) = result?;
-
-            if let Ok(expires_at_str) = std::str::from_utf8(&value)
-                && let Ok(expires_at) = DateTime::parse_from_rfc3339(expires_at_str)
-                && expires_at < now
-            {
-                db.remove(&key)?;
-                removed_count += 1;
-            }
-        }
-
-        if removed_count > 0 {
-            info!("Cleaned up {} expired nonces", removed_count);
-        }
-
-        Ok(removed_count)
-    }
 }
 
 impl Message<NonceCleanupMessage> for NonceCleanupActor {
@@ -83,13 +101,13 @@ impl Message<NonceCleanupMessage> for NonceCleanupActor {
     ) -> Self::Reply {
         match msg {
             NonceCleanupMessage::PerformCleanup => {
+                let plan = logic::plan_cleanup(Utc::now());
                 let db_clone = self.db.clone();
 
                 // spawn blocking operation to not block the current thread
-                let join_handle = task::spawn_blocking(move || {
-                    NonceCleanupActor::cleanup_expired_nonces(&db_clone)
-                });
-                // We get the result of the spanwed code by awaiting its join handle.
+                let join_handle =
+                    task::spawn_blocking(move || effects::execute_cleanup(plan, &db_clone));
+
                 let cleanup_result = join_handle.await;
                 let removed_count = match cleanup_result {
                     // Ok(inner_result) - Blocking task finished (successfully or with an inner error)
@@ -103,7 +121,7 @@ impl Message<NonceCleanupMessage> for NonceCleanupActor {
                         // We need to convert the `tokio::task::JoinError` into an `ApiError`.
                         let err_msg =
                             format!("Nonce cleanup spawned thread failed: {:?}", join_error);
-                        return Err(ApiError::ServerSetupError(std::io::Error::other(err_msg)));
+                        return Err(ApiError::ActorOperationFailed(err_msg));
                     }
                 }?;
 

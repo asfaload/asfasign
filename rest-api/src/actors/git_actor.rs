@@ -7,6 +7,73 @@ use std::path::PathBuf;
 use crate::path_validation::NormalisedPaths;
 use git2::{Repository, Signature};
 
+pub mod logic {
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    pub struct CommitPlan {
+        pub repo_path: PathBuf,
+        pub relative_path: PathBuf,
+        pub commit_message: String,
+    }
+
+    pub fn plan_commit(msg: CommitFile) -> Result<CommitPlan, ApiError> {
+        // Pure validation logic - no I/O
+        if msg.commit_message.trim().is_empty() {
+            return Err(ApiError::ActorOperationFailed(
+                "Commit message cannot be empty".to_string(),
+            ));
+        }
+
+        // Validate file paths
+        if msg.file_paths.relative_path().as_os_str().is_empty() {
+            return Err(ApiError::InvalidFilePath(
+                "File path cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(CommitPlan {
+            repo_path: msg.file_paths.base_dir().clone(),
+            relative_path: msg.file_paths.relative_path().clone(),
+            commit_message: msg.commit_message,
+        })
+    }
+}
+
+pub mod effects {
+    use super::logic::CommitPlan;
+    use super::*;
+
+    pub async fn execute_commit(plan: CommitPlan) -> Result<(), ApiError> {
+        // All git operations here - no business logic
+        let repo_path = plan.repo_path;
+        let relative_path = plan.relative_path;
+        let commit_message = plan.commit_message;
+
+        tokio::task::spawn_blocking(move || {
+            // Move existing git code here
+            let repo = Repository::open(&repo_path)?;
+            let signature = Signature::now(ACTOR_NAME, GIT_USER_EMAIL)?;
+            let mut index = repo.index()?;
+            index.add_path(&relative_path)?;
+            let tree_oid = index.write_tree()?;
+            let tree = repo.find_tree(tree_oid)?;
+            let parent_commit = repo.head().and_then(|head| head.peel_to_commit()).ok();
+            let parents: Vec<&git2::Commit> = parent_commit.as_ref().into_iter().collect();
+            repo.commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                &commit_message,
+                &tree,
+                &parents,
+            )?;
+            Ok(())
+        })
+        .await?
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CommitFile {
     // File path is relative to the git root
@@ -26,66 +93,6 @@ impl GitActor {
         info!("GitActor created with repo path: {:?}", repo_path);
         Self { repo_path }
     }
-    async fn commit_file(
-        &self,
-        file_paths: NormalisedPaths,
-        commit_message: &str,
-    ) -> Result<(), ApiError> {
-        if file_paths.base_dir() != self.repo_path {
-            return Err(ApiError::InvalidFilePath(format!(
-                "File's base_dir ({}) != actor's git dir ({})",
-                file_paths.base_dir().to_string_lossy(),
-                self.repo_path.to_string_lossy()
-            )));
-        }
-        info!(
-            "Attempting to commit file: {:?} with message: {}",
-            file_paths.absolute_path(),
-            commit_message
-        );
-        let repo_path = self.repo_path.clone();
-        let file_path = file_paths.relative_path();
-        let commit_message = commit_message.to_string();
-
-        tokio::task::spawn_blocking(move || {
-            // Open the repository
-            let repo = Repository::open(&repo_path)?;
-
-            // Create a signature for the commit
-            let signature = Signature::now(ACTOR_NAME, GIT_USER_EMAIL)?;
-
-            // Add the file to the index
-            let mut index = repo.index()?;
-            index.add_path(&file_path)?;
-
-            // Get the tree from the index
-            let tree_oid = index.write_tree()?;
-            let tree = repo.find_tree(tree_oid)?;
-
-            // Try to get the current HEAD for parent commit, or use empty parents for initial commit
-            let parent_commit = repo
-                .head()
-                .and_then(|head| head.peel_to_commit()) // Peel to commit if HEAD exists
-                .ok(); // Convert Result<Commit> to Option<Commit>
-
-            // Collect an optional reference into a Vec<&Commit> (empty if None)
-            let parents: Vec<&git2::Commit> = parent_commit.as_ref().into_iter().collect();
-
-            // Create the commit
-            repo.commit(
-                Some("HEAD"),
-                &signature,
-                &signature,
-                &commit_message,
-                &tree,
-                &parents,
-            )?;
-
-            info!("Successfully committed file: {:?}", file_path);
-            Ok(())
-        })
-        .await?
-    }
 }
 // GitActor implements Message<CommitFile> - the actor handles CommitFile messages
 impl Message<CommitFile> for GitActor {
@@ -102,7 +109,20 @@ impl Message<CommitFile> for GitActor {
         );
         info!("Commit message: {}", msg.commit_message);
 
-        self.commit_file(msg.file_paths, &msg.commit_message).await
+        // Validate repo path matches actor's configured repo
+        if msg.file_paths.base_dir() != self.repo_path {
+            return Err(ApiError::InvalidFilePath(format!(
+                "File's base_dir ({}) != actor's git dir ({})",
+                msg.file_paths.base_dir().to_string_lossy(),
+                self.repo_path.to_string_lossy()
+            )));
+        }
+
+        // 1. Plan the operation (pure logic)
+        let plan = logic::plan_commit(msg)?;
+
+        // 2. Execute the plan (side effects)
+        effects::execute_commit(plan).await
     }
 }
 
@@ -135,8 +155,6 @@ mod tests {
         let repo_path_buf = temp_dir.path().to_path_buf();
 
         // Don't initialize git repo - this should cause the commit to fail
-        // Create a GitActor
-        let git_actor = GitActor::new(repo_path_buf.to_path_buf());
 
         // Create a test file
         let test_file_path = PathBuf::from("test_file.txt");
@@ -146,10 +164,18 @@ mod tests {
         test_file.flush().await.unwrap();
 
         let normalised_paths = NormalisedPaths::new(repo_path_buf, test_file_path).await?;
-        // Try to commit the file - this should fail because there's no git repo
-        let result = git_actor
-            .commit_file(normalised_paths, "Test commit message")
-            .await;
+
+        // Create a CommitFile message
+        let commit_msg = CommitFile {
+            file_paths: normalised_paths,
+            commit_message: "Test commit message".to_string(),
+        };
+
+        // Test the logic planning - should succeed
+        let plan = logic::plan_commit(commit_msg).unwrap();
+
+        // Test the effects execution - should fail because there's no git repo
+        let result = effects::execute_commit(plan).await;
 
         // Verify that the commit failed
         assert!(result.is_err());

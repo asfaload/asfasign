@@ -50,5 +50,13 @@ features_lib = { path = "../core/features_lib/" }
 chrono = "0.4"
 sled = "0.34"
 
+[[test]]
+name = "git_actor_tests"
+path = "tests/unit/git_actor_tests.rs"
+
+[[test]]
+name = "git_actor_effects_tests"
+path = "tests/effects/git_actor_effects_tests.rs"
+
 [lints]
 workspace = true

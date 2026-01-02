@@ -62,6 +62,9 @@ pub mod errors {
         #[error("Replay attack detected: nonce already used")]
         ReplayAttackDetected,
 
+        #[error("Invalid nonce: {0}")]
+        InvalidNonce(String),
+
         #[error("Sled operation error")]
         SledError(#[from] sled::Error),
 
@@ -144,6 +147,7 @@ pub mod errors {
                 ApiError::TimestampValidationFailed(_) => StatusCode::UNAUTHORIZED,
                 ApiError::SignatureVerificationFailed => StatusCode::UNAUTHORIZED,
                 ApiError::ReplayAttackDetected => StatusCode::UNAUTHORIZED,
+                ApiError::InvalidNonce(_) => StatusCode::BAD_REQUEST,
                 ApiError::StateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::SledError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::ServerConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
