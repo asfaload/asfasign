@@ -101,6 +101,7 @@ impl Actor for NonceCacheActor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
     use kameo::actor::Spawn;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -185,51 +186,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_concurrent_nonce_handling() {
+    async fn test_concurrent_message_handling() -> Result<()> {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let db_name = format!("nonce_concurrent_{}.db", Uuid::new_v4());
-        let db_path = temp_dir.path().join(db_name);
+        let db_path = temp_dir
+            .path()
+            .join(format!("nonce_concurrent_msg_{}.db", Uuid::new_v4()));
+        let actor_ref = NonceCacheActor::spawn(db_path);
+        actor_ref.wait_for_startup().await;
 
-        let actor = NonceCacheActor::new(db_path).expect("Failed to create actor");
-        let actor_arc = std::sync::Arc::new(tokio::sync::Mutex::new(actor));
+        let nonce = "concurrent_message_nonce".to_string();
+        let mut handles = vec![];
 
-        let nonce = "concurrent_test_nonce".to_string();
+        // Spawn 10 tasks that all try to use the same nonce concurrently
+        for _ in 0..10 {
+            let actor_ref_clone = actor_ref.clone();
+            let nonce_clone = nonce.clone();
+            handles.push(tokio::spawn(async move {
+                actor_ref_clone
+                    .ask(NonceCacheMessage::CheckAndStoreNonce { nonce: nonce_clone })
+                    .await
+            }));
+        }
 
-        // Test actual concurrent access using tokio::task with shared mutex
-        let actor_clone1 = actor_arc.clone();
-        let nonce_clone1 = nonce.clone();
-        let handle1 = tokio::task::spawn(async move {
-            let mut actor = actor_clone1.lock().await;
-            actor.check_and_store_nonce(nonce_clone1).await
-        });
+        let results = futures::future::join_all(handles).await;
 
-        let actor_clone2 = actor_arc.clone();
-        let nonce_clone2 = nonce.clone();
-        let handle2 = tokio::task::spawn(async move {
-            let mut actor = actor_clone2.lock().await;
-            actor.check_and_store_nonce(nonce_clone2).await
-        });
+        let accepted_count = results
+            .into_iter()
+            .filter_map(Result::ok) // Filter out JoinErrors
+            .filter_map(Result::ok) // Filter out AskErrors
+            .filter(|res| *res == NonceCacheResponse::Accepted)
+            .count();
 
-        let (result1, result2) = tokio::join!(handle1, handle2);
-
-        let result1 = result1.expect("First task should complete successfully");
-        let result2 = result2.expect("Second task should complete successfully");
-
-        assert!(result1.is_ok(), "First concurrent usage should succeed");
-        assert!(result2.is_ok(), "Second concurrent usage should succeed");
-
-        // One should be accepted, the other refused
-        let response1 = result1.unwrap();
-        let response2 = result2.unwrap();
-
-        assert!(
-            (response1 == NonceCacheResponse::Accepted && response2 == NonceCacheResponse::Refused)
-                || (response1 == NonceCacheResponse::Refused
-                    && response2 == NonceCacheResponse::Accepted),
-            "Exactly one concurrent request should be accepted, got: {:?} and {:?}",
-            response1,
-            response2
+        assert_eq!(
+            accepted_count, 1,
+            "Exactly one of the concurrent requests should be accepted"
         );
+        Ok(())
     }
 
     #[tokio::test]
