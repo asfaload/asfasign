@@ -259,7 +259,7 @@ pub mod auth_tests {
         assert_eq!(response_body["success"], true);
 
         // Test 2: Oversized file (should fail)
-        let oversized_content = "x".repeat(MAX_BODY_SIZE + 1); // 501KB > 500KB limit
+        let oversized_content = "x".repeat(MAX_BODY_SIZE + 1);
         let payload = json!({
             "file_path": "oversized_file.txt",
             "content": oversized_content
@@ -291,9 +291,16 @@ pub mod auth_tests {
         );
 
         // Test 3: Accepted size should be successful
-        let max_content = "x".repeat(MAX_BODY_SIZE / 4);
+        let file_path = "max_size_file.txt";
+        let overhead = json!({
+            "file_path": file_path,
+            "content": ""
+        })
+        .to_string()
+        .len();
+        let max_content = "x".repeat(MAX_BODY_SIZE - overhead);
         let payload = json!({
-            "file_path": "max_size_file.txt",
+            "file_path": file_path,
             "content": max_content
         });
         let payload_string = payload.to_string();
