@@ -124,10 +124,170 @@ impl Actor for GitActor {
 mod tests {
     use super::*;
     use anyhow::Result;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use tempfile::TempDir;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
+
+    // Helper to initialise a git repo for these tests
+    fn initialise_git_actor_repo<P: AsRef<Path>>(repo_path: P) -> Result<Repository> {
+        // Initialize a git repository
+        let repo = Repository::init(repo_path)?;
+
+        // Define specific scope because repo.find_tree borrows the repo. Without this scope,
+        // it would be impossible to return the repo, as tree, which borrows repo, would still be
+        // in scope.
+        {
+            // Configure git user (required for commits)
+            let signature = Signature::now("Test User", "test@example.com")?;
+            let tree_oid = repo.index()?.write_tree()?;
+            let tree = repo.find_tree(tree_oid)?;
+            repo.commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                "Initial commit",
+                &tree,
+                &[],
+            )?;
+        }
+
+        Ok(repo)
+    }
+
+    #[tokio::test]
+    async fn test_git_actor_mismatched_base_directory() -> Result<()> {
+        let temp_dir1 = TempDir::new().expect("Failed to create first temp directory");
+        let temp_dir2 = TempDir::new().expect("Failed to create second temp directory");
+
+        // Create GitActor with first directory
+        let git_actor = GitActor::new(temp_dir1.path().to_path_buf());
+
+        // Create a test file in second directory
+        let test_file_path = PathBuf::from("test_file.txt");
+        let full_test_file_path = temp_dir2.path().join(&test_file_path);
+        let mut test_file = File::create(&full_test_file_path).await.unwrap();
+        test_file.write_all(b"Test content").await.unwrap();
+        test_file.flush().await.unwrap();
+
+        // Use second directory as base_dir (different from GitActor's repo_path)
+        let normalised_paths = NormalisedPaths::new(temp_dir2.path(), test_file_path).await?;
+
+        // Try to commit - this should fail because base_dir != repo_path
+        let result = git_actor
+            .commit_file(normalised_paths, "Test commit message")
+            .await;
+
+        // Verify that the commit failed with InvalidFilePath
+        assert!(result.is_err());
+        match result {
+            Err(ApiError::InvalidFilePath(e)) => {
+                assert!(e.contains("File's base_dir") && e.contains("!= actor's git dir"))
+            }
+            Err(e) => panic!("Got unexpected error type back: {}", e),
+            Ok(_) => panic!("Git operation succeeded with mismatched base directory??"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_git_actor_successful_commit() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let repo_path = temp_dir.path();
+
+        let repo = initialise_git_actor_repo(repo_path)?;
+        // Create GitActor
+        let git_actor = GitActor::new(repo_path.to_path_buf());
+
+        // Create a test file
+        let test_file_path = PathBuf::from("test_file.txt");
+        let full_test_file_path = repo_path.join(&test_file_path);
+        let mut test_file = File::create(&full_test_file_path).await.unwrap();
+        test_file.write_all(b"Test content").await.unwrap();
+        test_file.flush().await.unwrap();
+
+        let normalised_paths = NormalisedPaths::new(repo_path, test_file_path).await?;
+
+        // Try to commit - this should succeed
+        let result = git_actor
+            .commit_file(normalised_paths, "Test commit message")
+            .await;
+
+        // Verify that the commit succeeded
+        assert!(result.is_ok(), "Commit failed: {:?}", result);
+
+        // Verify the commit actually exists in git
+        let mut revwalk = repo.revwalk()?;
+        revwalk.push_head()?;
+        let commits: Vec<git2::Oid> = revwalk.by_ref().collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(
+            commits.len(),
+            2,
+            "Should have 2 commits (initial + our commit)"
+        );
+
+        // Get the latest commit and verify its message
+        let latest_commit = repo.find_commit(commits[0])?;
+        assert_eq!(latest_commit.message().unwrap(), "Test commit message");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_git_actor_message_handling() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let repo_path = temp_dir.path();
+
+        let repo = initialise_git_actor_repo(repo_path)?;
+        let git_actor = GitActor::new(repo_path.to_path_buf());
+
+        // Create a test file
+        let test_file_path = PathBuf::from("test_file.txt");
+        let full_test_file_path = repo_path.join(&test_file_path);
+        let mut test_file = File::create(&full_test_file_path).await.unwrap();
+        test_file.write_all(b"Test content").await.unwrap();
+        test_file.flush().await.unwrap();
+
+        let normalised_paths = NormalisedPaths::new(repo_path, test_file_path).await?;
+
+        // Create a CommitFile message
+        let commit_msg = CommitFile {
+            file_paths: normalised_paths,
+            commit_message: "Test message handling".to_string(),
+        };
+
+        // Test message creation and that Message trait is properly implemented
+        // Note: Since Context::mock() doesn't exist, we'll test the components separately
+        assert_eq!(commit_msg.commit_message, "Test message handling");
+        assert_eq!(
+            commit_msg.file_paths.relative_path(),
+            PathBuf::from("test_file.txt")
+        );
+
+        // Test that the commit_file method works (which is what the handle method calls)
+        let result = git_actor
+            .commit_file(commit_msg.file_paths, &commit_msg.commit_message)
+            .await;
+
+        // Verify that the commit succeeded
+        assert!(result.is_ok(), "Message handling failed: {:?}", result);
+
+        // Verify the commit actually exists in git
+        let mut revwalk = repo.revwalk()?;
+        revwalk.push_head()?;
+        let commits: Vec<git2::Oid> = revwalk.by_ref().collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(
+            commits.len(),
+            2,
+            "Should have 2 commits (initial + our commit)"
+        );
+
+        // Get the latest commit and verify its message
+        let latest_commit = repo.find_commit(commits[0])?;
+        assert_eq!(latest_commit.message().unwrap(), "Test message handling");
+
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_git_actor_uninitialised_git_repo_gives_commit_file_failure() -> Result<()> {
