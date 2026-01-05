@@ -5,8 +5,20 @@ pub mod errors {
 
     use super::models::ErrorResponse;
 
+    // To surface the errors of Kameo actor's on_start, the error has to be
+    // Clone, which is not possible for ApiError due to some errors it wraps
+    // not being Clone.
+    #[derive(Error, Debug, Clone)]
+    pub enum ActorError {
+        #[error("Sled operation error: {0}")]
+        SledError(#[from] sled::Error),
+    }
+
     #[derive(Error, Debug)]
     pub enum ApiError {
+        #[error("Actor error: {0}")]
+        ActorError(#[from] ActorError),
+
         #[error("State error: {0}")]
         StateError(String),
 
@@ -61,9 +73,6 @@ pub mod errors {
 
         #[error("Replay attack detected: nonce already used")]
         ReplayAttackDetected,
-
-        #[error("Sled operation error")]
-        SledError(#[from] sled::Error),
 
         #[error("Server configuration error: {0}")]
         ServerConfigError(#[from] ServerConfigError),
@@ -145,8 +154,8 @@ pub mod errors {
                 ApiError::SignatureVerificationFailed => StatusCode::UNAUTHORIZED,
                 ApiError::ReplayAttackDetected => StatusCode::UNAUTHORIZED,
                 ApiError::StateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-                ApiError::SledError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::ServerConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::ActorError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }

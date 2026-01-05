@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use kameo::prelude::{Actor, Message};
 use log::{error, info};
 use rest_api_auth::AUTH_SIGNATURE_VALIDITY_MINUTES;
-use rest_api_types::errors::ApiError;
+use rest_api_types::errors::ActorError;
 use sled;
 use std::path::PathBuf;
 
@@ -28,7 +28,7 @@ pub struct NonceCacheActor {
 }
 
 impl NonceCacheActor {
-    pub fn new(db_path: PathBuf) -> Result<Self, ApiError> {
+    pub fn new(db_path: PathBuf) -> Result<Self, ActorError> {
         let db = sled::open(&db_path)?;
 
         info!(
@@ -47,7 +47,7 @@ impl NonceCacheActor {
     pub async fn check_and_store_nonce(
         &mut self,
         nonce: String,
-    ) -> Result<NonceCacheResponse, ApiError> {
+    ) -> Result<NonceCacheResponse, ActorError> {
         // Fast path: check if nonce already exists
         if self.db.contains_key(nonce.as_bytes())? {
             error!("Replay attack detected: nonce {} already used", nonce);
@@ -70,7 +70,7 @@ impl NonceCacheActor {
 }
 
 impl Message<NonceCacheMessage> for NonceCacheActor {
-    type Reply = Result<NonceCacheResponse, ApiError>;
+    type Reply = Result<NonceCacheResponse, ActorError>;
 
     async fn handle(
         &mut self,
@@ -87,7 +87,7 @@ impl Message<NonceCacheMessage> for NonceCacheActor {
 
 impl Actor for NonceCacheActor {
     type Args = PathBuf;
-    type Error = ApiError;
+    type Error = ActorError;
 
     async fn on_start(
         args: Self::Args,
@@ -178,7 +178,8 @@ mod tests {
         );
 
         match actor_result.unwrap_err() {
-            ApiError::SledError(_) => {} // Expected
+            ActorError::SledError(_) => {} // Expected
+            #[allow(unreachable_patterns)]
             other => panic!("Expected SledError, got: {:?}", other),
         }
     }
