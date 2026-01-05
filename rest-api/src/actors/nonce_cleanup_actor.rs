@@ -139,3 +139,192 @@ impl Actor for NonceCleanupActor {
         Ok(actor)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use chrono::{DateTime, Duration, Utc};
+    use std::path::Path;
+    use tempfile::TempDir;
+    use uuid::Uuid;
+
+    /// Helper function to create a test database with sample nonces
+    fn create_test_database_with_nonces(db_path: &Path) -> Result<sled::Db, ApiError> {
+        let db = sled::open(db_path)?;
+        let now = Utc::now();
+
+        // Add some valid nonces (expire in the future)
+        let valid_nonce_1 = Uuid::new_v4().to_string();
+        let valid_expires_1 = (now + Duration::minutes(10)).to_rfc3339();
+        db.insert(valid_nonce_1.as_bytes(), valid_expires_1.as_bytes())?;
+
+        let valid_nonce_2 = Uuid::new_v4().to_string();
+        let valid_expires_2 = (now + Duration::minutes(20)).to_rfc3339();
+        db.insert(valid_nonce_2.as_bytes(), valid_expires_2.as_bytes())?;
+
+        // Add some expired nonces (expire in the past)
+        let expired_nonce_1 = Uuid::new_v4().to_string();
+        let expired_expires_1 = (now - Duration::minutes(5)).to_rfc3339();
+        db.insert(expired_nonce_1.as_bytes(), expired_expires_1.as_bytes())?;
+
+        let expired_nonce_2 = Uuid::new_v4().to_string();
+        let expired_expires_2 = (now - Duration::minutes(15)).to_rfc3339();
+        db.insert(expired_nonce_2.as_bytes(), expired_expires_2.as_bytes())?;
+
+        // Add a malformed timestamp entry
+        let malformed_nonce = Uuid::new_v4().to_string();
+        db.insert(malformed_nonce.as_bytes(), "invalid-timestamp".as_bytes())?;
+
+        Ok(db)
+    }
+
+    #[tokio::test]
+    async fn test_nonce_cleanup_actor_creation() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let db_path = temp_dir.path().to_path_buf();
+
+        let actor = NonceCleanupActor::new(db_path.clone())?;
+
+        // Verify the database was created
+        assert!(db_path.exists(), "Database path should exist");
+
+        // Verify cleanup interval is set correctly
+        let expected_interval = Duration::minutes(AUTH_SIGNATURE_VALIDITY_MINUTES * 2);
+        let actual_interval_seconds = actor.cleanup_interval.as_secs();
+        let expected_interval_seconds = expected_interval.num_seconds() as u64;
+        assert_eq!(
+            actual_interval_seconds, expected_interval_seconds,
+            "Cleanup interval should be twice the signature validity period"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_expired_nonces() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let db = create_test_database_with_nonces(temp_dir.path())
+            .expect("Failed to create test database");
+
+        // Count initial entries
+        let initial_count: usize = db.iter().count();
+        assert_eq!(initial_count, 5, "Should have 5 initial entries");
+
+        let result = NonceCleanupActor::cleanup_expired_nonces(&db);
+
+        assert!(result.is_ok(), "Cleanup should succeed");
+        let removed_count = result.unwrap();
+        assert_eq!(removed_count, 2, "Should remove exactly 2 expired nonces");
+
+        // Verify remaining entries
+        let remaining_count: usize = db.iter().count();
+        assert_eq!(remaining_count, 3, "Should have 3 remaining entries");
+
+        // Verify that expired nonces are gone and valid ones remain
+        let now = Utc::now();
+        let mut valid_count = 0;
+        let mut malformed_count = 0;
+
+        for result in db.iter() {
+            let (_key, value) = result.expect("Should be able to read entry");
+
+            if let Ok(expires_at_str) = std::str::from_utf8(&value) {
+                if let Ok(expires_at) = DateTime::parse_from_rfc3339(expires_at_str) {
+                    if expires_at > now {
+                        valid_count += 1;
+                    }
+                } else {
+                    malformed_count += 1; // Invalid RFC3339 format
+                }
+            } else {
+                malformed_count += 1; // Invalid UTF-8
+            }
+        }
+
+        assert_eq!(valid_count, 2, "Should have 2 valid nonces remaining");
+        assert_eq!(
+            malformed_count, 1,
+            "Should have 1 malformed timestamp entry remaining"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_empty_database() {
+        // Arrange
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let db = sled::open(temp_dir.path()).expect("Failed to create empty database");
+
+        // Verify database is empty
+        let initial_count: usize = db.iter().count();
+        assert_eq!(initial_count, 0, "Database should be empty initially");
+
+        // Act
+        let result = NonceCleanupActor::cleanup_expired_nonces(&db);
+
+        // Assert
+        assert!(
+            result.is_ok(),
+            "Cleanup should succeed even on empty database"
+        );
+        let removed_count = result.unwrap();
+        assert_eq!(
+            removed_count, 0,
+            "Should remove 0 entries from empty database"
+        );
+
+        // Verify database is still empty
+        let final_count: usize = db.iter().count();
+        assert_eq!(final_count, 0, "Database should remain empty");
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_malformed_timestamps() {
+        // Arrange
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let db = sled::open(temp_dir.path()).expect("Failed to create database");
+
+        // Add entries with malformed timestamps
+        let malformed_entries = vec![
+            ("not-a-timestamp"),
+            ("invalid-rfc3339"),
+            (""),
+            ("2024-13-45T99:99:99Z"), // Invalid date/time values
+        ];
+
+        for malformed_timestamp in malformed_entries {
+            let nonce = Uuid::new_v4().to_string();
+            db.insert(nonce.as_bytes(), malformed_timestamp.as_bytes())
+                .expect("Should be able to insert malformed entry");
+        }
+
+        // Add one valid entry for comparison
+        let now = Utc::now();
+        let valid_nonce = Uuid::new_v4().to_string();
+        let valid_expires = (now + Duration::minutes(10)).to_rfc3339();
+        db.insert(valid_nonce.as_bytes(), valid_expires.as_bytes())
+            .expect("Should be able to insert valid entry");
+
+        let initial_count: usize = db.iter().count();
+        assert_eq!(initial_count, 5, "Should have 5 total entries");
+
+        let result = NonceCleanupActor::cleanup_expired_nonces(&db);
+
+        assert!(
+            result.is_ok(),
+            "Cleanup should succeed despite malformed timestamps"
+        );
+        let removed_count = result.unwrap();
+        assert_eq!(
+            removed_count, 0,
+            "Should remove 0 entries (none are expired with valid timestamps)"
+        );
+
+        // Verify all entries are still present (malformed ones are ignored, not removed)
+        let final_count: usize = db.iter().count();
+        assert_eq!(
+            final_count, 5,
+            "All entries should remain (malformed ones are ignored)"
+        );
+    }
+}

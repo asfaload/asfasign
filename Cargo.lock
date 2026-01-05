@@ -2055,6 +2055,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
+ "uuid",
 ]
 
 [[package]]
