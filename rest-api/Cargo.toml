@@ -29,6 +29,8 @@ normalize-path = "0.2.1"
 git2 = "0.20.3"
 sled = "0.34"
 chrono = "0.4"
+uuid = "1.19.0"
+futures = "0.3.31"
 
 [dev-dependencies]
 reqwest = { version = "0.12.26", features = ["json"] }
@@ -49,6 +51,7 @@ rest_api_test_helpers = { path = "../rest_api_test_helpers/" }
 features_lib = { path = "../core/features_lib/" }
 chrono = "0.4"
 sled = "0.34"
+uuid = { version = "1.0", features = ["v4"] }
 
 [lints]
 workspace = true

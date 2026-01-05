@@ -2037,6 +2037,7 @@ dependencies = [
  "config",
  "env_logger",
  "features_lib",
+ "futures",
  "futures-util",
  "git2",
  "hyper 1.8.1",
@@ -2055,6 +2056,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
+ "uuid",
 ]
 
 [[package]]

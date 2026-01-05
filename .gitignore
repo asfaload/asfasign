@@ -1,0 +1,7 @@
+target
+fullcode.txt
+.aicodeprep-gui
+.aider*
+.env
+.worktrees/
+docs/plans
