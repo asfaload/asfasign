@@ -1,16 +1,17 @@
 // Comprehensive authentication tests
 #[cfg(test)]
 pub mod auth_tests {
+    use std::collections::HashMap;
+
     use anyhow::Result;
     use axum::http::StatusCode;
-    use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadSignatureTrait};
+    use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
     use rest_api::{auth_middleware::MAX_BODY_SIZE, server::run_server};
-    use rest_api_auth::{
-        AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE,
-        HEADER_TIMESTAMP,
-    };
+    use rest_api_auth::{HEADER_NONCE, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::{
-        build_test_config, get_random_port, init_git_repo, url_for, wait_for_server,
+        build_test_config, get_random_port, init_git_repo, send_add_file_request_with_key,
+        send_add_file_request_with_key_and_overwrite, send_repeated_add_file_request,
+        wait_for_server,
     };
     use serde_json::{Value, json};
     use tempfile::TempDir;
@@ -42,31 +43,13 @@ pub mod auth_tests {
             "file_path": "test_file.txt",
             "content": "This should succeed with proper authentication"
         });
-        let payload_string = payload.to_string();
 
         // Generate a test key pair
         let test_password = "test_password";
         let key_pair = AsfaloadKeyPairs::new(test_password).unwrap();
         let secret_key = key_pair.secret_key(test_password).unwrap();
 
-        // Create authentication info and signature
-        let auth_info = AuthInfo::new(payload_string.clone());
-        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
-
-        // Send the request with proper authentication headers
-        let response = client
-            .post(url_for("add-file", port))
-            .header(
-                HEADER_TIMESTAMP,
-                auth_signature.auth_info().timestamp().to_rfc3339(),
-            )
-            .header(HEADER_NONCE, auth_signature.auth_info().nonce())
-            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
-            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
+        let response = send_add_file_request_with_key(&client, port, &secret_key, &payload).await;
 
         // Check the response status - should be 200 OK
         let status = response.status();
@@ -86,22 +69,19 @@ pub mod auth_tests {
         // Invalid signature
         // -----------------
 
-        // Get a new auth_signature to avoid nonce reuse
-        let auth_info = AuthInfo::new(payload_string.clone());
-        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
-        let response = client
-            .post(url_for("add-file", port))
-            .header(
-                HEADER_TIMESTAMP,
-                auth_signature.auth_info().timestamp().to_rfc3339(),
-            )
-            .header(HEADER_NONCE, auth_signature.auth_info().nonce())
-            .header(HEADER_SIGNATURE, "invalid_signature") // Tampered signature
-            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
+        let mut overwrite: HashMap<String, String> = HashMap::new();
+        overwrite.insert(
+            HEADER_SIGNATURE.to_string(),
+            "invalid_signature".to_string(),
+        );
+        let response = send_add_file_request_with_key_and_overwrite(
+            &client,
+            port,
+            &secret_key,
+            &payload,
+            overwrite,
+        )
+        .await;
 
         // Check the response status - should be 401 Unauthorized
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -115,20 +95,18 @@ pub mod auth_tests {
 
         // Invalid timestamp
         // -----------------
-        // Get a new auth_signature to avoid nonce reuse
-        let auth_info = AuthInfo::new(payload_string.clone());
-        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
-        let old_timestamp = auth_signature.auth_info().timestamp() - chrono::Duration::minutes(10);
-        let response = client
-            .post(url_for("add-file", port))
-            .header(HEADER_TIMESTAMP, old_timestamp.to_rfc3339())
-            .header(HEADER_NONCE, auth_signature.auth_info().nonce())
-            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
-            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
+
+        let old_timestamp = chrono::Utc::now() - chrono::Duration::minutes(10);
+        let mut overwrite: HashMap<String, String> = HashMap::new();
+        overwrite.insert(HEADER_TIMESTAMP.to_string(), old_timestamp.to_rfc3339());
+        let response = send_add_file_request_with_key_and_overwrite(
+            &client,
+            port,
+            &secret_key,
+            &payload,
+            overwrite,
+        )
+        .await;
 
         // Check the response status - should be 401 Unauthorized
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -145,22 +123,17 @@ pub mod auth_tests {
 
         // Invalid nonce
         // -------------
-        // Get a new auth_signature to avoid nonce reuse
-        let auth_info = AuthInfo::new(payload_string.clone());
-        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
-        let response = client
-            .post(url_for("add-file", port))
-            .header(
-                HEADER_TIMESTAMP,
-                auth_signature.auth_info().timestamp().to_rfc3339(),
-            )
-            .header(HEADER_NONCE, "invalid")
-            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
-            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
+        //
+        let mut overwrite: HashMap<String, String> = HashMap::new();
+        overwrite.insert(HEADER_NONCE.to_string(), "invalid_nonce".to_string());
+        let response = send_add_file_request_with_key_and_overwrite(
+            &client,
+            port,
+            &secret_key,
+            &payload,
+            overwrite,
+        )
+        .await;
 
         // Check the response status - should be 401 Unauthorized
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
@@ -175,20 +148,7 @@ pub mod auth_tests {
         // Nonce reuse
         // -----------
         // Reuse the same nonce to simulate replay
-        let response = client
-            .post(url_for("add-file", port))
-            .header(
-                HEADER_TIMESTAMP,
-                auth_signature.auth_info().timestamp().to_rfc3339(),
-            )
-            .header(HEADER_NONCE, "invalid")
-            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
-            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
-
+        let response = send_repeated_add_file_request(&client, port, &payload).await;
         // Check the response status - should be 401 Unauthorized
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
@@ -235,24 +195,7 @@ pub mod auth_tests {
             "file_path": "normal_file.txt",
             "content": normal_content
         });
-        let payload_string = payload.to_string();
-
-        let auth_info = AuthInfo::new(payload_string.clone());
-        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
-
-        let response = client
-            .post(url_for("add-file", port))
-            .header(
-                HEADER_TIMESTAMP,
-                auth_signature.auth_info().timestamp().to_rfc3339(),
-            )
-            .header(HEADER_NONCE, auth_signature.auth_info().nonce())
-            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
-            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
+        let response = send_add_file_request_with_key(&client, port, &secret_key, &payload).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         let response_body: Value = response.json().await.expect("Failed to parse response");
@@ -264,24 +207,8 @@ pub mod auth_tests {
             "file_path": "oversized_file.txt",
             "content": oversized_content
         });
-        let payload_string = payload.to_string();
 
-        let auth_info = AuthInfo::new(payload_string.clone());
-        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
-
-        let response = client
-            .post(url_for("add-file", port))
-            .header(
-                HEADER_TIMESTAMP,
-                auth_signature.auth_info().timestamp().to_rfc3339(),
-            )
-            .header(HEADER_NONCE, auth_signature.auth_info().nonce())
-            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
-            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
+        let response = send_add_file_request_with_key(&client, port, &secret_key, &payload).await;
 
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
         let response_body: Value = response.json().await.expect("Failed to parse response");
@@ -303,25 +230,7 @@ pub mod auth_tests {
             "file_path": file_path,
             "content": max_content
         });
-        let payload_string = payload.to_string();
-
-        let auth_info = AuthInfo::new(payload_string.clone());
-        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
-
-        let response = client
-            .post(url_for("add-file", port))
-            .header(
-                HEADER_TIMESTAMP,
-                auth_signature.auth_info().timestamp().to_rfc3339(),
-            )
-            .header(HEADER_NONCE, auth_signature.auth_info().nonce())
-            .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
-            .header(HEADER_PUBLIC_KEY, auth_signature.public_key())
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
-
+        let response = send_add_file_request_with_key(&client, port, &secret_key, &payload).await;
         assert_eq!(response.status(), StatusCode::OK);
         let response_body: Value = response.json().await.expect("Failed to parse response");
         assert_eq!(response_body["success"], true);

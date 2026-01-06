@@ -34,7 +34,7 @@ uuid = "1.19.0"
 futures = "0.3.31"
 
 [dev-dependencies]
-reqwest = { version = "0.12.26", features = ["json"] }
+reqwest = { version = "0.13.1", features = ["json"] }
 tempfile = "3.4"
 tokio = { version = "1.0", features = [
   "macros",
