@@ -59,7 +59,9 @@ pub async fn add_file_handler(
         .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write file content: {}", e)))?;
     // Flushing is absolutely necessary, otherwise the git_actor might try to not yet
     // see the file when it wants to commit it!
-    file.flush().await?;
+    file.flush()
+        .await
+        .map_err(|e| ApiError::FileWriteFailed(format!("Failed to flush file: {}", e)))?;
 
     // Send commit message to git actor with the requested format
     let commit_message = format!(

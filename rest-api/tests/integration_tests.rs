@@ -3,16 +3,14 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
-    use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadSignatureTrait};
     use rest_api::server::run_server;
-    use rest_api_auth::{
-        AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE,
-        HEADER_TIMESTAMP,
-    };
+    use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
+    use rest_api_test_helpers::parse_log_lines;
+    use rest_api_test_helpers::wait_for_log_entry_with_request_id;
     use rest_api_test_helpers::{
-        build_test_config, file_exists_in_repo, get_latest_commit, get_random_port, init_git_repo,
-        parse_log_lines, read_file_content, url_for, wait_for_commit,
-        wait_for_log_entry_with_request_id, wait_for_server,
+        TestAuthHeaders, build_test_config, create_auth_headers, file_exists_in_repo,
+        get_latest_commit, get_random_port, init_git_repo, read_file_content,
+        send_add_file_request, url_for, wait_for_commit, wait_for_server,
     };
     use serde_json::{Value, json};
     use std::fs;
@@ -21,32 +19,6 @@ pub mod tests {
     use tokio::time::Duration;
     use tracing_appender::non_blocking::WorkerGuard;
     use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
-
-    struct TestAuthHeaders {
-        timestamp: String,
-        nonce: String,
-        signature: String,
-        public_key: String,
-    }
-
-    /// Helper function to create authentication headers for a given payload
-    async fn create_auth_headers(payload: &str) -> TestAuthHeaders {
-        // Generate a test key pair
-        let test_password = "test_password";
-        let key_pair = AsfaloadKeyPairs::new(test_password).unwrap();
-        let secret_key = key_pair.secret_key(test_password).unwrap();
-
-        // Create authentication info and signature
-        let auth_info = AuthInfo::new(payload.to_string());
-        let auth_signature = AuthSignature::new(&auth_info, &secret_key).unwrap();
-
-        TestAuthHeaders {
-            timestamp: auth_signature.auth_info().timestamp().to_rfc3339(),
-            nonce: auth_signature.auth_info().nonce(),
-            signature: auth_signature.signature().to_base64(),
-            public_key: auth_signature.public_key(),
-        }
-    }
 
     // Test case: Successfully add a file to the repository
     #[tokio::test]
@@ -80,25 +52,7 @@ pub mod tests {
             "file_path": file_path,
             "content": content
         });
-        let payload_string = payload.to_string();
-        let TestAuthHeaders {
-            timestamp,
-            nonce,
-            signature,
-            public_key,
-        } = create_auth_headers(&payload_string).await;
-
-        // Send the request to add the file with authentication headers
-        let response = client
-            .post(url_for("add-file", port))
-            .header(HEADER_TIMESTAMP, timestamp)
-            .header(HEADER_NONCE, nonce)
-            .header(HEADER_SIGNATURE, signature)
-            .header(HEADER_PUBLIC_KEY, public_key)
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
+        let response = send_add_file_request(&client, port, &payload).await;
 
         // Check the response status
         assert_eq!(response.status(), StatusCode::OK);
@@ -161,25 +115,7 @@ pub mod tests {
             "file_path": "",
             "content": "This should fail"
         });
-        let payload_string = payload.to_string();
-        let TestAuthHeaders {
-            timestamp,
-            nonce,
-            signature,
-            public_key,
-        } = create_auth_headers(&payload_string).await;
-
-        // Send the request with an empty file path and authentication headers
-        let response = client
-            .post(url_for("add-file", port))
-            .header(HEADER_TIMESTAMP, timestamp)
-            .header(HEADER_NONCE, nonce)
-            .header(HEADER_SIGNATURE, signature)
-            .header(HEADER_PUBLIC_KEY, public_key)
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
+        let response = send_add_file_request(&client, port, &payload).await;
 
         // Check the response status
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -227,27 +163,7 @@ pub mod tests {
             "file_path": file_path,
             "content": content
         });
-        let payload_string = payload.to_string();
-        let TestAuthHeaders {
-            timestamp,
-            nonce,
-            signature,
-            public_key,
-        } = create_auth_headers(&payload_string).await;
-
-        // Send the request to add the file with authentication headers
-        let response = client
-            .post(url_for("add-file", port))
-            .header(HEADER_TIMESTAMP, timestamp)
-            .header(HEADER_NONCE, nonce)
-            .header(HEADER_SIGNATURE, signature)
-            .header(HEADER_PUBLIC_KEY, public_key)
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
-
-        // Check the response status
+        let response = send_add_file_request(&client, port, &payload).await;
         let status = response.status();
 
         if status != StatusCode::OK {
@@ -320,25 +236,7 @@ pub mod tests {
             "file_path": "my-new-file",
             "content": "This should fail"
         });
-        let payload_string = payload.to_string();
-        let TestAuthHeaders {
-            timestamp,
-            nonce,
-            signature,
-            public_key,
-        } = create_auth_headers(&payload_string).await;
-
-        // Send the request with authentication headers
-        let response = client
-            .post(url_for("add-file", port))
-            .header(HEADER_TIMESTAMP, timestamp)
-            .header(HEADER_NONCE, nonce)
-            .header(HEADER_SIGNATURE, signature)
-            .header(HEADER_PUBLIC_KEY, public_key)
-            .json(&payload)
-            .send()
-            .await
-            .expect("Failed to send request");
+        let response = send_add_file_request(&client, port, &payload).await;
 
         // Check the response status
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
