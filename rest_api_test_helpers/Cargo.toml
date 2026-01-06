@@ -9,8 +9,11 @@ tokio = { version = "1.48.0", features = ["full"] }
 rest_api_types = { path = "../rest_api_types/" }
 rest-api = { path = "../rest-api/" }
 git2 = "0.20.3"
+reqwest = { version = "0.13.1", features = ["json"] }
 serde = "1.0.228"
 serde_json = "1.0.148"
+rest_api_auth = { path = "../rest_api_auth/" }
+features_lib = { path = "../core/features_lib/" }
 
 [lints]
 workspace = true

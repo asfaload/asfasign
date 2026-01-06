@@ -5,7 +5,13 @@ use std::{
 };
 
 use anyhow::Result;
+use features_lib::{
+    AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadSecretKeys, AsfaloadSignatureTrait,
+};
 use git2::Repository;
+use rest_api_auth::{
+    AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP,
+};
 use rest_api_types::errors::ApiError;
 use serde_json::Value;
 use tokio::{
@@ -211,4 +217,63 @@ pub async fn make_git_commit_fail(repo_path_buf: PathBuf) -> Result<(), ApiError
     )
     .await?;
     Ok(())
+}
+
+pub struct TestAuthHeaders {
+    pub timestamp: String,
+    pub nonce: String,
+    pub signature: String,
+    pub public_key: String,
+}
+
+/// Helper function to create authentication headers for a given payload
+pub async fn create_auth_headers_with_key(
+    secret_key: &AsfaloadSecretKeys,
+    payload: &str,
+) -> TestAuthHeaders {
+    // Create authentication info and signature
+    let auth_info = AuthInfo::new(payload.to_string());
+    let auth_signature = AuthSignature::new(&auth_info, secret_key).unwrap();
+
+    TestAuthHeaders {
+        timestamp: auth_signature.auth_info().timestamp().to_rfc3339(),
+        nonce: auth_signature.auth_info().nonce(),
+        signature: auth_signature.signature().to_base64(),
+        public_key: auth_signature.public_key(),
+    }
+}
+
+/// Helper function to create authentication headers for a given payload
+pub async fn create_auth_headers(payload: &str) -> TestAuthHeaders {
+    // Generate a test key pair
+    let test_password = "test_password";
+    let key_pair = AsfaloadKeyPairs::new(test_password).unwrap();
+    let secret_key = key_pair.secret_key(test_password).unwrap();
+    create_auth_headers_with_key(&secret_key, payload).await
+}
+pub async fn send_add_file_request(
+    client: &reqwest::Client,
+    port: u16,
+    secret_key: &AsfaloadSecretKeys, // Replace with correct SecretKey type
+    payload: &serde_json::Value,
+) -> reqwest::Response {
+    let payload_string = payload.to_string();
+
+    let TestAuthHeaders {
+        timestamp,
+        nonce,
+        signature,
+        public_key,
+    } = create_auth_headers_with_key(secret_key, &payload_string).await;
+
+    client
+        .post(url_for("add-file", port))
+        .header(HEADER_TIMESTAMP, timestamp)
+        .header(HEADER_NONCE, nonce)
+        .header(HEADER_SIGNATURE, signature)
+        .header(HEADER_PUBLIC_KEY, public_key)
+        .json(payload)
+        .send()
+        .await
+        .expect("Failed to send request")
 }
