@@ -5,3 +5,4 @@ pub mod handlers;
 pub mod path_validation;
 pub mod server;
 pub mod state;
+pub mod traces;

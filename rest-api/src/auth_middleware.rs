@@ -7,7 +7,7 @@ use rest_api_auth::{
 use rest_api_types::errors::ApiError;
 
 // 1MB should be more than enough in our case
-const MAX_BODY_SIZE: usize = 1024 * 1024;
+pub const MAX_BODY_SIZE: usize = 1024 * 1024;
 
 // Heper to extract a header as string
 fn get_header(request: &Request<Body>, header_name: &str) -> Result<String, ApiError> {
@@ -44,7 +44,6 @@ pub async fn auth_middleware(
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, ApiError> {
-
     // Clone header values before moving the request
     let timestamp = get_header(&request, HEADER_TIMESTAMP)?;
     let nonce = get_header(&request, HEADER_NONCE)?;
@@ -58,7 +57,7 @@ pub async fn auth_middleware(
     let (parts, body) = request.into_parts();
     let body_bytes = axum::body::to_bytes(body, MAX_BODY_SIZE)
         .await
-        .map_err(|e| ApiError::InvalidRequestBody(e.to_string()))?;
+        .map_err(|e| ApiError::RequestTooBig(e.to_string()))?;
 
     let payload = std::str::from_utf8(&body_bytes).map_err(|e| {
         ApiError::InvalidRequestBody(format!("Request body contains invalid UTF-8: {}", e))

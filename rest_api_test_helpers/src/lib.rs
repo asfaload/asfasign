@@ -7,6 +7,7 @@ use std::{
 use anyhow::Result;
 use git2::Repository;
 use rest_api_types::errors::ApiError;
+use serde_json::Value;
 use tokio::{
     fs::File,
     io::AsyncWriteExt,
@@ -76,6 +77,7 @@ pub fn build_test_config(git_repo_path: &Path, server_port: u16) -> rest_api::co
     rest_api::config::AppConfig {
         git_repo_path: git_repo_path.to_path_buf(),
         server_port,
+        log_level: "info".to_string(),
     }
 }
 
@@ -138,6 +140,41 @@ pub async fn wait_for_commit(
             ));
         }
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
+
+pub fn parse_log_lines(content: &str) -> Result<Vec<Value>> {
+    content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str::<Value>(l).map_err(anyhow::Error::from))
+        .collect()
+}
+pub async fn wait_for_log_entry_with_request_id<P: AsRef<Path>>(
+    log_path: P,
+    request_id: &str,
+) -> Result<()> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Ok(content) = fs::read_to_string(log_path.as_ref())
+            && parse_log_lines(&content)?.iter().any(|entry| {
+                entry
+                    .get("request_id")
+                    .or_else(|| entry.get("fields").and_then(|f| f.get("request_id")))
+                    .and_then(|v| v.as_str())
+                    == Some(request_id)
+            })
+        {
+            return Ok(());
+        }
+
+        if tokio::time::Instant::now() > deadline {
+            anyhow::bail!(
+                "Timed out waiting for log entry with request_id. Log content: {}",
+                fs::read_to_string(log_path).unwrap_or_default()
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
