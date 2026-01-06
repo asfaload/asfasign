@@ -3,16 +3,23 @@ use rest_api_types::errors::ServerConfigError;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct AppConfig {
     pub server_port: u16,
     pub git_repo_path: PathBuf,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
 }
 
 #[derive(Debug, Serialize, Clone)]
 pub struct AppConfigOptions {
     pub server_port: Option<u16>,
     pub git_repo_path: Option<PathBuf>,
+    pub log_level: Option<String>,
 }
 
 impl Default for AppConfigOptions {
@@ -20,6 +27,7 @@ impl Default for AppConfigOptions {
         Self {
             server_port: Some(3000),
             git_repo_path: None,
+            log_level: Some("info".to_string()),
         }
     }
 }
@@ -69,6 +77,7 @@ mod tests {
         let defaults = AppConfigOptions {
             server_port: Some(3000),
             git_repo_path: None,
+            log_level: None,
         };
 
         let result = build_config_from_defaults(defaults);
@@ -81,6 +90,8 @@ mod tests {
                 assert!(
                     e.to_string()
                         .contains("expected a string for key `git_repo_path`")
+                        || e.to_string()
+                            .contains("expected a string for key `log_level`")
                 );
             }
             Err(e) => {
@@ -92,21 +103,55 @@ mod tests {
 
     #[test]
     fn test_build_config_from_defaults_with_git_path() {
-        // Test that build_config_from_defaults succeeds when git_repo_path is provided
+        // Test that build_config_from_defaults succeeds when required values are provided
         let temp_dir = tempfile::tempdir().unwrap();
         let git_path = temp_dir.path().to_path_buf();
 
         let defaults = AppConfigOptions {
             server_port: Some(8080),
             git_repo_path: Some(git_path.clone()),
+            log_level: Some("info".to_string()),
         };
 
         let result = build_config_from_defaults(defaults);
 
-        // Should succeed because git_repo_path is provided
-        assert!(result.is_ok());
+        match result {
+            Ok(_) => {}
+            Err(e) => panic!("Could not build config from defaults: {}", e),
+        }
         let config = result.unwrap();
         assert_eq!(config.server_port, 8080);
         assert_eq!(config.git_repo_path, git_path);
+        assert_eq!(config.log_level, "info");
+    }
+
+    #[test]
+    fn test_build_config_from_defaults_no_log_level() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let git_path = temp_dir.path().to_path_buf();
+        // Test that build_config_from_defaults fails when no log_level is provided
+        // and no environment variables are set
+        let defaults = AppConfigOptions {
+            server_port: Some(3000),
+            git_repo_path: Some(git_path.clone()),
+            log_level: None,
+        };
+
+        let result = build_config_from_defaults(defaults);
+
+        // Should fail because log_level is required but not provided
+        assert!(result.is_err());
+        match result {
+            Err(ServerConfigError::BuildError(e)) => {
+                assert!(
+                    e.to_string()
+                        .contains("expected a string for key `log_level`")
+                );
+            }
+            Err(e) => {
+                panic!("Expected BuildError, got: {:?}", e);
+            }
+            Ok(_) => panic!("Expected error but got success"),
+        }
     }
 }

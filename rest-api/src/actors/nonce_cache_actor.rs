@@ -1,6 +1,5 @@
 use chrono::{Duration, Utc};
 use kameo::prelude::{Actor, Message};
-use log::{error, info};
 use rest_api_auth::AUTH_SIGNATURE_VALIDITY_MINUTES;
 use rest_api_types::errors::ActorError;
 use sled;
@@ -31,9 +30,9 @@ impl NonceCacheActor {
     pub fn new(db_path: PathBuf) -> Result<Self, ActorError> {
         let db = sled::open(&db_path)?;
 
-        info!(
-            "NonceCacheActor initialized with database at: {:?}",
-            db_path
+        tracing::info!(
+            db_path = %db_path.display(),
+            "NonceCacheActor initialized"
         );
 
         Ok(Self {
@@ -50,7 +49,7 @@ impl NonceCacheActor {
     ) -> Result<NonceCacheResponse, ActorError> {
         // Fast path: check if nonce already exists
         if self.db.contains_key(nonce.as_bytes())? {
-            error!("Replay attack detected: nonce {} already used", nonce);
+            tracing::error!(nonce = %nonce, "Replay attack detected: nonce already used");
             return Ok(NonceCacheResponse::Refused);
         }
 
@@ -59,10 +58,10 @@ impl NonceCacheActor {
         self.db
             .insert(nonce.as_bytes(), expires_at.to_rfc3339().as_bytes())?;
 
-        info!(
-            "Stored new nonce {} (expires at: {})",
-            nonce,
-            expires_at.to_rfc3339()
+        tracing::info!(
+            nonce = %nonce,
+            expires_at = %expires_at.to_rfc3339(),
+            "Stored new nonce"
         );
 
         Ok(NonceCacheResponse::Accepted)
@@ -93,7 +92,7 @@ impl Actor for NonceCacheActor {
         args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        info!("NonceCacheActor starting with db path: {:?}", args);
+        tracing::info!(db_path = %args.display(), "NonceCacheActor starting");
         Self::new(args)
     }
 }
