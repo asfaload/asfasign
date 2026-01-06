@@ -3,8 +3,7 @@ use std::{path::PathBuf, str::FromStr};
 use crate::actors::git_actor::CommitFile;
 use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
-use axum::{Json, extract::State};
-use log::info;
+use axum::{Json, extract::State, http::HeaderMap};
 use rest_api_types::{
     errors::ApiError,
     models::{AddFileRequest, AddFileResponse},
@@ -13,9 +12,19 @@ use tokio::io::AsyncWriteExt;
 
 pub async fn add_file_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<AddFileRequest>,
 ) -> Result<Json<AddFileResponse>, ApiError> {
-    info!("Received add_file request for path: {}", request.file_path);
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        file_path = %request.file_path,
+        "Received add_file request"
+    );
 
     // Validate the file path
     if request.file_path.is_empty() {
@@ -48,6 +57,9 @@ pub async fn add_file_handler(
     file.write_all(request.content.as_bytes())
         .await
         .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write file content: {}", e)))?;
+    // Flushing is absolutely necessary, otherwise the git_actor might try to not yet
+    // see the file when it wants to commit it!
+    file.flush().await?;
 
     // Send commit message to git actor with the requested format
     let commit_message = format!(
@@ -57,6 +69,7 @@ pub async fn add_file_handler(
     let commit_msg = CommitFile {
         file_paths: normalised_paths,
         commit_message: commit_message.clone(),
+        request_id: request_id.to_string(),
     };
 
     state

@@ -62,6 +62,9 @@ pub mod errors {
         #[error("Invalid request body: {0}")]
         InvalidRequestBody(String),
 
+        #[error("Request too big: {0}")]
+        RequestTooBig(String),
+
         #[error("Authentication failed: {0}")]
         AuthenticationFailed(String),
 
@@ -156,6 +159,7 @@ pub mod errors {
                 ApiError::StateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::ServerConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::ActorError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::RequestTooBig(_) => StatusCode::PAYLOAD_TOO_LARGE,
             }
         }
     }

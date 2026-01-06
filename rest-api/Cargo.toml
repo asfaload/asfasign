@@ -20,8 +20,9 @@ kameo = "0.19.2"
 async-trait = "0.1"
 futures-util = "0.3"
 thiserror = "2.0.17"
-log = "0.4"
-env_logger = "0.11.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tower-http = { version = "0.6", features = ["trace", "request-id", "util"] }
 rest_api_types = { path = "../rest_api_types/" }
 rest_api_auth = { path = "../rest_api_auth/" }
 hyper = "1.0"
@@ -52,6 +53,8 @@ features_lib = { path = "../core/features_lib/" }
 chrono = "0.4"
 sled = "0.34"
 uuid = { version = "1.0", features = ["v4"] }
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 
 [lints]
 workspace = true

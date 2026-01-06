@@ -1,6 +1,5 @@
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
-use log::info;
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
 
@@ -12,6 +11,7 @@ pub struct CommitFile {
     // File path is relative to the git root
     pub file_paths: NormalisedPaths,
     pub commit_message: String,
+    pub request_id: String,
 }
 
 const ACTOR_NAME: &str = "git-actor";
@@ -23,13 +23,14 @@ pub struct GitActor {
 
 impl GitActor {
     pub fn new(repo_path: PathBuf) -> Self {
-        info!("GitActor created with repo path: {:?}", repo_path);
+        tracing::info!(repo_path = %repo_path.display(), "GitActor created");
         Self { repo_path }
     }
     async fn commit_file(
         &self,
         file_paths: NormalisedPaths,
         commit_message: &str,
+        request_id: &str,
     ) -> Result<(), ApiError> {
         if file_paths.base_dir() != self.repo_path {
             return Err(ApiError::InvalidFilePath(format!(
@@ -38,14 +39,16 @@ impl GitActor {
                 self.repo_path.to_string_lossy()
             )));
         }
-        info!(
-            "Attempting to commit file: {:?} with message: {}",
-            file_paths.absolute_path(),
-            commit_message
+        tracing::info!(
+            request_id = %request_id,
+            file_path = %file_paths.absolute_path().display(),
+            commit_message,
+            "Attempting to commit file"
         );
         let repo_path = self.repo_path.clone();
         let file_path = file_paths.relative_path();
         let commit_message = commit_message.to_string();
+        let request_id = request_id.to_string();
 
         tokio::task::spawn_blocking(move || {
             // Open the repository
@@ -81,7 +84,7 @@ impl GitActor {
                 &parents,
             )?;
 
-            info!("Successfully committed file: {:?}", file_path);
+            tracing::info!(request_id = %request_id, file_path = %file_path.display(), "Successfully committed file");
             Ok(())
         })
         .await?
@@ -91,18 +94,20 @@ impl GitActor {
 impl Message<CommitFile> for GitActor {
     type Reply = Result<(), ApiError>;
 
+    #[tracing::instrument(skip(self, msg, _ctx))]
     async fn handle(
         &mut self,
         msg: CommitFile,
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
-        info!(
-            "GitActor received commit request for file: {:?}",
-            msg.file_paths.relative_path()
+        tracing::info!(
+            request_id = %msg.request_id,
+            file_path = %msg.file_paths.relative_path().display(),
+            commit_message = %msg.commit_message,
+            "GitActor received commit request"
         );
-        info!("Commit message: {}", msg.commit_message);
 
-        self.commit_file(msg.file_paths, &msg.commit_message).await
+        self.commit_file(msg.file_paths, &msg.commit_message, &msg.request_id).await
     }
 }
 
@@ -115,7 +120,7 @@ impl Actor for GitActor {
         args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        info!("GitActor starting with repo path: {:?}", args);
+        tracing::info!(repo_path = %args.display(), "GitActor starting");
         Ok(Self::new(args))
     }
 }
@@ -175,7 +180,7 @@ mod tests {
 
         // Try to commit - this should fail because base_dir != repo_path
         let result = git_actor
-            .commit_file(normalised_paths, "Test commit message")
+            .commit_file(normalised_paths, "Test commit message", "test-request-id")
             .await;
 
         // Verify that the commit failed with InvalidFilePath
@@ -210,7 +215,7 @@ mod tests {
 
         // Try to commit - this should succeed
         let result = git_actor
-            .commit_file(normalised_paths, "Test commit message")
+            .commit_file(normalised_paths, "Test commit message", "test-request-id")
             .await;
 
         // Verify that the commit succeeded
@@ -254,6 +259,7 @@ mod tests {
         let commit_msg = CommitFile {
             file_paths: normalised_paths,
             commit_message: "Test message handling".to_string(),
+            request_id: "test-request-id".to_string(),
         };
 
         // Test message creation and that Message trait is properly implemented
@@ -266,7 +272,7 @@ mod tests {
 
         // Test that the commit_file method works (which is what the handle method calls)
         let result = git_actor
-            .commit_file(commit_msg.file_paths, &commit_msg.commit_message)
+            .commit_file(commit_msg.file_paths, &commit_msg.commit_message, "test-request-id")
             .await;
 
         // Verify that the commit succeeded
@@ -308,7 +314,7 @@ mod tests {
         let normalised_paths = NormalisedPaths::new(repo_path_buf, test_file_path).await?;
         // Try to commit the file - this should fail because there's no git repo
         let result = git_actor
-            .commit_file(normalised_paths, "Test commit message")
+            .commit_file(normalised_paths, "Test commit message", "test-request-id")
             .await;
 
         // Verify that the commit failed
