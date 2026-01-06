@@ -1,7 +1,12 @@
-use crate::{auth_middleware::auth_middleware, handlers::add_file_handler, state::init_state};
+use crate::{
+    auth_middleware::auth_middleware,
+    handlers::{add_file_handler, register_repo_handler},
+    state::init_state,
+};
 use axum::{Router, routing::post};
 use rest_api_types::errors::ApiError;
 use std::net::SocketAddr;
+use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 
@@ -15,20 +20,32 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
     let canonical_repo_path = tokio::fs::canonicalize(&config.git_repo_path)
         .await
         .map_err(|e| ApiError::InvalidFilePath(format!("Invalid git repo path: {}", e)))?;
-    let app_state = init_state(canonical_repo_path);
-    // Build router with authentication middleware and request tracing
+    let app_state = init_state(canonical_repo_path).await;
+    let governor_conf = GovernorConfigBuilder::default()
+        .per_second(10)
+        .burst_size(20)
+        .finish()
+        .ok_or_else(|| {
+            ApiError::ServerConfigError(rest_api_types::errors::ServerConfigError::InvalidConfig(
+                "Invalid rate limiter configuration: failed to build governor config".to_string(),
+            ))
+        })?;
     let app = Router::new()
+        .route("/register_repo", post(register_repo_handler))
         .route("/add-file", post(add_file_handler))
         .layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             auth_middleware,
         ))
+        .layer(GovernorLayer::new(governor_conf))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
-        .layer(TraceLayer::new_for_http()
-            .make_span_with(DefaultMakeSpan::new().include_headers(true))
-            .on_request(DefaultOnRequest::new().level(tracing::Level::INFO))
-            .on_response(DefaultOnResponse::new().level(tracing::Level::INFO)))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().include_headers(true))
+                .on_request(DefaultOnRequest::new().level(tracing::Level::INFO))
+                .on_response(DefaultOnResponse::new().level(tracing::Level::INFO)),
+        )
         .with_state(app_state);
 
     // Start the server

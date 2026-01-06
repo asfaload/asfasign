@@ -22,20 +22,27 @@ futures-util = "0.3"
 thiserror = "2.0.17"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-tower-http = { version = "0.6", features = ["trace", "request-id", "util"] }
+tower-http = { version = "0.6", features = ["trace", "request-id", "util", "limit"] }
+tower_governor = "0.8"
 rest_api_types = { path = "../rest_api_types/" }
 rest_api_auth = { path = "../rest_api_auth/" }
 hyper = "1.0"
 normalize-path = "0.2.1"
+reqwest = { version = "0.13", features = ["json"] }
 git2 = "0.20.3"
 sled = "0.34"
 chrono = "0.4"
+signers_file_types = { path = "../core/signers_file_types/" }
+signatures = { path = "../core/signatures/" }
 uuid = "1.19.0"
 futures = "0.3.31"
+url = "2.5"
 
 [dev-dependencies]
-reqwest = { version = "0.13.1", features = ["json"] }
-tempfile = "3.4"
+tempfile = "3"
+httpmock = "0.7"
+axum-test = "18.5.0"
+tower = "0.5"
 tokio = { version = "1.0", features = [
   "macros",
   "rt-multi-thread",

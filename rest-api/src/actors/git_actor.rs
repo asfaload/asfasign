@@ -107,7 +107,8 @@ impl Message<CommitFile> for GitActor {
             "GitActor received commit request"
         );
 
-        self.commit_file(msg.file_paths, &msg.commit_message, &msg.request_id).await
+        self.commit_file(msg.file_paths, &msg.commit_message, &msg.request_id)
+            .await
     }
 }
 
@@ -272,7 +273,11 @@ mod tests {
 
         // Test that the commit_file method works (which is what the handle method calls)
         let result = git_actor
-            .commit_file(commit_msg.file_paths, &commit_msg.commit_message, "test-request-id")
+            .commit_file(
+                commit_msg.file_paths,
+                &commit_msg.commit_message,
+                "test-request-id",
+            )
             .await;
 
         // Verify that the commit succeeded

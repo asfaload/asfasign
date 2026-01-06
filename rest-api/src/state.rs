@@ -1,10 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use kameo::actor::{ActorRef, Spawn};
 
 use crate::actors::{
-    git_actor::GitActor, nonce_cache_actor::NONCE_CACHE_DB, nonce_cache_actor::NonceCacheActor,
-    nonce_cleanup_actor::NonceCleanupActor,
+    git_actor::GitActor, github_project_authenticator::GitHubProjectAuthenticator,
+    nonce_cache_actor::NONCE_CACHE_DB, nonce_cache_actor::NonceCacheActor,
+    nonce_cleanup_actor::NonceCleanupActor, repo_handler::RepoHandler,
+    signers_initialiser::SignersInitialiser,
 };
 
 #[derive(Clone)]
@@ -13,10 +15,12 @@ pub struct AppState {
     pub git_actor: ActorRef<GitActor>,
     pub nonce_cache_actor: ActorRef<NonceCacheActor>,
     pub nonce_cleanup_actor: ActorRef<NonceCleanupActor>,
+    pub github_project_authenticator: ActorRef<GitHubProjectAuthenticator>,
+    pub signers_initialiser: ActorRef<SignersInitialiser>,
+    pub repo_handler: ActorRef<RepoHandler>,
 }
 
-pub fn init_state<P: AsRef<Path>>(git_repo_path_in: P) -> AppState {
-    let git_repo_path = git_repo_path_in.as_ref().to_path_buf();
+pub async fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
     let git_actor = GitActor::spawn(git_repo_path.clone());
 
     // Initialize nonce cache with database path
@@ -25,10 +29,18 @@ pub fn init_state<P: AsRef<Path>>(git_repo_path_in: P) -> AppState {
     let nonce_cache_actor = NonceCacheActor::spawn(nonce_db_path.clone());
     let nonce_cleanup_actor = NonceCleanupActor::spawn(nonce_db_path);
 
+    let github_project_authenticator = GitHubProjectAuthenticator::spawn(());
+    let signers_initialiser = SignersInitialiser::spawn(());
+
+    let repo_handler = RepoHandler::spawn((git_repo_path.clone(), git_actor.clone()));
+
     AppState {
         git_repo_path,
         git_actor,
         nonce_cache_actor,
         nonce_cleanup_actor,
+        github_project_authenticator,
+        signers_initialiser,
+        repo_handler,
     }
 }

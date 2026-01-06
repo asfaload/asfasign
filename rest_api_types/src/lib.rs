@@ -65,6 +65,9 @@ pub mod errors {
         #[error("Request too big: {0}")]
         RequestTooBig(String),
 
+        #[error("Internal server error: {0}")]
+        InternalServerError(String),
+
         #[error("Authentication failed: {0}")]
         AuthenticationFailed(String),
 
@@ -159,6 +162,7 @@ pub mod errors {
                 ApiError::StateError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::ServerConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::ActorError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::RequestTooBig(_) => StatusCode::PAYLOAD_TOO_LARGE,
             }
         }
@@ -211,4 +215,26 @@ pub mod models {
     pub struct ErrorResponse {
         pub error: String,
     }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RegisterRepoRequest {
+        pub signers_file_url: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct SignerInfo {
+        pub public_key: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RegisterRepoResponse {
+        pub success: bool,
+        pub project_id: String,
+        pub message: String,
+        pub required_signers: Vec<SignerInfo>,
+        pub signature_submission_url: String,
+    }
 }
+
+// Re-export commonly used types at the module level
+pub use models::{RegisterRepoRequest, RegisterRepoResponse, SignerInfo};

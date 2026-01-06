@@ -1,3 +1,5 @@
+use rest_api_types::{RegisterRepoRequest, RegisterRepoResponse};
+
 use std::{path::PathBuf, str::FromStr};
 
 use crate::actors::git_actor::CommitFile;
@@ -6,9 +8,16 @@ use crate::state::AppState;
 use axum::{Json, extract::State, http::HeaderMap};
 use rest_api_types::{
     errors::ApiError,
-    models::{AddFileRequest, AddFileResponse},
+    models::{AddFileRequest, AddFileResponse, SignerInfo},
 };
 use tokio::io::AsyncWriteExt;
+
+fn map_to_user_error(error: impl std::fmt::Display, context: &str) -> ApiError {
+    tracing::error!(internal_error = %error, "{}", context);
+    ApiError::InvalidRequestBody(
+        "Operation failed. Please check your request and try again.".to_string(),
+    )
+}
 
 pub async fn add_file_handler(
     State(state): State<AppState>,
@@ -84,5 +93,119 @@ pub async fn add_file_handler(
         success: true,
         message: "File added successfully".to_string(),
         file_path: request.file_path,
+    }))
+}
+
+pub async fn register_repo_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RegisterRepoRequest>,
+) -> Result<Json<RegisterRepoResponse>, ApiError> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        signers_file_url = %request.signers_file_url,
+        "Received register_repo request"
+    );
+
+    let auth_request = crate::actors::github_project_authenticator::AuthenticateProjectRequest {
+        signers_file_url: request.signers_file_url,
+        request_id: request_id.to_string(),
+    };
+
+    let signers_proposal = state
+        .github_project_authenticator
+        .ask(auth_request)
+        .await
+        .map_err(|e| map_to_user_error(e, "Project authentication failed"))?;
+
+    // Step 2: Initialise signers - create directory structure and files
+    let init_request = crate::actors::signers_initialiser::InitialiseSignersRequest {
+        project_id: signers_proposal.project_id.clone(),
+        signers_config: signers_proposal.signers_config.clone(),
+        git_repo_path: state.git_repo_path.clone(),
+        request_id: request_id.to_string(),
+    };
+
+    let init_result = state
+        .signers_initialiser
+        .ask(init_request)
+        .await
+        .map_err(|e| map_to_user_error(e, "Signers initialisation failed"))?;
+
+    // Step 3: Write and commit files via RepoHandler
+    let write_commit_request = crate::actors::repo_handler::WriteAndCommitFilesRequest {
+        signers_file_path: init_result.signers_file_path.clone(),
+        history_file_path: init_result.history_file_path.clone(),
+        git_repo_path: state.git_repo_path.clone(),
+        request_id: request_id.to_string(),
+    };
+
+    let repo_handler_result = state.repo_handler.ask(write_commit_request).await;
+
+    if let Err(e) = repo_handler_result {
+        tracing::error!(
+            request_id = %request_id,
+            error = %e,
+            "Repo handler write and commit failed, initiating cleanup"
+        );
+
+        let signers_file_path = init_result.signers_file_path.clone();
+        let history_file_path = init_result.history_file_path.clone();
+        let pending_dir = signers_file_path
+            .parent()
+            .ok_or_else(|| {
+                tracing::error!(request_id = %request_id, "Failed to get pending directory parent");
+                ApiError::InvalidRequestBody("Failed to determine pending directory".to_string())
+            })?
+            .to_path_buf();
+
+        let cleanup_request = crate::actors::signers_initialiser::CleanupSignersRequest {
+            signers_file_path,
+            history_file_path,
+            pending_dir,
+            request_id: request_id.to_string(),
+        };
+
+        if let Err(cleanup_err) = state.signers_initialiser.ask(cleanup_request).await {
+            tracing::error!(
+                request_id = %request_id,
+                error = %cleanup_err,
+                "Cleanup also failed"
+            );
+        }
+
+        return Err(map_to_user_error(
+            e,
+            "Git write and commit operation failed",
+        ));
+    }
+
+    tracing::info!(
+        request_id = %request_id,
+        project_id = %signers_proposal.project_id,
+        "Repo handler write and commit succeeded"
+    );
+
+    tracing::info!(
+        request_id = %request_id,
+        project_id = %signers_proposal.project_id,
+        "Project registration completed successfully"
+    );
+
+    Ok(Json(RegisterRepoResponse {
+        success: true,
+        project_id: signers_proposal.project_id,
+        message: "Project registered successfully. Collect signatures to activate.".to_string(),
+        required_signers: init_result
+            .required_signers
+            .into_iter()
+            .map(|key| SignerInfo { public_key: key })
+            .collect(),
+        signature_submission_url: "/sign".to_string(),
     }))
 }
