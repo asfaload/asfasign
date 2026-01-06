@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
-use log::info;
 use rest_api_auth::AUTH_SIGNATURE_VALIDITY_MINUTES;
 use rest_api_types::errors::{ActorError, ApiError};
 use sled;
@@ -31,9 +30,9 @@ impl NonceCleanupActor {
     pub fn new(db_path: PathBuf) -> Result<Self, ActorError> {
         let db = sled::open(&db_path)?;
 
-        info!(
-            "NonceCleanupActor initialized with database at: {:?}",
-            db_path
+        tracing::info!(
+            db_path = %db_path.display(),
+            "NonceCleanupActor initialized"
         );
 
         Ok(Self {
@@ -66,7 +65,7 @@ impl NonceCleanupActor {
         }
 
         if removed_count > 0 {
-            info!("Cleaned up {} expired nonces", removed_count);
+            tracing::info!(removed_count, "Cleaned up expired nonces");
         }
 
         Ok(removed_count)
@@ -130,10 +129,10 @@ impl Actor for NonceCleanupActor {
         args: Self::Args,
         actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        info!("NonceCleanupActor starting with db path: {:?}", args);
+        tracing::info!(db_path = %args.display(), "NonceCleanupActor starting");
         let actor = Self::new(args)?;
 
-        // Start the cleanup cycle immediately
+        // Start cleanup cycle immediately
         let _ = actor_ref.tell(NonceCleanupMessage::PerformCleanup).await;
 
         Ok(actor)
