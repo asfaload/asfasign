@@ -113,10 +113,11 @@ pub async fn register_repo_handler(
         "Received register_repo request"
     );
 
-    let auth_request = crate::actors::github_project_authenticator::AuthenticateProjectRequest {
-        signers_file_url: request.signers_file_url,
-        request_id: request_id.to_string(),
-    };
+    let auth_request =
+        crate::file_auth::github::actors::github_project_validator::ValidateProjectRequest {
+            signers_file_url: request.signers_file_url,
+            request_id: request_id.to_string(),
+        };
 
     let signers_proposal = state
         .github_project_authenticator

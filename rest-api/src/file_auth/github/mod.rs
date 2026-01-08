@@ -1,3 +1,5 @@
+pub mod actors;
+
 use std::path::PathBuf;
 use thiserror::Error;
 
