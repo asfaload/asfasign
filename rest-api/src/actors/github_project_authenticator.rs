@@ -42,17 +42,6 @@ pub fn validate_file_extension(file_path: &std::path::Path) -> Result<(), String
     Ok(())
 }
 
-pub fn validate_content_length(content_length: Option<u64>) -> Result<(), String> {
-    if let Some(length) = content_length.filter(|&l| l > MAX_SIGNERS_FILE_SIZE as u64) {
-        Err(format!(
-            "Signers file too large: {} bytes exceeds {} byte limit",
-            length, MAX_SIGNERS_FILE_SIZE
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 pub fn validate_body_size(body: &[u8]) -> Result<(), String> {
     if body.len() > MAX_SIGNERS_FILE_SIZE {
         return Err(format!(
@@ -326,36 +315,6 @@ mod tests {
     fn test_validate_file_extension_rejects_no_extension() {
         let result = validate_file_extension(PathBuf::from("signers").as_path());
         assert!(result.is_err(), "Should reject files without extension");
-    }
-
-    #[test]
-    fn test_validate_content_length_accepts_small() {
-        let result = validate_content_length(Some(1024)); // 1KB
-        assert!(result.is_ok(), "Should accept 1KB content");
-    }
-
-    #[test]
-    fn test_validate_content_length_accepts_max_size() {
-        let result = validate_content_length(Some(MAX_SIGNERS_FILE_SIZE as u64));
-        assert!(result.is_ok(), "Should accept max size");
-    }
-
-    #[test]
-    fn test_validate_content_length_rejects_over_max() {
-        let result = validate_content_length(Some(MAX_SIGNERS_FILE_SIZE as u64 + 1));
-        assert!(result.is_err(), "Should reject content over max size");
-        let err = result.unwrap_err();
-        assert!(
-            err.contains("too large") || err.contains("limit"),
-            "Error should mention size limit, got: {}",
-            err
-        );
-    }
-
-    #[test]
-    fn test_validate_content_length_accepts_none() {
-        let result = validate_content_length(None);
-        assert!(result.is_ok(), "Should accept missing content-length");
     }
 
     #[test]
