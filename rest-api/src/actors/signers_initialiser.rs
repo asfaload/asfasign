@@ -1,13 +1,14 @@
-use common::fs::names::{
-    PENDING_SIGNERS_DIR, PENDING_SIGNERS_FILE, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
-};
+use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::AsfaloadPublicKeys;
 use signers_file_types::SignersConfig;
-use std::{fs, path::PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
+
+use crate::path_validation::NormalisedPaths;
 
 #[derive(Debug, Clone)]
 pub struct InitialiseSignersRequest {
@@ -21,8 +22,8 @@ pub struct InitialiseSignersRequest {
 pub struct InitialiseSignersResult {
     pub project_id: String,
     pub required_signers: Vec<String>,
-    pub signers_file_path: PathBuf,
-    pub history_file_path: PathBuf,
+    pub signers_file_path: NormalisedPaths,
+    pub history_file_path: NormalisedPaths,
     pub request_id: String,
 }
 
@@ -64,13 +65,13 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             "SignersInitialiser received initialisation request"
         );
 
-        let validated_project_dir = tokio::task::spawn_blocking({
+        let project_normalised_paths = tokio::task::spawn_blocking({
             let git_repo_path = msg.git_repo_path.clone();
             let project_id = msg.project_id.clone();
-            move || validate_project_id(&git_repo_path, &project_id)
+            move || validate_project_id(git_repo_path, project_id)
         })
         .await
-        .map_err(ApiError::from)?
+        .map_err(ApiError::from)
         .map_err(|e| {
             tracing::error!(
                 request_id = %msg.request_id,
@@ -79,39 +80,63 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
                 "Project ID validation failed"
             );
             e
-        })?;
+        })?
+        .await?;
 
-        let project_dir = validated_project_dir;
-        let signers_pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
-        let signers_file_path = signers_pending_dir.join(SIGNERS_FILE);
-        let history_file_path = project_dir.join(SIGNERS_HISTORY_FILE);
+        tracing::debug!(
+                request_id = %msg.request_id,
+                project_id = %msg.project_id,
+            project_normalised_paths_relative = %project_normalised_paths.relative_path().display(),
+            project_normalised_paths_absolute = %project_normalised_paths.absolute_path().display(),
+            "Computed normalised paths for project"
+        );
 
-        tokio::fs::create_dir_all(&signers_pending_dir)
-            .await
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    tracing::warn!(
-                        request_id = %msg.request_id,
-                        project_id = %msg.project_id,
-                        "Project directory already exists"
-                    );
-                    return ApiError::InvalidRequestBody(format!(
-                        "Project '{}' is already registered",
-                        msg.project_id
-                    ));
-                }
-                tracing::error!(
+        let signers_normalised_paths = NormalisedPaths::new(
+            &msg.git_repo_path,
+            project_normalised_paths
+                .relative_path()
+                .join(PENDING_SIGNERS_DIR)
+                .join(SIGNERS_FILE),
+        )
+        .await?;
+        let history_normalised_paths = NormalisedPaths::new(
+            msg.git_repo_path,
+            project_normalised_paths
+                .relative_path()
+                .join(SIGNERS_HISTORY_FILE),
+        )
+        .await?;
+
+        tokio::fs::create_dir_all(&signers_normalised_paths.absolute_path().parent().ok_or(
+            ApiError::InvalidFilePath(
+                "Could not determine parent dir of signers file path".to_string(),
+            ),
+        )?)
+        .await
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                tracing::warn!(
                     request_id = %msg.request_id,
-                    error = %e,
-                    path = %signers_pending_dir.display(),
-                    "Failed to create signers directory"
+                    project_id = %msg.project_id,
+                    "Project directory already exists"
                 );
-                ApiError::DirectoryCreationFailed(format!(
-                    "Failed to create directory {}: {}",
-                    signers_pending_dir.display(),
-                    e
-                ))
-            })?;
+                return ApiError::InvalidRequestBody(format!(
+                    "Project '{}' is already registered",
+                    msg.project_id
+                ));
+            }
+            tracing::error!(
+                request_id = %msg.request_id,
+                error = %e,
+                path = %signers_normalised_paths.absolute_path().display(),
+                "Failed to create signers directory"
+            );
+            ApiError::DirectoryCreationFailed(format!(
+                "Failed to create directory {}: {}",
+                signers_normalised_paths.absolute_path().display(),
+                e
+            ))
+        })?;
 
         let signers_json = serde_json::to_string_pretty(&msg.signers_config).map_err(|e| {
             tracing::error!(
@@ -121,6 +146,9 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             );
             ApiError::FileWriteFailed(format!("Failed to serialize signers config: {}", e))
         })?;
+
+        let signers_file_path = signers_normalised_paths.absolute_path();
+        let history_file_path = history_normalised_paths.absolute_path();
 
         tokio::fs::write(&signers_file_path, signers_json)
             .await
@@ -137,6 +165,12 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
                     e
                 ))
             })?;
+
+        tracing::debug!(
+            request_id = %msg.request_id,
+            file_path = %signers_file_path.display(),
+            "Wrote signers file to disk"
+        );
 
         let history_json = "[]";
         tokio::fs::write(&history_file_path, history_json)
@@ -155,6 +189,12 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
                 ))
             })?;
 
+        tracing::debug!(
+            request_id = %msg.request_id,
+            file_path = %signers_file_path.display(),
+            "Wrote history file to disk"
+        );
+
         let required_signers: Vec<String> = msg
             .signers_config
             .all_signer_keys()
@@ -172,8 +212,8 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         Ok(InitialiseSignersResult {
             project_id: msg.project_id,
             required_signers,
-            signers_file_path,
-            history_file_path,
+            signers_file_path: signers_normalised_paths,
+            history_file_path: history_normalised_paths,
             request_id: msg.request_id,
         })
     }
@@ -232,7 +272,11 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
     }
 }
 
-fn validate_project_id(git_repo_path: &PathBuf, project_id: &str) -> Result<PathBuf, ApiError> {
+async fn validate_project_id<P: AsRef<Path>>(
+    git_repo_path: P,
+    project_id_in: impl Into<String>,
+) -> Result<NormalisedPaths, ApiError> {
+    let project_id = project_id_in.into();
     if project_id.contains('\0') {
         return Err(ApiError::InvalidRequestBody(
             "Project ID must not contain null bytes".to_string(),
@@ -245,30 +289,9 @@ fn validate_project_id(git_repo_path: &PathBuf, project_id: &str) -> Result<Path
         ));
     }
 
-    let project_path = git_repo_path.join(project_id);
-    let canonical_base = fs::canonicalize(git_repo_path).map_err(|e| {
-        ApiError::InvalidFilePath(format!("Failed to resolve repository path: {}", e))
-    })?;
+    let normalised_paths = NormalisedPaths::new(git_repo_path, project_id).await?;
 
-    let canonical_project = project_path.canonicalize();
-    let canonical_project = match canonical_project {
-        Ok(path) => path,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => project_path.clone(),
-        Err(e) => {
-            return Err(ApiError::InvalidFilePath(format!(
-                "Failed to resolve project path: {}",
-                e
-            )));
-        }
-    };
-
-    if !canonical_project.starts_with(&canonical_base) {
-        return Err(ApiError::InvalidRequestBody(
-            "Invalid project ID: path traversal detected".to_string(),
-        ));
-    }
-
-    Ok(project_path)
+    Ok(normalised_paths)
 }
 
 #[cfg(test)]
@@ -278,12 +301,12 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_validate_project_id_with_null_bytes() {
+    #[tokio::test]
+    async fn test_validate_project_id_with_null_bytes() {
         let temp_dir = TempDir::new().unwrap();
         let git_repo_path = temp_dir.path().to_path_buf();
 
-        let result = validate_project_id(&git_repo_path, "github.com/user/repo\0");
+        let result = validate_project_id(&git_repo_path, "github.com/user/repo\0").await;
         assert!(result.is_err());
         match result.unwrap_err() {
             ApiError::InvalidRequestBody(msg) => {
@@ -293,12 +316,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_validate_project_id_with_backslashes() {
+    #[tokio::test]
+    async fn test_validate_project_id_with_backslashes() {
         let temp_dir = TempDir::new().unwrap();
         let git_repo_path = temp_dir.path().to_path_buf();
 
-        let result = validate_project_id(&git_repo_path, "github.com\\user\\repo");
+        let result = validate_project_id(&git_repo_path, "github.com\\user\\repo").await;
         assert!(result.is_err());
         match result.unwrap_err() {
             ApiError::InvalidRequestBody(msg) => {
@@ -308,20 +331,20 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_validate_project_id_valid() {
+    #[tokio::test]
+    async fn test_validate_project_id_valid() {
         let temp_dir = TempDir::new().unwrap();
         let git_repo_path = temp_dir.path().to_path_buf();
 
-        let result = validate_project_id(&git_repo_path, "github.com/user/repo");
+        let result = validate_project_id(&git_repo_path, "github.com/user/repo").await;
         assert!(result.is_ok());
         let path = result.unwrap();
-        assert!(path.starts_with(&git_repo_path));
-        assert!(path.ends_with("github.com/user/repo"));
+        assert!(path.absolute_path().starts_with(&git_repo_path));
+        assert!(path.absolute_path().ends_with("github.com/user/repo"));
     }
 
-    #[test]
-    fn test_validate_project_id_with_existing_directory() {
+    #[tokio::test]
+    async fn test_validate_project_id_with_existing_directory() {
         let temp_dir = TempDir::new().unwrap();
         let git_repo_path = temp_dir.path().to_path_buf();
 
@@ -329,10 +352,10 @@ mod tests {
         let project_path = git_repo_path.join(project_id);
         fs::create_dir_all(&project_path).unwrap();
 
-        let result = validate_project_id(&git_repo_path, project_id);
+        let result = validate_project_id(&git_repo_path, project_id).await;
         assert!(result.is_ok());
         let path = result.unwrap();
-        assert_eq!(path, project_path);
+        assert_eq!(path.absolute_path(), project_path);
     }
 
     #[tokio::test]
@@ -364,17 +387,19 @@ mod tests {
         let project_dir = git_path.join("github.com/test/repo");
         let signers_pending_dir = project_dir.join("asfaload.signers.pending");
         assert!(signers_pending_dir.exists());
-        assert!(init_result.signers_file_path.exists());
-        assert!(init_result.history_file_path.exists());
+        assert!(init_result.signers_file_path.absolute_path().exists());
+        assert!(init_result.history_file_path.absolute_path().exists());
 
-        let history_content = tokio::fs::read_to_string(&init_result.history_file_path)
-            .await
-            .unwrap();
+        let history_content =
+            tokio::fs::read_to_string(&init_result.history_file_path.absolute_path())
+                .await
+                .unwrap();
         assert_eq!(history_content, "[]");
 
-        let signers_content = tokio::fs::read_to_string(&init_result.signers_file_path)
-            .await
-            .unwrap();
+        let signers_content =
+            tokio::fs::read_to_string(&init_result.signers_file_path.absolute_path())
+                .await
+                .unwrap();
         let parsed_config: SignersConfig = serde_json::from_str(&signers_content).unwrap();
         assert_eq!(parsed_config.artifact_signers().len(), 1);
     }

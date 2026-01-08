@@ -154,8 +154,8 @@ pub async fn register_repo_handler(
             "Repo handler write and commit failed, initiating cleanup"
         );
 
-        let signers_file_path = init_result.signers_file_path.clone();
-        let history_file_path = init_result.history_file_path.clone();
+        let signers_file_path = init_result.signers_file_path.absolute_path().clone();
+        let history_file_path = init_result.history_file_path.absolute_path().clone();
         let pending_dir = signers_file_path
             .parent()
             .ok_or_else(|| {

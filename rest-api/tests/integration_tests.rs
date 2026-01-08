@@ -634,7 +634,7 @@ pub mod tests {
         response.assert_status_ok();
 
         let response_body = response.json::<RegisterRepoResponse>();
-        assert_eq!(response_body.success, true);
+        assert!(response_body.success);
         assert_eq!(response_body.project_id, "github.com/owner/repo");
         assert_eq!(
             response_body.message,
@@ -792,8 +792,8 @@ pub mod tests {
         );
 
         let cleanup_request = CleanupSignersRequest {
-            signers_file_path: init_result.signers_file_path.clone(),
-            history_file_path: init_result.history_file_path.clone(),
+            signers_file_path: init_result.signers_file_path.absolute_path(),
+            history_file_path: init_result.history_file_path.absolute_path(),
             pending_dir: signers_pending_dir.clone(),
             request_id: "test-123".to_string(),
         };

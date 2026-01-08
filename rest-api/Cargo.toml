@@ -22,7 +22,12 @@ futures-util = "0.3"
 thiserror = "2.0.17"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-tower-http = { version = "0.6", features = ["trace", "request-id", "util", "limit"] }
+tower-http = { version = "0.6", features = [
+  "trace",
+  "request-id",
+  "util",
+  "limit",
+] }
 tower_governor = "0.8"
 rest_api_types = { path = "../rest_api_types/" }
 rest_api_auth = { path = "../rest_api_auth/" }

@@ -30,14 +30,17 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
                 "Invalid rate limiter configuration: failed to build governor config".to_string(),
             ))
         })?;
-    let app = Router::new()
-        .route("/register_repo", post(register_repo_handler))
+
+    let register_router = Router::new().route("/register_repo", post(register_repo_handler));
+    let add_file_router = Router::new()
         .route("/add-file", post(add_file_handler))
         .layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             auth_middleware,
-        ))
-        .layer(GovernorLayer::new(governor_conf))
+        ));
+    let app = register_router
+        .merge(add_file_router)
+        //.layer(GovernorLayer::new(governor_conf))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(
