@@ -196,6 +196,7 @@ pub mod environment {
 }
 
 pub mod models {
+    use features_lib::AsfaloadPublicKeys;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Deserialize)]
@@ -222,19 +223,14 @@ pub mod models {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct SignerInfo {
-        pub public_key: String,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RegisterRepoResponse {
         pub success: bool,
         pub project_id: String,
         pub message: String,
-        pub required_signers: Vec<SignerInfo>,
+        pub required_signers: Vec<String>,
         pub signature_submission_url: String,
     }
 }
 
 // Re-export commonly used types at the module level
-pub use models::{RegisterRepoRequest, RegisterRepoResponse, SignerInfo};
+pub use models::{RegisterRepoRequest, RegisterRepoResponse};

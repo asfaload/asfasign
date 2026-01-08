@@ -1,3 +1,4 @@
+use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use rest_api_types::{RegisterRepoRequest, RegisterRepoResponse};
 
 use std::{path::PathBuf, str::FromStr};
@@ -8,7 +9,7 @@ use crate::state::AppState;
 use axum::{Json, extract::State, http::HeaderMap};
 use rest_api_types::{
     errors::ApiError,
-    models::{AddFileRequest, AddFileResponse, SignerInfo},
+    models::{AddFileRequest, AddFileResponse},
 };
 use tokio::io::AsyncWriteExt;
 
@@ -201,11 +202,7 @@ pub async fn register_repo_handler(
         success: true,
         project_id: signers_proposal.project_id,
         message: "Project registered successfully. Collect signatures to activate.".to_string(),
-        required_signers: init_result
-            .required_signers
-            .into_iter()
-            .map(|key| SignerInfo { public_key: key })
-            .collect(),
+        required_signers: init_result.required_signers.into_iter().collect(),
         signature_submission_url: "/sign".to_string(),
     }))
 }

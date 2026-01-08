@@ -641,10 +641,7 @@ pub mod tests {
             "Project registered successfully. Collect signatures to activate."
         );
         assert_eq!(response_body.required_signers.len(), 1);
-        assert_eq!(
-            response_body.required_signers[0].public_key,
-            public_key.to_base64()
-        );
+        assert_eq!(response_body.required_signers[0], public_key.to_base64());
         assert_eq!(response_body.signature_submission_url, "/sign");
 
         mock.assert();

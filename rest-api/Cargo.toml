@@ -39,6 +39,7 @@ sled = "0.34"
 chrono = "0.4"
 signers_file_types = { path = "../core/signers_file_types/" }
 signatures = { path = "../core/signatures/" }
+features_lib = { path = "../core/features_lib/" }
 common = { path = "../core/common/" }
 uuid = "1.19.0"
 futures = "0.3.31"
