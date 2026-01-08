@@ -35,7 +35,8 @@ pub fn validate_file_extension(file_path: &std::path::Path) -> Result<(), String
     if !ALLOWED_EXTENSIONS.iter().any(|&ext| Some(ext) == extension) {
         let file_ext = extension.unwrap_or("none");
         return Err(format!(
-            "Signers file must have .json extension, got .{}",
+            "Signers file must have extension in [ {} ], got .{}",
+            ALLOWED_EXTENSIONS.join(","),
             file_ext
         ));
     }
