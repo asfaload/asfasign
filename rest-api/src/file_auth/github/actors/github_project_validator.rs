@@ -6,8 +6,9 @@ use signers_file_types::SignersConfig;
 
 use crate::file_auth::github::parse_github_url;
 
+const ACTOR_NAME: &str = "github_registration_validator";
 #[derive(Debug, Clone)]
-pub struct AuthenticateProjectRequest {
+pub struct ValidateProjectRequest {
     pub signers_file_url: String,
     pub request_id: String,
 }
@@ -19,7 +20,7 @@ pub struct ProjectSignersProposal {
     pub request_id: String,
 }
 
-pub struct GitHubProjectAuthenticator {
+pub struct GitHubProjectValidator {
     http_client: Client,
 }
 
@@ -54,9 +55,9 @@ pub fn validate_body_size(body: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-impl GitHubProjectAuthenticator {
+impl GitHubProjectValidator {
     pub fn new() -> Self {
-        tracing::info!("GitHubProjectAuthenticator created");
+        tracing::info!(actor_name = ACTOR_NAME, "GitHubProjectValidator created");
         Self {
             http_client: Client::new(),
         }
@@ -111,7 +112,7 @@ impl GitHubProjectAuthenticator {
         }
     }
 
-    async fn authenticate_project(
+    async fn validate_project(
         &self,
         signers_file_url: &str,
         request_id: &str,
@@ -119,7 +120,7 @@ impl GitHubProjectAuthenticator {
         tracing::info!(
             request_id = %request_id,
             signers_file_url = %signers_file_url,
-            "Attempting to authenticate project"
+            "Attempting to validate project"
         );
 
         let repo_info = parse_github_url(signers_file_url).map_err(|e| {
@@ -249,27 +250,27 @@ impl GitHubProjectAuthenticator {
     }
 }
 
-impl Message<AuthenticateProjectRequest> for GitHubProjectAuthenticator {
+impl Message<ValidateProjectRequest> for GitHubProjectValidator {
     type Reply = Result<ProjectSignersProposal, ApiError>;
 
     #[tracing::instrument(skip(self, msg, _ctx))]
     async fn handle(
         &mut self,
-        msg: AuthenticateProjectRequest,
+        msg: ValidateProjectRequest,
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         tracing::info!(
             request_id = %msg.request_id,
             signers_file_url = %msg.signers_file_url,
-            "GitHubProjectAuthenticator received authentication request"
+            "GitHubProjectValidator received authentication request"
         );
 
-        self.authenticate_project(&msg.signers_file_url, &msg.request_id)
+        self.validate_project(&msg.signers_file_url, &msg.request_id)
             .await
     }
 }
 
-impl Actor for GitHubProjectAuthenticator {
+impl Actor for GitHubProjectValidator {
     type Args = ();
     type Error = String;
 
@@ -277,12 +278,12 @@ impl Actor for GitHubProjectAuthenticator {
         _args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        tracing::info!("GitHubProjectAuthenticator starting");
+        tracing::info!(actor_name = ACTOR_NAME, "GitHubProjectValidator starting");
         Ok(Self::new())
     }
 }
 
-impl Default for GitHubProjectAuthenticator {
+impl Default for GitHubProjectValidator {
     fn default() -> Self {
         Self::new()
     }
@@ -366,13 +367,13 @@ mod tests {
             then.status(429).header("Retry-After", "200");
         });
 
-        let authenticator = GitHubProjectAuthenticator::new();
+        let authenticator = GitHubProjectValidator::new();
 
         // Start the authentication in the background
         let handle = tokio::spawn({
             async move {
                 authenticator
-                    .authenticate_project(&url, "test-rate-limit")
+                    .validate_project(&url, "test-rate-limit")
                     .await
             }
         });
@@ -441,10 +442,8 @@ mod tests {
 
         let url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
 
-        let authenticator = GitHubProjectAuthenticator::new();
-        let result = authenticator
-            .authenticate_project(&url, "test-request")
-            .await;
+        let validator = GitHubProjectValidator::new();
+        let result = validator.validate_project(&url, "test-request").await;
 
         assert!(
             result.is_ok(),
