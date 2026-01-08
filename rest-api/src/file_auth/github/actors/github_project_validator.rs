@@ -57,7 +57,10 @@ pub fn validate_body_size(body: &[u8]) -> Result<(), String> {
 
 impl GitHubProjectValidator {
     pub fn new() -> Self {
-        tracing::info!(actor_name = ACTOR_NAME, "GitHubProjectValidator created");
+        tracing::info!(
+            actor_name = ACTOR_NAME,
+            "GitHubProjectAuthenticator created"
+        );
         Self {
             http_client: Client::new(),
         }
@@ -69,7 +72,7 @@ impl GitHubProjectValidator {
 
         loop {
             let response = self.http_client.get(url).send().await.map_err(|e| {
-                tracing::error!(request_id = %request_id, url = %url, error = %e, "Failed to fetch signers file");
+                tracing::error!(actor_name = ACTOR_NAME, request_id = %request_id, url = %url, error = %e, "Failed to fetch signers file");
                 ApiError::ActorOperationFailed(format!("Failed to fetch: {}", e))
             })?;
 
@@ -87,7 +90,7 @@ impl GitHubProjectValidator {
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(backoff_ms);
 
-                tracing::warn!(request_id = %request_id, retry_after_ms = %retry_after, "Rate limited by GitHub, waiting before retry");
+                tracing::warn!(actor_name = ACTOR_NAME,request_id = %request_id, retry_after_ms = %retry_after, "Rate limited by GitHub, waiting before retry");
 
                 tokio::time::sleep(std::time::Duration::from_millis(retry_after)).await;
 
@@ -104,7 +107,7 @@ impl GitHubProjectValidator {
             }
 
             let content = response.text().await.map_err(|e| {
-                tracing::error!(request_id = %request_id, error = %e, "Failed to read response body");
+                tracing::error!(actor_name = ACTOR_NAME,request_id = %request_id, error = %e, "Failed to read response body");
                 ApiError::ActorOperationFailed(format!("Failed to read response: {}", e))
             })?;
 
@@ -118,14 +121,14 @@ impl GitHubProjectValidator {
         request_id: &str,
     ) -> Result<ProjectSignersProposal, ApiError> {
         tracing::info!(
-            request_id = %request_id,
+            actor_name = ACTOR_NAME,request_id = %request_id,
             signers_file_url = %signers_file_url,
             "Attempting to validate project"
         );
 
         let repo_info = parse_github_url(signers_file_url).map_err(|e| {
             tracing::error!(
-                request_id = %request_id,
+                actor_name = ACTOR_NAME,request_id = %request_id,
                 url = %signers_file_url,
                 error = %e,
                 "Failed to parse GitHub URL"
@@ -134,6 +137,7 @@ impl GitHubProjectValidator {
         })?;
 
         tracing::info!(
+            actor_name = ACTOR_NAME,
             request_id = %request_id,
             owner = %repo_info.owner,
             repo = %repo_info.repo,
@@ -143,7 +147,7 @@ impl GitHubProjectValidator {
         );
 
         validate_file_extension(&repo_info.file_path).map_err(|e| {
-            tracing::error!(request_id = %request_id, error = %e, "Invalid file extension");
+            tracing::error!(actor_name = ACTOR_NAME,request_id = %request_id, error = %e, "Invalid file extension");
             ApiError::InvalidRequestBody(e)
         })?;
 
@@ -152,13 +156,13 @@ impl GitHubProjectValidator {
             .await?;
 
         tracing::info!(
-            request_id = %request_id,
+            actor_name = ACTOR_NAME,request_id = %request_id,
             content_length = content.len(),
             "Fetched signers file content successfully"
         );
 
         validate_body_size(content.as_bytes()).map_err(|e| {
-            tracing::error!(request_id = %request_id, error = %e, "Body size exceeds limit");
+            tracing::error!(actor_name = ACTOR_NAME,request_id = %request_id, error = %e, "Body size exceeds limit");
             ApiError::InvalidRequestBody(e)
         })?;
 
@@ -180,7 +184,7 @@ impl GitHubProjectValidator {
         for group in signers_config.artifact_signers() {
             if group.threshold > group.signers.len() as u32 {
                 tracing::error!(
-                    request_id = %request_id,
+                    actor_name = ACTOR_NAME,request_id = %request_id,
                     group_threshold = group.threshold,
                     signer_count = group.signers.len(),
                     "Artifact signers group threshold exceeds signer count"
@@ -196,7 +200,7 @@ impl GitHubProjectValidator {
         for group in signers_config.admin_keys() {
             if group.threshold > group.signers.len() as u32 {
                 tracing::error!(
-                    request_id = %request_id,
+                    actor_name = ACTOR_NAME,request_id = %request_id,
                     group_threshold = group.threshold,
                     signer_count = group.signers.len(),
                     "Admin keys group threshold exceeds signer count"
@@ -213,7 +217,7 @@ impl GitHubProjectValidator {
             for group in master_keys {
                 if group.threshold > group.signers.len() as u32 {
                     tracing::error!(
-                        request_id = %request_id,
+                    actor_name = ACTOR_NAME,    request_id = %request_id,
                         group_threshold = group.threshold,
                         signer_count = group.signers.len(),
                         "Master keys group threshold exceeds signer count"
@@ -228,7 +232,7 @@ impl GitHubProjectValidator {
         }
 
         tracing::info!(
-            request_id = %request_id,
+        actor_name = ACTOR_NAME,    request_id = %request_id,
             owner = %repo_info.owner,
             repo = %repo_info.repo,
             "Signers config validated successfully"
@@ -237,7 +241,7 @@ impl GitHubProjectValidator {
         let project_id = format!("github.com/{}/{}", repo_info.owner, repo_info.repo);
 
         tracing::info!(
-            request_id = %request_id,
+        actor_name = ACTOR_NAME,    request_id = %request_id,
             project_id = %project_id,
             "Project authentication successful"
         );
@@ -260,7 +264,7 @@ impl Message<ValidateProjectRequest> for GitHubProjectValidator {
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         tracing::info!(
-            request_id = %msg.request_id,
+        actor_name = ACTOR_NAME,    request_id = %msg.request_id,
             signers_file_url = %msg.signers_file_url,
             "GitHubProjectValidator received authentication request"
         );
@@ -278,7 +282,10 @@ impl Actor for GitHubProjectValidator {
         _args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        tracing::info!(actor_name = ACTOR_NAME, "GitHubProjectValidator starting");
+        tracing::info!(
+            actor_name = ACTOR_NAME,
+            "GitHubProjectAuthenticator starting"
+        );
         Ok(Self::new())
     }
 }
