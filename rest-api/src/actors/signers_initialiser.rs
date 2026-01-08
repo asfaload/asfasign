@@ -1,3 +1,6 @@
+use common::fs::names::{
+    PENDING_SIGNERS_DIR, PENDING_SIGNERS_FILE, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
+};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
@@ -79,9 +82,9 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         })?;
 
         let project_dir = validated_project_dir;
-        let signers_pending_dir = project_dir.join("asfaload.signers.pending");
-        let signers_file_path = signers_pending_dir.join("index.json");
-        let history_file_path = project_dir.join("asfaload.signers.history.json");
+        let signers_pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        let signers_file_path = signers_pending_dir.join(SIGNERS_FILE);
+        let history_file_path = project_dir.join(SIGNERS_HISTORY_FILE);
 
         tokio::fs::create_dir_all(&signers_pending_dir)
             .await
