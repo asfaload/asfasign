@@ -40,7 +40,7 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
         ));
     let app = register_router
         .merge(add_file_router)
-        //.layer(GovernorLayer::new(governor_conf))
+        .layer(GovernorLayer::new(governor_conf))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(
@@ -56,6 +56,10 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
     tracing::info!(address = %addr, "Server listening");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
