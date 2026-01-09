@@ -138,51 +138,46 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             ApiError::FileWriteFailed(format!("Failed to serialize signers config: {}", e))
         })?;
 
-        let signers_file_path = signers_normalised_paths.absolute_path();
-        let history_file_path = history_normalised_paths.absolute_path();
-
-        tokio::fs::write(&signers_file_path, signers_json)
+        tokio::fs::write(&signers_normalised_paths, signers_json)
             .await
             .map_err(|e| {
                 tracing::error!(
                     request_id = %msg.request_id,
                     error = %e,
-                    path = %signers_file_path.display(),
+                    path = %signers_normalised_paths,
                     "Failed to write signers file"
                 );
                 ApiError::FileWriteFailed(format!(
                     "Failed to write signers file {}: {}",
-                    signers_file_path.display(),
-                    e
+                    signers_normalised_paths, e
                 ))
             })?;
 
         tracing::debug!(
             request_id = %msg.request_id,
-            file_path = %signers_file_path.display(),
+            file_path = %signers_normalised_paths,
             "Wrote signers file to disk"
         );
 
         let history_json = "[]";
-        tokio::fs::write(&history_file_path, history_json)
+        tokio::fs::write(&history_normalised_paths, history_json)
             .await
             .map_err(|e| {
                 tracing::error!(
                     request_id = %msg.request_id,
                     error = %e,
-                    path = %history_file_path.display(),
+                    path = %history_normalised_paths,
                     "Failed to write history file"
                 );
                 ApiError::FileWriteFailed(format!(
                     "Failed to write history file {}: {}",
-                    history_file_path.display(),
-                    e
+                    history_normalised_paths, e
                 ))
             })?;
 
         tracing::debug!(
             request_id = %msg.request_id,
-            file_path = %signers_file_path.display(),
+            file_path = %signers_normalised_paths,
             "Wrote history file to disk"
         );
 

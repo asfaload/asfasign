@@ -1,4 +1,5 @@
 use std::{
+    fmt::{Display, Formatter},
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -44,6 +45,18 @@ impl NormalisedPaths {
         tokio::task::spawn_blocking(move || build_normalised_absolute_path(base_path, new_path))
             .await
             .map_err(ApiError::from)?
+    }
+}
+
+impl AsRef<Path> for NormalisedPaths {
+    fn as_ref(&self) -> &Path {
+        self.absolute_path.as_path()
+    }
+}
+
+impl Display for NormalisedPaths {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.absolute_path.display())
     }
 }
 
