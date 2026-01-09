@@ -703,12 +703,13 @@ pub mod tests {
             })
             .await;
 
-        response.assert_status(StatusCode::INTERNAL_SERVER_ERROR);
+        response.assert_status(StatusCode::BAD_REQUEST);
 
         let response_body: serde_json::Value = response.json();
         assert!(response_body.get("error").is_some());
 
-        mock.assert();
+        // project existence is detected before sending out request
+        mock.assert_hits(0);
 
         Ok(())
     }
