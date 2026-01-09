@@ -196,7 +196,6 @@ pub mod environment {
 }
 
 pub mod models {
-    use features_lib::AsfaloadPublicKeys;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Deserialize)]

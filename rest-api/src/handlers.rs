@@ -1,4 +1,3 @@
-use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use rest_api_types::{RegisterRepoRequest, RegisterRepoResponse};
 
 use std::{path::PathBuf, str::FromStr};
