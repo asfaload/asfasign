@@ -474,14 +474,19 @@ mod tests {
             Ok(_) => panic!("Expected error for path traversal"),
             Err(send_error) => match send_error {
                 kameo::error::SendError::HandlerError(api_error) => match api_error {
-                    ApiError::InvalidRequestBody(msg) => {
-                        assert!(
-                            msg.contains("Invalid project ID") || msg.contains("path traversal")
+                    ApiError::InvalidFilePath(msg) => {
+                        assert_eq!(
+                            msg, "Path traversal attempt through parent dir",
+                            "But got {}",
+                            msg
                         );
                     }
-                    _ => panic!("Expected InvalidRequestBody error for path traversal"),
+                    e => panic!(
+                        "Expected InvalidFilePath error for path traversal, got {}",
+                        e
+                    ),
                 },
-                _ => panic!("Expected HandlerError for path traversal"),
+                e => panic!("Expected HandlerError for path traversal, got {}", e),
             },
         }
     }
