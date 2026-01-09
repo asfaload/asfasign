@@ -76,6 +76,7 @@ impl GitHubProjectValidator {
                 ApiError::ActorOperationFailed(format!("Failed to fetch: {}", e))
             })?;
 
+            // Too many requests, we need to wait before next try
             if response.status() == 429 {
                 if retries >= MAX_RETRIES {
                     return Err(ApiError::ActorOperationFailed(
@@ -96,10 +97,12 @@ impl GitHubProjectValidator {
 
                 retries += 1;
                 backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
+                // We can now try again, so start a new loop iteration
                 continue;
             }
 
             if !response.status().is_success() {
+                tracing::error!(actor_name = ACTOR_NAME, request_id = %request_id, url = %url, status = %response.status(), "Github returned non success status");
                 return Err(ApiError::ActorOperationFailed(format!(
                     "GitHub returned status: {}",
                     response.status()
