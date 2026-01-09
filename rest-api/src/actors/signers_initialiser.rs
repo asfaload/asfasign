@@ -212,7 +212,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
 }
 
 impl Message<CleanupSignersRequest> for SignersInitialiser {
-    type Reply = Result<(), String>;
+    type Reply = Result<(), ApiError>;
 
     #[tracing::instrument(skip(self, msg, _ctx))]
     async fn handle(
@@ -228,7 +228,9 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
             "Cleaning up signers files"
         );
 
+        let mut had_error = false;
         if let Err(e) = tokio::fs::remove_file(&msg.signers_file_path).await {
+            had_error = true;
             tracing::warn!(
                 request_id = %msg.request_id,
                 path = %msg.signers_file_path.display(),
@@ -238,6 +240,7 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
         }
 
         if let Err(e) = tokio::fs::remove_file(&msg.history_file_path).await {
+            had_error = true;
             tracing::warn!(
                 request_id = %msg.request_id,
                 path = %msg.history_file_path.display(),
@@ -247,6 +250,7 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
         }
 
         if let Err(e) = tokio::fs::remove_dir_all(&msg.pending_dir).await {
+            had_error = true;
             tracing::warn!(
                 request_id = %msg.request_id,
                 path = %msg.pending_dir.display(),
@@ -260,7 +264,11 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
             "Cleanup completed"
         );
 
-        Ok(())
+        if had_error {
+            Err(ApiError::ActorOperationFailed("Cleanup failed".to_string()))
+        } else {
+            Ok(())
+        }
     }
 }
 
