@@ -98,33 +98,39 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             .await?;
         let history_normalised_paths = project_normalised_paths.join(SIGNERS_HISTORY_FILE).await?;
 
-        tokio::fs::create_dir_all(&signers_normalised_paths.absolute_path().parent().ok_or(
+        // Need to assign to avoid
+        //    rustc: temporary value dropped while borrowed
+        //    consider using a `let` binding to create a longer lived value [E0716]
+        let target = signers_normalised_paths.absolute_path();
+        let pending_dir_result = target.parent();
+        let pending_dir = pending_dir_result.ok_or_else(|| {
             ApiError::InvalidFilePath(
                 "Could not determine parent dir of signers file path".to_string(),
-            ),
-        )?)
-        .await
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::AlreadyExists {
-                tracing::warn!(
-                    request_id = %msg.request_id,
-                    project_id = %msg.project_id,
-                    "Project directory already exists"
-                );
-                return ApiError::InvalidRequestBody(format!(
-                    "Project '{}' is already registered",
-                    msg.project_id
-                ));
-            }
+            )
+        })?;
+
+        if pending_dir.exists() {
+            tracing::warn!(
+                request_id = %msg.request_id,
+                project_id = %msg.project_id,
+                "Project directory structure already exists, indicating a pending or completed registration."
+            );
+            return Err(ApiError::InvalidRequestBody(format!(
+                "Project '{}' is already registered or registration is in progress.",
+                msg.project_id
+            )));
+        }
+
+        tokio::fs::create_dir_all(&pending_dir).await.map_err(|e| {
             tracing::error!(
                 request_id = %msg.request_id,
                 error = %e,
-                path = %signers_normalised_paths.absolute_path().display(),
+                path = %pending_dir.display(),
                 "Failed to create signers directory"
             );
             ApiError::DirectoryCreationFailed(format!(
                 "Failed to create directory {}: {}",
-                signers_normalised_paths.absolute_path().display(),
+                pending_dir.display(),
                 e
             ))
         })?;
