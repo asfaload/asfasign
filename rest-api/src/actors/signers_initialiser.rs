@@ -91,21 +91,12 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             "Computed normalised paths for project"
         );
 
-        let signers_normalised_paths = NormalisedPaths::new(
-            &msg.git_repo_path,
-            project_normalised_paths
-                .relative_path()
-                .join(PENDING_SIGNERS_DIR)
-                .join(SIGNERS_FILE),
-        )
-        .await?;
-        let history_normalised_paths = NormalisedPaths::new(
-            msg.git_repo_path,
-            project_normalised_paths
-                .relative_path()
-                .join(SIGNERS_HISTORY_FILE),
-        )
-        .await?;
+        let signers_normalised_paths = project_normalised_paths
+            .join(PENDING_SIGNERS_DIR)
+            .await?
+            .join(SIGNERS_FILE)
+            .await?;
+        let history_normalised_paths = project_normalised_paths.join(SIGNERS_HISTORY_FILE).await?;
 
         tokio::fs::create_dir_all(&signers_normalised_paths.absolute_path().parent().ok_or(
             ApiError::InvalidFilePath(
