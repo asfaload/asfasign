@@ -20,7 +20,7 @@ pub struct InitialiseSignersRequest {
 
 #[derive(Debug, Clone)]
 pub struct InitialiseSignersResult {
-    pub project_id: String,
+    pub project_path: NormalisedPaths,
     pub required_signers: Vec<String>,
     pub signers_file_path: NormalisedPaths,
     pub history_file_path: NormalisedPaths,
@@ -68,7 +68,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         let project_normalised_paths = tokio::task::spawn_blocking({
             let git_repo_path = msg.git_repo_path.clone();
             let project_id = msg.project_id.clone();
-            move || validate_project_id(git_repo_path, project_id)
+            move || get_project_normalised_paths(git_repo_path, project_id)
         })
         .await
         .map_err(ApiError::from)
@@ -210,7 +210,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         );
 
         Ok(InitialiseSignersResult {
-            project_id: msg.project_id,
+            project_path: project_normalised_paths,
             required_signers,
             signers_file_path: signers_normalised_paths,
             history_file_path: history_normalised_paths,
@@ -272,7 +272,8 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
     }
 }
 
-async fn validate_project_id<P: AsRef<Path>>(
+/// Get the project's normalised paths in the repo
+async fn get_project_normalised_paths<P: AsRef<Path>>(
     git_repo_path: P,
     project_id_in: impl Into<String>,
 ) -> Result<NormalisedPaths, ApiError> {
@@ -306,7 +307,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let git_repo_path = temp_dir.path().to_path_buf();
 
-        let result = validate_project_id(&git_repo_path, "github.com/user/repo\0").await;
+        let result = get_project_normalised_paths(&git_repo_path, "github.com/user/repo\0").await;
         assert!(result.is_err());
         match result.unwrap_err() {
             ApiError::InvalidRequestBody(msg) => {
@@ -321,7 +322,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let git_repo_path = temp_dir.path().to_path_buf();
 
-        let result = validate_project_id(&git_repo_path, "github.com\\user\\repo").await;
+        let result = get_project_normalised_paths(&git_repo_path, "github.com\\user\\repo").await;
         assert!(result.is_err());
         match result.unwrap_err() {
             ApiError::InvalidRequestBody(msg) => {
@@ -336,7 +337,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let git_repo_path = temp_dir.path().to_path_buf();
 
-        let result = validate_project_id(&git_repo_path, "github.com/user/repo").await;
+        let result = get_project_normalised_paths(&git_repo_path, "github.com/user/repo").await;
         assert!(result.is_ok());
         let path = result.unwrap();
         assert!(path.absolute_path().starts_with(&git_repo_path));
@@ -352,7 +353,7 @@ mod tests {
         let project_path = git_repo_path.join(project_id);
         fs::create_dir_all(&project_path).unwrap();
 
-        let result = validate_project_id(&git_repo_path, project_id).await;
+        let result = get_project_normalised_paths(&git_repo_path, project_id).await;
         assert!(result.is_ok());
         let path = result.unwrap();
         assert_eq!(path.absolute_path(), project_path);

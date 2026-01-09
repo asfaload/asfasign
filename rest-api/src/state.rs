@@ -7,7 +7,6 @@ use crate::{
         git_actor::GitActor,
         nonce_cache_actor::{NONCE_CACHE_DB, NonceCacheActor},
         nonce_cleanup_actor::NonceCleanupActor,
-        repo_handler::RepoHandler,
         signers_initialiser::SignersInitialiser,
     },
     file_auth::github::actors::github_project_validator::GitHubProjectValidator,
@@ -21,7 +20,6 @@ pub struct AppState {
     pub nonce_cleanup_actor: ActorRef<NonceCleanupActor>,
     pub github_project_validator: ActorRef<GitHubProjectValidator>,
     pub signers_initialiser: ActorRef<SignersInitialiser>,
-    pub repo_handler: ActorRef<RepoHandler>,
 }
 
 pub async fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
@@ -36,8 +34,6 @@ pub async fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
     let github_project_authenticator = GitHubProjectValidator::spawn(());
     let signers_initialiser = SignersInitialiser::spawn(());
 
-    let repo_handler = RepoHandler::spawn(git_actor.clone());
-
     AppState {
         git_repo_path,
         git_actor,
@@ -45,6 +41,5 @@ pub async fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
         nonce_cleanup_actor,
         github_project_validator: github_project_authenticator,
         signers_initialiser,
-        repo_handler,
     }
 }

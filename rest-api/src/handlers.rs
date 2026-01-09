@@ -139,21 +139,23 @@ pub async fn register_repo_handler(
         .await
         .map_err(|e| map_to_user_error(e, "Signers initialisation failed"))?;
 
-    // Step 3: Write and commit files via RepoHandler
-    let write_commit_request = crate::actors::repo_handler::WriteAndCommitFilesRequest {
-        signers_file_path: init_result.signers_file_path.clone(),
-        history_file_path: init_result.history_file_path.clone(),
-        git_repo_path: state.git_repo_path.clone(),
+    // Step 3: Write and commit files via Git actor
+    let write_commit_request = crate::actors::git_actor::CommitFile {
+        file_paths: init_result.project_path.clone(),
+        commit_message: format!(
+            "Adding {}",
+            init_result.project_path.relative_path().display()
+        ),
         request_id: request_id.to_string(),
     };
 
-    let repo_handler_result = state.repo_handler.ask(write_commit_request).await;
+    let git_actor_result = state.git_actor.ask(write_commit_request).await;
 
-    if let Err(e) = repo_handler_result {
+    if let Err(e) = git_actor_result {
         tracing::error!(
             request_id = %request_id,
             error = %e,
-            "Repo handler write and commit failed, initiating cleanup"
+            "Git actor commit failed, initiating cleanup"
         );
 
         let signers_file_path = init_result.signers_file_path.absolute_path().clone();
