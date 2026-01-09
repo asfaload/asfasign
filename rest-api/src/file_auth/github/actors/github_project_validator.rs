@@ -177,60 +177,6 @@ impl GitHubProjectValidator {
                 ApiError::InvalidRequestBody(format!("Invalid signers config JSON: {}", e))
             })?;
 
-        // NOTE: This validation is intentionally duplicated from SignerGroup's
-        // deserializer for defense-in-depth, providing clearer error messages
-        // and logging at the API layer. The deserializer enforces the constraint
-        // during JSON parsing, but we validate again here for better error reporting.
-        for group in signers_config.artifact_signers() {
-            if group.threshold > group.signers.len() as u32 {
-                tracing::error!(
-                    actor_name = ACTOR_NAME,request_id = %request_id,
-                    group_threshold = group.threshold,
-                    signer_count = group.signers.len(),
-                    "Artifact signers group threshold exceeds signer count"
-                );
-                return Err(ApiError::InvalidRequestBody(format!(
-                    "Artifact signers group threshold ({}) exceeds signer count ({})",
-                    group.threshold,
-                    group.signers.len()
-                )));
-            }
-        }
-
-        for group in signers_config.admin_keys() {
-            if group.threshold > group.signers.len() as u32 {
-                tracing::error!(
-                    actor_name = ACTOR_NAME,request_id = %request_id,
-                    group_threshold = group.threshold,
-                    signer_count = group.signers.len(),
-                    "Admin keys group threshold exceeds signer count"
-                );
-                return Err(ApiError::InvalidRequestBody(format!(
-                    "Admin keys group threshold ({}) exceeds signer count ({})",
-                    group.threshold,
-                    group.signers.len()
-                )));
-            }
-        }
-
-        if let Some(master_keys) = signers_config.master_keys() {
-            for group in master_keys {
-                if group.threshold > group.signers.len() as u32 {
-                    tracing::error!(
-                    actor_name = ACTOR_NAME,    request_id = %request_id,
-                        group_threshold = group.threshold,
-                        signer_count = group.signers.len(),
-                        "Master keys group threshold exceeds signer count"
-                    );
-                    return Err(ApiError::InvalidRequestBody(format!(
-                        "Master keys group threshold ({}) exceeds signer count ({})",
-                        group.threshold,
-                        group.signers.len()
-                    )));
-                }
-            }
-        }
-
         tracing::info!(
         actor_name = ACTOR_NAME,    request_id = %request_id,
             owner = %repo_info.owner,
