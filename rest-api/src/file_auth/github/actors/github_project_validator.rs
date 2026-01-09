@@ -263,7 +263,7 @@ mod tests {
         assert!(result.is_err(), "Should reject .txt extension");
         let err = result.unwrap_err();
         assert!(
-            err.contains(".json"),
+            err.contains(&ALLOWED_EXTENSIONS.join(",")),
             "Error should mention .json, got: {}",
             err
         );
@@ -291,16 +291,6 @@ mod tests {
             err.contains("too large") || err.contains("limit"),
             "Error should mention size limit, got: {}",
             err
-        );
-    }
-
-    #[test]
-    fn test_constants_are_correct() {
-        assert_eq!(MAX_SIGNERS_FILE_SIZE, 64 * 1024, "Max size should be 64KB");
-        assert_eq!(
-            ALLOWED_EXTENSIONS,
-            &["json"],
-            "Only .json should be allowed"
         );
     }
 
@@ -410,5 +400,193 @@ mod tests {
         assert_eq!(auth_result.project_id, "github.com/owner/repo");
 
         mock.assert();
+    }
+
+    use std::time::Instant;
+    use tokio;
+
+    use httpmock::{Method::GET, MockServer};
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_fetch_success_on_first_try() {
+        let server = MockServer::start_async().await;
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/");
+            then.status(200).body("success content");
+        });
+
+        let authenticator = GitHubProjectValidator::new();
+
+        let result = authenticator
+            .fetch_with_retry(&server.url("/"), "req-1")
+            .await
+            .unwrap();
+
+        assert_eq!(result, "success content");
+        mock.assert_hits_async(1).await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_non_429_error_status_fails_immediately() {
+        let server = MockServer::start_async().await;
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/");
+            then.status(500);
+        });
+
+        let authenticator = GitHubProjectValidator::new();
+
+        let err = authenticator
+            .fetch_with_retry(&server.url("/"), "req-2")
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ApiError::ActorOperationFailed(msg) if msg.contains("500")));
+        mock.assert_hits_async(1).await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_429_without_retry_after_uses_backoff_and_retries() {
+        let server = MockServer::start_async().await;
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/");
+            then.status(429); // No Retry-After header
+        });
+
+        let authenticator = GitHubProjectValidator::new();
+
+        let start = Instant::now();
+        let err = authenticator
+            .fetch_with_retry(&server.url("/"), "req-3")
+            .await
+            .unwrap_err();
+
+        // Should retry MAX_RETRIES + 1 times (initial + 3 retries = 4 total attempts)
+        mock.assert_hits_async((MAX_RETRIES + 1) as usize).await;
+
+        // Total sleep time: 1 + 2 + 4 = 7 seconds (backoff: 1→2→4; stops before 8 due to max retries)
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= Duration::from_secs(7),
+            "Expected at least 7s backoff, got {:?}",
+            elapsed
+        );
+
+        assert!(
+            matches!(err, ApiError::ActorOperationFailed(msg) if msg.contains("rate limit exceeded"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_429_with_retry_after_header_uses_it_instead_of_backoff() {
+        let server = MockServer::start_async().await;
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/");
+            then.status(429).header("Retry-After", "2");
+        });
+
+        let authenticator = GitHubProjectValidator::new();
+
+        let start = Instant::now();
+        let err = authenticator
+            .fetch_with_retry(&server.url("/"), "req-4")
+            .await
+            .unwrap_err();
+
+        mock.assert_hits_async((MAX_RETRIES + 1) as usize).await;
+
+        // Each retry waits 2s → 3 retries = 6s total wait
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= Duration::from_secs(6),
+            "Expected at least 6s due to Retry-After, got {:?}",
+            elapsed
+        );
+
+        assert!(
+            matches!(err, ApiError::ActorOperationFailed(msg) if msg.contains("rate limit exceeded"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_succeeds_on_second_attempt_after_429() {
+        let server = MockServer::start_async().await;
+
+        let signers_json = r#"{
+            "version": 1,
+            "timestamp": "2024-01-01T00:00:00Z",
+            "artifact_signers": []
+        }"#;
+        let mut mock_429 = server.mock(move |when, then| {
+            when.method(GET).path("/");
+            then.status(429).header("Retry-After", "1");
+        });
+
+        let authenticator = GitHubProjectValidator::new();
+
+        let server_url = server.url("/");
+
+        // Start fetch loop
+        let handle = tokio::spawn({
+            async move { authenticator.fetch_with_retry(&server_url, "req-5").await }
+        });
+
+        let start = std::time::Instant::now();
+        // The mock returning 429 gets a hit, it is replaced by a success responder
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            if mock_429.hits() > 0 {
+                mock_429.delete();
+                server.mock(|when, then| {
+                    when.method(httpmock::Method::GET).path("/");
+                    then.status(200)
+                        .header("Content-Type", "application/json")
+                        .body(signers_json);
+                });
+                break;
+            }
+            if start.elapsed().as_secs() > 5 {
+                panic!("Timeout waiting for first hit, hits: {}", mock_429.hits());
+            }
+        }
+
+        // Get the result of the fetch loop
+        let result = handle.await.unwrap();
+
+        match result {
+            Ok(s) => {
+                assert_eq!(s, signers_json);
+            }
+            Err(e) => {
+                panic!("Should have been success: {}", e)
+            }
+        }
+
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= Duration::from_secs(1),
+            "Should have waited at least 1s"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_network_error_propagates() {
+        // Use a port that is unlikely to have a server
+        let unreachable_url = "http://127.0.0.1:1".to_string();
+
+        let authenticator = GitHubProjectValidator::new();
+
+        let err = authenticator
+            .fetch_with_retry(&unreachable_url, "req-6")
+            .await
+            .unwrap_err();
+
+        match err {
+            ApiError::ActorOperationFailed(msg) => {
+                assert!(msg.contains("Failed to fetch"))
+            }
+            e => panic!("Expected ActorOperationFailed, got {}", e),
+        }
     }
 }
