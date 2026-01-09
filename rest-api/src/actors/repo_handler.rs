@@ -14,29 +14,25 @@ pub struct WriteAndCommitFilesRequest {
 }
 
 pub struct RepoHandler {
-    git_repo_path: PathBuf,
     git_actor: ActorRef<GitActor>,
 }
 
 impl RepoHandler {
-    pub fn new(git_repo_path: PathBuf, git_actor: ActorRef<GitActor>) -> Self {
-        tracing::info!(repo_path = %git_repo_path.display(), "RepoHandler created");
-        Self {
-            git_repo_path,
-            git_actor,
-        }
+    pub fn new(git_actor: ActorRef<GitActor>) -> Self {
+        tracing::info!("RepoHandler created");
+        Self { git_actor }
     }
 }
 
 impl Actor for RepoHandler {
-    type Args = (PathBuf, ActorRef<GitActor>);
+    type Args = ActorRef<GitActor>;
     type Error = String;
 
     async fn on_start(
         args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        Ok(Self::new(args.0, args.1))
+        Ok(Self::new(args))
     }
 }
 
@@ -122,6 +118,6 @@ mod tests {
     async fn create_test_handler(repo_path: PathBuf) -> RepoHandler {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let git_actor_ref = GitActor::spawn(temp_dir.path().to_path_buf());
-        RepoHandler::new(repo_path, git_actor_ref)
+        RepoHandler::new(git_actor_ref)
     }
 }
