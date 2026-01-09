@@ -719,7 +719,6 @@ pub mod tests {
         use git2::Repository;
         use kameo::actor::Spawn;
         use rest_api::actors::git_actor::GitActor;
-        use rest_api::actors::repo_handler::RepoHandler;
         use rest_api::actors::signers_initialiser::{
             CleanupSignersRequest, InitialiseSignersRequest, SignersInitialiser,
         };
@@ -772,16 +771,14 @@ pub mod tests {
         fs::remove_dir_all(&git_dir)?;
 
         let git_actor = GitActor::spawn(git_repo_path_clone.clone());
-        let repo_handler = RepoHandler::spawn(git_actor.clone());
 
-        let write_commit_request = rest_api::actors::repo_handler::WriteAndCommitFilesRequest {
-            signers_file_path: init_result.signers_file_path.clone(),
-            history_file_path: init_result.history_file_path.clone(),
-            git_repo_path: git_repo_path_clone.clone(),
+        let write_commit_request = rest_api::actors::git_actor::CommitFile {
+            file_paths: init_result.project_path,
+            commit_message: "commit of test-123".to_string(),
             request_id: "test-123".to_string(),
         };
 
-        let result = repo_handler.ask(write_commit_request).await;
+        let result = git_actor.ask(write_commit_request).await;
 
         assert!(
             result.is_err(),

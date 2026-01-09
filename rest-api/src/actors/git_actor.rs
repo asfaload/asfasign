@@ -1,7 +1,8 @@
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use crate::path_validation::NormalisedPaths;
 use git2::{Repository, Signature};
@@ -20,7 +21,38 @@ const GIT_USER_EMAIL: &str = "git-actor@rest-api.asfaload.com";
 pub struct GitActor {
     repo_path: PathBuf,
 }
+fn add_path_recursively<P1: AsRef<Path>, P2: AsRef<Path>>(
+    index: &mut git2::Index,
+    repo_workdir_in: P1,
+    target_path_in: P2,
+) -> Result<(), git2::Error> {
+    let repo_workdir = repo_workdir_in.as_ref();
+    let target_path = target_path_in.as_ref();
+    let metadata = fs::metadata(target_path).map_err(|e| {
+        git2::Error::from_str(&format!("Failed to read path {:?}: {}", target_path, e))
+    })?;
 
+    if metadata.is_file() {
+        // Compute the relative path from the workdir
+        let rel_path = target_path
+            .strip_prefix(repo_workdir)
+            .map_err(|_| git2::Error::from_str("Target path is outside repository"))?;
+        index.add_path(rel_path)?;
+    } else if metadata.is_dir() {
+        for entry in fs::read_dir(target_path).map_err(|e| {
+            git2::Error::from_str(&format!(
+                "Failed to read directory {:?}: {}",
+                target_path, e
+            ))
+        })? {
+            let entry =
+                entry.map_err(|e| git2::Error::from_str(&format!("Dir entry error: {}", e)))?;
+            add_path_recursively(index, repo_workdir, entry.path())?;
+        }
+    }
+    // Ignore symlinks or other types unless you want to handle them
+    Ok(())
+}
 impl GitActor {
     pub fn new(repo_path: PathBuf) -> Self {
         tracing::info!(repo_path = %repo_path.display(), "GitActor created");
@@ -46,7 +78,7 @@ impl GitActor {
             "Attempting to commit file"
         );
         let repo_path = self.repo_path.clone();
-        let file_path = file_paths.relative_path();
+        let file_path = file_paths.absolute_path();
         let commit_message = commit_message.to_string();
         let request_id = request_id.to_string();
 
@@ -59,7 +91,7 @@ impl GitActor {
 
             // Add the file to the index
             let mut index = repo.index()?;
-            index.add_path(&file_path)?;
+            add_path_recursively(&mut index, repo_path, &file_path)?;
 
             // Get the tree from the index
             let tree_oid = index.write_tree()?;
