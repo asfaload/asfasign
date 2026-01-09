@@ -36,7 +36,7 @@ pub async fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
     let github_project_authenticator = GitHubProjectValidator::spawn(());
     let signers_initialiser = SignersInitialiser::spawn(());
 
-    let repo_handler = RepoHandler::spawn((git_repo_path.clone(), git_actor.clone()));
+    let repo_handler = RepoHandler::spawn(git_actor.clone());
 
     AppState {
         git_repo_path,

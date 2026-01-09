@@ -772,7 +772,7 @@ pub mod tests {
         fs::remove_dir_all(&git_dir)?;
 
         let git_actor = GitActor::spawn(git_repo_path_clone.clone());
-        let repo_handler = RepoHandler::spawn((git_repo_path_clone.clone(), git_actor.clone()));
+        let repo_handler = RepoHandler::spawn(git_actor.clone());
 
         let write_commit_request = rest_api::actors::repo_handler::WriteAndCommitFilesRequest {
             signers_file_path: init_result.signers_file_path.clone(),
