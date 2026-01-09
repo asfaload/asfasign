@@ -81,6 +81,7 @@ pub fn parse_github_url(url: &str) -> Result<GitHubRepoInfo, GitHubUrlError> {
             let raw_url = url.to_string();
             (owner, repo, branch, PathBuf::from(&file_path), raw_url)
         }
+        #[cfg(test)]
         Some("localhost") | Some("127.0.0.1") => {
             if segments.len() < 4 {
                 return Err(GitHubUrlError::InvalidFormat(
