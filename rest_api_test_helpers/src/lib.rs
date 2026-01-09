@@ -21,6 +21,7 @@ use tokio::{
     net::TcpStream,
     time::{Instant, timeout},
 };
+use tracing_subscriber::EnvFilter;
 
 //
 // Helper function to initialize a git repository in a temporary directory
@@ -347,4 +348,15 @@ pub async fn send_repeated_add_file_request(
         .send()
         .await
         .expect("Failed to send request")
+}
+
+pub fn print_logs() {
+    // Set log level with RUST_LOG env var
+    if std::env::var("RUST_LOG").is_err() {
+        println!("** Set the log level with RUST_LOG env var");
+    }
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_test_writer()
+        .init();
 }
