@@ -28,8 +28,8 @@ const MAX_SIGNERS_FILE_SIZE: usize = 64 * 1024; // 64KB
 const ALLOWED_EXTENSIONS: &[&str] = &["json"];
 
 const MAX_RETRIES: u32 = 3;
-const INITIAL_BACKOFF_MS: u64 = 1000;
-const MAX_BACKOFF_MS: u64 = 30000;
+const INITIAL_BACKOFF_SEC: u64 = 1;
+const MAX_BACKOFF_SEC: u64 = 30000;
 
 pub fn validate_file_extension(file_path: &std::path::Path) -> Result<(), String> {
     let extension = file_path.extension().and_then(|e| e.to_str());
@@ -68,7 +68,7 @@ impl GitHubProjectValidator {
 
     async fn fetch_with_retry(&self, url: &str, request_id: &str) -> Result<String, ApiError> {
         let mut retries = 0;
-        let mut backoff_ms = INITIAL_BACKOFF_MS;
+        let mut backoff_sec = INITIAL_BACKOFF_SEC;
 
         loop {
             let response = self.http_client.get(url).send().await.map_err(|e| {
@@ -89,14 +89,14 @@ impl GitHubProjectValidator {
                     .get("Retry-After")
                     .and_then(|h| h.to_str().ok())
                     .and_then(|s| s.parse().ok())
-                    .unwrap_or(backoff_ms);
+                    .unwrap_or(backoff_sec);
 
-                tracing::warn!(actor_name = ACTOR_NAME,request_id = %request_id, retry_after_ms = %retry_after, "Rate limited by GitHub, waiting before retry");
+                tracing::warn!(actor_name = ACTOR_NAME,request_id = %request_id, retry_after_sec = %retry_after, "Rate limited by GitHub, waiting before retry");
 
-                tokio::time::sleep(std::time::Duration::from_millis(retry_after)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(retry_after)).await;
 
                 retries += 1;
-                backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
+                backoff_sec = (backoff_sec * 2).min(MAX_BACKOFF_SEC);
                 // We can now try again, so start a new loop iteration
                 continue;
             }
@@ -320,7 +320,7 @@ mod tests {
         let mut mock_429 = mock_server.mock(|when, then| {
             when.method(httpmock::Method::GET)
                 .path("/owner/repo/main/signers.json");
-            then.status(429).header("Retry-After", "200");
+            then.status(429).header("Retry-After", "2");
         });
 
         let authenticator = GitHubProjectValidator::new();
@@ -365,7 +365,7 @@ mod tests {
             result
         );
         assert!(
-            elapsed.as_millis() >= 200,
+            elapsed.as_secs() >= 2,
             "Should have waited for Retry-After, got: {:?}",
             elapsed
         );
