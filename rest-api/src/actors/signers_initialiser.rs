@@ -65,15 +65,19 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             "SignersInitialiser received initialisation request"
         );
 
-        let project_normalised_paths = tokio::task::spawn_blocking({
-            let git_repo_path = msg.git_repo_path.clone();
-            let project_id = msg.project_id.clone();
-            move || get_project_normalised_paths(git_repo_path, project_id)
-        })
-        .await
-        .map_err(ApiError::from)
-        .map_err(|e| {
-            tracing::error!(
+        let project_normalised_paths =
+            get_project_normalised_paths(msg.git_repo_path, &msg.project_id)
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        request_id = %msg.request_id,
+                        project_id = %msg.project_id,
+                        error = %e,
+                        "Project ID validation failed"
+                    );
+                    e
+                })?;
+
                 request_id = %msg.request_id,
                 project_id = %msg.project_id,
                 error = %e,
