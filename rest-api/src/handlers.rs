@@ -15,7 +15,7 @@ use tokio::io::AsyncWriteExt;
 
 fn map_to_user_error(error: impl std::fmt::Display, context: &str) -> ApiError {
     tracing::error!(internal_error = %error, "{}", context);
-    ApiError::InvalidRequestBody(
+    ApiError::InternalServerError(
         "Operation failed. Please check your request and try again.".to_string(),
     )
 }
@@ -200,7 +200,7 @@ pub async fn register_repo_handler(
             .parent()
             .ok_or_else(|| {
                 tracing::error!(request_id = %request_id, "Failed to get pending directory parent");
-                ApiError::InvalidRequestBody("Failed to determine pending directory".to_string())
+                ApiError::InternalServerError("Failed to determine pending directory".to_string())
             })?
             .to_path_buf();
 
