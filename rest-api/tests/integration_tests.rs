@@ -719,6 +719,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_register_repo_cleans_up_on_repo_handler_failure() -> Result<(), anyhow::Error> {
+        use common::fs::names::PENDING_SIGNERS_DIR;
         use features_lib::AsfaloadKeyPairTrait;
         use git2::Repository;
         use kameo::actor::Spawn;
@@ -779,7 +780,7 @@ pub mod tests {
         let git_actor = GitActor::spawn(git_repo_path_clone.clone());
 
         let write_commit_request = rest_api::actors::git_actor::CommitFile {
-            file_paths: init_result.project_path,
+            file_paths: init_result.project_path.clone(),
             commit_message: "commit of test-123".to_string(),
             request_id: "test-123".to_string(),
         };
@@ -791,10 +792,12 @@ pub mod tests {
             "RepoHandler should fail when git repo is corrupted"
         );
 
+        let pending_dir = init_result.project_path.join(PENDING_SIGNERS_DIR).await?;
+
         let cleanup_request = CleanupSignersRequest {
-            signers_file_path: init_result.signers_file_path.absolute_path(),
-            history_file_path: init_result.history_file_path.absolute_path(),
-            pending_dir: signers_pending_dir.clone(),
+            signers_file_path: init_result.signers_file_path.clone(),
+            history_file_path: init_result.history_file_path.clone(),
+            pending_dir,
             request_id: "test-123".to_string(),
         };
 
