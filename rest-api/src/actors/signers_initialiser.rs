@@ -5,7 +5,6 @@ use rest_api_types::errors::ApiError;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::AsfaloadPublicKeys;
 use signers_file_types::SignersConfig;
-use std::path::Path;
 use std::path::PathBuf;
 
 use crate::path_validation::NormalisedPaths;
@@ -274,29 +273,6 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
             Ok(())
         }
     }
-}
-
-/// Get the project's normalised paths in the repo
-async fn get_project_normalised_paths<P: AsRef<Path>>(
-    git_repo_path: P,
-    project_id_in: impl Into<String>,
-) -> Result<NormalisedPaths, ApiError> {
-    let project_id = project_id_in.into();
-    if project_id.contains('\0') {
-        return Err(ApiError::InvalidRequestBody(
-            "Project ID must not contain null bytes".to_string(),
-        ));
-    }
-
-    if project_id.contains('\\') {
-        return Err(ApiError::InvalidRequestBody(
-            "Project ID must not contain backslashes".to_string(),
-        ));
-    }
-
-    let normalised_paths = NormalisedPaths::new(git_repo_path, project_id).await?;
-
-    Ok(normalised_paths)
 }
 
 #[cfg(test)]
