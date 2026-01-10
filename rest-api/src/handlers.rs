@@ -2,9 +2,10 @@ use rest_api_types::{RegisterRepoRequest, RegisterRepoResponse};
 
 use std::{path::PathBuf, str::FromStr};
 
-use crate::actors::git_actor::CommitFile;
+use crate::file_auth::github::get_project_normalised_paths;
 use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
+use crate::{actors::git_actor::CommitFile, file_auth::github::parse_github_url};
 use axum::{Json, extract::State, http::HeaderMap};
 use rest_api_types::{
     errors::ApiError,
@@ -112,6 +113,41 @@ pub async fn register_repo_handler(
         "Received register_repo request"
     );
 
+    let repo_info = parse_github_url(&request.signers_file_url).map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            url = %request.signers_file_url,
+            error = %e,
+            "Failed to parse GitHub URL"
+        );
+        ApiError::InvalidRequestBody(format!("Invalid GitHub URL: {}", e))
+    })?;
+
+    let project_id = repo_info.project_id();
+    let project_normalised_paths = get_project_normalised_paths(&state.git_repo_path, &project_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                project_id = %project_id,
+                error = %e,
+                "Failed to get normalised paths in handlers"
+            );
+            e
+        })?;
+
+    let project_dir = project_normalised_paths.absolute_path();
+    if project_dir.exists() {
+        tracing::warn!(
+            request_id = %request_id,
+            project_id = %project_id,
+            "Project directory structure already exists, indicating a pending or completed registration."
+        );
+        return Err(ApiError::InvalidRequestBody(format!(
+            "Project '{}' is already registered or registration is in progress.",
+            project_id
+        )));
+    }
     let auth_request =
         crate::file_auth::github::actors::github_project_validator::ValidateProjectRequest {
             signers_file_url: request.signers_file_url,
@@ -119,7 +155,7 @@ pub async fn register_repo_handler(
         };
 
     let signers_proposal = state
-        .github_project_authenticator
+        .github_project_validator
         .ask(auth_request)
         .await
         .map_err(|e| map_to_user_error(e, "Project authentication failed"))?;
@@ -127,6 +163,7 @@ pub async fn register_repo_handler(
     // Step 2: Initialise signers - create directory structure and files
     let init_request = crate::actors::signers_initialiser::InitialiseSignersRequest {
         project_id: signers_proposal.project_id.clone(),
+        project_path: project_normalised_paths,
         signers_config: signers_proposal.signers_config.clone(),
         git_repo_path: state.git_repo_path.clone(),
         request_id: request_id.to_string(),

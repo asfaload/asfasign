@@ -308,4 +308,20 @@ mod tests {
         let path = result.unwrap();
         assert_eq!(path.absolute_path(), project_path);
     }
+    #[tokio::test]
+    async fn test_validate_project_id_with_path_traversal() {
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let project_id = "../../../etc/passwd";
+
+        let result = get_project_normalised_paths(&git_repo_path, project_id).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ApiError::InvalidFilePath(msg) => {
+                assert!(msg.contains("traversal"));
+            }
+            e => panic!("Expected InvalidFilePath error, got {}", e),
+        }
+    }
 }

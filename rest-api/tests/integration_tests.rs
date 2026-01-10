@@ -3,6 +3,7 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
+    use rest_api::file_auth::github::get_project_normalised_paths;
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::parse_log_lines;
@@ -744,10 +745,12 @@ pub mod tests {
         let signers_pending_dir = project_dir.join("asfaload.signers.pending");
         let signers_file_path = signers_pending_dir.join("index.json");
         let history_file_path = project_dir.join("asfaload.signers.history.json");
+        let project_path = get_project_normalised_paths(&git_repo_path, project_id).await?;
 
         let signers_initialiser = SignersInitialiser::spawn(());
         let init_request = InitialiseSignersRequest {
             project_id: project_id.to_string(),
+            project_path,
             signers_config: signers_config.clone(),
             git_repo_path: git_repo_path.clone(),
             request_id: "test-123".to_string(),
