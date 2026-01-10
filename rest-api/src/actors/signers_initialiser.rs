@@ -12,6 +12,10 @@ use crate::path_validation::NormalisedPaths;
 #[derive(Debug, Clone)]
 pub struct InitialiseSignersRequest {
     pub project_id: String,
+    // FIXME: the normalised project path is based on
+    // the same info as the project_id. Should we
+    // check consistency here?
+    pub project_path: NormalisedPaths,
     pub signers_config: SignersConfig,
     pub git_repo_path: PathBuf,
     pub request_id: String,
@@ -64,27 +68,24 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             "SignersInitialiser received initialisation request"
         );
 
-        let project_normalised_paths =
-            get_project_normalised_paths(msg.git_repo_path, &msg.project_id)
-                .await
-                .map_err(|e| {
-                    tracing::error!(
-                        request_id = %msg.request_id,
-                        project_id = %msg.project_id,
-                        error = %e,
-                        "Project ID validation failed"
-                    );
-                    e
-                })?;
-
+        let project_normalised_paths = msg.project_path;
+        //
+        // Even though the handler checks the existence, we need to test it here
+        // just in case the handler gets the second request before we create the
+        // directory here. The second message the handler sends us will detect
+        // here that the project dir was already created.
+        let project_dir = project_normalised_paths.absolute_path();
+        if project_dir.exists() {
+            tracing::warn!(
                 request_id = %msg.request_id,
                 project_id = %msg.project_id,
-                error = %e,
-                "Project ID validation failed"
+                "Project directory structure already exists, indicating a pending or completed registration."
             );
-            e
-        })?
-        .await?;
+            return Err(ApiError::InvalidRequestBody(format!(
+                "Project '{}' is already registered or registration is in progress.",
+                msg.project_id
+            )));
+        }
 
         tracing::debug!(
                 request_id = %msg.request_id,
@@ -111,18 +112,6 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
                 "Could not determine parent dir of signers file path".to_string(),
             )
         })?;
-
-        if pending_dir.exists() {
-            tracing::warn!(
-                request_id = %msg.request_id,
-                project_id = %msg.project_id,
-                "Project directory structure already exists, indicating a pending or completed registration."
-            );
-            return Err(ApiError::InvalidRequestBody(format!(
-                "Project '{}' is already registered or registration is in progress.",
-                msg.project_id
-            )));
-        }
 
         tokio::fs::create_dir_all(&pending_dir).await.map_err(|e| {
             tracing::error!(
@@ -277,70 +266,14 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
 
 #[cfg(test)]
 mod tests {
+    use crate::file_auth::github::get_project_normalised_paths;
+
     use super::*;
+    use anyhow::Result;
     use kameo::actor::Spawn;
-    use std::fs;
-    use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_validate_project_id_with_null_bytes() {
-        let temp_dir = TempDir::new().unwrap();
-        let git_repo_path = temp_dir.path().to_path_buf();
-
-        let result = get_project_normalised_paths(&git_repo_path, "github.com/user/repo\0").await;
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ApiError::InvalidRequestBody(msg) => {
-                assert!(msg.contains("null bytes"));
-            }
-            _ => panic!("Expected InvalidRequestBody error"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_validate_project_id_with_backslashes() {
-        let temp_dir = TempDir::new().unwrap();
-        let git_repo_path = temp_dir.path().to_path_buf();
-
-        let result = get_project_normalised_paths(&git_repo_path, "github.com\\user\\repo").await;
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ApiError::InvalidRequestBody(msg) => {
-                assert!(msg.contains("backslashes"));
-            }
-            _ => panic!("Expected InvalidRequestBody error"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_validate_project_id_valid() {
-        let temp_dir = TempDir::new().unwrap();
-        let git_repo_path = temp_dir.path().to_path_buf();
-
-        let result = get_project_normalised_paths(&git_repo_path, "github.com/user/repo").await;
-        assert!(result.is_ok());
-        let path = result.unwrap();
-        assert!(path.absolute_path().starts_with(&git_repo_path));
-        assert!(path.absolute_path().ends_with("github.com/user/repo"));
-    }
-
-    #[tokio::test]
-    async fn test_validate_project_id_with_existing_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        let git_repo_path = temp_dir.path().to_path_buf();
-
-        let project_id = "github.com/user/repo";
-        let project_path = git_repo_path.join(project_id);
-        fs::create_dir_all(&project_path).unwrap();
-
-        let result = get_project_normalised_paths(&git_repo_path, project_id).await;
-        assert!(result.is_ok());
-        let path = result.unwrap();
-        assert_eq!(path.absolute_path(), project_path);
-    }
-
-    #[tokio::test]
-    async fn test_signers_initialiser_creates_directory_structure() {
+    async fn test_signers_initialiser_creates_directory_structure() -> Result<()> {
         let temp = tempfile::TempDir::new().unwrap();
         let git_path = temp.path().to_path_buf();
 
@@ -352,8 +285,11 @@ mod tests {
         )
         .unwrap();
 
+        let project_id = "github.com/test/repo".to_string();
+        let project_path = get_project_normalised_paths(&git_path, &project_id).await?;
         let request = InitialiseSignersRequest {
-            project_id: "github.com/test/repo".to_string(),
+            project_id,
+            project_path,
             signers_config: config,
             git_repo_path: git_path.clone(),
             request_id: "test-123".to_string(),
@@ -383,10 +319,11 @@ mod tests {
                 .unwrap();
         let parsed_config: SignersConfig = serde_json::from_str(&signers_content).unwrap();
         assert_eq!(parsed_config.artifact_signers().len(), 1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_signers_initialiser_extract_public_keys() {
+    async fn test_signers_initialiser_extract_public_keys() -> Result<()> {
         let temp = tempfile::TempDir::new().unwrap();
         let git_path = temp.path().to_path_buf();
 
@@ -403,9 +340,12 @@ mod tests {
             ),
         )
         .unwrap();
+        let project_id = "github.com/test/repo".to_string();
+        let project_path = get_project_normalised_paths(&git_path, &project_id).await?;
 
         let request = InitialiseSignersRequest {
-            project_id: "github.com/test/repo".to_string(),
+            project_id,
+            project_path,
             signers_config: config,
             git_repo_path: git_path.clone(),
             request_id: "test-456".to_string(),
@@ -428,52 +368,11 @@ mod tests {
                 .required_signers
                 .contains(&test_keys.pub_key(1).unwrap().to_base64())
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_signers_initialiser_rejects_path_traversal() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let git_path = temp.path().to_path_buf();
-
-        let malicious_id = "../../../etc/passwd";
-        let test_keys = test_helpers::TestKeys::new(1);
-        let public_key = test_keys.pub_key(0).unwrap().clone();
-
-        let config = SignersConfig::with_artifact_signers_only(1, (vec![public_key], 1)).unwrap();
-
-        let request = InitialiseSignersRequest {
-            project_id: malicious_id.to_string(),
-            signers_config: config,
-            git_repo_path: git_path.clone(),
-            request_id: "test-traversal-001".to_string(),
-        };
-
-        let actor_ref = SignersInitialiser::spawn(());
-        let result = actor_ref.ask(request).await;
-
-        match result {
-            Ok(_) => panic!("Expected error for path traversal"),
-            Err(send_error) => match send_error {
-                kameo::error::SendError::HandlerError(api_error) => match api_error {
-                    ApiError::InvalidFilePath(msg) => {
-                        assert_eq!(
-                            msg, "Path traversal attempt through parent dir",
-                            "But got {}",
-                            msg
-                        );
-                    }
-                    e => panic!(
-                        "Expected InvalidFilePath error for path traversal, got {}",
-                        e
-                    ),
-                },
-                e => panic!("Expected HandlerError for path traversal, got {}", e),
-            },
-        }
-    }
-
-    #[tokio::test]
-    async fn test_signers_initialiser_handles_existing_directory() {
+    async fn test_signers_initialiser_handles_existing_directory() -> Result<()> {
         let temp = tempfile::TempDir::new().unwrap();
         let git_path = temp.path().to_path_buf();
 
@@ -486,9 +385,12 @@ mod tests {
         let public_key = test_keys.pub_key(0).unwrap().clone();
 
         let config = SignersConfig::with_artifact_signers_only(1, (vec![public_key], 1)).unwrap();
+        let project_id = "github.com/test/existing".to_string();
+        let project_path = get_project_normalised_paths(&git_path, &project_id).await?;
 
         let request = InitialiseSignersRequest {
-            project_id: "github.com/test/existing".to_string(),
+            project_id,
+            project_path,
             signers_config: config,
             git_repo_path: git_path.clone(),
             request_id: "test-exists-001".to_string(),
@@ -509,5 +411,6 @@ mod tests {
                 _ => panic!("Expected HandlerError for existing directory"),
             },
         }
+        Ok(())
     }
 }
