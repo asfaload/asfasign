@@ -7,6 +7,7 @@ use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
 use crate::{actors::git_actor::CommitFile, file_auth::github::parse_github_url};
 use axum::{Json, extract::State, http::HeaderMap};
+use common::fs::names::PENDING_SIGNERS_DIR;
 use rest_api_types::{
     errors::ApiError,
     models::{AddFileRequest, AddFileResponse},
@@ -194,19 +195,11 @@ pub async fn register_repo_handler(
             "Git actor commit failed, initiating cleanup"
         );
 
-        let signers_file_path = init_result.signers_file_path.absolute_path().clone();
-        let history_file_path = init_result.history_file_path.absolute_path().clone();
-        let pending_dir = signers_file_path
-            .parent()
-            .ok_or_else(|| {
-                tracing::error!(request_id = %request_id, "Failed to get pending directory parent");
-                ApiError::InternalServerError("Failed to determine pending directory".to_string())
-            })?
-            .to_path_buf();
+        let pending_dir = init_result.project_path.join(PENDING_SIGNERS_DIR).await?;
 
         let cleanup_request = crate::actors::signers_initialiser::CleanupSignersRequest {
-            signers_file_path,
-            history_file_path,
+            signers_file_path: init_result.signers_file_path.clone(),
+            history_file_path: init_result.history_file_path.clone(),
             pending_dir,
             request_id: request_id.to_string(),
         };
