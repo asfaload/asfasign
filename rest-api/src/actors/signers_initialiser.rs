@@ -11,10 +11,6 @@ use crate::path_validation::NormalisedPaths;
 
 #[derive(Debug, Clone)]
 pub struct InitialiseSignersRequest {
-    pub project_id: String,
-    // FIXME: the normalised project path is based on
-    // the same info as the project_id. Should we
-    // check consistency here?
     pub project_path: NormalisedPaths,
     pub signers_config: SignersConfig,
     pub git_repo_path: PathBuf,
@@ -62,9 +58,14 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         msg: InitialiseSignersRequest,
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
+        let project_id = msg
+            .project_path
+            .relative_path()
+            .to_string_lossy()
+            .to_string();
         tracing::info!(
             request_id = %msg.request_id,
-            project_id = %msg.project_id,
+            project_id = %project_id,
             "SignersInitialiser received initialisation request"
         );
 
@@ -78,18 +79,18 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         if project_dir.exists() {
             tracing::warn!(
                 request_id = %msg.request_id,
-                project_id = %msg.project_id,
+                project_id = %project_id,
                 "Project directory structure already exists, indicating a pending or completed registration."
             );
             return Err(ApiError::InvalidRequestBody(format!(
                 "Project '{}' is already registered or registration is in progress.",
-                msg.project_id
+                project_id
             )));
         }
 
         tracing::debug!(
                 request_id = %msg.request_id,
-                project_id = %msg.project_id,
+                project_id = %project_id,
             project_normalised_paths_relative = %project_normalised_paths.relative_path().display(),
             project_normalised_paths_absolute = %project_normalised_paths.absolute_path().display(),
             "Computed normalised paths for project"
@@ -188,7 +189,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
 
         tracing::info!(
             request_id = %msg.request_id,
-            project_id = %msg.project_id,
+            project_id = %project_id,
             required_signers_count = required_signers.len(),
             "Successfully initialised signers"
         );
@@ -285,10 +286,8 @@ mod tests {
         )
         .unwrap();
 
-        let project_id = "github.com/test/repo".to_string();
-        let project_path = get_project_normalised_paths(&git_path, &project_id).await?;
+        let project_path = get_project_normalised_paths(&git_path, "github.com/test/repo").await?;
         let request = InitialiseSignersRequest {
-            project_id,
             project_path,
             signers_config: config,
             git_repo_path: git_path.clone(),
@@ -340,11 +339,9 @@ mod tests {
             ),
         )
         .unwrap();
-        let project_id = "github.com/test/repo".to_string();
-        let project_path = get_project_normalised_paths(&git_path, &project_id).await?;
+        let project_path = get_project_normalised_paths(&git_path, "github.com/test/repo").await?;
 
         let request = InitialiseSignersRequest {
-            project_id,
             project_path,
             signers_config: config,
             git_repo_path: git_path.clone(),
@@ -385,11 +382,10 @@ mod tests {
         let public_key = test_keys.pub_key(0).unwrap().clone();
 
         let config = SignersConfig::with_artifact_signers_only(1, (vec![public_key], 1)).unwrap();
-        let project_id = "github.com/test/existing".to_string();
-        let project_path = get_project_normalised_paths(&git_path, &project_id).await?;
+        let project_path =
+            get_project_normalised_paths(&git_path, "github.com/test/existing").await?;
 
         let request = InitialiseSignersRequest {
-            project_id,
             project_path,
             signers_config: config,
             git_repo_path: git_path.clone(),

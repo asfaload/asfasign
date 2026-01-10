@@ -163,7 +163,6 @@ pub async fn register_repo_handler(
 
     // Step 2: Initialise signers - create directory structure and files
     let init_request = crate::actors::signers_initialiser::InitialiseSignersRequest {
-        project_id: signers_proposal.project_id.clone(),
         project_path: project_normalised_paths,
         signers_config: signers_proposal.signers_config.clone(),
         git_repo_path: state.git_repo_path.clone(),

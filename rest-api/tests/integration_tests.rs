@@ -752,7 +752,6 @@ pub mod tests {
 
         let signers_initialiser = SignersInitialiser::spawn(());
         let init_request = InitialiseSignersRequest {
-            project_id: project_id.to_string(),
             project_path,
             signers_config: signers_config.clone(),
             git_repo_path: git_repo_path.clone(),
