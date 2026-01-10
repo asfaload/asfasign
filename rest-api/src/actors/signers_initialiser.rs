@@ -32,9 +32,9 @@ pub struct InitialiseSignersResult {
 
 #[derive(Debug, Clone)]
 pub struct CleanupSignersRequest {
-    pub signers_file_path: PathBuf,
-    pub history_file_path: PathBuf,
-    pub pending_dir: PathBuf,
+    pub signers_file_path: NormalisedPaths,
+    pub history_file_path: NormalisedPaths,
+    pub pending_dir: NormalisedPaths,
     pub request_id: String,
 }
 
@@ -214,9 +214,9 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
     ) -> Self::Reply {
         tracing::info!(
             request_id = %msg.request_id,
-            signers_file_path = %msg.signers_file_path.display(),
-            history_file_path = %msg.history_file_path.display(),
-            pending_dir = %msg.pending_dir.display(),
+            signers_file_path = %msg.signers_file_path,
+            history_file_path = %msg.history_file_path,
+            pending_dir = %msg.pending_dir,
             "Cleaning up signers files"
         );
 
@@ -225,7 +225,7 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
             had_error = true;
             tracing::warn!(
                 request_id = %msg.request_id,
-                path = %msg.signers_file_path.display(),
+                path = %msg.signers_file_path,
                 error = %e,
                 "Failed to remove signers file during cleanup"
             );
@@ -235,7 +235,7 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
             had_error = true;
             tracing::warn!(
                 request_id = %msg.request_id,
-                path = %msg.history_file_path.display(),
+                path = %msg.history_file_path,
                 error = %e,
                 "Failed to remove history file during cleanup"
             );
@@ -245,7 +245,7 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
             had_error = true;
             tracing::warn!(
                 request_id = %msg.request_id,
-                path = %msg.pending_dir.display(),
+                path = %msg.pending_dir,
                 error = %e,
                 "Failed to remove pending directory during cleanup"
             );
