@@ -108,7 +108,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         let target = signers_normalised_paths.absolute_path();
         let pending_dir_result = target.parent();
         let pending_dir = pending_dir_result.ok_or_else(|| {
-            ApiError::InvalidFilePath(
+            ApiError::InternalServerError(
                 "Could not determine parent dir of signers file path".to_string(),
             )
         })?;
