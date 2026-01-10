@@ -294,6 +294,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_retries_on_rate_limiting() {
         let mock_server = httpmock::MockServer::start();
@@ -361,6 +362,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_authenticate_with_localhost_url() {
         let mock_server = httpmock::MockServer::start();

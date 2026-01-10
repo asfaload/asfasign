@@ -577,6 +577,7 @@ pub mod tests {
     // such enhancements.
     // ============================================================================
 
+    #[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_register_repo_success() -> Result<(), anyhow::Error> {
         use features_lib::AsfaloadKeyPairTrait;
@@ -650,6 +651,7 @@ pub mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_register_repo_already_exists() -> Result<(), anyhow::Error> {
         use features_lib::AsfaloadKeyPairTrait;

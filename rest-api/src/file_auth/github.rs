@@ -40,16 +40,21 @@ pub fn parse_github_url(url: &str) -> Result<GitHubRepoInfo, GitHubUrlError> {
     let url = url::Url::parse(url).map_err(|e| GitHubUrlError::InvalidFormat(e.to_string()))?;
 
     let host = url.host_str().unwrap_or("");
-    if ![
+
+    #[cfg(not(feature = "test-utils"))]
+    const ALLOWED_HOSTS: &[&str] = &["github.com", "raw.githubusercontent.com"];
+
+    #[cfg(feature = "test-utils")]
+    const ALLOWED_HOSTS: &[&str] = &[
         "github.com",
         "raw.githubusercontent.com",
         "localhost",
         "127.0.0.1",
-    ]
-    .contains(&host)
-    {
+    ];
+
+    if !ALLOWED_HOSTS.contains(&host) {
         return Err(GitHubUrlError::InvalidFormat(
-            "URL must be from github.com, raw.githubusercontent.com, or localhost".to_string(),
+            "URL must be from github.com or raw.githubusercontent.com".to_string(),
         ));
     }
 
@@ -90,8 +95,7 @@ pub fn parse_github_url(url: &str) -> Result<GitHubRepoInfo, GitHubUrlError> {
             let raw_url = url.to_string();
             (owner, repo, branch, PathBuf::from(&file_path), raw_url)
         }
-        // Note this annotation is commented out because it works for unit tests, but not for integration tests!
-        //#[cfg(test)]
+        #[cfg(feature = "test-utils")]
         Some("localhost") | Some("127.0.0.1") => {
             if segments.len() < 4 {
                 return Err(GitHubUrlError::InvalidFormat(
@@ -210,6 +214,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_parse_localhost_url() {
         let url = "http://localhost:8080/owner/repo/main/signers.json";
         let result = parse_github_url(url).unwrap();
@@ -221,6 +226,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_parse_127_0_0_1_url() {
         let url = "http://127.0.0.1:8080/owner/repo/main/signers.json";
         let result = parse_github_url(url).unwrap();
@@ -232,6 +238,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_parse_localhost_without_port() {
         let url = "http://localhost/owner/repo/main/signers.json";
         let result = parse_github_url(url).unwrap();
@@ -243,6 +250,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "test-utils")]
     fn test_parse_127_0_0_1_without_port() {
         let url = "http://127.0.0.1/owner/repo/main/signers.json";
         let result = parse_github_url(url).unwrap();
