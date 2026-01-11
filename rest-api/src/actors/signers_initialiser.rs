@@ -76,7 +76,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         // directory here. The second message the handler sends us will detect
         // here that the project dir was already created.
         let project_dir = project_normalised_paths.absolute_path();
-        if project_dir.exists() {
+        if tokio::fs::try_exists(&project_dir).await? {
             tracing::warn!(
                 request_id = %msg.request_id,
                 project_id = %project_id,
