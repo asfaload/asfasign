@@ -22,7 +22,7 @@ pub struct AppState {
     pub signers_initialiser: ActorRef<SignersInitialiser>,
 }
 
-pub async fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
+pub fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
     let git_actor = GitActor::spawn(git_repo_path.clone());
 
     // Initialize nonce cache with database path

@@ -20,7 +20,7 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
     let canonical_repo_path = tokio::fs::canonicalize(&config.git_repo_path)
         .await
         .map_err(|e| ApiError::InvalidFilePath(format!("Invalid git repo path: {}", e)))?;
-    let app_state = init_state(canonical_repo_path).await;
+    let app_state = init_state(canonical_repo_path);
     let governor_conf = GovernorConfigBuilder::default()
         .per_second(10)
         .burst_size(20)

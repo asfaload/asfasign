@@ -615,7 +615,7 @@ pub mod tests {
 
         let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone()).await;
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
 
         let app = axum::Router::new()
             .route(
@@ -688,7 +688,7 @@ pub mod tests {
 
         let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone()).await;
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
 
         let app = axum::Router::new()
             .route(
@@ -831,7 +831,7 @@ pub mod tests {
         let git_repo_path = temp_dir.path().join("git_repo");
         Repository::init(&git_repo_path)?;
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone()).await;
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
 
         let app = axum::Router::new()
             .route(
