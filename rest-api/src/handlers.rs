@@ -194,21 +194,30 @@ pub async fn register_repo_handler(
             "Git actor commit failed, initiating cleanup"
         );
 
-        let pending_dir = init_result.project_path.join(PENDING_SIGNERS_DIR).await?;
+        match init_result.project_path.join(PENDING_SIGNERS_DIR).await {
+            Ok(pending_dir) => {
+                let cleanup_request = crate::actors::signers_initialiser::CleanupSignersRequest {
+                    signers_file_path: init_result.signers_file_path.clone(),
+                    history_file_path: init_result.history_file_path.clone(),
+                    pending_dir,
+                    request_id: request_id.to_string(),
+                };
 
-        let cleanup_request = crate::actors::signers_initialiser::CleanupSignersRequest {
-            signers_file_path: init_result.signers_file_path.clone(),
-            history_file_path: init_result.history_file_path.clone(),
-            pending_dir,
-            request_id: request_id.to_string(),
-        };
-
-        if let Err(cleanup_err) = state.signers_initialiser.ask(cleanup_request).await {
-            tracing::error!(
-                request_id = %request_id,
-                error = %cleanup_err,
-                "Cleanup also failed"
-            );
+                if let Err(cleanup_err) = state.signers_initialiser.ask(cleanup_request).await {
+                    tracing::error!(
+                        request_id = %request_id,
+                        error = %cleanup_err,
+                        "Cleanup also failed"
+                    );
+                }
+            }
+            Err(join_err) => {
+                tracing::error!(
+                    request_id = %request_id,
+                    error = %join_err,
+                    "Failed to construct pending_dir path for cleanup"
+                );
+            }
         }
 
         return Err(map_to_user_error(
