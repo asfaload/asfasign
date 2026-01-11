@@ -30,8 +30,20 @@ fn add_path_recursively<P1: AsRef<Path>, P2: AsRef<Path>>(
     let mut paths_to_visit = vec![target_path_in.as_ref().to_path_buf()];
 
     while let Some(current_path) = paths_to_visit.pop() {
-        let metadata = match fs::metadata(&current_path) {
-            Ok(meta) => meta,
+        let metadata = match fs::symlink_metadata(&current_path) {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() {
+                    tracing::error!(
+                        file_path = %current_path.display(),
+                        "Encountered symlink in git repo!"
+                    );
+                    return Err(git2::Error::from_str(&format!(
+                        "Encountered a symlink!{}",
+                        current_path.display()
+                    )));
+                }
+                meta
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 // This can happen with broken symlinks, for example. We just skip them.
                 continue;
@@ -178,6 +190,44 @@ mod tests {
     use tempfile::TempDir;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn test_add_path_recursively_rejects_symlink() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let repo_path = temp_dir.path();
+
+        let repo = Repository::init(repo_path)?;
+        let mut index = repo.index()?;
+
+        let target_file = repo_path.join("target.txt");
+        fs::write(&target_file, "target content")?;
+
+        let symlink_path = repo_path.join("link.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("target.txt", &symlink_path)?;
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file("target.txt", &symlink_path)?;
+
+        let result = add_path_recursively(&mut index, repo_path, &symlink_path);
+
+        match result {
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    error_msg.contains("symlink"),
+                    "Error message should mention symlink: {}",
+                    error_msg
+                );
+                assert!(
+                    error_msg.contains("link.txt"),
+                    "Error message should mention path: {}",
+                    error_msg
+                );
+            }
+            Ok(_) => panic!("Expected error when encountering symlink but got Ok"),
+        }
+        Ok(())
+    }
 
     // Helper to initialise a git repo for these tests
     fn initialise_git_actor_repo<P: AsRef<Path>>(repo_path: P) -> Result<Repository> {
