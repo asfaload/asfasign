@@ -53,9 +53,10 @@ pub fn parse_github_url(url: &str) -> Result<GitHubRepoInfo, GitHubUrlError> {
     ];
 
     if !ALLOWED_HOSTS.contains(&host) {
-        return Err(GitHubUrlError::InvalidFormat(
-            "URL must be from github.com or raw.githubusercontent.com".to_string(),
-        ));
+        return Err(GitHubUrlError::InvalidFormat(format!(
+            "URL must be one of {}",
+            ALLOWED_HOSTS.join(","),
+        )));
     }
 
     let segments: Vec<&str> = url.path().split('/').filter(|s| !s.is_empty()).collect();
