@@ -29,7 +29,7 @@ const ALLOWED_EXTENSIONS: &[&str] = &["json"];
 
 const MAX_RETRIES: u32 = 3;
 const INITIAL_BACKOFF_SEC: u64 = 1;
-const MAX_BACKOFF_SEC: u64 = 30000;
+const MAX_BACKOFF_SEC: u64 = 3600;
 
 pub fn validate_file_extension(file_path: &std::path::Path) -> Result<(), String> {
     let extension = file_path.extension().and_then(|e| e.to_str());
@@ -89,7 +89,8 @@ impl GitHubProjectValidator {
                     .get("Retry-After")
                     .and_then(|h| h.to_str().ok())
                     .and_then(|s| s.parse().ok())
-                    .unwrap_or(backoff_sec);
+                    .unwrap_or(backoff_sec)
+                    .min(MAX_BACKOFF_SEC);
 
                 tracing::warn!(actor_name = ACTOR_NAME,request_id = %request_id, retry_after_sec = %retry_after, "Rate limited by GitHub, waiting before retry");
 
