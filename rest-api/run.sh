@@ -58,4 +58,4 @@ EOF
 
 base_dir=$(git rev-parse --show-toplevel)
 # Start the server using the release binary
-"${base_dir}/target/release/rest-api"
+"${base_dir}/target/release/rest-api" | tee server.log

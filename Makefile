@@ -4,6 +4,15 @@ SHELL:=/bin/bash
 ## Run tests of all components
 test:
 	cargo test
+	# Some integration tests require the rest-api to accept registrations of
+	# signers files served on localhost, which should not happen in production.
+	# This behaviour is enabled with the test-utils features, and tests requiring
+	# this localhost acceptance only run with this feature.
+	$(MAKE) test-with-test-utils
+
+## Run tests with test-utils feature enabled (for integration tests)
+test-with-test-utils:
+	cargo test --features test-utils
 
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"
