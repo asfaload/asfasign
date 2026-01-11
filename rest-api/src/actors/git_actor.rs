@@ -27,30 +27,42 @@ fn add_path_recursively<P1: AsRef<Path>, P2: AsRef<Path>>(
     target_path_in: P2,
 ) -> Result<(), git2::Error> {
     let repo_workdir = repo_workdir_in.as_ref();
-    let target_path = target_path_in.as_ref();
-    let metadata = fs::metadata(target_path).map_err(|e| {
-        git2::Error::from_str(&format!("Failed to read path {:?}: {}", target_path, e))
-    })?;
+    let mut paths_to_visit = vec![target_path_in.as_ref().to_path_buf()];
 
-    if metadata.is_file() {
-        // Compute the relative path from the workdir
-        let rel_path = target_path
-            .strip_prefix(repo_workdir)
-            .map_err(|_| git2::Error::from_str("Target path is outside repository"))?;
-        index.add_path(rel_path)?;
-    } else if metadata.is_dir() {
-        for entry in fs::read_dir(target_path).map_err(|e| {
-            git2::Error::from_str(&format!(
-                "Failed to read directory {:?}: {}",
-                target_path, e
-            ))
-        })? {
-            let entry =
-                entry.map_err(|e| git2::Error::from_str(&format!("Dir entry error: {}", e)))?;
-            add_path_recursively(index, repo_workdir, entry.path())?;
+    while let Some(current_path) = paths_to_visit.pop() {
+        let metadata = match fs::metadata(&current_path) {
+            Ok(meta) => meta,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // This can happen with broken symlinks, for example. We just skip them.
+                continue;
+            }
+            Err(e) => {
+                return Err(git2::Error::from_str(&format!(
+                    "Failed to read path {:?}: {}",
+                    current_path, e
+                )));
+            }
+        };
+
+        if metadata.is_file() {
+            let rel_path = current_path
+                .strip_prefix(repo_workdir)
+                .map_err(|_| git2::Error::from_str("Target path is outside repository"))?;
+            index.add_path(rel_path)?;
+        } else if metadata.is_dir() {
+            for entry in fs::read_dir(&current_path).map_err(|e| {
+                git2::Error::from_str(&format!(
+                    "Failed to read directory {:?}: {}",
+                    current_path, e
+                ))
+            })? {
+                let entry =
+                    entry.map_err(|e| git2::Error::from_str(&format!("Dir entry error: {}", e)))?;
+                paths_to_visit.push(entry.path());
+            }
         }
+        // Symlinks and other file types are implicitly ignored.
     }
-    // Ignore symlinks or other types unless you want to handle them
     Ok(())
 }
 impl GitActor {
