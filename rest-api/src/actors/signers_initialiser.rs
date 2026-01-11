@@ -222,15 +222,6 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
         );
 
         let mut had_error = false;
-        if let Err(e) = tokio::fs::remove_file(&msg.signers_file_path).await {
-            had_error = true;
-            tracing::warn!(
-                request_id = %msg.request_id,
-                path = %msg.signers_file_path,
-                error = %e,
-                "Failed to remove signers file during cleanup"
-            );
-        }
 
         if let Err(e) = tokio::fs::remove_file(&msg.history_file_path).await {
             had_error = true;
