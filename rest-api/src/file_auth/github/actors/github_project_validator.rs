@@ -62,7 +62,10 @@ impl GitHubProjectValidator {
             "GitHubProjectAuthenticator created"
         );
         Self {
-            http_client: Client::new(),
+            http_client: Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .build()
+                .expect("Failed to build reqwest client"),
         }
     }
 
