@@ -4,7 +4,7 @@ use rest_api_types::errors::ApiError;
 use std::path::{Path, PathBuf};
 
 use crate::{
-    file_auth::forges::{ForgeTrait, ForgeUrlError},
+    file_auth::forges_types::{ForgeTrait, ForgeUrlError},
     path_validation::NormalisedPaths,
 };
 

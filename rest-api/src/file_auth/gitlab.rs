@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::file_auth::forges::{ForgeTrait, ForgeUrlError};
+use crate::file_auth::forges_types::{ForgeTrait, ForgeUrlError};
 
 #[derive(Debug, Clone)]
 pub struct GitLabRepoInfo {
