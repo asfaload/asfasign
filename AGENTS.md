@@ -89,8 +89,15 @@ This is EXTREMELY IMPORTANT:
 
 # ROLE
 
-According to your role, load additional reference files.
+IMPORTANT: Read your role-specific file BEFORE starting any work. Use the Read tool to load it.
 
-- as a developer, load [agents/developer.md].
-- as a reviewer, load [agents/reviewer.md].
-- as a tester, load [agents/tester.md].
+According to your role, read these reference files:
+
+- as a developer, read [agents/developer.md]
+- as a reviewer, read [agents/reviewer.md]
+- as a tester, read [agents/tester.md]
+
+# PROJECT SPECIFIC NOTES
+
+@core/common/src/fs/names.rs defines constants to be used to avoid hard-coding file and dir names.
+Bad: "asfaload.signers.pending" Good: "PENDING_SIGNERS_NAME"

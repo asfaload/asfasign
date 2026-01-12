@@ -1,17 +1,22 @@
 #!/bin/bash
 
-set -euxo pipefail
 
-echo "using git repo path: ${1?provide path to git repo}"
 
 # Check if a git directory path was provided
 if [ -z "$1" ]; then
   echo "Error: No git directory path provided a first argument."
   echo "Usage: $0 /path/to/git/repository"
+  cat <<EOF
+  Instructions to set up a git repo in /tmp/repo:
+  rm -rf /tmp/repo/ ; mkdir /tmp/repo ; ( cd /tmp/repo; git init;  )
+EOF
   exit 1
 fi
 
+echo "using git repo path: ${1?provide path to git repo}"
 GIT_REPO_PATH="${1}"
+
+set -euxo pipefail
 
 # Check if the provided path is a directory
 if [ ! -d "$GIT_REPO_PATH" ]; then
@@ -51,6 +56,16 @@ curl -X POST http://localhost:3000/add-file   -H "Content-Type: application/json
     "file_path": "example.txt",
     "content": "This is a test file edited via the REST API"
   }'
+
+You can test the project registration with
+
+curl -X POST http://localhost:3000/register_repo \
+  -H "Content-Type: application/json" \
+  -d '{"signers_file_url" : "https://raw.githubusercontent.com/asfaload/asfald/refs/heads/signers_file/asfaload_signers_file.json"}'
+
+
+Get debug logs by setting ASFASIGN_LOG_LEVEL=debug
+Logs are also sent to the file server.log
 ********************************************************************************
 
 
