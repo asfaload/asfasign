@@ -187,4 +187,211 @@ mod tests {
         let result = ForgeInfo::new(url);
         assert!(result.is_err());
     }
+
+    fn assert_forge_trait_methods(
+        forge: &ForgeInfo,
+        expected_owner: &str,
+        expected_repo: &str,
+        expected_branch: &str,
+        expected_path: &str,
+        expected_raw_url: &str,
+        expected_project_id: &str,
+    ) {
+        assert_eq!(forge.owner(), expected_owner, "owner mismatch");
+        assert_eq!(forge.repo(), expected_repo, "repo mismatch");
+        assert_eq!(forge.branch(), expected_branch, "branch mismatch");
+        assert_eq!(
+            forge.file_path(),
+            PathBuf::from(expected_path),
+            "file_path mismatch"
+        );
+        assert_eq!(forge.raw_url(), expected_raw_url, "raw_url mismatch");
+        assert_eq!(
+            forge.project_id(),
+            expected_project_id,
+            "project_id mismatch"
+        );
+    }
+
+    #[test]
+    fn test_github_blob_all_trait_methods() {
+        let url = "https://github.com/example-org/my-repo/blob/develop/docs/config.json";
+        let forge = ForgeInfo::new(url).unwrap();
+
+        assert_forge_trait_methods(
+            &forge,
+            "example-org",
+            "my-repo",
+            "develop",
+            "docs/config.json",
+            "https://raw.githubusercontent.com/example-org/my-repo/develop/docs/config.json",
+            "github.com/example-org/my-repo",
+        );
+    }
+
+    #[test]
+    fn test_github_raw_all_trait_methods() {
+        let url = "https://raw.githubusercontent.com/user/repo/v1.0/data.json";
+        let forge = ForgeInfo::new(url).unwrap();
+
+        assert_forge_trait_methods(
+            &forge,
+            "user",
+            "repo",
+            "v1.0",
+            "data.json",
+            url,
+            "github.com/user/repo",
+        );
+    }
+
+    #[test]
+    fn test_github_nested_path_trait_methods() {
+        let url = "https://github.com/org/complex-repo/blob/main/path/to/deeply/nested/config.yml";
+        let forge = ForgeInfo::new(url).unwrap();
+
+        assert_forge_trait_methods(
+            &forge,
+            "org",
+            "complex-repo",
+            "main",
+            "path/to/deeply/nested/config.yml",
+            "https://raw.githubusercontent.com/org/complex-repo/main/path/to/deeply/nested/config.yml",
+            "github.com/org/complex-repo",
+        );
+    }
+
+    #[test]
+    fn test_github_complex_branch_trait_methods() {
+        let url = "https://github.com/acme/projects/blob/feature-auth-v2/src/auth/provider.ts";
+        let forge = ForgeInfo::new(url).unwrap();
+
+        assert_forge_trait_methods(
+            &forge,
+            "acme",
+            "projects",
+            "feature-auth-v2",
+            "src/auth/provider.ts",
+            "https://raw.githubusercontent.com/acme/projects/feature-auth-v2/src/auth/provider.ts",
+            "github.com/acme/projects",
+        );
+    }
+
+    #[test]
+    fn test_gitlab_blob_all_trait_methods() {
+        let url = "https://gitlab.com/group/subgroup/project/-/blob/dev/src/main.rs";
+        let forge = ForgeInfo::new(url).unwrap();
+
+        assert_forge_trait_methods(
+            &forge,
+            "group/subgroup",
+            "project",
+            "dev",
+            "src/main.rs",
+            "https://gitlab.com/group/subgroup/project/-/raw/dev/src/main.rs",
+            "gitlab.com/group/subgroup/project",
+        );
+    }
+
+    #[test]
+    fn test_gitlab_raw_all_trait_methods() {
+        let url = "https://gitlab.com/group/project/-/raw/main/file.txt";
+        let forge = ForgeInfo::new(url).unwrap();
+
+        assert_forge_trait_methods(
+            &forge,
+            "group",
+            "project",
+            "main",
+            "file.txt",
+            url,
+            "gitlab.com/group/project",
+        );
+    }
+
+    #[test]
+    fn test_gitlab_nested_namespace_trait_methods() {
+        let url = "https://gitlab.com/enterprise/engineering/platform/app/-/blob/production/config/settings.toml";
+        let forge = ForgeInfo::new(url).unwrap();
+
+        assert_forge_trait_methods(
+            &forge,
+            "enterprise/engineering/platform",
+            "app",
+            "production",
+            "config/settings.toml",
+            "https://gitlab.com/enterprise/engineering/platform/app/-/raw/production/config/settings.toml",
+            "gitlab.com/enterprise/engineering/platform/app",
+        );
+    }
+
+    #[test]
+    fn test_gitlab_nested_path_trait_methods() {
+        let url = "https://gitlab.com/group/project/-/blob/deploy/lib/utils/helpers.js";
+        let forge = ForgeInfo::new(url).unwrap();
+
+        assert_forge_trait_methods(
+            &forge,
+            "group",
+            "project",
+            "deploy",
+            "lib/utils/helpers.js",
+            "https://gitlab.com/group/project/-/raw/deploy/lib/utils/helpers.js",
+            "gitlab.com/group/project",
+        );
+    }
+
+    #[test]
+    fn test_forge_trait_methods_delegation_github() {
+        let github = ForgeInfo::new("https://github.com/owner/repo/blob/main/file.json").unwrap();
+
+        assert_eq!(github.owner(), "owner");
+        assert_eq!(github.repo(), "repo");
+        assert_eq!(github.branch(), "main");
+        assert_eq!(github.file_path(), PathBuf::from("file.json"));
+        assert_eq!(
+            github.raw_url(),
+            "https://raw.githubusercontent.com/owner/repo/main/file.json"
+        );
+        assert_eq!(github.project_id(), "github.com/owner/repo");
+
+        match &github {
+            ForgeInfo::Github(info) => {
+                assert_eq!(info.owner(), github.owner());
+                assert_eq!(info.repo(), github.repo());
+                assert_eq!(info.branch(), github.branch());
+                assert_eq!(info.file_path(), github.file_path());
+                assert_eq!(info.raw_url(), github.raw_url());
+                assert_eq!(info.project_id(), github.project_id());
+            }
+            ForgeInfo::Gitlab(_) => panic!("Expected GitHub variant"),
+        }
+    }
+
+    #[test]
+    fn test_forge_trait_methods_delegation_gitlab() {
+        let gitlab = ForgeInfo::new("https://gitlab.com/ns/proj/-/blob/main/file.json").unwrap();
+
+        assert_eq!(gitlab.owner(), "ns");
+        assert_eq!(gitlab.repo(), "proj");
+        assert_eq!(gitlab.branch(), "main");
+        assert_eq!(gitlab.file_path(), PathBuf::from("file.json"));
+        assert_eq!(
+            gitlab.raw_url(),
+            "https://gitlab.com/ns/proj/-/raw/main/file.json"
+        );
+        assert_eq!(gitlab.project_id(), "gitlab.com/ns/proj");
+
+        match &gitlab {
+            ForgeInfo::Gitlab(info) => {
+                assert_eq!(info.owner(), gitlab.owner());
+                assert_eq!(info.repo(), gitlab.repo());
+                assert_eq!(info.branch(), gitlab.branch());
+                assert_eq!(info.file_path(), gitlab.file_path());
+                assert_eq!(info.raw_url(), gitlab.raw_url());
+                assert_eq!(info.project_id(), gitlab.project_id());
+            }
+            ForgeInfo::Github(_) => panic!("Expected GitLab variant"),
+        }
+    }
 }
