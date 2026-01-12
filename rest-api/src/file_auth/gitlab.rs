@@ -8,7 +8,7 @@ pub struct GitLabRepoInfo {
     project: String,
     branch: String,
     file_path: PathBuf,
-    raw_url: String,
+    raw_url: url::Url,
 }
 
 #[cfg(not(feature = "test-utils"))]
@@ -18,9 +18,7 @@ pub const GITLAB_HOSTS: &[&str] = &["gitlab.com"];
 pub const GITLAB_HOSTS: &[&str] = &["gitlab.com", "localhost", "127.0.0.1"];
 
 impl ForgeTrait for GitLabRepoInfo {
-    fn new(url: &str) -> Result<GitLabRepoInfo, ForgeUrlError> {
-        let url = url::Url::parse(url).map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?;
-
+    fn new(url: &url::Url) -> Result<GitLabRepoInfo, ForgeUrlError> {
         let host = url.host_str().unwrap_or("");
 
         if !GITLAB_HOSTS.contains(&host) {
@@ -95,12 +93,16 @@ impl ForgeTrait for GitLabRepoInfo {
         }
 
         let raw_url = if action == "raw" {
-            url.to_string()
+            url.clone()
         } else {
-            format!(
-                "https://gitlab.com/{}/{}/-/raw/{}/{}",
-                namespace, project, branch, file_path
+            url::Url::parse(
+                format!(
+                    "https://gitlab.com/{}/{}/-/raw/{}/{}",
+                    namespace, project, branch, file_path
+                )
+                .as_str(),
             )
+            .map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?
         };
 
         Ok(GitLabRepoInfo {
@@ -132,7 +134,7 @@ impl ForgeTrait for GitLabRepoInfo {
         &self.file_path
     }
 
-    fn raw_url(&self) -> &str {
+    fn raw_url(&self) -> &url::Url {
         &self.raw_url
     }
 }
@@ -143,8 +145,8 @@ mod tests {
 
     #[test]
     fn test_parse_gitlab_blob_url() {
-        let url = "https://gitlab.com/namespace/project/-/blob/main/asfaload.initial_signers.json";
-        let result = GitLabRepoInfo::new(url).unwrap();
+        let url = url::Url::parse("https://gitlab.com/namespace/project/-/blob/main/asfaload.initial_signers.json").unwrap();
+        let result = GitLabRepoInfo::new(&url).unwrap();
         assert_eq!(result.namespace, "namespace");
         assert_eq!(result.project, "project");
         assert_eq!(result.branch, "main");
@@ -154,14 +156,14 @@ mod tests {
         );
         assert_eq!(
             result.raw_url,
-            "https://gitlab.com/namespace/project/-/raw/main/asfaload.initial_signers.json"
+            url::Url::parse("https://gitlab.com/namespace/project/-/raw/main/asfaload.initial_signers.json").unwrap()
         );
     }
 
     #[test]
     fn test_parse_gitlab_raw_url() {
-        let url = "https://gitlab.com/namespace/project/-/raw/develop/path/to/file.json";
-        let result = GitLabRepoInfo::new(url).unwrap();
+        let url = url::Url::parse("https://gitlab.com/namespace/project/-/raw/develop/path/to/file.json").unwrap();
+        let result = GitLabRepoInfo::new(&url).unwrap();
         assert_eq!(result.namespace, "namespace");
         assert_eq!(result.project, "project");
         assert_eq!(result.branch, "develop");
@@ -171,43 +173,43 @@ mod tests {
 
     #[test]
     fn test_parse_gitlab_nested_namespace() {
-        let url = "https://gitlab.com/group/subgroup/project/-/blob/main/file.json";
-        let result = GitLabRepoInfo::new(url).unwrap();
+        let url = url::Url::parse("https://gitlab.com/group/subgroup/project/-/blob/main/file.json").unwrap();
+        let result = GitLabRepoInfo::new(&url).unwrap();
         assert_eq!(result.namespace, "group/subgroup");
         assert_eq!(result.project, "project");
         assert_eq!(result.branch, "main");
         assert_eq!(result.file_path, PathBuf::from("file.json"));
         assert_eq!(
             result.raw_url,
-            "https://gitlab.com/group/subgroup/project/-/raw/main/file.json"
+            url::Url::parse("https://gitlab.com/group/subgroup/project/-/raw/main/file.json").unwrap()
         );
     }
 
     #[test]
     fn test_parse_invalid_domain() {
-        let url = "https://github.com/namespace/project/-/blob/main/file.json";
-        let result = GitLabRepoInfo::new(url);
+        let url = url::Url::parse("https://github.com/namespace/project/-/blob/main/file.json").unwrap();
+        let result = GitLabRepoInfo::new(&url);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_missing_blob_segment() {
-        let url = "https://gitlab.com/namespace/project/-/main/file.json";
-        let result = GitLabRepoInfo::new(url);
+        let url = url::Url::parse("https://gitlab.com/namespace/project/-/main/file.json").unwrap();
+        let result = GitLabRepoInfo::new(&url);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_missing_branch() {
-        let url = "https://gitlab.com/namespace/project/-/raw/file.json";
-        let result = GitLabRepoInfo::new(url);
+        let url = url::Url::parse("https://gitlab.com/namespace/project/-/raw/file.json").unwrap();
+        let result = GitLabRepoInfo::new(&url);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_empty_namespace_and_project() {
-        let url = "https://gitlab.com/-/project/repo/blob/main/file.json";
-        let result = GitLabRepoInfo::new(url);
+        let url = url::Url::parse("https://gitlab.com/-/project/repo/blob/main/file.json").unwrap();
+        let result = GitLabRepoInfo::new(&url);
         match result {
             Err(ForgeUrlError::InvalidFormat(msg)) => {
                 if !msg.contains("GitLab URL must contain a namespace and project") {

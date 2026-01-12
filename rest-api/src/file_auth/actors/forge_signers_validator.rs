@@ -9,7 +9,7 @@ use crate::file_auth::forges::{ForgeInfo, ForgeTrait};
 const ACTOR_NAME: &str = "forge_signers_validator";
 #[derive(Debug, Clone)]
 pub struct ValidateProjectRequest {
-    pub signers_file_url: String,
+    pub signers_file_url: url::Url,
     pub request_id: String,
 }
 
@@ -66,12 +66,12 @@ impl ForgeProjectValidator {
         }
     }
 
-    async fn fetch_with_retry(&self, url: &str, request_id: &str) -> Result<String, ApiError> {
+    async fn fetch_with_retry(&self, url: &url::Url, request_id: &str) -> Result<String, ApiError> {
         let mut retries = 0;
         let mut backoff_sec = INITIAL_BACKOFF_SEC;
 
         loop {
-            let response = self.http_client.get(url).send().await.map_err(|e| {
+            let response = self.http_client.get(url.to_owned()).send().await.map_err(|e| {
                 tracing::error!(actor_name = ACTOR_NAME, request_id = %request_id, url = %url, error = %e, "Failed to fetch signers file");
                 ApiError::ActorOperationFailed(format!("Failed to fetch: {}", e))
             })?;
@@ -121,7 +121,7 @@ impl ForgeProjectValidator {
 
     async fn validate_project(
         &self,
-        signers_file_url: &str,
+        signers_file_url: &url::Url,
         request_id: &str,
     ) -> Result<ProjectSignersProposal, ApiError> {
         tracing::info!(
@@ -307,7 +307,7 @@ mod tests {
         }"#;
 
         // Test with a localhost URL
-        let url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+        let url = url::Url::parse(&format!("{}/owner/repo/main/signers.json", mock_server.url(""))).unwrap();
 
         let mut mock_429 = mock_server.mock(|when, then| {
             when.method(httpmock::Method::GET)
@@ -389,7 +389,7 @@ mod tests {
                 .body(signers_json);
         });
 
-        let url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+        let url = url::Url::parse(&format!("{}/owner/repo/main/signers.json", mock_server.url(""))).unwrap();
 
         let validator = ForgeProjectValidator::new();
         let result = validator.validate_project(&url, "test-request").await;
@@ -422,7 +422,7 @@ mod tests {
         let authenticator = ForgeProjectValidator::new();
 
         let result = authenticator
-            .fetch_with_retry(&server.url("/"), "req-1")
+            .fetch_with_retry(&url::Url::parse(&server.url("/")).unwrap(), "req-1")
             .await
             .unwrap();
 
@@ -441,7 +441,7 @@ mod tests {
         let authenticator = ForgeProjectValidator::new();
 
         let err = authenticator
-            .fetch_with_retry(&server.url("/"), "req-2")
+            .fetch_with_retry(&url::Url::parse(&server.url("/")).unwrap(), "req-2")
             .await
             .unwrap_err();
 
@@ -461,7 +461,7 @@ mod tests {
 
         let start = Instant::now();
         let err = authenticator
-            .fetch_with_retry(&server.url("/"), "req-3")
+            .fetch_with_retry(&url::Url::parse(&server.url("/")).unwrap(), "req-3")
             .await
             .unwrap_err();
 
@@ -493,7 +493,7 @@ mod tests {
 
         let start = Instant::now();
         let err = authenticator
-            .fetch_with_retry(&server.url("/"), "req-4")
+            .fetch_with_retry(&url::Url::parse(&server.url("/")).unwrap(), "req-4")
             .await
             .unwrap_err();
 
@@ -528,7 +528,7 @@ mod tests {
 
         let authenticator = ForgeProjectValidator::new();
 
-        let server_url = server.url("/");
+        let server_url = url::Url::parse(&server.url("/")).unwrap();
 
         // Start fetch loop
         let handle = tokio::spawn({
@@ -576,7 +576,7 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_network_error_propagates() {
         // Use a port that is unlikely to have a server
-        let unreachable_url = "http://127.0.0.1:1".to_string();
+        let unreachable_url = url::Url::parse("http://127.0.0.1:1").unwrap();
 
         let authenticator = ForgeProjectValidator::new();
 

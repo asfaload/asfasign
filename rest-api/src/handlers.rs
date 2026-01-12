@@ -116,7 +116,9 @@ pub async fn register_repo_handler(
         "Received register_repo request"
     );
 
-    let repo_info = ForgeInfo::new(&request.signers_file_url).map_err(|e| {
+    let parsed_url = url::Url::parse(&request.signers_file_url)
+        .map_err(|e| ApiError::InvalidRequestBody(e.to_string()))?;
+    let repo_info = ForgeInfo::new(&parsed_url).map_err(|e| {
         tracing::error!(
             request_id = %request_id,
             url = %request.signers_file_url,
@@ -152,7 +154,7 @@ pub async fn register_repo_handler(
         )));
     }
     let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
-        signers_file_url: request.signers_file_url,
+        signers_file_url: parsed_url,
         request_id: request_id.to_string(),
     };
 
