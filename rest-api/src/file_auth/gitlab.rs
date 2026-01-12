@@ -43,6 +43,12 @@ impl ForgeTrait for GitLabRepoInfo {
             .position(|&s| s == "-")
             .ok_or_else(|| ForgeUrlError::InvalidFormat("Invalid GitLab URL format".to_string()))?;
 
+        if dash_idx == 0 {
+            return Err(ForgeUrlError::InvalidFormat(
+                "GitLab URL must contain a namespace and project".to_string(),
+            ));
+        }
+
         let project = segments[dash_idx - 1].to_string();
 
         let namespace = if dash_idx > 1 {
@@ -73,12 +79,6 @@ impl ForgeTrait for GitLabRepoInfo {
             .ok_or(ForgeUrlError::MissingFilePath)?;
 
         let file_path = file_path_segments.join("/");
-
-        if namespace.is_empty() {
-            return Err(ForgeUrlError::InvalidFormat(
-                "Namespace cannot be empty".to_string(),
-            ));
-        }
 
         if project.is_empty() {
             return Err(ForgeUrlError::InvalidFormat(
@@ -202,5 +202,23 @@ mod tests {
         let url = "https://gitlab.com/namespace/project/-/raw/file.json";
         let result = GitLabRepoInfo::new(url);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_empty_namespace_and_project() {
+        let url = "https://gitlab.com/-/project/repo/blob/main/file.json";
+        let result = GitLabRepoInfo::new(url);
+        match result {
+            Err(ForgeUrlError::InvalidFormat(msg)) => {
+                if !msg.contains("GitLab URL must contain a namespace and project") {
+                    panic!(
+                        "Expected message to contain \"GitLab URL must contain a namespace and project\" but was \"{}\"",
+                        msg
+                    )
+                }
+            }
+            Err(e) => panic!("Expected InvalidFormat error, got {}", e),
+            Ok(v) => panic!("Expected InvalidFormat error, got ok value {:?}", v),
+        }
     }
 }
