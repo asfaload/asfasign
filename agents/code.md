@@ -13,6 +13,7 @@
 - **Security**: Consider security implications in your code
 - **Version Control**: Write clear commit messages
 
+Read [producing_better_code.md](./producing_better_code.md) which collects lessons from earlier code development in this project.
 
 ## Code Style Guidelines
 
@@ -57,6 +58,31 @@
 - Test both success and error cases
 - Use descriptive test names that explain the scenario
 - Structure tests with arrange-act-assert pattern
+- do not write this:
+```
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ApiError::InvalidRequestBody(msg) => {
+                assert!(msg.contains("null bytes"));
+            }
+            _ => panic!("Expected InvalidRequestBody error"),
+        }
+
+```
+but
+```
+        match result{
+
+            Err(ApiError::InvalidRequestBody(msg)) => {
+                assert!(msg.contains("null bytes"));
+            }
+            Err(e) => {
+                panic!("Expected ApiError::InvalidRequestBody but got {}", e)
+            },
+            Ok(_) => panic!("Expected InvalidRequestBody error, go ok value !",),
+        }
+```
+as this will report the unexpected error we got
 
 ### Async Code
 - Use `#[tokio::main]` for async main functions
