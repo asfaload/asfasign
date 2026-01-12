@@ -54,6 +54,9 @@ curl -X POST http://localhost:3000/register_repo \
   -H "Content-Type: application/json" \
   -d '{"signers_file_url" : "https://raw.githubusercontent.com/asfaload/asfald/refs/heads/signers_file/asfaload_signers_file.json"}'
 
+curl -X POST http://localhost:3000/register_repo \
+  -H "Content-Type: application/json" \
+  -d '{"signers_file_url" : "https://gitlab.com/myowndb/myowndb/-/blob/signers_file/asfaload_signers_file.json?ref_type=heads"}'
 
 Get debug logs by setting ASFASIGN_LOG_LEVEL=debug
 The git repo is at $GIT_REPO_PATH

@@ -4,11 +4,11 @@ use crate::file_auth::forges_types::{ForgeTrait, ForgeUrlError};
 
 #[derive(Debug, Clone)]
 pub struct GitLabRepoInfo {
-    pub namespace: String,
-    pub project: String,
-    pub branch: String,
-    pub file_path: PathBuf,
-    pub raw_url: String,
+    namespace: String,
+    project: String,
+    branch: String,
+    file_path: PathBuf,
+    raw_url: String,
 }
 
 #[cfg(not(feature = "test-utils"))]

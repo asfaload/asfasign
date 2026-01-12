@@ -8,11 +8,11 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct GitHubRepoInfo {
-    pub owner: String,
-    pub repo: String,
-    pub branch: String,
-    pub file_path: PathBuf,
-    pub raw_url: String,
+    owner: String,
+    repo: String,
+    branch: String,
+    file_path: PathBuf,
+    raw_url: String,
 }
 
 #[cfg(not(feature = "test-utils"))]
