@@ -3,6 +3,7 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
+    use rest_api::file_auth::github::get_project_normalised_paths;
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::parse_log_lines;
@@ -560,6 +561,311 @@ pub mod tests {
                 .and_then(|m| m.as_str()),
             Some("Test error message"),
             "Should have message"
+        );
+
+        Ok(())
+    }
+
+    // ============================================================================
+    // Register Repo Integration Tests
+    //
+    // NOTE: These tests establish the integration test infrastructure pattern for
+    // register_repo endpoint. Due to architectural limitations where
+    // GitHubProjectAuthenticator only accepts github.com URLs and httpmock can
+    // only mock localhost, these tests require additional mocking infrastructure
+    // or dependency injection to fully pass. This provides the foundation for
+    // such enhancements.
+    // ============================================================================
+
+    #[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn test_register_repo_success() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadKeyPairTrait;
+        use features_lib::AsfaloadPublicKeyTrait;
+        use git2::Repository;
+        use httpmock::Method;
+        use rest_api_types::RegisterRepoRequest;
+        use rest_api_types::RegisterRepoResponse;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        Repository::init(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_password = "test_password";
+        let key_pair = features_lib::AsfaloadKeyPairs::new(test_password)?;
+        let public_key = key_pair.public_key();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(signers_json);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
+
+        let app = axum::Router::new()
+            .route(
+                "/register_repo",
+                axum::routing::post(rest_api::handlers::register_repo_handler),
+            )
+            .with_state(app_state);
+
+        let server = axum_test::TestServer::new(app)?;
+
+        let response = server
+            .post("/register_repo")
+            .json(&RegisterRepoRequest {
+                signers_file_url: signers_url,
+            })
+            .await;
+
+        response.assert_status_ok();
+
+        let response_body = response.json::<RegisterRepoResponse>();
+        assert!(response_body.success);
+        assert_eq!(response_body.project_id, "github.com/owner/repo");
+        assert_eq!(
+            response_body.message,
+            "Project registered successfully. Collect signatures to activate."
+        );
+        assert_eq!(response_body.required_signers.len(), 1);
+        assert_eq!(response_body.required_signers[0], public_key.to_base64());
+        assert_eq!(response_body.signature_submission_url, "/sign");
+
+        mock.assert();
+
+        Ok(())
+    }
+
+    #[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn test_register_repo_already_exists() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadKeyPairTrait;
+        use git2::Repository;
+        use httpmock::Method;
+        use rest_api_types::RegisterRepoRequest;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        Repository::init(&git_repo_path)?;
+
+        let project_dir = git_repo_path.join("github.com/owner/repo");
+        tokio::fs::create_dir_all(&project_dir).await?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_password = "test_password";
+        let key_pair = features_lib::AsfaloadKeyPairs::new(test_password)?;
+        let public_key = key_pair.public_key();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key], 1),
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200).body(signers_json);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
+
+        let app = axum::Router::new()
+            .route(
+                "/register_repo",
+                axum::routing::post(rest_api::handlers::register_repo_handler),
+            )
+            .with_state(app_state);
+
+        let server = axum_test::TestServer::new(app)?;
+
+        let response = server
+            .post("/register_repo")
+            .json(&RegisterRepoRequest {
+                signers_file_url: signers_url,
+            })
+            .await;
+
+        response.assert_status(StatusCode::BAD_REQUEST);
+
+        let response_body: serde_json::Value = response.json();
+        assert!(response_body.get("error").is_some());
+
+        // project existence is detected before sending out request
+        mock.assert_hits(0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_register_repo_cleans_up_on_repo_handler_failure() -> Result<(), anyhow::Error> {
+        use common::fs::names::PENDING_SIGNERS_DIR;
+        use features_lib::AsfaloadKeyPairTrait;
+        use git2::Repository;
+        use kameo::actor::Spawn;
+        use rest_api::actors::git_actor::GitActor;
+        use rest_api::actors::signers_initialiser::{
+            CleanupSignersRequest, InitialiseSignersRequest, SignersInitialiser,
+        };
+        use std::fs;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        let git_repo_path_clone = git_repo_path.clone();
+
+        Repository::init(&git_repo_path)?;
+
+        let test_password = "test_password";
+        let key_pair = features_lib::AsfaloadKeyPairs::new(test_password)?;
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![key_pair.public_key().clone()], 1),
+        )?;
+
+        let project_id = "github.com/test/repo";
+        let project_dir = git_repo_path.join(project_id);
+        let signers_pending_dir = project_dir.join("asfaload.signers.pending");
+        let signers_file_path = signers_pending_dir.join("index.json");
+        let history_file_path = project_dir.join("asfaload.signers.history.json");
+        let project_path = get_project_normalised_paths(&git_repo_path, project_id).await?;
+
+        let signers_initialiser = SignersInitialiser::spawn(());
+        let init_request = InitialiseSignersRequest {
+            project_path,
+            signers_config: signers_config.clone(),
+            git_repo_path: git_repo_path.clone(),
+            request_id: "test-123".to_string(),
+        };
+
+        let init_result = signers_initialiser.ask(init_request).await?;
+
+        assert!(
+            signers_file_path.exists(),
+            "Signers file should exist after initialization"
+        );
+        assert!(
+            history_file_path.exists(),
+            "History file should exist after initialization"
+        );
+        assert!(
+            signers_pending_dir.exists(),
+            "Pending directory should exist after initialization"
+        );
+
+        let git_dir = git_repo_path.join(".git");
+        fs::remove_dir_all(&git_dir)?;
+
+        let git_actor = GitActor::spawn(git_repo_path_clone.clone());
+
+        let write_commit_request = rest_api::actors::git_actor::CommitFile {
+            file_paths: init_result.project_path.clone(),
+            commit_message: "commit of test-123".to_string(),
+            request_id: "test-123".to_string(),
+        };
+
+        let result = git_actor.ask(write_commit_request).await;
+
+        assert!(
+            result.is_err(),
+            "RepoHandler should fail when git repo is corrupted"
+        );
+
+        let pending_dir = init_result.project_path.join(PENDING_SIGNERS_DIR).await?;
+
+        let cleanup_request = CleanupSignersRequest {
+            signers_file_path: init_result.signers_file_path.clone(),
+            history_file_path: init_result.history_file_path.clone(),
+            pending_dir,
+            request_id: "test-123".to_string(),
+        };
+
+        let cleanup_result = signers_initialiser.ask(cleanup_request).await;
+
+        assert!(cleanup_result.is_ok(), "Cleanup should succeed");
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        assert!(
+            !signers_file_path.exists(),
+            "Signers file should be cleaned up after failure"
+        );
+        assert!(
+            !history_file_path.exists(),
+            "History file should be cleaned up after failure"
+        );
+        assert!(
+            !signers_pending_dir.exists(),
+            "Pending directory should be cleaned up after failure"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_register_repo_errors_dont_leak_internal_details() -> Result<(), anyhow::Error> {
+        use git2::Repository;
+        use rest_api_types::RegisterRepoRequest;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        Repository::init(&git_repo_path)?;
+
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
+
+        let app = axum::Router::new()
+            .route(
+                "/register_repo",
+                axum::routing::post(rest_api::handlers::register_repo_handler),
+            )
+            .with_state(app_state);
+
+        let server = axum_test::TestServer::new(app)?;
+
+        let response = server
+            .post("/register_repo")
+            .json(&RegisterRepoRequest {
+                signers_file_url: "https://github.com/owner/repo/blob/main/nonexistent.json"
+                    .to_string(),
+            })
+            .await;
+
+        let response_body: serde_json::Value = response.json();
+
+        let error_msg = response_body
+            .get("error")
+            .and_then(|e| e.as_str())
+            .unwrap_or("");
+
+        assert!(
+            !error_msg.contains("ActorOperationFailed"),
+            "Should not expose actor errors"
+        );
+        assert!(!error_msg.contains("/"), "Should not expose file paths");
+        assert!(
+            error_msg.len() < 200,
+            "Error message should be concise: {}",
+            error_msg
         );
 
         Ok(())

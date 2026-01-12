@@ -1,7 +1,8 @@
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use crate::path_validation::NormalisedPaths;
 use git2::{Repository, Signature};
@@ -20,7 +21,62 @@ const GIT_USER_EMAIL: &str = "git-actor@rest-api.asfaload.com";
 pub struct GitActor {
     repo_path: PathBuf,
 }
+fn add_path_recursively<P1: AsRef<Path>, P2: AsRef<Path>>(
+    index: &mut git2::Index,
+    repo_workdir_in: P1,
+    target_path_in: P2,
+) -> Result<(), git2::Error> {
+    let repo_workdir = repo_workdir_in.as_ref();
+    let mut paths_to_visit = vec![target_path_in.as_ref().to_path_buf()];
 
+    while let Some(current_path) = paths_to_visit.pop() {
+        let metadata = match fs::symlink_metadata(&current_path) {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() {
+                    tracing::error!(
+                        file_path = %current_path.display(),
+                        "Encountered symlink in git repo!"
+                    );
+                    return Err(git2::Error::from_str(&format!(
+                        "Encountered a symlink!{}",
+                        current_path.display()
+                    )));
+                }
+                meta
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // This can happen with broken symlinks, for example. We just skip them.
+                continue;
+            }
+            Err(e) => {
+                return Err(git2::Error::from_str(&format!(
+                    "Failed to read path {:?}: {}",
+                    current_path, e
+                )));
+            }
+        };
+
+        if metadata.is_file() {
+            let rel_path = current_path
+                .strip_prefix(repo_workdir)
+                .map_err(|_| git2::Error::from_str("Target path is outside repository"))?;
+            index.add_path(rel_path)?;
+        } else if metadata.is_dir() {
+            for entry in fs::read_dir(&current_path).map_err(|e| {
+                git2::Error::from_str(&format!(
+                    "Failed to read directory {:?}: {}",
+                    current_path, e
+                ))
+            })? {
+                let entry =
+                    entry.map_err(|e| git2::Error::from_str(&format!("Dir entry error: {}", e)))?;
+                paths_to_visit.push(entry.path());
+            }
+        }
+        // Symlinks and other file types are implicitly ignored.
+    }
+    Ok(())
+}
 impl GitActor {
     pub fn new(repo_path: PathBuf) -> Self {
         tracing::info!(repo_path = %repo_path.display(), "GitActor created");
@@ -46,7 +102,7 @@ impl GitActor {
             "Attempting to commit file"
         );
         let repo_path = self.repo_path.clone();
-        let file_path = file_paths.relative_path();
+        let file_path = file_paths.absolute_path();
         let commit_message = commit_message.to_string();
         let request_id = request_id.to_string();
 
@@ -59,7 +115,7 @@ impl GitActor {
 
             // Add the file to the index
             let mut index = repo.index()?;
-            index.add_path(&file_path)?;
+            add_path_recursively(&mut index, repo_path, &file_path)?;
 
             // Get the tree from the index
             let tree_oid = index.write_tree()?;
@@ -107,7 +163,8 @@ impl Message<CommitFile> for GitActor {
             "GitActor received commit request"
         );
 
-        self.commit_file(msg.file_paths, &msg.commit_message, &msg.request_id).await
+        self.commit_file(msg.file_paths, &msg.commit_message, &msg.request_id)
+            .await
     }
 }
 
@@ -133,6 +190,44 @@ mod tests {
     use tempfile::TempDir;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn test_add_path_recursively_rejects_symlink() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let repo_path = temp_dir.path();
+
+        let repo = Repository::init(repo_path)?;
+        let mut index = repo.index()?;
+
+        let target_file = repo_path.join("target.txt");
+        fs::write(&target_file, "target content")?;
+
+        let symlink_path = repo_path.join("link.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("target.txt", &symlink_path)?;
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file("target.txt", &symlink_path)?;
+
+        let result = add_path_recursively(&mut index, repo_path, &symlink_path);
+
+        match result {
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    error_msg.contains("symlink"),
+                    "Error message should mention symlink: {}",
+                    error_msg
+                );
+                assert!(
+                    error_msg.contains("link.txt"),
+                    "Error message should mention path: {}",
+                    error_msg
+                );
+            }
+            Ok(_) => panic!("Expected error when encountering symlink but got Ok"),
+        }
+        Ok(())
+    }
 
     // Helper to initialise a git repo for these tests
     fn initialise_git_actor_repo<P: AsRef<Path>>(repo_path: P) -> Result<Repository> {
@@ -272,7 +367,11 @@ mod tests {
 
         // Test that the commit_file method works (which is what the handle method calls)
         let result = git_actor
-            .commit_file(commit_msg.file_paths, &commit_msg.commit_message, "test-request-id")
+            .commit_file(
+                commit_msg.file_paths,
+                &commit_msg.commit_message,
+                "test-request-id",
+            )
             .await;
 
         // Verify that the commit succeeded

@@ -1,4 +1,5 @@
 use std::{
+    fmt::{Display, Formatter},
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -35,6 +36,27 @@ impl NormalisedPaths {
     }
     pub fn relative_path(&self) -> PathBuf {
         self.relative_path.clone()
+    }
+
+    pub async fn join(&self, suffix_in: impl Into<String>) -> Result<Self, ApiError> {
+        let suffix = suffix_in.into();
+        let base_path = self.base_dir();
+        let new_path = self.relative_path().join(suffix);
+        tokio::task::spawn_blocking(move || build_normalised_absolute_path(base_path, new_path))
+            .await
+            .map_err(ApiError::from)?
+    }
+}
+
+impl AsRef<Path> for NormalisedPaths {
+    fn as_ref(&self) -> &Path {
+        self.absolute_path.as_path()
+    }
+}
+
+impl Display for NormalisedPaths {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.absolute_path.display())
     }
 }
 
@@ -482,5 +504,31 @@ mod tests {
             result.unwrap().absolute_path,
             base_path.join("folder/subfolder/file.txt")
         );
+    }
+
+    use anyhow::Result;
+    #[tokio::test]
+    async fn test_normalised_path_join() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+        let first = "folder/sub_dir";
+        let second = "sub_sub_dir/file.txt";
+        let np1 = build_normalised_absolute_path(base_path, first)?;
+        let np2 = np1.join(second).await?;
+        assert_eq!(
+            np2.relative_path().display().to_string(),
+            "folder/sub_dir/sub_sub_dir/file.txt"
+        );
+        let npe_result = np1.join("..").await;
+        match npe_result {
+            Err(e) => {
+                assert!(
+                    e.to_string()
+                        .contains("Invalid file path: Path traversal attempt through parent dir")
+                );
+            }
+            Ok(_) => panic!("Join should fail with parent access with \"..\""),
+        }
+        Ok(())
     }
 }
