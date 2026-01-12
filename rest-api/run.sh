@@ -1,22 +1,13 @@
 #!/bin/bash
 
-
-
-# Check if a git directory path was provided
-if [ -z "$1" ]; then
-  echo "Error: No git directory path provided a first argument."
-  echo "Usage: $0 /path/to/git/repository"
-  cat <<EOF
-  Instructions to set up a git repo in /tmp/repo:
-  rm -rf /tmp/repo/ ; mkdir /tmp/repo ; ( cd /tmp/repo; git init;  )
-EOF
-  exit 1
-fi
-
-echo "using git repo path: ${1?provide path to git repo}"
-GIT_REPO_PATH="${1}"
-
 set -euxo pipefail
+
+# Setup new git repo at each run
+GIT_REPO_PATH=$(mktemp -d)
+( cd "$GIT_REPO_PATH"; git init;  )
+
+echo "using git repo path: ${GIT_REPO_PATH}"
+
 
 # Check if the provided path is a directory
 if [ ! -d "$GIT_REPO_PATH" ]; then
@@ -65,7 +56,8 @@ curl -X POST http://localhost:3000/register_repo \
 
 
 Get debug logs by setting ASFASIGN_LOG_LEVEL=debug
-Logs are also sent to the file server.log
+The git repo is at $GIT_REPO_PATH
+Logs are also sent to the file $GIT_REPO_PATH/server.log
 ********************************************************************************
 
 
@@ -73,4 +65,4 @@ EOF
 
 base_dir=$(git rev-parse --show-toplevel)
 # Start the server using the release binary
-"${base_dir}/target/release/rest-api" | tee server.log
+"${base_dir}/target/release/rest-api" | tee $GIT_REPO_PATH/server.log
