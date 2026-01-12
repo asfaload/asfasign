@@ -1,14 +1,12 @@
 use std::path::{Path, PathBuf};
 
 pub use common::errors;
+use common::fs::names::{find_global_signers_for, pending_signers_file_in_dir};
 pub use common::{
     ArtifactMarker, FileType, InitialSignersFileMarker, SignedFile, SignersFileMarker,
     errors::SignedFileError,
 };
 pub use common::{SignedFileLoader, SignedFileWithKind};
-use common::{
-    fs::names::{find_global_signers_for, pending_signers_file_in_dir},
-};
 
 pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file};
 
@@ -23,8 +21,6 @@ pub use signatures::types::AsfaloadKeyPairs;
 pub use signatures::types::AsfaloadPublicKeys;
 pub use signatures::types::AsfaloadSecretKeys;
 pub use signatures::types::AsfaloadSignatures;
-
-
 
 use signers_file::sign_signers_file;
 pub use signers_file_types::SignersConfig;
@@ -164,10 +160,6 @@ impl SignersFileTrait for SignersFile {
         pending_signers_file_in_dir(path_in)
     }
 }
-
-
-
-
 
 pub mod aggregate_signature_helpers {
     use std::{collections::HashMap, path::Path};

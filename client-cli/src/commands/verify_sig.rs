@@ -2,7 +2,9 @@ use std::path::Path;
 
 use crate::error::Result;
 use features_lib::sha512_for_file;
-use features_lib::{AsfaloadPublicKeys, AsfaloadSignatures, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use features_lib::{
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatureTrait, AsfaloadSignatures,
+};
 
 pub fn handle_verify_sig_command<P: AsRef<Path>>(
     signed_file: &P,
@@ -24,4 +26,3 @@ pub fn handle_verify_sig_command<P: AsRef<Path>>(
     println!("Signature verification successful!");
     Ok(())
 }
-
