@@ -2,12 +2,12 @@ use rest_api_types::{RegisterRepoRequest, RegisterRepoResponse};
 
 use std::{path::PathBuf, str::FromStr};
 
+use crate::actors::git_actor::CommitFile;
+use crate::file_auth::forges::ForgeInfo;
+use crate::file_auth::forges::ForgeTrait;
 use crate::file_auth::github::get_project_normalised_paths;
 use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
-use crate::{
-    actors::git_actor::CommitFile, file_auth::forges::ForgeTrait, file_auth::github::GitHubRepoInfo,
-};
 use axum::{Json, extract::State, http::HeaderMap};
 use common::fs::names::PENDING_SIGNERS_DIR;
 use rest_api_types::{
@@ -116,16 +116,15 @@ pub async fn register_repo_handler(
         "Received register_repo request"
     );
 
-    let repo_info: GitHubRepoInfo =
-        GitHubRepoInfo::new(&request.signers_file_url).map_err(|e| {
-            tracing::error!(
-                request_id = %request_id,
-                url = %request.signers_file_url,
-                error = %e,
-                "Failed to parse GitHub URL"
-            );
-            ApiError::InvalidRequestBody(format!("Invalid GitHub URL: {}", e))
-        })?;
+    let repo_info = ForgeInfo::new(&request.signers_file_url).map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            url = %request.signers_file_url,
+            error = %e,
+            "Failed to parse GitHub URL"
+        );
+        ApiError::InvalidRequestBody(format!("Invalid GitHub URL: {}", e))
+    })?;
 
     let project_id = repo_info.project_id();
     let project_normalised_paths = get_project_normalised_paths(&state.git_repo_path, &project_id)
@@ -152,14 +151,13 @@ pub async fn register_repo_handler(
             project_id
         )));
     }
-    let auth_request =
-        crate::file_auth::github::actors::github_project_validator::ValidateProjectRequest {
-            signers_file_url: request.signers_file_url,
-            request_id: request_id.to_string(),
-        };
+    let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
+        signers_file_url: request.signers_file_url,
+        request_id: request_id.to_string(),
+    };
 
     let signers_proposal = state
-        .github_project_validator
+        .forge_project_validator
         .ask(auth_request)
         .await
         .map_err(|e| map_to_user_error(e, "Project authentication failed"))?;

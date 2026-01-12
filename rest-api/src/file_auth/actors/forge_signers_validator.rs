@@ -4,9 +4,9 @@ use reqwest::Client;
 use rest_api_types::errors::ApiError;
 use signers_file_types::SignersConfig;
 
-use crate::{file_auth::forges::ForgeTrait, file_auth::github::GitHubRepoInfo};
+use crate::file_auth::forges::{ForgeInfo, ForgeTrait};
 
-const ACTOR_NAME: &str = "github_registration_validator";
+const ACTOR_NAME: &str = "forge_signers_validator";
 #[derive(Debug, Clone)]
 pub struct ValidateProjectRequest {
     pub signers_file_url: String,
@@ -20,7 +20,7 @@ pub struct ProjectSignersProposal {
     pub request_id: String,
 }
 
-pub struct GitHubProjectValidator {
+pub struct ForgeProjectValidator {
     http_client: Client,
 }
 
@@ -55,12 +55,9 @@ pub fn validate_body_size(body: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-impl GitHubProjectValidator {
+impl ForgeProjectValidator {
     pub fn new() -> Self {
-        tracing::info!(
-            actor_name = ACTOR_NAME,
-            "GitHubProjectAuthenticator created"
-        );
+        tracing::info!(actor_name = ACTOR_NAME, "ForgeProjectAuthenticator created");
         Self {
             http_client: Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
@@ -83,7 +80,7 @@ impl GitHubProjectValidator {
             if response.status() == 429 {
                 if retries >= MAX_RETRIES {
                     return Err(ApiError::ActorOperationFailed(
-                        "GitHub rate limit exceeded after max retries".to_string(),
+                        "Forge rate limit exceeded after max retries".to_string(),
                     ));
                 }
 
@@ -95,7 +92,7 @@ impl GitHubProjectValidator {
                     .unwrap_or(backoff_sec)
                     .min(MAX_BACKOFF_SEC);
 
-                tracing::warn!(actor_name = ACTOR_NAME,request_id = %request_id, retry_after_sec = %retry_after, "Rate limited by GitHub, waiting before retry");
+                tracing::warn!(actor_name = ACTOR_NAME,request_id = %request_id, retry_after_sec = %retry_after, "Rate limited by Forge, waiting before retry");
 
                 tokio::time::sleep(std::time::Duration::from_secs(retry_after)).await;
 
@@ -106,9 +103,9 @@ impl GitHubProjectValidator {
             }
 
             if !response.status().is_success() {
-                tracing::error!(actor_name = ACTOR_NAME, request_id = %request_id, url = %url, status = %response.status(), "Github returned non success status");
+                tracing::error!(actor_name = ACTOR_NAME, request_id = %request_id, url = %url, status = %response.status(), "Forge returned non success status");
                 return Err(ApiError::ActorOperationFailed(format!(
-                    "GitHub returned status: {}",
+                    "Forge returned status: {}",
                     response.status()
                 )));
             }
@@ -133,33 +130,33 @@ impl GitHubProjectValidator {
             "Attempting to validate project"
         );
 
-        let repo_info: GitHubRepoInfo = GitHubRepoInfo::new(signers_file_url).map_err(|e| {
+        let repo_info: ForgeInfo = ForgeInfo::new(signers_file_url).map_err(|e| {
             tracing::error!(
                 actor_name = ACTOR_NAME,request_id = %request_id,
                 url = %signers_file_url,
                 error = %e,
-                "Failed to parse GitHub URL"
+                "Failed to parse Forge URL"
             );
-            ApiError::InvalidRequestBody(format!("Invalid GitHub URL: {}", e))
+            ApiError::InvalidRequestBody(format!("Invalid Forge URL: {}", e))
         })?;
 
         tracing::info!(
             actor_name = ACTOR_NAME,
             request_id = %request_id,
-            owner = %repo_info.owner,
-            repo = %repo_info.repo,
-            branch = %repo_info.branch,
-            file_path = %repo_info.file_path.display(),
-            "Parsed GitHub URL successfully"
+            owner = %repo_info.owner(),
+            repo = %repo_info.repo(),
+            branch = %repo_info.branch(),
+            file_path = %repo_info.file_path().display(),
+            "Parsed Forge URL successfully"
         );
 
-        validate_file_extension(&repo_info.file_path).map_err(|e| {
+        validate_file_extension(repo_info.file_path()).map_err(|e| {
             tracing::error!(actor_name = ACTOR_NAME,request_id = %request_id, error = %e, "Invalid file extension");
             ApiError::InvalidRequestBody(e)
         })?;
 
         let content = self
-            .fetch_with_retry(&repo_info.raw_url, request_id)
+            .fetch_with_retry(repo_info.raw_url(), request_id)
             .await?;
 
         tracing::info!(
@@ -177,7 +174,7 @@ impl GitHubProjectValidator {
             .map_err(|e| {
                 tracing::error!(
                     request_id = %request_id,
-                    raw_url = %repo_info.raw_url,
+                    raw_url = %repo_info.raw_url(),
                     error = %e,
                     "Failed to parse signers config JSON"
                 );
@@ -186,12 +183,12 @@ impl GitHubProjectValidator {
 
         tracing::info!(
         actor_name = ACTOR_NAME,    request_id = %request_id,
-            owner = %repo_info.owner,
-            repo = %repo_info.repo,
+            owner = %repo_info.owner(),
+            repo = %repo_info.repo(),
             "Signers config validated successfully"
         );
 
-        let project_id = format!("github.com/{}/{}", repo_info.owner, repo_info.repo);
+        let project_id = repo_info.project_id();
 
         tracing::info!(
         actor_name = ACTOR_NAME,    request_id = %request_id,
@@ -207,7 +204,7 @@ impl GitHubProjectValidator {
     }
 }
 
-impl Message<ValidateProjectRequest> for GitHubProjectValidator {
+impl Message<ValidateProjectRequest> for ForgeProjectValidator {
     type Reply = Result<ProjectSignersProposal, ApiError>;
 
     #[tracing::instrument(skip(self, msg, _ctx))]
@@ -219,7 +216,7 @@ impl Message<ValidateProjectRequest> for GitHubProjectValidator {
         tracing::info!(
         actor_name = ACTOR_NAME,    request_id = %msg.request_id,
             signers_file_url = %msg.signers_file_url,
-            "GitHubProjectValidator received authentication request"
+            "ForgeProjectValidator received authentication request"
         );
 
         self.validate_project(&msg.signers_file_url, &msg.request_id)
@@ -227,7 +224,7 @@ impl Message<ValidateProjectRequest> for GitHubProjectValidator {
     }
 }
 
-impl Actor for GitHubProjectValidator {
+impl Actor for ForgeProjectValidator {
     type Args = ();
     type Error = String;
 
@@ -237,13 +234,13 @@ impl Actor for GitHubProjectValidator {
     ) -> Result<Self, Self::Error> {
         tracing::info!(
             actor_name = ACTOR_NAME,
-            "GitHubProjectAuthenticator starting"
+            "ForgeProjectAuthenticator starting"
         );
         Ok(Self::new())
     }
 }
 
-impl Default for GitHubProjectValidator {
+impl Default for ForgeProjectValidator {
     fn default() -> Self {
         Self::new()
     }
@@ -318,7 +315,7 @@ mod tests {
             then.status(429).header("Retry-After", "2");
         });
 
-        let authenticator = GitHubProjectValidator::new();
+        let authenticator = ForgeProjectValidator::new();
 
         // Start the authentication in the background
         let handle = tokio::spawn({
@@ -394,7 +391,7 @@ mod tests {
 
         let url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
 
-        let validator = GitHubProjectValidator::new();
+        let validator = ForgeProjectValidator::new();
         let result = validator.validate_project(&url, "test-request").await;
 
         assert!(
@@ -422,7 +419,7 @@ mod tests {
             then.status(200).body("success content");
         });
 
-        let authenticator = GitHubProjectValidator::new();
+        let authenticator = ForgeProjectValidator::new();
 
         let result = authenticator
             .fetch_with_retry(&server.url("/"), "req-1")
@@ -441,7 +438,7 @@ mod tests {
             then.status(500);
         });
 
-        let authenticator = GitHubProjectValidator::new();
+        let authenticator = ForgeProjectValidator::new();
 
         let err = authenticator
             .fetch_with_retry(&server.url("/"), "req-2")
@@ -460,7 +457,7 @@ mod tests {
             then.status(429); // No Retry-After header
         });
 
-        let authenticator = GitHubProjectValidator::new();
+        let authenticator = ForgeProjectValidator::new();
 
         let start = Instant::now();
         let err = authenticator
@@ -492,7 +489,7 @@ mod tests {
             then.status(429).header("Retry-After", "2");
         });
 
-        let authenticator = GitHubProjectValidator::new();
+        let authenticator = ForgeProjectValidator::new();
 
         let start = Instant::now();
         let err = authenticator
@@ -529,7 +526,7 @@ mod tests {
             then.status(429).header("Retry-After", "1");
         });
 
-        let authenticator = GitHubProjectValidator::new();
+        let authenticator = ForgeProjectValidator::new();
 
         let server_url = server.url("/");
 
@@ -581,7 +578,7 @@ mod tests {
         // Use a port that is unlikely to have a server
         let unreachable_url = "http://127.0.0.1:1".to_string();
 
-        let authenticator = GitHubProjectValidator::new();
+        let authenticator = ForgeProjectValidator::new();
 
         let err = authenticator
             .fetch_with_retry(&unreachable_url, "req-6")

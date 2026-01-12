@@ -1,5 +1,3 @@
-pub mod actors;
-
 use rest_api_types::errors::ApiError;
 use std::path::{Path, PathBuf};
 
