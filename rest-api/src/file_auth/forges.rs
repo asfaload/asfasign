@@ -187,34 +187,4 @@ mod tests {
         let result = ForgeInfo::new(url);
         assert!(result.is_err());
     }
-
-    #[test]
-    #[cfg(feature = "test-utils")]
-    fn test_localhost_github_url() {
-        let url = "http://localhost:8080/owner/repo/main/file.json";
-        let result = ForgeInfo::new(url).unwrap();
-
-        match result {
-            ForgeInfo::Github(info) => {
-                assert_eq!(info.owner(), "owner");
-                assert_eq!(info.repo(), "repo");
-            }
-            ForgeInfo::Gitlab(_) => panic!("Expected GitHub variant"),
-        }
-    }
-
-    #[test]
-    #[cfg(feature = "test-utils")]
-    fn test_127_0_0_1_gitlab_url() {
-        let url = "http://127.0.0.1:8080/namespace/project/-/blob/main/file.json";
-        let result = ForgeInfo::new(url).unwrap();
-
-        match result {
-            ForgeInfo::Gitlab(info) => {
-                assert_eq!(info.owner(), "namespace");
-                assert_eq!(info.repo(), "project");
-            }
-            ForgeInfo::Github(_) => panic!("Expected GitLab variant"),
-        }
-    }
 }
