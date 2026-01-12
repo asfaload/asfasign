@@ -4,7 +4,7 @@ use reqwest::Client;
 use rest_api_types::errors::ApiError;
 use signers_file_types::SignersConfig;
 
-use crate::file_auth::github::parse_github_url;
+use crate::{file_auth::forges::ForgeTrait, file_auth::github::GitHubRepoInfo};
 
 const ACTOR_NAME: &str = "github_registration_validator";
 #[derive(Debug, Clone)]
@@ -133,7 +133,7 @@ impl GitHubProjectValidator {
             "Attempting to validate project"
         );
 
-        let repo_info = parse_github_url(signers_file_url).map_err(|e| {
+        let repo_info: GitHubRepoInfo = GitHubRepoInfo::new(signers_file_url).map_err(|e| {
             tracing::error!(
                 actor_name = ACTOR_NAME,request_id = %request_id,
                 url = %signers_file_url,
