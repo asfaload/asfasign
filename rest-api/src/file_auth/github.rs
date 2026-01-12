@@ -17,6 +17,16 @@ pub struct GitHubRepoInfo {
     pub raw_url: String,
 }
 
+#[cfg(not(feature = "test-utils"))]
+pub const GITHUB_HOSTS: &[&str] = &["github.com", "raw.githubusercontent.com"];
+
+#[cfg(feature = "test-utils")]
+pub const GITHUB_HOSTS: &[&str] = &[
+    "github.com",
+    "raw.githubusercontent.com",
+    "localhost",
+    "127.0.0.1",
+];
 impl ForgeTrait for GitHubRepoInfo {
     /// Parse a GitHub URL (blob or raw format) and extract repo information
     /// Accepts both:
@@ -28,21 +38,10 @@ impl ForgeTrait for GitHubRepoInfo {
 
         let host = url.host_str().unwrap_or("");
 
-        #[cfg(not(feature = "test-utils"))]
-        const ALLOWED_HOSTS: &[&str] = &["github.com", "raw.githubusercontent.com"];
-
-        #[cfg(feature = "test-utils")]
-        const ALLOWED_HOSTS: &[&str] = &[
-            "github.com",
-            "raw.githubusercontent.com",
-            "localhost",
-            "127.0.0.1",
-        ];
-
-        if !ALLOWED_HOSTS.contains(&host) {
+        if !GITHUB_HOSTS.contains(&host) {
             return Err(ForgeUrlError::InvalidFormat(format!(
                 "URL must be one of {}",
-                ALLOWED_HOSTS.join(","),
+                GITHUB_HOSTS.join(","),
             )));
         }
 

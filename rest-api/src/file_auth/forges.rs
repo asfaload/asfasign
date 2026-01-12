@@ -1,3 +1,5 @@
+use crate::file_auth::github::GITHUB_HOSTS;
+use crate::file_auth::gitlab::GITLAB_HOSTS;
 use crate::file_auth::{github::GitHubRepoInfo, gitlab::GitLabRepoInfo};
 
 pub use crate::file_auth::forges_types::ForgeTrait;
@@ -16,23 +18,6 @@ impl ForgeTrait for ForgeInfo {
         })?;
 
         let host = parsed_url.host_str().unwrap_or("");
-
-        #[cfg(not(feature = "test-utils"))]
-        const GITHUB_HOSTS: &[&str] = &["github.com", "raw.githubusercontent.com"];
-
-        #[cfg(feature = "test-utils")]
-        const GITHUB_HOSTS: &[&str] = &[
-            "github.com",
-            "raw.githubusercontent.com",
-            "localhost",
-            "127.0.0.1",
-        ];
-
-        #[cfg(not(feature = "test-utils"))]
-        const GITLAB_HOSTS: &[&str] = &["gitlab.com"];
-
-        #[cfg(feature = "test-utils")]
-        const GITLAB_HOSTS: &[&str] = &["gitlab.com", "localhost", "127.0.0.1"];
 
         if GITHUB_HOSTS.contains(&host) {
             Ok(Self::Github(GitHubRepoInfo::new(url)?))

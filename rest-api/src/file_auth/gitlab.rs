@@ -11,22 +11,22 @@ pub struct GitLabRepoInfo {
     pub raw_url: String,
 }
 
+#[cfg(not(feature = "test-utils"))]
+pub const GITLAB_HOSTS: &[&str] = &["gitlab.com"];
+
+#[cfg(feature = "test-utils")]
+pub const GITLAB_HOSTS: &[&str] = &["gitlab.com", "localhost", "127.0.0.1"];
+
 impl ForgeTrait for GitLabRepoInfo {
     fn new(url: &str) -> Result<GitLabRepoInfo, ForgeUrlError> {
         let url = url::Url::parse(url).map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?;
 
         let host = url.host_str().unwrap_or("");
 
-        #[cfg(not(feature = "test-utils"))]
-        const ALLOWED_HOSTS: &[&str] = &["gitlab.com"];
-
-        #[cfg(feature = "test-utils")]
-        const ALLOWED_HOSTS: &[&str] = &["gitlab.com", "localhost", "127.0.0.1"];
-
-        if !ALLOWED_HOSTS.contains(&host) {
+        if !GITLAB_HOSTS.contains(&host) {
             return Err(ForgeUrlError::InvalidFormat(format!(
                 "URL must be one of {}",
-                ALLOWED_HOSTS.join(","),
+                GITLAB_HOSTS.join(","),
             )));
         }
 
