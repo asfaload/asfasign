@@ -181,7 +181,10 @@ mod tests {
 
     #[test]
     fn test_parse_github_blob_url() {
-        let url = url::Url::parse("https://github.com/owner/repo/blob/main/asfaload.initial_signers.json").unwrap();
+        let url = url::Url::parse(
+            "https://github.com/owner/repo/blob/main/asfaload.initial_signers.json",
+        )
+        .unwrap();
         let result = GitHubRepoInfo::new(&url).unwrap();
         assert_eq!(result.owner, "owner");
         assert_eq!(result.repo, "repo");
@@ -192,13 +195,19 @@ mod tests {
         );
         assert_eq!(
             result.raw_url,
-            url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/asfaload.initial_signers.json").unwrap()
+            url::Url::parse(
+                "https://raw.githubusercontent.com/owner/repo/main/asfaload.initial_signers.json"
+            )
+            .unwrap()
         );
     }
 
     #[test]
     fn test_parse_github_raw_url() {
-        let url = url::Url::parse("https://raw.githubusercontent.com/owner/repo/develop/path/to/file.json").unwrap();
+        let url = url::Url::parse(
+            "https://raw.githubusercontent.com/owner/repo/develop/path/to/file.json",
+        )
+        .unwrap();
         let result = GitHubRepoInfo::new(&url).unwrap();
         assert_eq!(result.owner, "owner");
         assert_eq!(result.repo, "repo");
@@ -223,7 +232,8 @@ mod tests {
 
     #[test]
     fn test_parse_missing_branch() {
-        let url = url::Url::parse("https://raw.githubusercontent.com/owner/repo/file.json").unwrap();
+        let url =
+            url::Url::parse("https://raw.githubusercontent.com/owner/repo/file.json").unwrap();
         let result = GitHubRepoInfo::new(&url);
         assert!(result.is_err());
     }

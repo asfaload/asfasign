@@ -229,7 +229,29 @@ pub mod models {
         pub required_signers: Vec<String>,
         pub signature_submission_url: String,
     }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct SubmitSignatureRequest {
+        pub file_path: String,
+        pub public_key: String,
+        pub signature: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct SubmitSignatureResponse {
+        pub is_complete: bool,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct GetSignatureStatusResponse {
+        pub file_path: String,
+        pub is_complete: bool,
+        pub collected_count: u32,
+    }
 }
 
 // Re-export commonly used types at the module level
-pub use models::{RegisterRepoRequest, RegisterRepoResponse};
+pub use models::{
+    GetSignatureStatusResponse, RegisterRepoRequest, RegisterRepoResponse, SubmitSignatureRequest,
+    SubmitSignatureResponse,
+};

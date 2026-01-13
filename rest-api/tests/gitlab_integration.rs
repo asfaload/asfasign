@@ -43,7 +43,12 @@ mod tests {
         assert!(github_info.file_path().ends_with("assets/signers.json"));
         assert!(gitlab_info.file_path().ends_with("assets/signers.json"));
 
-        assert!(github_info.raw_url().as_str().contains("raw.githubusercontent.com"));
+        assert!(
+            github_info
+                .raw_url()
+                .as_str()
+                .contains("raw.githubusercontent.com")
+        );
         assert!(gitlab_info.raw_url().as_str().contains("gitlab.com"));
     }
 
@@ -68,28 +73,34 @@ mod tests {
         let github_info = GitHubRepoInfo::new(&url::Url::parse(github_blob_url).unwrap()).unwrap();
         assert_eq!(
             github_info.raw_url(),
-            &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/path/to/file.json").unwrap()
+            &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/path/to/file.json")
+                .unwrap()
         );
 
         let github_raw_url = "https://raw.githubusercontent.com/owner/repo/main/path/to/file.json";
-        let github_info_raw = GitHubRepoInfo::new(&url::Url::parse(github_raw_url).unwrap()).unwrap();
+        let github_info_raw =
+            GitHubRepoInfo::new(&url::Url::parse(github_raw_url).unwrap()).unwrap();
         assert_eq!(
             github_info_raw.raw_url(),
-            &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/path/to/file.json").unwrap()
+            &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/path/to/file.json")
+                .unwrap()
         );
 
         let gitlab_blob_url = "https://gitlab.com/namespace/project/-/blob/main/path/to/file.json";
         let gitlab_info = GitLabRepoInfo::new(&url::Url::parse(gitlab_blob_url).unwrap()).unwrap();
         assert_eq!(
             gitlab_info.raw_url(),
-            &url::Url::parse("https://gitlab.com/namespace/project/-/raw/main/path/to/file.json").unwrap()
+            &url::Url::parse("https://gitlab.com/namespace/project/-/raw/main/path/to/file.json")
+                .unwrap()
         );
 
         let gitlab_raw_url = "https://gitlab.com/namespace/project/-/raw/main/path/to/file.json";
-        let gitlab_info_raw = GitLabRepoInfo::new(&url::Url::parse(gitlab_raw_url).unwrap()).unwrap();
+        let gitlab_info_raw =
+            GitLabRepoInfo::new(&url::Url::parse(gitlab_raw_url).unwrap()).unwrap();
         assert_eq!(
             gitlab_info_raw.raw_url(),
-            &url::Url::parse("https://gitlab.com/namespace/project/-/raw/main/path/to/file.json").unwrap()
+            &url::Url::parse("https://gitlab.com/namespace/project/-/raw/main/path/to/file.json")
+                .unwrap()
         );
     }
 
@@ -105,10 +116,14 @@ mod tests {
             )
         }
 
-        let github_info =
-            GitHubRepoInfo::new(&url::Url::parse("https://github.com/user/repo/blob/feature/file.json").unwrap()).unwrap();
-        let gitlab_info =
-            GitLabRepoInfo::new(&url::Url::parse("https://gitlab.com/ns/proj/-/blob/feature/file.json").unwrap()).unwrap();
+        let github_info = GitHubRepoInfo::new(
+            &url::Url::parse("https://github.com/user/repo/blob/feature/file.json").unwrap(),
+        )
+        .unwrap();
+        let gitlab_info = GitLabRepoInfo::new(
+            &url::Url::parse("https://gitlab.com/ns/proj/-/blob/feature/file.json").unwrap(),
+        )
+        .unwrap();
 
         let github_result = process_forge_url(&github_info);
         let gitlab_result = process_forge_url(&gitlab_info);
@@ -130,10 +145,14 @@ mod tests {
             assert!(!info.repo().is_empty());
         }
 
-        let github =
-            GitHubRepoInfo::new(&url::Url::parse("https://github.com/org/repo/blob/main/file.json").unwrap()).unwrap();
-        let gitlab =
-            GitLabRepoInfo::new(&url::Url::parse("https://gitlab.com/ns/proj/-/raw/main/file.json").unwrap()).unwrap();
+        let github = GitHubRepoInfo::new(
+            &url::Url::parse("https://github.com/org/repo/blob/main/file.json").unwrap(),
+        )
+        .unwrap();
+        let gitlab = GitLabRepoInfo::new(
+            &url::Url::parse("https://gitlab.com/ns/proj/-/raw/main/file.json").unwrap(),
+        )
+        .unwrap();
 
         validate_trait_impl(&github, "github.com/org/repo");
         validate_trait_impl(&gitlab, "gitlab.com/ns/proj");
@@ -149,10 +168,14 @@ mod tests {
             )
         }
 
-        let github =
-            GitHubRepoInfo::new(&url::Url::parse("https://github.com/test/test/blob/v1.0/config.json").unwrap()).unwrap();
-        let gitlab =
-            GitLabRepoInfo::new(&url::Url::parse("https://gitlab.com/test/test/-/blob/v1.0/config.json").unwrap()).unwrap();
+        let github = GitHubRepoInfo::new(
+            &url::Url::parse("https://github.com/test/test/blob/v1.0/config.json").unwrap(),
+        )
+        .unwrap();
+        let gitlab = GitLabRepoInfo::new(
+            &url::Url::parse("https://gitlab.com/test/test/-/blob/v1.0/config.json").unwrap(),
+        )
+        .unwrap();
 
         let github_info = get_branch_info(&github);
         let gitlab_info = get_branch_info(&gitlab);
