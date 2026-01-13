@@ -1,4 +1,5 @@
 use crate::path_validation::NormalisedPaths;
+use common::errors::AggregateSignatureError;
 use features_lib::{
     AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState,
     aggregate_signature_helpers::get_individual_signatures,
@@ -7,32 +8,58 @@ use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 
+/// Request to collect a signature for a specific file.
+///
+/// This request is sent to the SignatureCollector actor to add an individual
+/// signature to a file's aggregate signature collection.
 #[derive(Debug, Clone)]
 pub struct CollectSignatureRequest {
+    /// Normalised path to the file being signed
     pub file_path: NormalisedPaths,
+    /// Public key of the signer
     pub public_key: AsfaloadPublicKeys,
+    /// Signature data
     pub signature: AsfaloadSignatures,
+    /// Request ID for tracing and logging
     pub request_id: String,
 }
 
+/// Result of a signature collection operation.
+///
+/// Returns the completion status of the aggregate signature after adding
+/// the individual signature.
 #[derive(Debug, Clone)]
 pub struct CollectSignatureResult {
+    /// Whether the aggregate signature is now complete
     pub is_complete: bool,
+    /// Request ID from the original request
     pub request_id: String,
 }
 
+/// Request to query the current status of a file's signature collection.
 #[derive(Debug, Clone)]
 pub struct GetSignatureStatusRequest {
+    /// Normalised path to the file
     pub file_path: NormalisedPaths,
+    /// Request ID for tracing and logging
     pub request_id: String,
 }
 
+/// Status of signature collection for a file.
 #[derive(Debug, Clone)]
 pub struct SignatureStatus {
+    /// Whether the aggregate signature is complete
     pub is_complete: bool,
+    /// Number of individual signatures collected so far
     pub collected_count: u32,
 }
 
+/// Actor responsible for collecting individual signatures for aggregate signatures.
+///
+/// The SignatureCollector handles the generic collection of signatures for any type
+/// of aggregate signature (initial signers files, signers file updates, or artifact files).
+/// It delegates to the AggregateSignature API for validation and storage, and automatically
+/// transitions signatures from pending to complete state when the threshold is reached.
 pub struct SignatureCollector;
 
 const ACTOR_NAME: &str = "SignatureCollector";
@@ -66,7 +93,6 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
             "received signature collection request"
         );
 
-        // 1. Check if the file exists
         if !msg.file_path.absolute_path().exists() {
             return Err(ApiError::InvalidRequestBody(format!(
                 "File not found: {}",
@@ -74,7 +100,6 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
             )));
         }
 
-        // 2. Load the aggregate signature (handles both pending and complete states)
         let signature_with_state =
             SignatureWithState::load_for_file(&msg.file_path).map_err(|e| {
                 tracing::error!(
@@ -86,15 +111,10 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                 ApiError::InternalServerError("Failed to load aggregate signature".to_string())
             })?;
 
-        // 3. Get the pending aggregate - only pending signatures can be added to
         let pending_agg = signature_with_state.get_pending().ok_or_else(|| {
             ApiError::InvalidRequestBody("Aggregate signature is already complete".to_string())
         })?;
 
-        // 4. Add the individual signature - this handles:
-        //    - Signature validation
-        //    - Adding to pending file
-        //    - Transparent transition to complete if all signatures collected
         let new_state = pending_agg
             .add_individual_signature(&msg.signature, &msg.public_key)
             .map_err(|e| {
@@ -105,38 +125,46 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                     "failed to add individual signature"
                 );
                 match e {
-                    features_lib::errors::AggregateSignatureError::Signature(msg) => {
+                    AggregateSignatureError::Signature(msg) => {
                         if msg.contains("signature verification failed") {
                             ApiError::SignatureVerificationFailed
                         } else {
                             ApiError::InternalServerError(msg)
                         }
                     }
-                    features_lib::errors::AggregateSignatureError::Io(io) => {
+                    AggregateSignatureError::Io(io) => {
                         if io.kind() == std::io::ErrorKind::AlreadyExists {
                             ApiError::InvalidRequestBody("Signature already added".to_string())
                         } else {
                             ApiError::InternalServerError(format!("IO error: {}", io))
                         }
                     }
-                    features_lib::errors::AggregateSignatureError::IsIncomplete => {
-                        // This is OK - just means still pending
-                        ApiError::InternalServerError("Unexpected incompleteness error".to_string())
-                    }
+                    // IsIncomplete is not an error - it's handled in the normal flow below
                     _ => ApiError::InternalServerError(e.to_string()),
                 }
             })?;
 
-        tracing::info!(
-            actor = ACTOR_NAME,
-            request_id = %msg.request_id,
-            file_path = %msg.file_path.absolute_path().display(),
-            is_complete = new_state.is_complete(),
-            "signature collected successfully"
-        );
+        // Handle both complete and incomplete states appropriately
+        let is_complete = new_state.is_complete();
+        if !is_complete {
+            tracing::info!(
+                actor = ACTOR_NAME,
+                request_id = %msg.request_id,
+                file_path = %msg.file_path.absolute_path().display(),
+                "signature added but aggregate signature remains incomplete"
+            );
+        } else {
+            tracing::info!(
+                actor = ACTOR_NAME,
+                request_id = %msg.request_id,
+                file_path = %msg.file_path.absolute_path().display(),
+                is_complete = true,
+                "signature collected successfully - aggregate signature is now complete"
+            );
+        }
 
         Ok(CollectSignatureResult {
-            is_complete: new_state.is_complete(),
+            is_complete,
             request_id: msg.request_id.clone(),
         })
     }
@@ -172,8 +200,6 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
 
         let is_complete = signature_with_state.is_complete();
 
-        // Get collected count - Note: AggregateSignature doesn't expose signatures() method directly
-        // We'll need to load from disk to get the count
         let collected_count = {
             use common::fs::names::{pending_signatures_path_for, signatures_path_for};
 
@@ -323,7 +349,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_collect_signature_duplicate() -> anyhow::Result<()> {
+    async fn test_collect_signature_second_attempt_after_complete() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().join("github.com/test/repo");
         let pending_dir = project_dir.join("asfaload.signers.pending");
@@ -352,7 +378,7 @@ mod tests {
 
         let actor_ref = SignatureCollector::spawn(());
 
-        // Add the signature first time - should succeed
+        // Add the signature first time - should succeed and complete
         let result1 = actor_ref
             .ask(CollectSignatureRequest {
                 file_path: file_path.clone(),
@@ -362,6 +388,7 @@ mod tests {
             })
             .await;
         assert!(result1.is_ok());
+        assert!(result1.unwrap().is_complete);
 
         // Try to add the same signature again - should fail with "already complete"
         // (because after first signature, the signature file is now complete)
@@ -444,6 +471,59 @@ mod tests {
                 e
             ),
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_collect_signature_partial_completion() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let project_dir = temp_dir.path().join("github.com/test/repo");
+        let pending_dir = project_dir.join("asfaload.signers.pending");
+        let pending_signers_path = pending_dir.join("index.json");
+
+        std::fs::create_dir_all(&pending_dir)?;
+
+        // Create test keys - we'll need 2 for threshold > 1
+        let key_pair1 = features_lib::AsfaloadKeyPairs::new("test_password1")?;
+        let key_pair2 = features_lib::AsfaloadKeyPairs::new("test_password2")?;
+
+        // Create signers config with 2 signers, threshold 2
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            2,
+            (vec![key_pair1.public_key().clone(), key_pair2.public_key().clone()], 2)
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+        std::fs::write(&pending_signers_path, signers_json)?;
+
+        // Create first signature
+        let digest = sha512_for_file(&pending_signers_path)?;
+        let secret_key1 = key_pair1.secret_key("test_password1")?;
+        let signature1 = secret_key1.sign(&digest)?;
+        let public_key1 = key_pair1.public_key();
+
+        let file_path = make_normalised_paths(
+            &temp_dir,
+            "github.com/test/repo/asfaload.signers.pending/index.json",
+        )
+        .await;
+
+        let actor_ref = SignatureCollector::spawn(());
+
+        // Add first signature - should return is_complete: false
+        let result1 = actor_ref
+            .ask(CollectSignatureRequest {
+                file_path: file_path.clone(),
+                public_key: public_key1,
+                signature: signature1,
+                request_id: "first-sign".to_string(),
+            })
+            .await;
+
+        assert!(result1.is_ok());
+        let collect_result1 = result1.unwrap();
+        assert!(!collect_result1.is_complete);  // Should be false - threshold not met yet
 
         Ok(())
     }

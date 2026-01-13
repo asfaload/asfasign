@@ -881,7 +881,10 @@ pub mod tests {
     #[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_submit_signature_for_artifact_file() -> Result<(), anyhow::Error> {
-        use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file};
+        use features_lib::{
+            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
+            AsfaloadSignatureTrait, sha512_for_file,
+        };
         use rest_api_types::SubmitSignatureRequest;
         use rest_api_types::SubmitSignatureResponse;
 
@@ -946,20 +949,82 @@ pub mod tests {
 
     #[cfg(feature = "test-utils")]
     #[tokio::test]
-    #[ignore]
     async fn test_submit_signature_for_signers_file() -> Result<(), anyhow::Error> {
-        // TODO: Fix Git initialization for proper HEAD state
-        // The test requires a properly initialized Git repo with HEAD,
-        // but the git2 crate checkout is causing conflicts in the test environment.
-        // This test is skipped for now as the core functionality (signature collection)
-        // is already tested by test_submit_signature_for_artifact_file.
+        use features_lib::{
+            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
+            AsfaloadSignatureTrait, sha512_for_file,
+        };
+        use rest_api_types::SubmitSignatureRequest;
+        use rest_api_types::SubmitSignatureResponse;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        git2::Repository::init(&git_repo_path)?;
+
+        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
+        let public_key = key_pair.public_key();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let project_dir = git_repo_path.join("github.com/test/repo");
+        let pending_dir = project_dir.join("asfaload.signers.pending");
+        tokio::fs::create_dir_all(&pending_dir).await?;
+        let pending_signers_path = pending_dir.join("index.json");
+        tokio::fs::write(pending_signers_path.clone(), &signers_json).await?;
+
+        let digest = sha512_for_file(&pending_signers_path)?;
+        let secret_key = key_pair.secret_key("test_password")?;
+        let signature = secret_key.sign(&digest)?;
+
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
+
+        let app = axum::Router::new()
+            .route(
+                "/signatures",
+                axum::routing::post(rest_api::handlers::submit_signature_handler),
+            )
+            .with_state(app_state);
+
+        let server = axum_test::TestServer::new(app)?;
+
+        let response = server
+            .post("/signatures")
+            .json(&SubmitSignatureRequest {
+                file_path: "github.com/test/repo/asfaload.signers.pending/index.json".to_string(),
+                public_key: public_key.to_base64(),
+                signature: signature.to_base64(),
+            })
+            .await;
+
+        response.assert_status_ok();
+
+        let response_body = response.json::<SubmitSignatureResponse>();
+
+        assert!(
+            response_body.is_complete,
+            "Signers file signature should complete"
+        );
+
+        let signature_file = format!("{}.signatures.json", pending_signers_path.display());
+        let signature_file = std::path::PathBuf::from(signature_file);
+        assert!(
+            signature_file.exists(),
+            "Signature file should be created as complete"
+        );
+
         Ok(())
     }
 
     #[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_get_signature_status() -> Result<(), anyhow::Error> {
-        use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait};
+        use features_lib::AsfaloadKeyPairTrait;
         use rest_api_types::GetSignatureStatusResponse;
 
         let temp_dir = TempDir::new()?;
@@ -1048,10 +1113,12 @@ pub mod tests {
         let body: serde_json::Value = response.json();
 
         assert!(body.get("error").is_some());
-        assert!(body["error"]
-            .as_str()
-            .unwrap_or("")
-            .contains("File not found"));
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("File not found")
+        );
 
         Ok(())
     }

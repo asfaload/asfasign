@@ -47,7 +47,10 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
     // Generic signature collection routes
     let signature_router = Router::new()
         .route("/signatures", post(submit_signature_handler))
-        .route("/signatures/:file_path", get(get_signature_status_handler));
+        .route(
+            "/signatures/{*file_path}",
+            get(get_signature_status_handler),
+        );
     let app = register_router
         .merge(add_file_router)
         .merge(signature_router)

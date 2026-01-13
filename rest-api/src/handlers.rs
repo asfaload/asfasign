@@ -257,6 +257,26 @@ pub async fn register_repo_handler(
     }))
 }
 
+/// Handle signature submission for a specific file.
+///
+/// This endpoint accepts individual signatures for any file that has an aggregate signature.
+/// The signature is validated and added to the collection. Changes are committed to Git after
+/// each signature is collected to prevent data loss.
+///
+/// # Arguments
+/// * `state` - Application state containing actor references
+/// * `headers` - HTTP headers (must include x-request-id for tracing)
+/// * `request` - Signature submission with file_path, public_key, and signature
+///
+/// # Returns
+/// Returns a response indicating whether signature collection is complete
+///
+/// # Errors
+/// Returns `ApiError` if:
+/// - File path is invalid or file doesn't exist
+/// - Public key or signature format is invalid
+/// - Signature verification fails
+/// - Git commit fails
 pub async fn submit_signature_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -316,8 +336,18 @@ pub async fn submit_signature_handler(
         .await
         .map_err(|e| map_to_user_error(e, "Signature collection failed"))?;
 
-    // Commit to Git after signature collection
-    // Note: The actor handles file modifications transparently, so we just commit the file directory
+    // Always commit to Git to prevent data loss on server restart
+    let status_request = crate::actors::signature_collector::GetSignatureStatusRequest {
+        file_path: file_path.clone(),
+        request_id: request_id.to_string(),
+    };
+
+    let status = state
+        .signature_collector
+        .ask(status_request)
+        .await
+        .map_err(|e| map_to_user_error(e, "Failed to get signature status"))?;
+
     let commit_path = file_path
         .absolute_path()
         .parent()
@@ -326,10 +356,18 @@ pub async fn submit_signature_handler(
 
     let normalised_commit_path = NormalisedPaths::new(state.git_repo_path, commit_path).await?;
 
-    let commit_message = format!(
-        "added signature for {}",
-        file_path.relative_path().display()
-    );
+    let commit_message = if status.is_complete {
+        format!(
+            "completed signature collection for {}",
+            file_path.relative_path().display()
+        )
+    } else {
+        format!(
+            "added partial signature for {} ({})",
+            file_path.relative_path().display(),
+            status.collected_count
+        )
+    };
 
     let commit_msg = CommitFile {
         file_paths: normalised_commit_path,
@@ -355,6 +393,24 @@ pub async fn submit_signature_handler(
     }))
 }
 
+/// Query the current signature status for a specific file.
+///
+/// Returns information about the aggregate signature for a file, including
+/// whether it's complete and how many signatures have been collected.
+///
+/// # Arguments
+/// * `state` - Application state containing actor references
+/// * `headers` - HTTP headers (must include x-request-id for tracing)
+/// * `file_path` - Path to the file from the URL path parameter
+///
+/// # Returns
+/// Returns the current status of signature collection including completion
+/// status and count of collected signatures
+///
+/// # Errors
+/// Returns `ApiError` if:
+/// - File path is invalid or file doesn't exist
+/// - Failed to load signature status from disk
 pub async fn get_signature_status_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
