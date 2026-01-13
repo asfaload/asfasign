@@ -9,7 +9,7 @@ use crate::{
         nonce_cleanup_actor::NonceCleanupActor,
         signers_initialiser::SignersInitialiser,
     },
-    file_auth::github::actors::github_project_validator::GitHubProjectValidator,
+    file_auth::actors::forge_signers_validator::ForgeProjectValidator,
 };
 
 #[derive(Clone)]
@@ -18,7 +18,7 @@ pub struct AppState {
     pub git_actor: ActorRef<GitActor>,
     pub nonce_cache_actor: ActorRef<NonceCacheActor>,
     pub nonce_cleanup_actor: ActorRef<NonceCleanupActor>,
-    pub github_project_validator: ActorRef<GitHubProjectValidator>,
+    pub forge_project_validator: ActorRef<ForgeProjectValidator>,
     pub signers_initialiser: ActorRef<SignersInitialiser>,
 }
 
@@ -31,7 +31,7 @@ pub fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
     let nonce_cache_actor = NonceCacheActor::spawn(nonce_db_path.clone());
     let nonce_cleanup_actor = NonceCleanupActor::spawn(nonce_db_path);
 
-    let github_project_authenticator = GitHubProjectValidator::spawn(());
+    let forge_project_validator = ForgeProjectValidator::spawn(());
     let signers_initialiser = SignersInitialiser::spawn(());
 
     AppState {
@@ -39,7 +39,7 @@ pub fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
         git_actor,
         nonce_cache_actor,
         nonce_cleanup_actor,
-        github_project_validator: github_project_authenticator,
+        forge_project_validator,
         signers_initialiser,
     }
 }
