@@ -1,4 +1,8 @@
-use rest_api_types::{RegisterRepoRequest, RegisterRepoResponse};
+use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use rest_api_types::{
+    GetSignatureStatusResponse, RegisterRepoRequest, RegisterRepoResponse, SubmitSignatureRequest,
+    SubmitSignatureResponse,
+};
 
 use std::{path::PathBuf, str::FromStr};
 
@@ -9,7 +13,7 @@ use crate::file_auth::github::get_project_normalised_paths;
 use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
 use axum::{Json, extract::State, http::HeaderMap};
-use common::fs::names::PENDING_SIGNERS_DIR;
+use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
 use rest_api_types::{
     errors::ApiError,
     models::{AddFileRequest, AddFileResponse},
@@ -246,6 +250,162 @@ pub async fn register_repo_handler(
         project_id: signers_proposal.project_id,
         message: "Project registered successfully. Collect signatures to activate.".to_string(),
         required_signers: init_result.required_signers.into_iter().collect(),
-        signature_submission_url: "/sign".to_string(),
+        signature_submission_url: format!(
+            "/signatures/{}/{}/{}",
+            project_id, PENDING_SIGNERS_DIR, SIGNERS_FILE
+        ),
+    }))
+}
+
+pub async fn submit_signature_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<SubmitSignatureRequest>,
+) -> Result<Json<SubmitSignatureResponse>, ApiError> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        file_path = %request.file_path,
+        "Received submit_signature request"
+    );
+
+    // Validate the file path
+    if request.file_path.is_empty() {
+        return Err(ApiError::InvalidRequestBody(
+            "File path cannot be empty".to_string(),
+        ));
+    }
+
+    // Normalize and validate the file path
+    let file_path = NormalisedPaths::new(
+        state.git_repo_path.clone(),
+        PathBuf::from_str(request.file_path.as_ref()).unwrap(),
+    )
+    .await?;
+
+    // Check if the file exists
+    if !file_path.absolute_path().exists() {
+        return Err(ApiError::InvalidRequestBody(format!(
+            "File not found: {}",
+            request.file_path
+        )));
+    }
+
+    // Parse public key and signature from base64 strings
+    let public_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
+        .map_err(|_| ApiError::InvalidRequestBody("Invalid public key format".to_string()))?;
+
+    let signature = features_lib::AsfaloadSignatures::from_base64(&request.signature)
+        .map_err(|_| ApiError::InvalidRequestBody("Invalid signature format".to_string()))?;
+
+    // Send signature collection request to the actor
+    let collector_request = crate::actors::signature_collector::CollectSignatureRequest {
+        file_path: file_path.clone(),
+        public_key,
+        signature,
+        request_id: request_id.to_string(),
+    };
+
+    let collector_result = state
+        .signature_collector
+        .ask(collector_request)
+        .await
+        .map_err(|e| map_to_user_error(e, "Signature collection failed"))?;
+
+    // Commit to Git after signature collection
+    // Note: The actor handles file modifications transparently, so we just commit the file directory
+    let commit_path = file_path
+        .absolute_path()
+        .parent()
+        .unwrap_or(&file_path.absolute_path())
+        .to_path_buf();
+
+    let normalised_commit_path = NormalisedPaths::new(state.git_repo_path, commit_path).await?;
+
+    let commit_message = format!(
+        "added signature for {}",
+        file_path.relative_path().display()
+    );
+
+    let commit_msg = CommitFile {
+        file_paths: normalised_commit_path,
+        commit_message,
+        request_id: request_id.to_string(),
+    };
+
+    state
+        .git_actor
+        .ask(commit_msg)
+        .await
+        .map_err(|e| map_to_user_error(e, "Failed to commit signature changes"))?;
+
+    tracing::info!(
+        request_id = %request_id,
+        file_path = %request.file_path,
+        is_complete = collector_result.is_complete,
+        "Signature collection result"
+    );
+
+    Ok(Json(SubmitSignatureResponse {
+        is_complete: collector_result.is_complete,
+    }))
+}
+
+pub async fn get_signature_status_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(file_path): axum::extract::Path<String>,
+) -> Result<Json<GetSignatureStatusResponse>, ApiError> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        file_path = %file_path,
+        "Received get_signature_status request"
+    );
+
+    if file_path.is_empty() {
+        return Err(ApiError::InvalidRequestBody(
+            "File path cannot be empty".to_string(),
+        ));
+    }
+
+    // Normalize and validate the file path
+    let file_path = NormalisedPaths::new(
+        state.git_repo_path.clone(),
+        PathBuf::from_str(file_path.as_ref()).unwrap(),
+    )
+    .await?;
+
+    if !file_path.absolute_path().exists() {
+        return Err(ApiError::InvalidRequestBody(format!(
+            "File not found: {}",
+            file_path
+        )));
+    }
+
+    // Send status request to the actor
+    let status_request = crate::actors::signature_collector::GetSignatureStatusRequest {
+        file_path: file_path.clone(),
+        request_id: request_id.to_string(),
+    };
+
+    let status = state
+        .signature_collector
+        .ask(status_request)
+        .await
+        .map_err(|e| map_to_user_error(e, "Signature status query failed"))?;
+
+    Ok(Json(GetSignatureStatusResponse {
+        file_path: file_path.relative_path().display().to_string(),
+        is_complete: status.is_complete,
+        collected_count: status.collected_count,
     }))
 }
