@@ -61,6 +61,11 @@ fn add_path_recursively<P1: AsRef<Path>, P2: AsRef<Path>>(
                 .strip_prefix(repo_workdir)
                 .map_err(|_| git2::Error::from_str("Target path is outside repository"))?;
             index.add_path(rel_path)?;
+            if metadata.file_type().is_symlink() {
+                // Ignore symlinks in directories too
+                tracing::debug!("Ignoring symlink in directory: {}", current_path.display());
+                continue;
+            }
         } else if metadata.is_dir() {
             for entry in fs::read_dir(&current_path).map_err(|e| {
                 git2::Error::from_str(&format!(
