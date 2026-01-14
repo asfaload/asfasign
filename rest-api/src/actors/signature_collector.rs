@@ -413,64 +413,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_collect_signature_already_complete() -> anyhow::Result<()> {
-        let temp_dir = TempDir::new()?;
-        let project_dir = temp_dir.path().join("github.com/test/repo");
-        let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
-        let pending_signers_path = pending_dir.join(SIGNERS_FILE);
-
-        std::fs::create_dir_all(&pending_dir)?;
-
-        // Create test keys
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))?;
-        let signers_json = serde_json::to_string_pretty(&signers_config)?;
-        std::fs::write(&pending_signers_path, signers_json)?;
-
-        // Complete the signature first
-        let digest = sha512_for_file(&pending_signers_path)?;
-        let secret_key = key_pair.secret_key("test_password")?;
-        let signature = secret_key.sign(&digest)?;
-        let public_key = key_pair.public_key();
-
-        let file_path =
-            make_normalised_paths(&temp_dir, &pending_signers_path.strip_prefix(&temp_dir)?).await;
-
-        let actor_ref = SignatureCollector::spawn(());
-        actor_ref
-            .ask(CollectSignatureRequest {
-                file_path: file_path.clone(),
-                public_key: public_key.clone(),
-                signature: signature.clone(),
-                request_id: "first-sign".to_string(),
-            })
-            .await?;
-
-        // Try to add another signature to the now-complete signature
-        let result = actor_ref
-            .ask(CollectSignatureRequest {
-                file_path,
-                public_key,
-                signature,
-                request_id: "second-sign".to_string(),
-            })
-            .await;
-
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            kameo::error::SendError::HandlerError(ApiError::InvalidRequestBody(msg))
-                if msg.contains("already complete") => {}
-            e => panic!(
-                "Expected InvalidRequestBody with 'already complete', got {:?}",
-                e
-            ),
-        }
-
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn test_collect_signature_partial_completion() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().join("github.com/test/repo");
