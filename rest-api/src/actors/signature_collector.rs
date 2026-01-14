@@ -146,22 +146,13 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
 
         // Handle both complete and incomplete states appropriately
         let is_complete = new_state.is_complete();
-        if !is_complete {
-            tracing::info!(
-                actor = ACTOR_NAME,
-                request_id = %msg.request_id,
-                file_path = %msg.file_path.absolute_path().display(),
-                "signature added but aggregate signature remains incomplete"
-            );
-        } else {
-            tracing::info!(
-                actor = ACTOR_NAME,
-                request_id = %msg.request_id,
-                file_path = %msg.file_path.absolute_path().display(),
-                is_complete = true,
-                "signature collected successfully - aggregate signature is now complete"
-            );
-        }
+        tracing::info!(
+            actor = ACTOR_NAME,
+            request_id = %msg.request_id,
+            file_path = %msg.file_path.absolute_path().display(),
+            is_complete = %is_complete,
+            "Added individual signature to aggregate signature"
+        );
 
         Ok(CollectSignatureResult {
             is_complete,
