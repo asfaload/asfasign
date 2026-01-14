@@ -233,6 +233,7 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
 mod tests {
     use std::path::Path;
     use super::*;
+    use common::fs::names::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait, sha512_for_file};
     use kameo::actor::Spawn;
     use signers_file_types::SignersConfig;
@@ -250,8 +251,8 @@ mod tests {
     async fn test_collect_signature_for_signers_file() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().join("github.com/test/repo");
-        let pending_dir = project_dir.join("asfaload.signers.pending");
-        let pending_signers_path = pending_dir.join("index.json");
+        let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        let pending_signers_path = pending_dir.join(SIGNERS_FILE);
 
         // Create directory structure
         std::fs::create_dir_all(&pending_dir)?;
@@ -273,11 +274,8 @@ mod tests {
         let signature = secret_key.sign(&digest)?;
 
         // Create NormalisedPaths
-        let file_path = make_normalised_paths(
-            &temp_dir,
-            "github.com/test/repo/asfaload.signers.pending/index.json",
-        )
-        .await;
+        let file_path =
+            make_normalised_paths(&temp_dir, &pending_signers_path.strip_prefix(&temp_dir)?).await;
 
         // Spawn the actor and send request
         let actor_ref = SignatureCollector::spawn(());
@@ -299,7 +297,7 @@ mod tests {
         // The signers file doesn't move - only the signature file transitions
         // from .pending to complete.
         // The signature path is {file_path}.signatures.json for a complete signature
-        let complete_sig_path = format!("{}.signatures.json", pending_signers_path.display());
+        let complete_sig_path = format!("{}.{}", pending_signers_path.display(), SIGNATURES_SUFFIX);
         let complete_sig_path = std::path::PathBuf::from(complete_sig_path);
 
         // The signature file should exist
@@ -311,7 +309,7 @@ mod tests {
     #[tokio::test]
     async fn test_collect_signature_for_artifact_file() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
-        let signers_dir = temp_dir.path().join("asfaload.signers");
+        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
         std::fs::create_dir_all(&signers_dir)?;
 
         // Create signers config
@@ -319,7 +317,7 @@ mod tests {
         let signers_config =
             SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))?;
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
-        std::fs::write(signers_dir.join("index.json"), signers_json)?;
+        std::fs::write(signers_dir.join(SIGNERS_FILE), signers_json)?;
 
         // Create artifact file
         let artifact_file = temp_dir.path().join("release.txt");
@@ -356,8 +354,8 @@ mod tests {
     async fn test_collect_signature_second_attempt_after_complete() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().join("github.com/test/repo");
-        let pending_dir = project_dir.join("asfaload.signers.pending");
-        let pending_signers_path = pending_dir.join("index.json");
+        let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        let pending_signers_path = pending_dir.join(SIGNERS_FILE);
 
         std::fs::create_dir_all(&pending_dir)?;
 
@@ -374,11 +372,8 @@ mod tests {
         let signature = secret_key.sign(&digest)?;
         let public_key = key_pair.public_key();
 
-        let file_path = make_normalised_paths(
-            &temp_dir,
-            "github.com/test/repo/asfaload.signers.pending/index.json",
-        )
-        .await;
+        let file_path =
+            make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
 
         let actor_ref = SignatureCollector::spawn(());
 
@@ -422,8 +417,8 @@ mod tests {
     async fn test_collect_signature_already_complete() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().join("github.com/test/repo");
-        let pending_dir = project_dir.join("asfaload.signers.pending");
-        let pending_signers_path = pending_dir.join("index.json");
+        let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        let pending_signers_path = pending_dir.join(SIGNERS_FILE);
 
         std::fs::create_dir_all(&pending_dir)?;
 
@@ -440,11 +435,8 @@ mod tests {
         let signature = secret_key.sign(&digest)?;
         let public_key = key_pair.public_key();
 
-        let file_path = make_normalised_paths(
-            &temp_dir,
-            "github.com/test/repo/asfaload.signers.pending/index.json",
-        )
-        .await;
+        let file_path =
+            make_normalised_paths(&temp_dir, &pending_signers_path.strip_prefix(&temp_dir)?).await;
 
         let actor_ref = SignatureCollector::spawn(());
         actor_ref
@@ -483,8 +475,8 @@ mod tests {
     async fn test_collect_signature_partial_completion() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let project_dir = temp_dir.path().join("github.com/test/repo");
-        let pending_dir = project_dir.join("asfaload.signers.pending");
-        let pending_signers_path = pending_dir.join("index.json");
+        let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        let pending_signers_path = pending_dir.join(SIGNERS_FILE);
 
         std::fs::create_dir_all(&pending_dir)?;
 
@@ -507,11 +499,8 @@ mod tests {
         let signature1 = secret_key1.sign(&digest)?;
         let public_key1 = key_pair1.public_key();
 
-        let file_path = make_normalised_paths(
-            &temp_dir,
-            "github.com/test/repo/asfaload.signers.pending/index.json",
-        )
-        .await;
+        let file_path =
+            make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
 
         let actor_ref = SignatureCollector::spawn(());
 
