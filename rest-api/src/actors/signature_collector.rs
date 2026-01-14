@@ -231,6 +231,7 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
     use super::*;
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait, sha512_for_file};
     use kameo::actor::Spawn;
@@ -238,7 +239,10 @@ mod tests {
     use tempfile::TempDir;
 
     // Helper function to create NormalisedPaths for testing
-    async fn make_normalised_paths(base: &tempfile::TempDir, relative: &str) -> NormalisedPaths {
+    async fn make_normalised_paths<P: AsRef<Path>>(
+        base: &tempfile::TempDir,
+        relative: P,
+    ) -> NormalisedPaths {
         NormalisedPaths::new(base.path(), relative).await.unwrap()
     }
 
