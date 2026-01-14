@@ -465,6 +465,23 @@ mod tests {
         let collect_result1 = result1.unwrap();
         assert!(!collect_result1.is_complete); // Should be false - threshold not met yet
 
+        // Add second signature ti complete aggregate signature
+        let secret_key2 = key_pair2.secret_key("test_password2")?;
+        let signature2 = secret_key2.sign(&digest)?;
+        let public_key2 = key_pair2.public_key();
+        let result2 = actor_ref
+            .ask(CollectSignatureRequest {
+                file_path: file_path.clone(),
+                public_key: public_key2,
+                signature: signature2,
+                request_id: "second-sign".to_string(),
+            })
+            .await;
+
+        assert!(result2.is_ok());
+        let collect_result2 = result2.unwrap();
+        assert!(collect_result2.is_complete);
+
         Ok(())
     }
 }
