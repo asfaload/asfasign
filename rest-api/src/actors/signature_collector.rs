@@ -221,12 +221,15 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use super::*;
     use common::fs::names::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait, sha512_for_file};
     use kameo::actor::Spawn;
     use signers_file_types::SignersConfig;
+    use std::{
+        path::{Path, PathBuf},
+        str::FromStr,
+    };
     use tempfile::TempDir;
 
     // Helper function to create NormalisedPaths for testing
@@ -310,7 +313,13 @@ mod tests {
         std::fs::write(signers_dir.join(SIGNERS_FILE), signers_json)?;
 
         // Create artifact file
-        let artifact_file = temp_dir.path().join("release.txt");
+        let artifact_path = "my/nested/dir/with/release.txt";
+        std::fs::create_dir_all(
+            temp_dir
+                .path()
+                .join(PathBuf::from_str(artifact_path)?.parent().unwrap()),
+        )?;
+        let artifact_file = temp_dir.path().join(artifact_path);
         std::fs::write(&artifact_file, "artifact content")?;
 
         // Create the signature
@@ -319,7 +328,7 @@ mod tests {
         let secret_key = key_pair.secret_key("test_password")?;
         let signature = secret_key.sign(&digest)?;
 
-        let file_path = make_normalised_paths(&temp_dir, "release.txt").await;
+        let file_path = make_normalised_paths(&temp_dir, &artifact_path).await;
 
         // Spawn the actor and send request
         let actor_ref = SignatureCollector::spawn(());
@@ -477,7 +486,13 @@ mod tests {
         // Create signers config with 2 signers, threshold 2
         let signers_config = SignersConfig::with_artifact_signers_only(
             2,
-            (vec![key_pair1.public_key().clone(), key_pair2.public_key().clone()], 2)
+            (
+                vec![
+                    key_pair1.public_key().clone(),
+                    key_pair2.public_key().clone(),
+                ],
+                2,
+            ),
         )?;
 
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
@@ -506,7 +521,7 @@ mod tests {
 
         assert!(result1.is_ok());
         let collect_result1 = result1.unwrap();
-        assert!(!collect_result1.is_complete);  // Should be false - threshold not met yet
+        assert!(!collect_result1.is_complete); // Should be false - threshold not met yet
 
         Ok(())
     }
