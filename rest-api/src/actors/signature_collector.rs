@@ -139,7 +139,6 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                             ApiError::InternalServerError(format!("IO error: {}", io))
                         }
                     }
-                    // IsIncomplete is not an error - it's handled in the normal flow below
                     _ => ApiError::InternalServerError(e.to_string()),
                 }
             })?;
