@@ -337,17 +337,6 @@ pub async fn submit_signature_handler(
         .map_err(|e| map_to_user_error(e, "Signature collection failed"))?;
 
     // Always commit to Git to prevent data loss on server restart
-    let status_request = crate::actors::signature_collector::GetSignatureStatusRequest {
-        file_path: file_path.clone(),
-        request_id: request_id.to_string(),
-    };
-
-    let status = state
-        .signature_collector
-        .ask(status_request)
-        .await
-        .map_err(|e| map_to_user_error(e, "Failed to get signature status"))?;
-
     let commit_path = file_path
         .absolute_path()
         .parent()
@@ -356,16 +345,15 @@ pub async fn submit_signature_handler(
 
     let normalised_commit_path = NormalisedPaths::new(state.git_repo_path, commit_path).await?;
 
-    let commit_message = if status.is_complete {
+    let commit_message = if collector_result.is_complete {
         format!(
             "completed signature collection for {}",
             file_path.relative_path().display()
         )
     } else {
         format!(
-            "added partial signature for {} ({})",
+            "added partial signature for {}",
             file_path.relative_path().display(),
-            status.collected_count
         )
     };
 
