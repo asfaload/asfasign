@@ -62,6 +62,24 @@ fn add_path_recursively<P1: AsRef<Path>, P2: AsRef<Path>>(
                 .map_err(|_| git2::Error::from_str("Target path is outside repository"))?;
             index.add_path(rel_path)?;
         } else if metadata.is_dir() {
+            // Skip the .git directory - it should never be committed as content
+            if current_path
+                .file_name()
+                .map_or(false, |name| name == ".git")
+            {
+                tracing::debug!("Skipping .git directory: {}", current_path.display());
+                continue;
+            }
+
+            // Skip the .app_cache directory - it contains state that shouldn't be committed
+            if current_path
+                .file_name()
+                .map_or(false, |name| name == ".app_cache")
+            {
+                tracing::debug!("Skipping .app_cache directory: {}", current_path.display());
+                continue;
+            }
+
             for entry in fs::read_dir(&current_path).map_err(|e| {
                 git2::Error::from_str(&format!(
                     "Failed to read directory {:?}: {}",
@@ -101,6 +119,7 @@ impl GitActor {
             commit_message,
             "Attempting to commit file"
         );
+
         let repo_path = self.repo_path.clone();
         let file_path = file_paths.absolute_path();
         let commit_message = commit_message.to_string();
@@ -119,6 +138,10 @@ impl GitActor {
 
             // Get the tree from the index
             let tree_oid = index.write_tree()?;
+
+            // Write the index to disk so the files remain tracked
+            index.write()?;
+
             let tree = repo.find_tree(tree_oid)?;
 
             // Try to get the current HEAD for parent commit, or use empty parents for initial commit
@@ -226,6 +249,40 @@ mod tests {
             }
             Ok(_) => panic!("Expected error when encountering symlink but got Ok"),
         }
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_path_recursively_skips_git_directory() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let repo_path = temp_dir.path();
+
+        let repo = Repository::init(repo_path)?;
+        let mut index = repo.index()?;
+
+        // Create some test files
+        let test_file = repo_path.join("test.txt");
+        fs::write(&test_file, "test content")?;
+
+        let test_dir = repo_path.join("subdir");
+        fs::create_dir(&test_dir)?;
+        let test_file_in_dir = test_dir.join("nested.txt");
+        fs::write(&test_file_in_dir, "nested content")?;
+
+        // Add the repo root recursively
+        let result = add_path_recursively(&mut index, repo_path, repo_path);
+        assert!(result.is_ok(), "Should successfully add repo root");
+
+        // Verify no files from .git directory were added
+        for entry in index.iter() {
+            let path_str = String::from_utf8_lossy(&entry.path);
+            assert!(
+                !path_str.starts_with(".git/"),
+                "File from .git directory found in index: {}",
+                path_str
+            );
+        }
+
         Ok(())
     }
 

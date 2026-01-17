@@ -964,10 +964,6 @@ pub mod tests {
             "Signature file should be created"
         );
 
-        // Verify the signature file is in the latest git commit
-        // Note: This test currently fails because there's a bug in the git commit process
-        // where files are created on disk but not added to the git commit.
-        // The test is correct and should pass once the bug is fixed.
         assert!(
             file_exists_in_latest_commit(&git_repo_path, "release.txt.signatures.json")?,
             "Signature file should be in the latest git commit (BUG: files not being committed)"
