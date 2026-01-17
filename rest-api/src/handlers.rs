@@ -337,13 +337,7 @@ pub async fn submit_signature_handler(
         .map_err(|e| map_to_user_error(e, "Signature collection failed"))?;
 
     // Always commit to Git to prevent data loss on server restart
-    let commit_path = file_path
-        .absolute_path()
-        .parent()
-        .unwrap_or(&file_path.absolute_path())
-        .to_path_buf();
-
-    let normalised_commit_path = NormalisedPaths::new(state.git_repo_path, commit_path).await?;
+    let normalised_commit_path = file_path.parent();
 
     let commit_message = if collector_result.is_complete {
         format!(
