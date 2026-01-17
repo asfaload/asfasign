@@ -497,9 +497,6 @@ pub mod tests {
             })
             .collect();
 
-        //dbg!(&entries_with_request_id);
-        //dbg!(log_path);
-        //test_helpers::pause();
         assert!(
             !entries_with_request_id.is_empty(),
             "Should have at least 1 log entry with request_id"
