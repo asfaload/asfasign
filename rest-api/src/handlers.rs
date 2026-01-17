@@ -339,6 +339,7 @@ pub async fn submit_signature_handler(
     // Always commit to Git to prevent data loss on server restart
     let normalised_commit_path = file_path.parent();
 
+    // FIXME: should the collector trigger the commit?
     let commit_message = if collector_result.is_complete {
         format!(
             "completed signature collection for {}",
