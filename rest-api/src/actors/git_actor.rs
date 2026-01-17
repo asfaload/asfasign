@@ -63,6 +63,9 @@ fn add_path_recursively<P1: AsRef<Path>, P2: AsRef<Path>>(
             index.add_path(rel_path)?;
         } else if metadata.is_dir() {
             // Skip the .git directory - it should never be committed as content
+            // The map_or(false,....) can ussually be replaced by a ==Some(....), but here
+            // we need to compare to a OsStr, and the map_or looks simpler
+            #[allow(clippy::unnecessary_map_or)]
             if current_path
                 .file_name()
                 .map_or(false, |name| name == ".git")
@@ -72,6 +75,9 @@ fn add_path_recursively<P1: AsRef<Path>, P2: AsRef<Path>>(
             }
 
             // Skip the .app_cache directory - it contains state that shouldn't be committed
+            // The map_or(false,....) can ussually be replaced by a ==Some(....), but here
+            // we need to compare to a OsStr, and the map_or looks simpler
+            #[allow(clippy::unnecessary_map_or)]
             if current_path
                 .file_name()
                 .map_or(false, |name| name == ".app_cache")
