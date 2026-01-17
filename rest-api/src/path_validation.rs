@@ -46,6 +46,26 @@ impl NormalisedPaths {
             .await
             .map_err(ApiError::from)?
     }
+
+    pub fn parent(&self) -> NormalisedPaths {
+        let parent_relative = self
+            .relative_path()
+            .parent()
+            .unwrap_or(Path::new(""))
+            .to_path_buf();
+
+        let absolute_path = if parent_relative.as_os_str().is_empty() {
+            self.base_dir.clone()
+        } else {
+            self.base_dir.join(&parent_relative)
+        };
+
+        NormalisedPaths {
+            base_dir: self.base_dir.clone(),
+            absolute_path,
+            relative_path: parent_relative,
+        }
+    }
 }
 
 impl AsRef<Path> for NormalisedPaths {
@@ -529,6 +549,51 @@ mod tests {
             }
             Ok(_) => panic!("Join should fail with parent access with \"..\""),
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_normalised_path_parent_file_at_root() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+        let np = build_normalised_absolute_path(base_path, "file.txt")?;
+
+        let parent = np.parent();
+        assert_eq!(parent.relative_path(), PathBuf::from(""));
+
+        assert_eq!(parent.absolute_path(), base_path);
+        assert_eq!(parent.base_dir(), base_path);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_normalised_path_parent_file_in_subdir() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+        let np = build_normalised_absolute_path(base_path, " subdir /nested/file.txt")?;
+
+        let parent = np.parent();
+
+        assert_eq!(parent.relative_path(), PathBuf::from(" subdir /nested"));
+
+        assert_eq!(parent.absolute_path(), base_path.join(" subdir /nested"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_normalised_path_parent_nested_path() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+        let np = build_normalised_absolute_path(base_path, "a/b/c/deep/file.txt")?;
+
+        let parent = np.parent();
+        assert_eq!(parent.relative_path(), PathBuf::from("a/b/c/deep"));
+
+        let grandparent = parent.parent();
+        assert_eq!(grandparent.relative_path(), PathBuf::from("a/b/c"));
+
         Ok(())
     }
 }
