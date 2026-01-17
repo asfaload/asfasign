@@ -1,9 +1,15 @@
 use crate::{
     auth_middleware::auth_middleware,
-    handlers::{add_file_handler, register_repo_handler},
+    handlers::{
+        add_file_handler, get_signature_status_handler, register_repo_handler,
+        submit_signature_handler,
+    },
     state::init_state,
 };
-use axum::{Router, routing::post};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use rest_api_types::errors::ApiError;
 use std::net::SocketAddr;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
@@ -38,8 +44,16 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
             app_state.clone(),
             auth_middleware,
         ));
+    // Generic signature collection routes
+    let signature_router = Router::new()
+        .route("/signatures", post(submit_signature_handler))
+        .route(
+            "/signatures/{*file_path}",
+            get(get_signature_status_handler),
+        );
     let app = register_router
         .merge(add_file_router)
+        .merge(signature_router)
         .layer(GovernorLayer::new(governor_conf))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))

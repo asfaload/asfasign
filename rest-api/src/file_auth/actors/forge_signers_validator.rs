@@ -307,7 +307,11 @@ mod tests {
         }"#;
 
         // Test with a localhost URL
-        let url = url::Url::parse(&format!("{}/owner/repo/main/signers.json", mock_server.url(""))).unwrap();
+        let url = url::Url::parse(&format!(
+            "{}/owner/repo/main/signers.json",
+            mock_server.url("")
+        ))
+        .unwrap();
 
         let mut mock_429 = mock_server.mock(|when, then| {
             when.method(httpmock::Method::GET)
@@ -389,7 +393,11 @@ mod tests {
                 .body(signers_json);
         });
 
-        let url = url::Url::parse(&format!("{}/owner/repo/main/signers.json", mock_server.url(""))).unwrap();
+        let url = url::Url::parse(&format!(
+            "{}/owner/repo/main/signers.json",
+            mock_server.url("")
+        ))
+        .unwrap();
 
         let validator = ForgeProjectValidator::new();
         let result = validator.validate_project(&url, "test-request").await;

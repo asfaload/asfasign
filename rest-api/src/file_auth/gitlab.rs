@@ -145,7 +145,10 @@ mod tests {
 
     #[test]
     fn test_parse_gitlab_blob_url() {
-        let url = url::Url::parse("https://gitlab.com/namespace/project/-/blob/main/asfaload.initial_signers.json").unwrap();
+        let url = url::Url::parse(
+            "https://gitlab.com/namespace/project/-/blob/main/asfaload.initial_signers.json",
+        )
+        .unwrap();
         let result = GitLabRepoInfo::new(&url).unwrap();
         assert_eq!(result.namespace, "namespace");
         assert_eq!(result.project, "project");
@@ -156,13 +159,18 @@ mod tests {
         );
         assert_eq!(
             result.raw_url,
-            url::Url::parse("https://gitlab.com/namespace/project/-/raw/main/asfaload.initial_signers.json").unwrap()
+            url::Url::parse(
+                "https://gitlab.com/namespace/project/-/raw/main/asfaload.initial_signers.json"
+            )
+            .unwrap()
         );
     }
 
     #[test]
     fn test_parse_gitlab_raw_url() {
-        let url = url::Url::parse("https://gitlab.com/namespace/project/-/raw/develop/path/to/file.json").unwrap();
+        let url =
+            url::Url::parse("https://gitlab.com/namespace/project/-/raw/develop/path/to/file.json")
+                .unwrap();
         let result = GitLabRepoInfo::new(&url).unwrap();
         assert_eq!(result.namespace, "namespace");
         assert_eq!(result.project, "project");
@@ -173,7 +181,9 @@ mod tests {
 
     #[test]
     fn test_parse_gitlab_nested_namespace() {
-        let url = url::Url::parse("https://gitlab.com/group/subgroup/project/-/blob/main/file.json").unwrap();
+        let url =
+            url::Url::parse("https://gitlab.com/group/subgroup/project/-/blob/main/file.json")
+                .unwrap();
         let result = GitLabRepoInfo::new(&url).unwrap();
         assert_eq!(result.namespace, "group/subgroup");
         assert_eq!(result.project, "project");
@@ -181,13 +191,15 @@ mod tests {
         assert_eq!(result.file_path, PathBuf::from("file.json"));
         assert_eq!(
             result.raw_url,
-            url::Url::parse("https://gitlab.com/group/subgroup/project/-/raw/main/file.json").unwrap()
+            url::Url::parse("https://gitlab.com/group/subgroup/project/-/raw/main/file.json")
+                .unwrap()
         );
     }
 
     #[test]
     fn test_parse_invalid_domain() {
-        let url = url::Url::parse("https://github.com/namespace/project/-/blob/main/file.json").unwrap();
+        let url =
+            url::Url::parse("https://github.com/namespace/project/-/blob/main/file.json").unwrap();
         let result = GitLabRepoInfo::new(&url);
         assert!(result.is_err());
     }

@@ -56,6 +56,37 @@ pub fn get_latest_commit(repo_path: &Path) -> Result<String, ApiError> {
     Ok(format!("{} {}", short_id, message.trim()))
 }
 
+/// Check if a file exists in the latest git commit
+pub fn file_exists_in_latest_commit(repo_path: &Path, file_path: &str) -> Result<bool, ApiError> {
+    let repo = Repository::open(repo_path)?;
+    let head = repo.head()?;
+    let commit = head.peel_to_commit()?;
+    let tree = commit.tree()?;
+
+    // Check if the file exists in the commit's tree
+    match tree.get_path(Path::new(file_path)) {
+        Ok(_) => Ok(true),
+        Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
+        Err(e) => Err(ApiError::GitOperationFailed(e)),
+    }
+}
+
+/// Check if a file is tracked in git (in the index)
+pub fn file_is_tracked_in_git(repo_path: &Path, file_path: &str) -> Result<bool, ApiError> {
+    let repo = Repository::open(repo_path)?;
+    let mut index = repo.index()?;
+
+    // Check if the file exists in the index
+    let path_bytes = file_path.as_bytes();
+    for i in 0..index.len() {
+        let entry = index.get(i).unwrap();
+        if entry.path == path_bytes {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 // Helper function to check if a file exists in the repo
 pub fn file_exists_in_repo(repo_path: &Path, file_path: &str) -> bool {
     repo_path.join(file_path).exists()
