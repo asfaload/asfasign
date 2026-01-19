@@ -13,6 +13,8 @@ pub mod tests {
         get_latest_commit, get_random_port, init_git_repo, read_file_content,
         send_add_file_request, url_for, wait_for_commit, wait_for_server,
     };
+    #[cfg(feature = "test-utils")]
+    use rest_api_test_helpers::{file_exists_in_latest_commit, file_is_tracked_in_git};
     use serde_json::{Value, json};
     use std::fs;
     use std::path::Path;
@@ -496,9 +498,6 @@ pub mod tests {
             })
             .collect();
 
-        //dbg!(&entries_with_request_id);
-        //dbg!(log_path);
-        //test_helpers::pause();
         assert!(
             !entries_with_request_id.is_empty(),
             "Should have at least 1 log entry with request_id"
@@ -644,7 +643,7 @@ pub mod tests {
         );
         assert_eq!(response_body.required_signers.len(), 1);
         assert_eq!(response_body.required_signers[0], public_key.to_base64());
-        assert_eq!(response_body.signature_submission_url, "/sign");
+        assert_eq!(response_body.signature_submission_url, "/signatures");
 
         mock.assert();
 
@@ -866,6 +865,445 @@ pub mod tests {
             error_msg.len() < 200,
             "Error message should be concise: {}",
             error_msg
+        );
+
+        Ok(())
+    }
+
+    // ============================================================================
+    // Signature Collection Integration Tests
+    // ============================================================================
+
+    #[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn test_submit_signature_for_artifact_file() -> Result<(), anyhow::Error> {
+        use features_lib::{
+            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
+            AsfaloadSignatureTrait, sha512_for_file,
+        };
+        use rest_api_types::SubmitSignatureRequest;
+        use rest_api_types::SubmitSignatureResponse;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        git2::Repository::init(&git_repo_path)?;
+
+        // Create signers config
+        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
+        let public_key = key_pair.public_key();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        // Create signers directory and file
+        let signers_dir = git_repo_path.join("asfaload.signers");
+        tokio::fs::create_dir_all(&signers_dir).await?;
+        tokio::fs::write(signers_dir.join("index.json"), &signers_json).await?;
+
+        // Create artifact file
+        let artifact_file = git_repo_path.join("release.txt");
+        tokio::fs::write(&artifact_file, "artifact content").await?;
+
+        // Create the signature
+        let digest = sha512_for_file(&artifact_file)?;
+        let secret_key = key_pair.secret_key("test_password")?;
+        let signature = secret_key.sign(&digest)?;
+
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
+
+        let app = axum::Router::new()
+            .route(
+                "/signatures",
+                axum::routing::post(rest_api::handlers::submit_signature_handler),
+            )
+            .with_state(app_state);
+
+        let server = axum_test::TestServer::new(app)?;
+
+        let response = server
+            .post("/signatures")
+            .json(&SubmitSignatureRequest {
+                file_path: "release.txt".to_string(),
+                public_key: public_key.to_base64(),
+                signature: signature.to_base64(),
+            })
+            .await;
+
+        response.assert_status_ok();
+
+        let response_body = response.json::<SubmitSignatureResponse>();
+
+        assert!(response_body.is_complete);
+
+        // Wait for the commit to be processed
+        let expected_commit_message =
+            format!("completed signature collection for {}", "release.txt");
+        wait_for_commit(git_repo_path.clone(), &expected_commit_message, None).await?;
+
+        // Verify the commit was created with correct message
+        let commit_msg = get_latest_commit(&git_repo_path)?;
+        assert!(
+            commit_msg.contains(&expected_commit_message),
+            "Commit message doesn't match expected format"
+        );
+
+        // Verify the signature file was created
+        let signature_file_path = format!("{}.signatures.json", artifact_file.display());
+        assert!(
+            git_repo_path.join(signature_file_path).exists(),
+            "Signature file should be created"
+        );
+
+        assert!(
+            file_exists_in_latest_commit(&git_repo_path, "release.txt.signatures.json")?,
+            "Signature file should be in the latest git commit (BUG: files not being committed)"
+        );
+
+        // Verify the signature file is tracked in git
+        assert!(
+            file_is_tracked_in_git(&git_repo_path, "release.txt.signatures.json")?,
+            "Signature file should be tracked in git"
+        );
+
+        Ok(())
+    }
+
+    #[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn test_submit_signature_for_signers_file() -> Result<(), anyhow::Error> {
+        use features_lib::{
+            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
+            AsfaloadSignatureTrait, sha512_for_file,
+        };
+        use rest_api_types::SubmitSignatureRequest;
+        use rest_api_types::SubmitSignatureResponse;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        git2::Repository::init(&git_repo_path)?;
+
+        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
+        let public_key = key_pair.public_key();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let project_dir = git_repo_path.join("github.com/test/repo");
+        let pending_dir = project_dir.join("asfaload.signers.pending");
+        tokio::fs::create_dir_all(&pending_dir).await?;
+        let pending_signers_path = pending_dir.join("index.json");
+        tokio::fs::write(pending_signers_path.clone(), &signers_json).await?;
+
+        let digest = sha512_for_file(&pending_signers_path)?;
+        let secret_key = key_pair.secret_key("test_password")?;
+        let signature = secret_key.sign(&digest)?;
+
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
+
+        let app = axum::Router::new()
+            .route(
+                "/signatures",
+                axum::routing::post(rest_api::handlers::submit_signature_handler),
+            )
+            .with_state(app_state);
+
+        let server = axum_test::TestServer::new(app)?;
+
+        let response = server
+            .post("/signatures")
+            .json(&SubmitSignatureRequest {
+                file_path: "github.com/test/repo/asfaload.signers.pending/index.json".to_string(),
+                public_key: public_key.to_base64(),
+                signature: signature.to_base64(),
+            })
+            .await;
+
+        response.assert_status_ok();
+
+        let response_body = response.json::<SubmitSignatureResponse>();
+
+        assert!(
+            response_body.is_complete,
+            "Signers file signature should complete"
+        );
+
+        // Wait for the commit to be processed
+        let expected_commit_message = format!(
+            "completed signature collection for {}",
+            "github.com/test/repo/asfaload.signers.pending/index.json"
+        );
+        wait_for_commit(git_repo_path.clone(), &expected_commit_message, None).await?;
+
+        // Verify the commit was created with correct message
+        let commit_msg = get_latest_commit(&git_repo_path)?;
+        assert!(
+            commit_msg.contains(&expected_commit_message),
+            "Commit message doesn't match expected format"
+        );
+
+        let signature_file = format!("{}.signatures.json", pending_signers_path.display());
+        let signature_file = std::path::PathBuf::from(signature_file);
+        assert!(
+            signature_file.exists(),
+            "Signature file should be created as complete"
+        );
+
+        // Verify the signature file is tracked in git
+        let signature_file_path =
+            "github.com/test/repo/asfaload.signers.pending/index.json.signatures.json";
+        assert!(
+            file_is_tracked_in_git(&git_repo_path, signature_file_path)?,
+            "Signature file should be tracked in git"
+        );
+
+        // Verify the signature file is in the latest git commit
+        assert!(
+            file_exists_in_latest_commit(&git_repo_path, signature_file_path)?,
+            "Signature file should be in the latest git commit"
+        );
+
+        Ok(())
+    }
+
+    //#[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn test_get_signature_status() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadKeyPairTrait;
+        use rest_api_types::GetSignatureStatusResponse;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        git2::Repository::init(&git_repo_path)?;
+
+        // Create signers config
+        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![key_pair.public_key().clone()], 1),
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        // Create artifact file (without signatures)
+        let signers_dir = git_repo_path.join("asfaload.signers");
+        tokio::fs::create_dir_all(&signers_dir).await?;
+        tokio::fs::write(signers_dir.join("index.json"), &signers_json).await?;
+
+        let artifact_file = git_repo_path.join("data.txt");
+        tokio::fs::write(&artifact_file, "test data").await?;
+
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
+
+        let app = axum::Router::new()
+            .route(
+                "/signatures/{*file_path}",
+                axum::routing::get(rest_api::handlers::get_signature_status_handler),
+            )
+            .with_state(app_state);
+
+        let server = axum_test::TestServer::new(app)?;
+
+        let response = server.get("/signatures/data.txt").await;
+
+        response.assert_status_ok();
+
+        let status_body = response.json::<GetSignatureStatusResponse>();
+
+        assert_eq!(status_body.file_path, "data.txt");
+        assert!(!status_body.is_complete);
+
+        Ok(())
+    }
+
+    #[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn test_submit_partial_signature() -> Result<(), anyhow::Error> {
+        use common::fs::names::SIGNERS_DIR;
+        use common::fs::names::SIGNERS_FILE;
+        use features_lib::{
+            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
+            AsfaloadSignatureTrait, sha512_for_file,
+        };
+        use rest_api_test_helpers::print_logs;
+        use rest_api_types::SubmitSignatureRequest;
+        use rest_api_types::SubmitSignatureResponse;
+
+        print_logs();
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        git2::Repository::init(&git_repo_path)?;
+
+        // Create signers config with 2 signers, threshold 2
+        let key_pair1 = features_lib::AsfaloadKeyPairs::new("test_password1")?;
+        let key_pair2 = features_lib::AsfaloadKeyPairs::new("test_password2")?;
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            2,
+            (
+                vec![
+                    key_pair1.public_key().clone(),
+                    key_pair2.public_key().clone(),
+                ],
+                2,
+            ),
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        // Create signers directory and file
+        let signers_dir = git_repo_path.join(SIGNERS_DIR);
+        tokio::fs::create_dir_all(&signers_dir).await?;
+        tokio::fs::write(signers_dir.join(SIGNERS_FILE), &signers_json).await?;
+
+        // Create artifact file
+        let artifact_file = git_repo_path.join("release.txt");
+        tokio::fs::write(&artifact_file, "artifact content").await?;
+
+        // Create signatures
+        let digest = sha512_for_file(&artifact_file)?;
+        let secret_key1 = key_pair1.secret_key("test_password1")?;
+        let signature1 = secret_key1.sign(&digest)?;
+        let secret_key2 = key_pair2.secret_key("test_password2")?;
+        let signature2 = secret_key2.sign(&digest)?;
+
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
+
+        let app = axum::Router::new()
+            .route(
+                "/signatures",
+                axum::routing::post(rest_api::handlers::submit_signature_handler),
+            )
+            .with_state(app_state);
+
+        let server = axum_test::TestServer::new(app)?;
+
+        // Submit first signature (should be partial)
+        let response = server
+            .post("/signatures")
+            .json(&SubmitSignatureRequest {
+                file_path: "release.txt".to_string(),
+                public_key: key_pair1.public_key().to_base64(),
+                signature: signature1.to_base64(),
+            })
+            .await;
+
+        response.assert_status_ok();
+        let response_body = response.json::<SubmitSignatureResponse>();
+        assert!(
+            !response_body.is_complete,
+            "First signature should not complete"
+        );
+
+        // Wait for partial commit
+        let expected_commit_message = "added partial signature for release.txt";
+        wait_for_commit(git_repo_path.clone(), expected_commit_message, None).await?;
+
+        // Verify commit message
+        let commit_msg = get_latest_commit(&git_repo_path)?;
+        assert!(
+            commit_msg.contains(expected_commit_message),
+            "Partial commit message doesn't match"
+        );
+
+        // Submit second signature (should complete)
+        let response2 = server
+            .post("/signatures")
+            .json(&SubmitSignatureRequest {
+                file_path: "release.txt".to_string(),
+                public_key: key_pair2.public_key().to_base64(),
+                signature: signature2.to_base64(),
+            })
+            .await;
+
+        response2.assert_status_ok();
+        let response_body2 = response2.json::<SubmitSignatureResponse>();
+        assert!(
+            response_body2.is_complete,
+            "Second signature should complete"
+        );
+
+        // Wait for completion commit
+        let expected_completion_message = "completed signature collection for release.txt";
+        wait_for_commit(git_repo_path.clone(), expected_completion_message, None).await?;
+
+        // Verify completion commit message
+        let commit_msg2 = get_latest_commit(&git_repo_path)?;
+        assert!(
+            commit_msg2.contains(expected_completion_message),
+            "Completion commit message doesn't match"
+        );
+
+        // Verify the signature file is tracked in git
+        assert!(
+            file_is_tracked_in_git(&git_repo_path, "release.txt.signatures.json")?,
+            "Signature file should be tracked in git"
+        );
+
+        // Verify the signature file is in the latest git commit
+        assert!(
+            file_exists_in_latest_commit(&git_repo_path, "release.txt.signatures.json")?,
+            "Signature file should be in the latest git commit"
+        );
+
+        Ok(())
+    }
+
+    #[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn test_submit_signature_file_not_found() -> Result<(), anyhow::Error> {
+        use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait};
+        use rest_api_types::SubmitSignatureRequest;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        git2::Repository::init(&git_repo_path)?;
+
+        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
+        let public_key = key_pair.public_key();
+
+        let app_state = rest_api::state::init_state(git_repo_path.clone());
+
+        let app = axum::Router::new()
+            .route(
+                "/signatures",
+                axum::routing::post(rest_api::handlers::submit_signature_handler),
+            )
+            .with_state(app_state);
+
+        let server = axum_test::TestServer::new(app)?;
+
+        let response = server
+            .post("/signatures")
+            .json(&SubmitSignatureRequest {
+                file_path: "nonexistent.txt".to_string(),
+                public_key: public_key.to_base64(),
+                signature: "invalid_signature".to_string(),
+            })
+            .await;
+
+        response.assert_status(axum::http::StatusCode::BAD_REQUEST);
+
+        let body: serde_json::Value = response.json();
+
+        assert!(body.get("error").is_some());
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("File not found")
         );
 
         Ok(())

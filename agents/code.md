@@ -30,6 +30,7 @@ Read [producing_better_code.md](./producing_better_code.md) which collects lesso
 - Prefer explicit imports over glob imports except for test modules and prelude patterns
 
 ### Naming Conventions
+- NEVER hardcode a value if it is also available as constant
 - **Types**: `PascalCase` (e.g., `AsfaloadKeyPair`, `SignedFileWithKind`)
 - **Functions/Methods**: `snake_case` (e.g., `sha512_for_content`, `add_signature`)
 - **Constants**: `SCREAMING_SNAKE_CASE` (e.g., `SIGNERS_DIR`, `PENDING_SIGNERS_DIR`)

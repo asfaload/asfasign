@@ -229,7 +229,45 @@ pub mod models {
         pub required_signers: Vec<String>,
         pub signature_submission_url: String,
     }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    /// Request to submit a signature for a specific file.
+    ///
+    /// # Fields
+    /// * `file_path` - Relative path to the file being signed
+    /// * `public_key` - Base64-encoded public key of the signer
+    /// * `signature` - Base64-encoded signature data
+    pub struct SubmitSignatureRequest {
+        pub file_path: String,
+        pub public_key: String,
+        pub signature: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    /// Response to a signature submission request.
+    ///
+    /// # Fields
+    /// * `is_complete` - Whether the aggregate signature is now complete,
+    ///   meaning all required signatures have been collected
+    pub struct SubmitSignatureResponse {
+        pub is_complete: bool,
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    /// Response to a signature status query.
+    ///
+    /// # Fields
+    /// * `file_path` - Path to the file
+    /// * `is_complete` - Whether the aggregate signature is complete
+    /// * `collected_count` - Number of individual signatures collected so far
+    pub struct GetSignatureStatusResponse {
+        pub file_path: String,
+        pub is_complete: bool,
+    }
 }
 
 // Re-export commonly used types at the module level
-pub use models::{RegisterRepoRequest, RegisterRepoResponse};
+pub use models::{
+    GetSignatureStatusResponse, RegisterRepoRequest, RegisterRepoResponse, SubmitSignatureRequest,
+    SubmitSignatureResponse,
+};
