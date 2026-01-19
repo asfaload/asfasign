@@ -35,7 +35,7 @@ pub fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
 
     let forge_project_validator = ForgeProjectValidator::spawn(());
     let signers_initialiser = SignersInitialiser::spawn(());
-    let signature_collector = SignatureCollector::spawn(());
+    let signature_collector = SignatureCollector::spawn(git_actor.clone());
 
     AppState {
         git_repo_path,

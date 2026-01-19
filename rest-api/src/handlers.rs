@@ -20,7 +20,7 @@ use rest_api_types::{
 };
 use tokio::io::AsyncWriteExt;
 
-fn map_to_user_error(error: impl std::fmt::Display, context: &str) -> ApiError {
+pub fn map_to_user_error(error: impl std::fmt::Display, context: &str) -> ApiError {
     tracing::error!(internal_error = %error, "{}", context);
     ApiError::InternalServerError(
         "Operation failed. Please check your request and try again.".to_string(),
@@ -332,30 +332,6 @@ pub async fn submit_signature_handler(
         .ask(collector_request)
         .await
         .map_err(|e| map_to_user_error(e, "Signature collection failed"))?;
-
-    let commit_message = if collector_result.is_complete {
-        format!(
-            "completed signature collection for {}",
-            file_path.relative_path().display()
-        )
-    } else {
-        format!(
-            "added partial signature for {}",
-            file_path.relative_path().display(),
-        )
-    };
-
-    let commit_msg = CommitFile {
-        file_paths: vec![file_path],
-        commit_message,
-        request_id: request_id.to_string(),
-    };
-
-    state
-        .git_actor
-        .ask(commit_msg)
-        .await
-        .map_err(|e| map_to_user_error(e, "Failed to commit signature changes"))?;
 
     tracing::info!(
         request_id = %request_id,
