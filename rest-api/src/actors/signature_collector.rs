@@ -109,6 +109,32 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
             ));
         }
 
+        let file_path = msg.file_path.absolute_path();
+        let signed_file = features_lib::SignedFileLoader::load(&file_path);
+
+        if signed_file.is_artifact() {
+            let signers_file_path = common::fs::names::find_global_signers_for(&file_path)
+                .map_err(|e| {
+                    ApiError::InternalServerError(format!("Failed to find signers file: {}", e))
+                })?;
+
+            let signers_config =
+                features_lib::aggregate_signature_helpers::load_signers_config(&signers_file_path)
+                    .map_err(|e| {
+                        ApiError::InternalServerError(format!(
+                            "Failed to load signers config: {}",
+                            e
+                        ))
+                    })?;
+
+            let authorized_keys = signers_config.all_signer_keys();
+            if !authorized_keys.contains(&msg.public_key) {
+                return Err(ApiError::InvalidRequestBody(
+                    "Public key is not an authorized signer".to_string(),
+                ));
+            }
+        }
+
         let signature_with_state =
             SignatureWithState::load_for_file(&msg.file_path).map_err(|e| {
                 tracing::error!(
@@ -575,6 +601,67 @@ mod tests {
                 e
             ),
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_collect_signature_rejects_first_unauthorized_signature() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        initialise_git_repo(temp_dir.path())?;
+
+        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1")?;
+        let key_pair2 = features_lib::AsfaloadKeyPairs::new("pwd2")?;
+        let key_pair_unauth = features_lib::AsfaloadKeyPairs::new("unauth")?;
+
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            2,
+            (
+                vec![
+                    key_pair1.public_key().clone(),
+                    key_pair2.public_key().clone(),
+                ],
+                2,
+            ),
+        )?;
+
+        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
+        std::fs::create_dir_all(&signers_dir)?;
+        std::fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?)?;
+
+        let artifact_path = "nested/artifact.txt";
+        std::fs::create_dir_all(temp_dir.path().join("nested"))?;
+        let artifact_full_path = temp_dir.path().join(artifact_path);
+        std::fs::write(&artifact_full_path, "content")?;
+
+        let file_path = make_normalised_paths(&temp_dir, artifact_path).await;
+        let digest = sha512_for_file(&artifact_full_path)?;
+        let signature = key_pair_unauth.secret_key("unauth")?.sign(&digest)?;
+
+        let git_actor = crate::actors::git_actor::GitActor::spawn(artifact_full_path.clone());
+        let actor_ref = SignatureCollector::spawn(git_actor);
+
+        let result = actor_ref
+            .ask(CollectSignatureRequest {
+                file_path,
+                public_key: key_pair_unauth.public_key(),
+                signature,
+                request_id: "test-unauth-1".to_string(),
+            })
+            .await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            kameo::error::SendError::HandlerError(ApiError::InvalidRequestBody(msg))
+                if msg.contains("not an authorized signer") => {}
+            e => panic!("Expected unauthorized signer error, got {:?}", e),
+        }
+
+        let pending_sig_path = common::fs::names::pending_signatures_path_for(&artifact_full_path)?;
+        assert!(
+            !pending_sig_path.exists(),
+            "Pending signatures should not be created when signature is unauthorized"
+        );
 
         Ok(())
     }
