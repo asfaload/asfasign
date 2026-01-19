@@ -110,29 +110,23 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
         }
 
         let file_path = msg.file_path.absolute_path();
-        let signed_file = features_lib::SignedFileLoader::load(&file_path);
 
-        if signed_file.is_artifact() {
-            let signers_file_path = common::fs::names::find_global_signers_for(&file_path)
+        let authorized_signers =
+            features_lib::aggregate_signature_helpers::get_authorized_signers_for_file(&file_path)
                 .map_err(|e| {
-                    ApiError::InternalServerError(format!("Failed to find signers file: {}", e))
+                    tracing::error!(
+                        actor = ACTOR_NAME,
+                        request_id = %msg.request_id,
+                        error = %e,
+                        "failed to get authorized signers"
+                    );
+                    ApiError::InternalServerError("Failed to get authorized signers".to_string())
                 })?;
 
-            let signers_config =
-                features_lib::aggregate_signature_helpers::load_signers_config(&signers_file_path)
-                    .map_err(|e| {
-                        ApiError::InternalServerError(format!(
-                            "Failed to load signers config: {}",
-                            e
-                        ))
-                    })?;
-
-            let authorized_keys = signers_config.all_signer_keys();
-            if !authorized_keys.contains(&msg.public_key) {
-                return Err(ApiError::InvalidRequestBody(
-                    "Public key is not an authorized signer".to_string(),
-                ));
-            }
+        if !authorized_signers.contains(&msg.public_key) {
+            return Err(ApiError::InvalidRequestBody(
+                "Public key is not an authorized signer".to_string(),
+            ));
         }
 
         let signature_with_state =
