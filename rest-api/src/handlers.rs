@@ -20,7 +20,7 @@ use rest_api_types::{
 };
 use tokio::io::AsyncWriteExt;
 
-fn map_to_user_error(error: impl std::fmt::Display, context: &str) -> ApiError {
+pub fn map_to_user_error(error: impl std::fmt::Display, context: &str) -> ApiError {
     tracing::error!(internal_error = %error, "{}", context);
     ApiError::InternalServerError(
         "Operation failed. Please check your request and try again.".to_string(),
@@ -86,7 +86,7 @@ pub async fn add_file_handler(
         normalised_paths.relative_path().display()
     );
     let commit_msg = CommitFile {
-        file_paths: normalised_paths,
+        file_paths: vec![normalised_paths],
         commit_message: commit_message.clone(),
         request_id: request_id.to_string(),
     };
@@ -184,7 +184,7 @@ pub async fn register_repo_handler(
 
     // Step 3: Write and commit files via Git actor
     let write_commit_request = crate::actors::git_actor::CommitFile {
-        file_paths: init_result.project_path.clone(),
+        file_paths: vec![init_result.project_path.clone()],
         commit_message: format!(
             "Adding {}",
             init_result.project_path.relative_path().display()
@@ -332,33 +332,6 @@ pub async fn submit_signature_handler(
         .ask(collector_request)
         .await
         .map_err(|e| map_to_user_error(e, "Signature collection failed"))?;
-
-    // Always commit to Git to prevent data loss on server restart
-    let normalised_commit_path = file_path.parent();
-
-    let commit_message = if collector_result.is_complete {
-        format!(
-            "completed signature collection for {}",
-            file_path.relative_path().display()
-        )
-    } else {
-        format!(
-            "added partial signature for {}",
-            file_path.relative_path().display(),
-        )
-    };
-
-    let commit_msg = CommitFile {
-        file_paths: normalised_commit_path,
-        commit_message,
-        request_id: request_id.to_string(),
-    };
-
-    state
-        .git_actor
-        .ask(commit_msg)
-        .await
-        .map_err(|e| map_to_user_error(e, "Failed to commit signature changes"))?;
 
     tracing::info!(
         request_id = %request_id,

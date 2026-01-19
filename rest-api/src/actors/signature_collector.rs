@@ -1,9 +1,13 @@
+use crate::actors::git_actor::{CommitFile, GitActor};
+use crate::handlers::map_to_user_error;
 use crate::path_validation::NormalisedPaths;
 use common::errors::AggregateSignatureError;
 use features_lib::{AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState};
+use kameo::actor::ActorRef;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
+use std::path::Path;
 
 /// Request to collect a signature for a specific file.
 ///
@@ -55,20 +59,22 @@ pub struct SignatureStatus {
 /// of aggregate signature (initial signers files, signers file updates, or artifact files).
 /// It delegates to the AggregateSignature API for validation and storage, and automatically
 /// transitions signatures from pending to complete state when the threshold is reached.
-pub struct SignatureCollector;
+pub struct SignatureCollector {
+    git_actor: ActorRef<GitActor>,
+}
 
 const ACTOR_NAME: &str = "SignatureCollector";
 
 impl Actor for SignatureCollector {
-    type Args = ();
+    type Args = ActorRef<GitActor>;
     type Error = String;
 
     async fn on_start(
-        _args: Self::Args,
+        args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
         tracing::info!(actor = ACTOR_NAME, "starting");
-        Ok(Self)
+        Ok(Self { git_actor: args })
     }
 }
 
@@ -93,6 +99,14 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                 "File not found: {}",
                 msg.file_path.absolute_path().display()
             )));
+        }
+
+        let rel_path = msg.file_path.relative_path();
+        let rel_parent = rel_path.parent();
+        if rel_parent == None || rel_parent == Some(Path::new("")) {
+            return Err(ApiError::InvalidRequestBody(
+                "Files at git repository root cannot have signatures. Files must be in a subdirectory.".to_string()
+            ));
         }
 
         let signature_with_state =
@@ -137,9 +151,31 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                     _ => ApiError::InternalServerError(e.to_string()),
                 }
             })?;
-
-        // Handle both complete and incomplete states appropriately
         let is_complete = new_state.is_complete();
+
+        let commit_message = if is_complete {
+            format!(
+                "completed signature collection for {}",
+                msg.file_path.relative_path().display()
+            )
+        } else {
+            format!(
+                "added partial signature for {}",
+                msg.file_path.relative_path().display(),
+            )
+        };
+
+        let commit_msg = CommitFile {
+            file_paths: vec![msg.file_path.parent()],
+            commit_message,
+            request_id: msg.request_id.to_string(),
+        };
+
+        self.git_actor
+            .ask(commit_msg)
+            .await
+            .map_err(|e| map_to_user_error(e, "Failed to commit signature changes"))?;
+        // Handle both complete and incomplete states appropriately
         tracing::info!(
             actor = ACTOR_NAME,
             request_id = %msg.request_id,
@@ -194,6 +230,7 @@ mod tests {
     use super::*;
     use common::fs::names::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait, sha512_for_file};
+    use git2::{Repository, Signature};
     use kameo::actor::Spawn;
     use signers_file_types::SignersConfig;
     use std::{
@@ -210,9 +247,30 @@ mod tests {
         NormalisedPaths::new(base.path(), relative).await.unwrap()
     }
 
+    // Helper to initialise a git repo for these tests
+    fn initialise_git_repo<P: AsRef<Path>>(repo_path: P) -> anyhow::Result<Repository> {
+        let repo = Repository::init(repo_path)?;
+        {
+            let signature = Signature::now("Test User", "test@example.com")?;
+            let tree_oid = repo.index()?.write_tree()?;
+            let tree = repo.find_tree(tree_oid)?;
+            repo.commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                "Initial commit",
+                &tree,
+                &[],
+            )?;
+        }
+        Ok(repo)
+    }
+
     #[tokio::test]
     async fn test_collect_signature_for_signers_file() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
+        initialise_git_repo(temp_dir.path())?;
+
         let project_dir = temp_dir.path().join("github.com/test/repo");
         let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
         let pending_signers_path = pending_dir.join(SIGNERS_FILE);
@@ -240,8 +298,10 @@ mod tests {
         let file_path =
             make_normalised_paths(&temp_dir, &pending_signers_path.strip_prefix(&temp_dir)?).await;
 
-        // Spawn the actor and send request
-        let actor_ref = SignatureCollector::spawn(());
+        // Spawn git actor and signature collector
+        let git_actor = crate::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+
+        let actor_ref = SignatureCollector::spawn(git_actor);
         let request = CollectSignatureRequest {
             file_path,
             public_key,
@@ -272,6 +332,8 @@ mod tests {
     #[tokio::test]
     async fn test_collect_signature_for_artifact_file() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
+        initialise_git_repo(temp_dir.path())?;
+
         let signers_dir = temp_dir.path().join(SIGNERS_DIR);
         std::fs::create_dir_all(&signers_dir)?;
 
@@ -300,8 +362,10 @@ mod tests {
 
         let file_path = make_normalised_paths(&temp_dir, &artifact_path).await;
 
-        // Spawn the actor and send request
-        let actor_ref = SignatureCollector::spawn(());
+        // Spawn git actor and signature collector
+        let git_actor = crate::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+
+        let actor_ref = SignatureCollector::spawn(git_actor);
         let request = CollectSignatureRequest {
             file_path,
             public_key,
@@ -322,6 +386,8 @@ mod tests {
     #[tokio::test]
     async fn test_collect_signature_second_attempt_after_complete() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
+        initialise_git_repo(temp_dir.path())?;
+
         let project_dir = temp_dir.path().join("github.com/test/repo");
         let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
         let pending_signers_path = pending_dir.join(SIGNERS_FILE);
@@ -344,7 +410,8 @@ mod tests {
         let file_path =
             make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
 
-        let actor_ref = SignatureCollector::spawn(());
+        let git_actor = crate::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let actor_ref = SignatureCollector::spawn(git_actor);
 
         // Add the signature first time - should succeed and complete
         let result1 = actor_ref
@@ -385,6 +452,8 @@ mod tests {
     #[tokio::test]
     async fn test_collect_signature_partial_completion() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
+        initialise_git_repo(temp_dir.path())?;
+
         let project_dir = temp_dir.path().join("github.com/test/repo");
         let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
         let pending_signers_path = pending_dir.join(SIGNERS_FILE);
@@ -419,7 +488,8 @@ mod tests {
         let file_path =
             make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
 
-        let actor_ref = SignatureCollector::spawn(());
+        let git_actor = crate::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let actor_ref = SignatureCollector::spawn(git_actor);
 
         // Add first signature - should return is_complete: false
         let result1 = actor_ref
@@ -435,7 +505,7 @@ mod tests {
         let collect_result1 = result1.unwrap();
         assert!(!collect_result1.is_complete); // Should be false - threshold not met yet
 
-        // Add second signature ti complete aggregate signature
+        // Add second signature to complete aggregate signature
         let secret_key2 = key_pair2.secret_key("test_password2")?;
         let signature2 = secret_key2.sign(&digest)?;
         let public_key2 = key_pair2.public_key();
@@ -451,6 +521,60 @@ mod tests {
         assert!(result2.is_ok());
         let collect_result2 = result2.unwrap();
         assert!(collect_result2.is_complete);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_collect_signature_rejects_root_level_file() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        initialise_git_repo(temp_dir.path())?;
+
+        // Create signers config
+        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        // Create signers directory and file
+        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
+        std::fs::create_dir_all(&signers_dir)?;
+        std::fs::write(signers_dir.join(SIGNERS_FILE), signers_json)?;
+
+        // Create artifact file at repo root
+        let artifact_file = temp_dir.path().join("release.txt");
+        std::fs::write(&artifact_file, "artifact content")?;
+
+        // Create the signature
+        let public_key = key_pair.public_key();
+        let digest = sha512_for_file(&artifact_file)?;
+        let secret_key = key_pair.secret_key("test_password")?;
+        let signature = secret_key.sign(&digest)?;
+
+        let file_path = make_normalised_paths(&temp_dir, Path::new("release.txt")).await;
+
+        let git_actor = crate::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let actor_ref = SignatureCollector::spawn(git_actor);
+
+        let result = actor_ref
+            .ask(CollectSignatureRequest {
+                file_path,
+                public_key,
+                signature,
+                request_id: "test-root-file".to_string(),
+            })
+            .await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            kameo::error::SendError::HandlerError(ApiError::InvalidRequestBody(msg))
+                if msg.contains("Files at git repository root cannot have signatures") => {}
+            e => panic!(
+                "Expected InvalidRequestBody with root rejection, got {:?}",
+                e
+            ),
+        }
 
         Ok(())
     }

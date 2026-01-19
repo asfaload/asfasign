@@ -10,7 +10,7 @@ use git2::{Repository, Signature};
 #[derive(Debug, Clone)]
 pub struct CommitFile {
     // File path is relative to the git root
-    pub file_paths: NormalisedPaths,
+    pub file_paths: Vec<NormalisedPaths>,
     pub commit_message: String,
     pub request_id: String,
 }
@@ -88,28 +88,34 @@ impl GitActor {
         tracing::info!(repo_path = %repo_path.display(), "GitActor created");
         Self { repo_path }
     }
-    async fn commit_file(
+    async fn commit_files(
         &self,
-        file_paths: NormalisedPaths,
+        file_paths: Vec<NormalisedPaths>,
         commit_message: &str,
         request_id: &str,
     ) -> Result<(), ApiError> {
-        if file_paths.base_dir() != self.repo_path {
-            return Err(ApiError::InvalidFilePath(format!(
-                "File's base_dir ({}) != actor's git dir ({})",
-                file_paths.base_dir().to_string_lossy(),
-                self.repo_path.to_string_lossy()
-            )));
+        for path in &file_paths {
+            if path.base_dir() != self.repo_path {
+                return Err(ApiError::InvalidFilePath(format!(
+                    "File's base_dir ({}) != actor's git dir ({})",
+                    path.base_dir().to_string_lossy(),
+                    self.repo_path.to_string_lossy()
+                )));
+            }
         }
+
         tracing::info!(
             request_id = %request_id,
-            file_path = %file_paths.absolute_path().display(),
+            file_paths = %file_paths.iter()
+                .map(|p| p.relative_path().display().to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
             commit_message,
-            "Attempting to commit file"
+            "Attempting to commit files"
         );
 
         let repo_path = self.repo_path.clone();
-        let file_path = file_paths.absolute_path();
+        let file_paths: Vec<PathBuf> = file_paths.iter().map(|p| p.absolute_path()).collect();
         let commit_message = commit_message.to_string();
         let request_id = request_id.to_string();
 
@@ -120,9 +126,11 @@ impl GitActor {
             // Create a signature for the commit
             let signature = Signature::now(ACTOR_NAME, GIT_USER_EMAIL)?;
 
-            // Add the file to the index
+            // Add all files to the index
             let mut index = repo.index()?;
-            add_path_recursively(&mut index, repo_path, &file_path)?;
+            for file_path in &file_paths {
+                add_path_recursively(&mut index, &repo_path, file_path)?;
+            }
 
             // Get the tree from the index
             let tree_oid = index.write_tree()?;
@@ -151,7 +159,7 @@ impl GitActor {
                 &parents,
             )?;
 
-            tracing::info!(request_id = %request_id, file_path = %file_path.display(), "Successfully committed file");
+            tracing::info!(request_id = %request_id, file_paths = ?file_paths, "Successfully committed files");
             Ok(())
         })
         .await?
@@ -169,12 +177,12 @@ impl Message<CommitFile> for GitActor {
     ) -> Self::Reply {
         tracing::info!(
             request_id = %msg.request_id,
-            file_path = %msg.file_paths.relative_path().display(),
+            file_paths = %msg.file_paths.iter().map(|p| p.relative_path().display().to_string()).collect::<Vec<_>>().join(", "),
             commit_message = %msg.commit_message,
             "GitActor received commit request"
         );
 
-        self.commit_file(msg.file_paths, &msg.commit_message, &msg.request_id)
+        self.commit_files(msg.file_paths, &msg.commit_message, &msg.request_id)
             .await
     }
 }
@@ -320,7 +328,11 @@ mod tests {
 
         // Try to commit - this should fail because base_dir != repo_path
         let result = git_actor
-            .commit_file(normalised_paths, "Test commit message", "test-request-id")
+            .commit_files(
+                vec![normalised_paths],
+                "Test commit message",
+                "test-request-id",
+            )
             .await;
 
         // Verify that the commit failed with InvalidFilePath
@@ -355,7 +367,11 @@ mod tests {
 
         // Try to commit - this should succeed
         let result = git_actor
-            .commit_file(normalised_paths, "Test commit message", "test-request-id")
+            .commit_files(
+                vec![normalised_paths],
+                "Test commit message",
+                "test-request-id",
+            )
             .await;
 
         // Verify that the commit succeeded
@@ -397,7 +413,7 @@ mod tests {
 
         // Create a CommitFile message
         let commit_msg = CommitFile {
-            file_paths: normalised_paths,
+            file_paths: vec![normalised_paths],
             commit_message: "Test message handling".to_string(),
             request_id: "test-request-id".to_string(),
         };
@@ -406,13 +422,13 @@ mod tests {
         // Note: Since Context::mock() doesn't exist, we'll test the components separately
         assert_eq!(commit_msg.commit_message, "Test message handling");
         assert_eq!(
-            commit_msg.file_paths.relative_path(),
+            commit_msg.file_paths[0].relative_path(),
             PathBuf::from("test_file.txt")
         );
 
         // Test that the commit_file method works (which is what the handle method calls)
         let result = git_actor
-            .commit_file(
+            .commit_files(
                 commit_msg.file_paths,
                 &commit_msg.commit_message,
                 "test-request-id",
@@ -458,7 +474,11 @@ mod tests {
         let normalised_paths = NormalisedPaths::new(repo_path_buf, test_file_path).await?;
         // Try to commit the file - this should fail because there's no git repo
         let result = git_actor
-            .commit_file(normalised_paths, "Test commit message", "test-request-id")
+            .commit_files(
+                vec![normalised_paths],
+                "Test commit message",
+                "test-request-id",
+            )
             .await;
 
         // Verify that the commit failed
@@ -470,6 +490,129 @@ mod tests {
             Err(e) => panic!("Got unexpected error type back: {}", e),
             Ok(_) => panic!("Git operation succeeded outside a git repo??"),
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_git_actor_mismatched_base_directory_multiple_files() -> Result<()> {
+        let temp_dir1 = TempDir::new().expect("Failed to create first temp directory");
+        let temp_dir2 = TempDir::new().expect("Failed to create second temp directory");
+
+        let git_actor = GitActor::new(temp_dir1.path().to_path_buf());
+
+        // Create test files in second directory
+        let test_file_path1 = PathBuf::from("test_file1.txt");
+        let full_test_file_path1 = temp_dir2.path().join(&test_file_path1);
+        let mut test_file1 = File::create(&full_test_file_path1).await.unwrap();
+        test_file1.write_all(b"Test content 1").await.unwrap();
+        test_file1.flush().await.unwrap();
+
+        let test_file_path2 = PathBuf::from("test_file2.txt");
+        let full_test_file_path2 = temp_dir2.path().join(&test_file_path2);
+        let mut test_file2 = File::create(&full_test_file_path2).await.unwrap();
+        test_file2.write_all(b"Test content 2").await.unwrap();
+        test_file2.flush().await.unwrap();
+
+        // Create NormalisedPaths for both files
+        let normalised_paths1 = NormalisedPaths::new(temp_dir2.path(), test_file_path1).await?;
+        let normalised_paths2 = NormalisedPaths::new(temp_dir2.path(), test_file_path2).await?;
+
+        // Try to commit multiple files with wrong base_dir
+        let result = git_actor
+            .commit_files(
+                vec![normalised_paths1, normalised_paths2],
+                "Test commit message",
+                "test-request-id",
+            )
+            .await;
+
+        // Verify that the commit failed with InvalidFilePath
+        assert!(result.is_err());
+        match result {
+            Err(ApiError::InvalidFilePath(e)) => {
+                assert!(e.contains("File's base_dir") && e.contains("!= actor's git dir"))
+            }
+            Err(e) => panic!("Got unexpected error type back: {}", e),
+            Ok(_) => panic!("Git operation succeeded with mismatched base directory??"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_git_actor_successful_commit_multiple_files() -> Result<()> {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let repo_path = temp_dir.path();
+
+        let repo = initialise_git_actor_repo(repo_path)?;
+        let git_actor = GitActor::new(repo_path.to_path_buf());
+
+        // Create multiple test files
+        let test_file_path1 = PathBuf::from("test_file1.txt");
+        let full_test_file_path1 = repo_path.join(&test_file_path1);
+        let mut test_file1 = File::create(&full_test_file_path1).await.unwrap();
+        test_file1.write_all(b"Test content 1").await.unwrap();
+        test_file1.flush().await.unwrap();
+
+        let test_file_path2 = PathBuf::from("test_file2.txt");
+        let full_test_file_path2 = repo_path.join(&test_file_path2);
+        let mut test_file2 = File::create(&full_test_file_path2).await.unwrap();
+        test_file2.write_all(b"Test content 2").await.unwrap();
+        test_file2.flush().await.unwrap();
+
+        let test_file_path3 = PathBuf::from("subdir/test_file3.txt");
+        let full_test_file_path3 = repo_path.join(&test_file_path3);
+        tokio::fs::create_dir_all(full_test_file_path3.parent().unwrap())
+            .await
+            .unwrap();
+        let mut test_file3 = File::create(&full_test_file_path3).await.unwrap();
+        test_file3.write_all(b"Test content 3").await.unwrap();
+        test_file3.flush().await.unwrap();
+
+        let normalised_paths1 = NormalisedPaths::new(repo_path, test_file_path1).await?;
+        let normalised_paths2 = NormalisedPaths::new(repo_path, test_file_path2).await?;
+        let normalised_paths3 = NormalisedPaths::new(repo_path, test_file_path3).await?;
+
+        // Try to commit multiple files - this should succeed
+        let result = git_actor
+            .commit_files(
+                vec![normalised_paths1, normalised_paths2, normalised_paths3],
+                "Test multi-file commit",
+                "test-request-id",
+            )
+            .await;
+
+        // Verify that the commit succeeded
+        assert!(result.is_ok(), "Commit failed: {:?}", result);
+
+        // Verify the commit actually exists in git
+        let mut revwalk = repo.revwalk()?;
+        revwalk.push_head()?;
+        let commits: Vec<git2::Oid> = revwalk.by_ref().collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(
+            commits.len(),
+            2,
+            "Should have 2 commits (initial + our multi-file commit)"
+        );
+
+        // Get the latest commit and verify its message
+        let latest_commit = repo.find_commit(commits[0])?;
+        assert_eq!(latest_commit.message().unwrap(), "Test multi-file commit");
+
+        // Verify all files are tracked by git
+        let tree = latest_commit.tree()?;
+        assert!(tree.get_name("test_file1.txt").is_some());
+        assert!(tree.get_name("test_file2.txt").is_some());
+        // Check if subdir exists and contains test_file3.txt
+        let subdir_entry = tree.get_name("subdir");
+        assert!(subdir_entry.is_some(), "subdir not found in tree");
+        if let Some(subdir_entry) = subdir_entry {
+            let subdir_tree = repo.find_tree(subdir_entry.id())?;
+            assert!(
+                subdir_tree.get_name("test_file3.txt").is_some(),
+                "test_file3.txt not found in subdir"
+            );
+        }
+
         Ok(())
     }
 }

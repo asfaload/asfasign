@@ -777,7 +777,7 @@ pub mod tests {
         let git_actor = GitActor::spawn(git_repo_path_clone.clone());
 
         let write_commit_request = rest_api::actors::git_actor::CommitFile {
-            file_paths: init_result.project_path.clone(),
+            file_paths: vec![init_result.project_path.clone()],
             commit_message: "commit of test-123".to_string(),
             request_id: "test-123".to_string(),
         };
@@ -904,8 +904,9 @@ pub mod tests {
         tokio::fs::create_dir_all(&signers_dir).await?;
         tokio::fs::write(signers_dir.join("index.json"), &signers_json).await?;
 
-        // Create artifact file
-        let artifact_file = git_repo_path.join("release.txt");
+        // Create artifact file in a subdirectory
+        let artifact_file = git_repo_path.join("releases/release.txt");
+        tokio::fs::create_dir_all(artifact_file.parent().unwrap()).await?;
         tokio::fs::write(&artifact_file, "artifact content").await?;
 
         // Create the signature
@@ -927,7 +928,7 @@ pub mod tests {
         let response = server
             .post("/signatures")
             .json(&SubmitSignatureRequest {
-                file_path: "release.txt".to_string(),
+                file_path: "releases/release.txt".to_string(),
                 public_key: public_key.to_base64(),
                 signature: signature.to_base64(),
             })
@@ -940,8 +941,10 @@ pub mod tests {
         assert!(response_body.is_complete);
 
         // Wait for the commit to be processed
-        let expected_commit_message =
-            format!("completed signature collection for {}", "release.txt");
+        let expected_commit_message = format!(
+            "completed signature collection for {}",
+            "releases/release.txt"
+        );
         wait_for_commit(git_repo_path.clone(), &expected_commit_message, None).await?;
 
         // Verify the commit was created with correct message
@@ -959,13 +962,13 @@ pub mod tests {
         );
 
         assert!(
-            file_exists_in_latest_commit(&git_repo_path, "release.txt.signatures.json")?,
+            file_exists_in_latest_commit(&git_repo_path, "releases/release.txt.signatures.json")?,
             "Signature file should be in the latest git commit (BUG: files not being committed)"
         );
 
         // Verify the signature file is tracked in git
         assert!(
-            file_is_tracked_in_git(&git_repo_path, "release.txt.signatures.json")?,
+            file_is_tracked_in_git(&git_repo_path, "releases/release.txt.signatures.json")?,
             "Signature file should be tracked in git"
         );
 
@@ -1166,8 +1169,9 @@ pub mod tests {
         tokio::fs::create_dir_all(&signers_dir).await?;
         tokio::fs::write(signers_dir.join(SIGNERS_FILE), &signers_json).await?;
 
-        // Create artifact file
-        let artifact_file = git_repo_path.join("release.txt");
+        // Create artifact file in a subdirectory
+        let artifact_file = git_repo_path.join("releases/release.txt");
+        tokio::fs::create_dir_all(artifact_file.parent().unwrap()).await?;
         tokio::fs::write(&artifact_file, "artifact content").await?;
 
         // Create signatures
@@ -1192,7 +1196,7 @@ pub mod tests {
         let response = server
             .post("/signatures")
             .json(&SubmitSignatureRequest {
-                file_path: "release.txt".to_string(),
+                file_path: "releases/release.txt".to_string(),
                 public_key: key_pair1.public_key().to_base64(),
                 signature: signature1.to_base64(),
             })
@@ -1206,7 +1210,7 @@ pub mod tests {
         );
 
         // Wait for partial commit
-        let expected_commit_message = "added partial signature for release.txt";
+        let expected_commit_message = "added partial signature for releases/release.txt";
         wait_for_commit(git_repo_path.clone(), expected_commit_message, None).await?;
 
         // Verify commit message
@@ -1220,7 +1224,7 @@ pub mod tests {
         let response2 = server
             .post("/signatures")
             .json(&SubmitSignatureRequest {
-                file_path: "release.txt".to_string(),
+                file_path: "releases/release.txt".to_string(),
                 public_key: key_pair2.public_key().to_base64(),
                 signature: signature2.to_base64(),
             })
@@ -1234,7 +1238,7 @@ pub mod tests {
         );
 
         // Wait for completion commit
-        let expected_completion_message = "completed signature collection for release.txt";
+        let expected_completion_message = "completed signature collection for releases/release.txt";
         wait_for_commit(git_repo_path.clone(), expected_completion_message, None).await?;
 
         // Verify completion commit message
@@ -1246,13 +1250,13 @@ pub mod tests {
 
         // Verify the signature file is tracked in git
         assert!(
-            file_is_tracked_in_git(&git_repo_path, "release.txt.signatures.json")?,
+            file_is_tracked_in_git(&git_repo_path, "releases/release.txt.signatures.json")?,
             "Signature file should be tracked in git"
         );
 
         // Verify the signature file is in the latest git commit
         assert!(
-            file_exists_in_latest_commit(&git_repo_path, "release.txt.signatures.json")?,
+            file_exists_in_latest_commit(&git_repo_path, "releases/release.txt.signatures.json")?,
             "Signature file should be in the latest git commit"
         );
 
