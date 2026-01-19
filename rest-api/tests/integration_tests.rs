@@ -9,11 +9,12 @@ pub mod tests {
     use rest_api_test_helpers::parse_log_lines;
     use rest_api_test_helpers::wait_for_log_entry_with_request_id;
     use rest_api_test_helpers::{
-        TestAuthHeaders, build_test_config, create_auth_headers, file_exists_in_latest_commit,
-        file_exists_in_repo, file_is_tracked_in_git, get_latest_commit, get_random_port,
-        init_git_repo, read_file_content, send_add_file_request, url_for, wait_for_commit,
-        wait_for_server,
+        TestAuthHeaders, build_test_config, create_auth_headers, file_exists_in_repo,
+        get_latest_commit, get_random_port, init_git_repo, read_file_content,
+        send_add_file_request, url_for, wait_for_commit, wait_for_server,
     };
+    #[cfg(feature = "test-utils")]
+    use rest_api_test_helpers::{file_exists_in_latest_commit, file_is_tracked_in_git};
     use serde_json::{Value, json};
     use std::fs;
     use std::path::Path;
