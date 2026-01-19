@@ -79,7 +79,10 @@ mod tests {
 
     #[test]
     fn test_parse_github_blob_url() {
-        let url = url::Url::parse("https://github.com/owner/repo/blob/main/asfaload.initial_signers.json").unwrap();
+        let url = url::Url::parse(
+            "https://github.com/owner/repo/blob/main/asfaload.initial_signers.json",
+        )
+        .unwrap();
         let result = ForgeInfo::new(&url).unwrap();
 
         match result {
@@ -102,7 +105,10 @@ mod tests {
 
     #[test]
     fn test_parse_github_raw_url() {
-        let url = url::Url::parse("https://raw.githubusercontent.com/owner/repo/develop/path/to/file.json").unwrap();
+        let url = url::Url::parse(
+            "https://raw.githubusercontent.com/owner/repo/develop/path/to/file.json",
+        )
+        .unwrap();
         let result = ForgeInfo::new(&url).unwrap();
 
         match result {
@@ -119,7 +125,10 @@ mod tests {
 
     #[test]
     fn test_parse_gitlab_blob_url() {
-        let url = url::Url::parse("https://gitlab.com/namespace/project/-/blob/main/asfaload.initial_signers.json").unwrap();
+        let url = url::Url::parse(
+            "https://gitlab.com/namespace/project/-/blob/main/asfaload.initial_signers.json",
+        )
+        .unwrap();
         let result = ForgeInfo::new(&url).unwrap();
 
         match result {
@@ -142,7 +151,9 @@ mod tests {
 
     #[test]
     fn test_parse_gitlab_raw_url() {
-        let url = url::Url::parse("https://gitlab.com/namespace/project/-/raw/develop/path/to/file.json").unwrap();
+        let url =
+            url::Url::parse("https://gitlab.com/namespace/project/-/raw/develop/path/to/file.json")
+                .unwrap();
         let result = ForgeInfo::new(&url).unwrap();
 
         match result {
@@ -211,7 +222,9 @@ mod tests {
 
     #[test]
     fn test_github_blob_all_trait_methods() {
-        let url = url::Url::parse("https://github.com/example-org/my-repo/blob/develop/docs/config.json").unwrap();
+        let url =
+            url::Url::parse("https://github.com/example-org/my-repo/blob/develop/docs/config.json")
+                .unwrap();
         let forge = ForgeInfo::new(&url).unwrap();
 
         assert_forge_trait_methods(
@@ -220,14 +233,18 @@ mod tests {
             "my-repo",
             "develop",
             "docs/config.json",
-            &url::Url::parse("https://raw.githubusercontent.com/example-org/my-repo/develop/docs/config.json").unwrap(),
+            &url::Url::parse(
+                "https://raw.githubusercontent.com/example-org/my-repo/develop/docs/config.json",
+            )
+            .unwrap(),
             "github.com/example-org/my-repo",
         );
     }
 
     #[test]
     fn test_github_raw_all_trait_methods() {
-        let url = url::Url::parse("https://raw.githubusercontent.com/user/repo/v1.0/data.json").unwrap();
+        let url =
+            url::Url::parse("https://raw.githubusercontent.com/user/repo/v1.0/data.json").unwrap();
         let forge = ForgeInfo::new(&url).unwrap();
 
         assert_forge_trait_methods(
@@ -243,7 +260,10 @@ mod tests {
 
     #[test]
     fn test_github_nested_path_trait_methods() {
-        let url = url::Url::parse("https://github.com/org/complex-repo/blob/main/path/to/deeply/nested/config.yml").unwrap();
+        let url = url::Url::parse(
+            "https://github.com/org/complex-repo/blob/main/path/to/deeply/nested/config.yml",
+        )
+        .unwrap();
         let forge = ForgeInfo::new(&url).unwrap();
 
         assert_forge_trait_methods(
@@ -259,7 +279,10 @@ mod tests {
 
     #[test]
     fn test_github_complex_branch_trait_methods() {
-        let url = url::Url::parse("https://github.com/acme/projects/blob/feature-auth-v2/src/auth/provider.ts").unwrap();
+        let url = url::Url::parse(
+            "https://github.com/acme/projects/blob/feature-auth-v2/src/auth/provider.ts",
+        )
+        .unwrap();
         let forge = ForgeInfo::new(&url).unwrap();
 
         assert_forge_trait_methods(
@@ -275,7 +298,9 @@ mod tests {
 
     #[test]
     fn test_gitlab_blob_all_trait_methods() {
-        let url = url::Url::parse("https://gitlab.com/group/subgroup/project/-/blob/dev/src/main.rs").unwrap();
+        let url =
+            url::Url::parse("https://gitlab.com/group/subgroup/project/-/blob/dev/src/main.rs")
+                .unwrap();
         let forge = ForgeInfo::new(&url).unwrap();
 
         assert_forge_trait_methods(
@@ -284,7 +309,8 @@ mod tests {
             "project",
             "dev",
             "src/main.rs",
-            &url::Url::parse("https://gitlab.com/group/subgroup/project/-/raw/dev/src/main.rs").unwrap(),
+            &url::Url::parse("https://gitlab.com/group/subgroup/project/-/raw/dev/src/main.rs")
+                .unwrap(),
             "gitlab.com/group/subgroup/project",
         );
     }
@@ -323,7 +349,9 @@ mod tests {
 
     #[test]
     fn test_gitlab_nested_path_trait_methods() {
-        let url = url::Url::parse("https://gitlab.com/group/project/-/blob/deploy/lib/utils/helpers.js").unwrap();
+        let url =
+            url::Url::parse("https://gitlab.com/group/project/-/blob/deploy/lib/utils/helpers.js")
+                .unwrap();
         let forge = ForgeInfo::new(&url).unwrap();
 
         assert_forge_trait_methods(
@@ -332,14 +360,18 @@ mod tests {
             "project",
             "deploy",
             "lib/utils/helpers.js",
-            &url::Url::parse("https://gitlab.com/group/project/-/raw/deploy/lib/utils/helpers.js").unwrap(),
+            &url::Url::parse("https://gitlab.com/group/project/-/raw/deploy/lib/utils/helpers.js")
+                .unwrap(),
             "gitlab.com/group/project",
         );
     }
 
     #[test]
     fn test_forge_trait_methods_delegation_github() {
-        let github = ForgeInfo::new(&url::Url::parse("https://github.com/owner/repo/blob/main/file.json").unwrap()).unwrap();
+        let github = ForgeInfo::new(
+            &url::Url::parse("https://github.com/owner/repo/blob/main/file.json").unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(github.owner(), "owner");
         assert_eq!(github.repo(), "repo");
@@ -347,7 +379,8 @@ mod tests {
         assert_eq!(github.file_path(), PathBuf::from("file.json"));
         assert_eq!(
             github.raw_url(),
-            &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/file.json").unwrap()
+            &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/file.json")
+                .unwrap()
         );
         assert_eq!(github.project_id(), "github.com/owner/repo");
 
@@ -366,7 +399,10 @@ mod tests {
 
     #[test]
     fn test_forge_trait_methods_delegation_gitlab() {
-        let gitlab = ForgeInfo::new(&url::Url::parse("https://gitlab.com/ns/proj/-/blob/main/file.json").unwrap()).unwrap();
+        let gitlab = ForgeInfo::new(
+            &url::Url::parse("https://gitlab.com/ns/proj/-/blob/main/file.json").unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(gitlab.owner(), "ns");
         assert_eq!(gitlab.repo(), "proj");

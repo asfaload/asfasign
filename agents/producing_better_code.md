@@ -2,7 +2,7 @@
 
 ## Critical Rules (Non-Negotiable)
 
-- **Never hardcode file/dir names** → Use `common::fs::names` constants
+- **Never hardcode file/dir names** → Use `common::fs::names` constants. THIS IS VERY IMPORTANT
 - **Never pass raw PathBuf for security-sensitive paths** → Use typed wrappers like `NormalisedPaths`
 - **Always verify protocol specifications** → Never guess (e.g., HTTP Retry-After is seconds, not ms)
 - **Zero compiler warnings** → Fix all warnings before committing
