@@ -614,27 +614,25 @@ pub mod tests {
 
         let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone());
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
 
-        let app = axum::Router::new()
-            .route(
-                "/register_repo",
-                axum::routing::post(rest_api::handlers::register_repo_handler),
-            )
-            .with_state(app_state);
+        let client = reqwest::Client::new();
 
-        let server = axum_test::TestServer::new(app)?;
-
-        let response = server
-            .post("/register_repo")
+        let response = client
+            .post(format!("http://localhost:{}/register_repo", port))
             .json(&RegisterRepoRequest {
                 signers_file_url: signers_url,
             })
-            .await;
+            .send()
+            .await?;
 
-        response.assert_status_ok();
+        assert_eq!(response.status(), StatusCode::OK);
 
-        let response_body = response.json::<RegisterRepoResponse>();
+        let response_body = response.json::<RegisterRepoResponse>().await?;
         assert!(response_body.success);
         assert_eq!(response_body.project_id, "github.com/owner/repo");
         assert_eq!(
@@ -646,6 +644,7 @@ pub mod tests {
         assert_eq!(response_body.signature_submission_url, "/signatures");
 
         mock.assert();
+        server_handle.abort();
 
         Ok(())
     }
@@ -687,31 +686,31 @@ pub mod tests {
 
         let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone());
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
 
-        let app = axum::Router::new()
-            .route(
-                "/register_repo",
-                axum::routing::post(rest_api::handlers::register_repo_handler),
-            )
-            .with_state(app_state);
+        let client = reqwest::Client::new();
 
-        let server = axum_test::TestServer::new(app)?;
-
-        let response = server
-            .post("/register_repo")
+        let response = client
+            .post(format!("http://localhost:{}/register_repo", port))
             .json(&RegisterRepoRequest {
                 signers_file_url: signers_url,
             })
-            .await;
+            .send()
+            .await?;
 
-        response.assert_status(StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
-        let response_body: serde_json::Value = response.json();
+        let response_body: serde_json::Value = response.json().await?;
         assert!(response_body.get("error").is_some());
 
         // project existence is detected before sending out request
         mock.assert_hits(0);
+
+        server_handle.abort();
 
         Ok(())
     }
@@ -830,26 +829,24 @@ pub mod tests {
         let git_repo_path = temp_dir.path().join("git_repo");
         Repository::init(&git_repo_path)?;
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone());
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
 
-        let app = axum::Router::new()
-            .route(
-                "/register_repo",
-                axum::routing::post(rest_api::handlers::register_repo_handler),
-            )
-            .with_state(app_state);
+        let client = reqwest::Client::new();
 
-        let server = axum_test::TestServer::new(app)?;
-
-        let response = server
-            .post("/register_repo")
+        let response = client
+            .post(format!("http://localhost:{}/register_repo", port))
             .json(&RegisterRepoRequest {
                 signers_file_url: "https://github.com/owner/repo/blob/main/nonexistent.json"
                     .to_string(),
             })
-            .await;
+            .send()
+            .await?;
 
-        let response_body: serde_json::Value = response.json();
+        let response_body: serde_json::Value = response.json().await?;
 
         let error_msg = response_body
             .get("error")
@@ -866,6 +863,8 @@ pub mod tests {
             "Error message should be concise: {}",
             error_msg
         );
+
+        server_handle.abort();
 
         Ok(())
     }
