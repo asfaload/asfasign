@@ -642,10 +642,7 @@ pub mod tests {
         );
         assert_eq!(response_body.required_signers.len(), 1);
         assert_eq!(response_body.required_signers[0], public_key.to_base64());
-        assert_eq!(
-            response_body.signature_submission_url,
-            "/signatures/github.com/owner/repo/asfaload.signers.pending/index.json"
-        );
+        assert_eq!(response_body.signature_submission_url, "/signatures");
 
         mock.assert();
 
@@ -1077,7 +1074,7 @@ pub mod tests {
         Ok(())
     }
 
-    #[cfg(feature = "test-utils")]
+    //#[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_get_signature_status() -> Result<(), anyhow::Error> {
         use features_lib::AsfaloadKeyPairTrait;
