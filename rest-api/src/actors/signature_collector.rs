@@ -103,7 +103,11 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
 
         let rel_path = msg.file_path.relative_path();
         let rel_parent = rel_path.parent();
-        if rel_parent == None || rel_parent == Some(Path::new("")) {
+        // We do not support signatures for files in the repo's root.
+        // This can be fixed (eg the signers_initialiser would need to be
+        // updated to not call parent on the signed file), but is currently not
+        // a priority as all files are in subdirectories.
+        if rel_parent.is_none() || rel_parent == Some(Path::new("")) {
             return Err(ApiError::InvalidRequestBody(
                 "Files at git repository root cannot have signatures. Files must be in a subdirectory.".to_string()
             ));
@@ -656,6 +660,138 @@ mod tests {
             !pending_sig_path.exists(),
             "Pending signatures should not be created when signature is unauthorized"
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_collect_signature_rejects_unauthorized_for_signers_update() -> anyhow::Result<()>
+    {
+        let temp_dir = TempDir::new()?;
+        initialise_git_repo(temp_dir.path())?;
+
+        // Create old signers config with admin (key 0) and master (key 1)
+        let key_pair0 = features_lib::AsfaloadKeyPairs::new("pwd0")?;
+        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1")?;
+        let key_pair_unauth = features_lib::AsfaloadKeyPairs::new("unauth")?;
+        let key_pair2 = features_lib::AsfaloadKeyPairs::new("pwd2")?;
+
+        // First, establish the current signers configuration
+        // We create a config with admin and master signers (existing signers for the signers file)
+        let old_config = SignersConfig::with_keys(
+            1,
+            (vec![], 1),
+            Some((vec![key_pair0.public_key().clone()], 1)),
+            Some((vec![key_pair1.public_key().clone()], 1)),
+        )?;
+
+        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
+        std::fs::create_dir_all(&signers_dir)?;
+        std::fs::write(
+            signers_dir.join(SIGNERS_FILE),
+            serde_json::to_string_pretty(&old_config)?,
+        )?;
+
+        // Create new signers config (in pending) that adds key_pair2 as artifact signer
+        let new_config = SignersConfig::with_keys(
+            2,
+            (vec![key_pair2.public_key().clone()], 1),
+            Some((vec![key_pair0.public_key().clone()], 1)),
+            Some((vec![key_pair1.public_key().clone()], 1)),
+        )?;
+        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
+        std::fs::create_dir_all(&pending_dir)?;
+        std::fs::write(
+            pending_dir.join(SIGNERS_FILE),
+            serde_json::to_string_pretty(&new_config)?,
+        )?;
+
+        // Try to sign the pending signers file with unauthorized key
+        // The relative path should be "asfaload.signers.pending/index.json"
+        let relative_path = format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE);
+        let file_path = make_normalised_paths(&temp_dir, &relative_path).await;
+
+        let digest = sha512_for_file(&pending_dir.join(SIGNERS_FILE))?;
+        let signature = key_pair_unauth.secret_key("unauth")?.sign(&digest)?;
+
+        let git_actor = crate::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let actor_ref = SignatureCollector::spawn(git_actor);
+
+        let result = actor_ref
+            .ask(CollectSignatureRequest {
+                file_path,
+                public_key: key_pair_unauth.public_key(),
+                signature,
+                request_id: "test-unauth-signers".to_string(),
+            })
+            .await;
+
+        // Should fail - key_pair_unauth is not authorized
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            kameo::error::SendError::HandlerError(ApiError::InvalidRequestBody(msg))
+                if msg.contains("not an authorized signer") => {}
+            e => panic!("Expected unauthorized signer error, got {:?}", e),
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_collect_signature_rejects_unauthorized_for_initial_signers() -> anyhow::Result<()>
+    {
+        let temp_dir = TempDir::new()?;
+        initialise_git_repo(temp_dir.path())?;
+
+        // Create initial signers config
+        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1")?;
+        let key_pair2 = features_lib::AsfaloadKeyPairs::new("pwd2")?;
+        let key_pair_unauth = features_lib::AsfaloadKeyPairs::new("unauth")?;
+
+        let config = SignersConfig::with_artifact_signers_only(
+            2,
+            (
+                vec![
+                    key_pair1.public_key().clone(),
+                    key_pair2.public_key().clone(),
+                ],
+                2,
+            ),
+        )?;
+
+        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
+        std::fs::create_dir_all(&pending_dir)?;
+        std::fs::write(
+            pending_dir.join(SIGNERS_FILE),
+            serde_json::to_string_pretty(&config)?,
+        )?;
+
+        // Try to sign with unauthorized key
+        let relative_path = format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE);
+        let file_path = make_normalised_paths(&temp_dir, &relative_path).await;
+
+        let digest = sha512_for_file(&pending_dir.join(SIGNERS_FILE))?;
+        let signature = key_pair_unauth.secret_key("unauth")?.sign(&digest)?;
+
+        let git_actor = crate::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let actor_ref = SignatureCollector::spawn(git_actor);
+
+        let result = actor_ref
+            .ask(CollectSignatureRequest {
+                file_path,
+                public_key: key_pair_unauth.public_key(),
+                signature,
+                request_id: "test-unauth-initial".to_string(),
+            })
+            .await;
+
+        // Should fail
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            kameo::error::SendError::HandlerError(ApiError::InvalidRequestBody(msg))
+                if msg.contains("not an authorized signer") => {}
+            e => panic!("Expected unauthorized signer error, got {:?}", e),
+        }
 
         Ok(())
     }
