@@ -74,17 +74,9 @@ pub fn file_exists_in_latest_commit(repo_path: &Path, file_path: &str) -> Result
 /// Check if a file is tracked in git (in the index)
 pub fn file_is_tracked_in_git(repo_path: &Path, file_path: &str) -> Result<bool, ApiError> {
     let repo = Repository::open(repo_path)?;
-    let mut index = repo.index()?;
+    let index = repo.index()?;
 
-    // Check if the file exists in the index
-    let path_bytes = file_path.as_bytes();
-    for i in 0..index.len() {
-        let entry = index.get(i).unwrap();
-        if entry.path == path_bytes {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    Ok(index.get_path(Path::new(file_path), 0).is_some())
 }
 
 // Helper function to check if a file exists in the repo
