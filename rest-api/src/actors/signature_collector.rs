@@ -1,9 +1,6 @@
 use crate::path_validation::NormalisedPaths;
 use common::errors::AggregateSignatureError;
-use features_lib::{
-    AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState,
-    aggregate_signature_helpers::get_individual_signatures,
-};
+use features_lib::{AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
@@ -50,8 +47,6 @@ pub struct GetSignatureStatusRequest {
 pub struct SignatureStatus {
     /// Whether the aggregate signature is complete
     pub is_complete: bool,
-    /// Number of individual signatures collected so far
-    pub collected_count: u32,
 }
 
 /// Actor responsible for collecting individual signatures for aggregate signatures.
@@ -190,32 +185,7 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
 
         let is_complete = signature_with_state.is_complete();
 
-        let collected_count = {
-            use common::fs::names::{pending_signatures_path_for, signatures_path_for};
-
-            let sig_file_path = if is_complete {
-                signatures_path_for(&msg.file_path)?
-            } else {
-                pending_signatures_path_for(&msg.file_path)?
-            };
-
-            let signatures = get_individual_signatures(&sig_file_path).map_err(|e| {
-                tracing::error!(
-                    actor = ACTOR_NAME,
-                    request_id = %msg.request_id,
-                    error = %e,
-                    "failed to get individual signatures"
-                );
-                ApiError::InternalServerError("Failed to read signatures".to_string())
-            })?;
-
-            signatures.len() as u32
-        };
-
-        Ok(SignatureStatus {
-            is_complete,
-            collected_count,
-        })
+        Ok(SignatureStatus { is_complete })
     }
 }
 

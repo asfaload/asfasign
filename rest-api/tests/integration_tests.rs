@@ -1120,8 +1120,6 @@ pub mod tests {
         let status_body = response.json::<GetSignatureStatusResponse>();
 
         assert_eq!(status_body.file_path, "data.txt");
-        // Should have 0 signatures collected
-        assert_eq!(status_body.collected_count, 0);
         assert!(!status_body.is_complete);
 
         Ok(())

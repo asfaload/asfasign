@@ -263,7 +263,6 @@ pub mod models {
     pub struct GetSignatureStatusResponse {
         pub file_path: String,
         pub is_complete: bool,
-        pub collected_count: u32,
     }
 }
 
