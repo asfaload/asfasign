@@ -254,6 +254,111 @@ pub fn get_newly_added_signer_keys(
     new_signers.difference(&old_signers).cloned().collect()
 }
 
+/// Get all public keys authorized to sign a file
+///
+/// Returns the complete set of public keys that are authorized to contribute signatures
+/// to a file, based on the file's type and the relevant signers configurations.
+///
+/// # Arguments
+/// * `file_path` - Path to the file being signed
+///
+/// # Returns
+/// * `Ok(HashSet<AsfaloadPublicKeys>)` - Set of all authorized public keys
+///
+/// # Errors
+/// * `AggregateSignatureError::Io` - If signers files cannot be read
+/// * `AggregateSignatureError::JsonError` - If signers configs cannot be parsed
+///
+/// # Authorized Keys by File Type
+///
+/// **Artifact files:** All keys from the `artifact_signers` group in the global signers config.
+/// Master and admin keys are NOT authorized to sign artifacts.
+///
+/// **Signers file updates:** Union of:
+/// - Old config: all admin keys
+/// - Old config: all master keys (if defined)
+/// - New config: all admin keys
+/// - New config: all master keys (if defined)
+/// - All newly added signers (from any group: artifact, admin, or master)
+///
+/// **Initial signers files:** All keys from the signers config (admin, master, and artifact)
+pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
+    file_path: P,
+) -> Result<HashSet<AsfaloadPublicKeys>, AggregateSignatureError> {
+    let file_path = file_path.as_ref();
+    let signed_file = SignedFileLoader::load(file_path);
+
+    match signed_file {
+        SignedFileWithKind::Artifact(_) => {
+            let signers_file_path = find_global_signers_for(file_path)?;
+            let signers_config = load_signers_config(&signers_file_path)?;
+
+            // Only artifact_signers can sign artifacts (NOT admin or master keys)
+            Ok(signers_config
+                .artifact_signers()
+                .iter()
+                .flat_map(|group| group.signers.iter().map(|s| s.data.pubkey.clone()))
+                .collect())
+        }
+        SignedFileWithKind::SignersFile(_) => {
+            let old_config_path = find_global_signers_for(file_path)?;
+            let old_config = load_signers_config(&old_config_path)?;
+            let new_config = load_signers_config(file_path)?;
+
+            // Collect all newly added signers
+            let added_signers = get_newly_added_signer_keys(&old_config, &new_config);
+
+            // Union of all authorized signers:
+            // - Old: admins + masters
+            // - New: admins + masters
+            // - All newly added signers (from any group)
+            let mut all_keys = HashSet::new();
+
+            // Old config: admins
+            for group in old_config.admin_keys() {
+                for signer in &group.signers {
+                    all_keys.insert(signer.data.pubkey.clone());
+                }
+            }
+
+            // Old config: masters (if defined)
+            if let Some(master_groups) = old_config.master_keys() {
+                for group in master_groups {
+                    for signer in &group.signers {
+                        all_keys.insert(signer.data.pubkey.clone());
+                    }
+                }
+            }
+
+            // New config: admins
+            for group in new_config.admin_keys() {
+                for signer in &group.signers {
+                    all_keys.insert(signer.data.pubkey.clone());
+                }
+            }
+
+            // New config: masters (if defined)
+            if let Some(master_groups) = new_config.master_keys() {
+                for group in master_groups {
+                    for signer in &group.signers {
+                        all_keys.insert(signer.data.pubkey.clone());
+                    }
+                }
+            }
+
+            // All newly added signers (from any group)
+            all_keys.extend(added_signers);
+
+            Ok(all_keys)
+        }
+        SignedFileWithKind::InitialSignersFile(_) => {
+            let config = load_signers_config(file_path)?;
+            // All signers in the config must sign initial signers files
+            Ok(config.all_signer_keys())
+        }
+    }
+}
+
 /// Check if an aggregate signature for a file is complete
 pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
     file_path: P,
