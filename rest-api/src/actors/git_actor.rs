@@ -62,30 +62,12 @@ fn add_path_recursively<P1: AsRef<Path>, P2: AsRef<Path>>(
                 .map_err(|_| git2::Error::from_str("Target path is outside repository"))?;
             index.add_path(rel_path)?;
         } else if metadata.is_dir() {
-            // Skip the .git directory - it should never be committed as content
-            // The map_or(false,....) can ussually be replaced by a ==Some(....), but here
-            // we need to compare to a OsStr, and the map_or looks simpler
-            #[allow(clippy::unnecessary_map_or)]
-            if current_path
-                .file_name()
-                .map_or(false, |name| name == ".git")
+            if let Some(name) = current_path.file_name()
+                && (name == ".git" || name == ".app_cache")
             {
-                tracing::debug!("Skipping .git directory: {}", current_path.display());
+                tracing::debug!("Skipping ignored directory: {}", current_path.display());
                 continue;
             }
-
-            // Skip the .app_cache directory - it contains state that shouldn't be committed
-            // The map_or(false,....) can ussually be replaced by a ==Some(....), but here
-            // we need to compare to a OsStr, and the map_or looks simpler
-            #[allow(clippy::unnecessary_map_or)]
-            if current_path
-                .file_name()
-                .map_or(false, |name| name == ".app_cache")
-            {
-                tracing::debug!("Skipping .app_cache directory: {}", current_path.display());
-                continue;
-            }
-
             for entry in fs::read_dir(&current_path).map_err(|e| {
                 git2::Error::from_str(&format!(
                     "Failed to read directory {:?}: {}",
