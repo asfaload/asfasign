@@ -1,8 +1,8 @@
 use crate::{
     auth_middleware::auth_middleware,
     handlers::{
-        add_file_handler, get_signature_status_handler, register_repo_handler,
-        submit_signature_handler,
+        add_file_handler, get_pending_signatures_handler, get_signature_status_handler,
+        register_repo_handler, submit_signature_handler,
     },
     state::init_state,
 };
@@ -46,6 +46,7 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
         ));
     // Generic signature collection routes
     let signature_router = Router::new()
+        .route("/pending_signatures", get(get_pending_signatures_handler))
         .route("/signatures", post(submit_signature_handler))
         .route(
             "/signatures/{*file_path}",

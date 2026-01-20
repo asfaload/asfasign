@@ -264,10 +264,20 @@ pub mod models {
         pub file_path: String,
         pub is_complete: bool,
     }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    /// Response to a pending signatures list request.
+    ///
+    /// # Fields
+    /// * `file_paths` - List of relative paths to files that need signatures
+    ///   from the requesting signer
+    pub struct ListPendingResponse {
+        pub file_paths: Vec<String>,
+    }
 }
 
 // Re-export commonly used types at the module level
 pub use models::{
-    GetSignatureStatusResponse, RegisterRepoRequest, RegisterRepoResponse, SubmitSignatureRequest,
-    SubmitSignatureResponse,
+    GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
+    SubmitSignatureRequest, SubmitSignatureResponse,
 };

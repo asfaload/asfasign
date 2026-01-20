@@ -1,7 +1,7 @@
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use rest_api_types::{
-    GetSignatureStatusResponse, RegisterRepoRequest, RegisterRepoResponse, SubmitSignatureRequest,
-    SubmitSignatureResponse,
+    GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
+    SubmitSignatureRequest, SubmitSignatureResponse,
 };
 
 use std::{path::PathBuf, str::FromStr};
@@ -415,4 +415,90 @@ pub async fn get_signature_status_handler(
         file_path: file_path.relative_path().display().to_string(),
         is_complete: status.is_complete,
     }))
+}
+
+/// Handler to list all pending signature files for a specific signer.
+///
+/// Returns a list of file paths where the authenticated signer is authorized
+/// to sign but has not yet submitted their signature.
+///
+/// # Arguments
+/// * `state` - Application state with git repo path and actors
+/// * `headers` - HTTP headers (must include authentication headers signed by the signer)
+///
+/// # Returns
+/// Returns JSON response with list of file paths needing the signer's signature
+///
+/// # Errors
+/// Returns `ApiError` if:
+/// - Authentication headers are missing or invalid
+/// - Failed to scan repository for pending files
+/// - Failed to check signer authorization
+pub async fn get_pending_signatures_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ListPendingResponse>, ApiError> {
+    use crate::pending_discovery;
+    use crate::path_validation::build_normalised_absolute_path;
+
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        "Received list_pending_signatures request"
+    );
+
+    // Extract public key from authentication headers
+    let public_key = extract_public_key_from_headers(&headers)?;
+
+    // Create base path NormalisedPaths
+    let base_path = build_normalised_absolute_path(
+        state.git_repo_path.clone(),
+        state.git_repo_path.clone(),
+    )
+    .map_err(|e| ApiError::InvalidFilePath(format!("Failed to normalize base path: {}", e)))?;
+
+    // Find pending files for this signer
+    let discovery = pending_discovery::create_default_discovery();
+    let pending_files = discovery
+        .find_pending_for_signer(&base_path, &public_key)
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                error = %e,
+                "Failed to find pending signatures"
+            );
+            ApiError::InternalServerError("Failed to find pending signatures".to_string())
+        })?;
+
+    // Extract relative paths
+    let file_paths: Vec<String> = pending_files
+        .iter()
+        .map(|p| p.relative_path().display().to_string())
+        .collect();
+
+    tracing::info!(
+        request_id = %request_id,
+        count = %file_paths.len(),
+        "Returning pending signatures list"
+    );
+
+    Ok(Json(ListPendingResponse { file_paths }))
+}
+
+/// Helper to extract public key from authentication headers.
+fn extract_public_key_from_headers(
+    headers: &HeaderMap,
+) -> Result<features_lib::AsfaloadPublicKeys, ApiError> {
+    let pub_key_header = headers
+        .get("X-Public-Key")
+        .ok_or_else(|| ApiError::MissingAuthenticationHeaders)?
+        .to_str()
+        .map_err(|_| ApiError::InvalidAuthenticationHeaders)?;
+
+    features_lib::AsfaloadPublicKeys::from_base64(pub_key_header)
+        .map_err(|_| ApiError::InvalidAuthenticationHeaders)
 }
