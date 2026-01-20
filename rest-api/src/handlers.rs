@@ -454,10 +454,10 @@ pub async fn get_pending_signatures_handler(
     // Extract public key from authentication headers
     let public_key = extract_public_key_from_headers(&headers)?;
 
-    // Create base path NormalisedPaths
+    // Create base path NormalisedPaths for scanning from repo root
     let base_path = build_normalised_absolute_path(
         state.git_repo_path.clone(),
-        state.git_repo_path.clone(),
+        PathBuf::from("."),
     )
     .map_err(|e| ApiError::InvalidFilePath(format!("Failed to normalize base path: {}", e)))?;
 
@@ -474,10 +474,14 @@ pub async fn get_pending_signatures_handler(
             ApiError::InternalServerError("Failed to find pending signatures".to_string())
         })?;
 
-    // Extract relative paths
+    // Extract relative paths and convert from pending signature files to artifact files
     let file_paths: Vec<String> = pending_files
         .iter()
-        .map(|p| p.relative_path().display().to_string())
+        .map(|p| {
+            let path = p.relative_path().display().to_string();
+            // Strip .signatures.json.pending suffix to get artifact path
+            path.trim_end_matches(".signatures.json.pending").to_string()
+        })
         .collect();
 
     tracing::info!(
