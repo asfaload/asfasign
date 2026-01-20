@@ -148,6 +148,39 @@ pub enum Commands {
         #[arg(long, short = 's')]
         signers_file: PathBuf,
     },
+
+    /// List files requiring your signature from the backend
+    ListPending {
+        /// Path to your secret key file
+        #[arg(short, long)]
+        secret_key: PathBuf,
+
+        /// Backend API URL (optional, defaults to http://127.0.0.1:3000)
+        #[arg(short, long)]
+        backend_url: Option<String>,
+    },
+
+    /// Sign a pending file (fetch, sign, submit)
+    SignPending {
+        /// Path to the pending file (relative path in mirror)
+        file_path: String,
+
+        /// Path to your secret key file
+        #[arg(short = 'K', long)]
+        secret_key: PathBuf,
+
+        /// Password for the key (conflicts with password_file)
+        #[arg(long, short, conflicts_with = "password_file")]
+        password: Option<String>,
+
+        /// Path to a file containing the password (conflicts with password)
+        #[arg(long, short = 'P', conflicts_with = "password")]
+        password_file: Option<PathBuf>,
+
+        /// Backend API URL (optional, defaults to http://127.0.0.1:3000)
+        #[arg(short = 'u', long)]
+        backend_url: Option<String>,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -175,6 +208,8 @@ impl Commands {
             Self::VerifySig { .. } => "VERIFY_SIG",
             Self::AddToAggregate { .. } => "ADD_TO_AGGREGATE",
             Self::IsAggComplete { .. } => "IS_AGG_COMPLETE",
+            Self::ListPending { .. } => "LIST_PENDING",
+            Self::SignPending { .. } => "SIGN_PENDING",
         }
     }
 

@@ -648,6 +648,7 @@ dependencies = [
  "minisign",
  "reqwest 0.11.27",
  "rest_api_auth",
+ "rest_api_types",
  "rpassword",
  "serde_json",
  "signatures",
