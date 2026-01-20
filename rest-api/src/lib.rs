@@ -4,6 +4,7 @@ pub mod config;
 pub mod file_auth;
 pub mod handlers;
 pub mod path_validation;
+pub mod pending_discovery;
 pub mod server;
 pub mod state;
 pub mod traces;
