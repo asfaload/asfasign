@@ -165,7 +165,9 @@ pub mod aggregate_signature_helpers {
     use std::{collections::HashMap, path::Path};
 
     use aggregate_signature::get_individual_signatures as get_individual_signatures_ori;
-    pub use aggregate_signature::{check_groups, load_signers_config};
+    pub use aggregate_signature::{
+        check_groups, get_authorized_signers_for_file, load_signers_config,
+    };
     use common::errors::AggregateSignatureError;
     use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
