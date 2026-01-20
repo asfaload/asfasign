@@ -73,10 +73,28 @@ impl super::PendingSignaturesDiscovery for WalkdirPendingDiscovery {
 
     fn find_pending_for_signer(
         &self,
-        _base_path: &NormalisedPaths,
-        _signer: &features_lib::AsfaloadPublicKeys,
+        base_path: &NormalisedPaths,
+        signer: &features_lib::AsfaloadPublicKeys,
     ) -> Result<Vec<NormalisedPaths>, SignedFileError> {
-        Ok(Vec::new())
+        let mut pending_for_signer = Vec::new();
+
+        let all_pending = self.find_all_pending(base_path)?;
+
+        for pending_path in all_pending {
+            match can_signer_add_signature(&pending_path, signer) {
+                Ok(true) => pending_for_signer.push(pending_path),
+                Ok(false) => continue,
+                Err(e) => {
+                    tracing::warn!(
+                        "Error checking if signer can add signature to {}: {}",
+                        pending_path.relative_path().display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        Ok(pending_for_signer)
     }
 }
 
@@ -231,5 +249,56 @@ mod tests {
         let result = can_signer_add_signature(&normalised, &public_key);
         assert!(result.is_ok());
         assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_find_pending_for_signer_filters_correctly() {
+        let temp_dir = TempDir::new().unwrap();
+        let normalised = build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
+
+        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1").unwrap();
+
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![key_pair1.public_key().clone()], 1)
+        ).unwrap();
+        let signers_json = serde_json::to_string(&signers_config).unwrap();
+
+        let signers_dir = temp_dir.path().join("asfaload.signers");
+        fs::create_dir_all(&signers_dir).unwrap();
+        fs::write(signers_dir.join("index.json"), signers_json).unwrap();
+
+        let artifact1_dir = temp_dir.path().join("dir1");
+        fs::create_dir_all(&artifact1_dir).unwrap();
+        let artifact1 = artifact1_dir.join("file1.txt");
+        fs::write(&artifact1, "content1").unwrap();
+        let pending1 = pending_signatures_path_for(&artifact1).unwrap();
+        fs::write(&pending1, "{}").unwrap();
+
+        let artifact2_dir = temp_dir.path().join("dir2");
+        fs::create_dir_all(&artifact2_dir).unwrap();
+        let artifact2 = artifact2_dir.join("file2.txt");
+        fs::write(&artifact2, "content2").unwrap();
+        let hash = sha512_for_file(&artifact2).unwrap();
+        let sig = key_pair1.secret_key("pwd1").unwrap().sign(&hash).unwrap();
+        let pending2 = pending_signatures_path_for(&artifact2).unwrap();
+        let pending2_content = serde_json::json!({
+            key_pair1.public_key().to_base64(): sig.to_base64()
+        });
+        fs::write(&pending2, pending2_content.to_string()).unwrap();
+
+        let artifact3_dir = temp_dir.path().join("dir3");
+        fs::create_dir_all(&artifact3_dir).unwrap();
+        let artifact3 = artifact3_dir.join("file3.txt");
+        fs::write(&artifact3, "content3").unwrap();
+        let complete3 = artifact3.with_extension("signatures.json");
+        fs::write(&complete3, "{}").unwrap();
+
+        let discovery = WalkdirPendingDiscovery::new();
+        let result = discovery.find_pending_for_signer(&normalised, &key_pair1.public_key()).unwrap();
+
+        assert_eq!(result.len(), 1);
+        let path = result[0].relative_path().to_string_lossy().to_string();
+        assert!(path.contains("file1.txt"));
     }
 }
