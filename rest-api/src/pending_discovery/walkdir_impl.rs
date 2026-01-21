@@ -18,13 +18,7 @@ pub fn can_signer_add_signature(
         return Ok(false);
     }
 
-    let existing_signatures =
-        get_individual_signatures(pending_sig_path.absolute_path()).map_err(|e| {
-            SignedFileError::AggregateSignatureError(AggregateSignatureError::LogicError(format!(
-                "Failed to get existing signatures: {}",
-                e
-            )))
-        })?;
+    let existing_signatures = get_individual_signatures(pending_sig_path.absolute_path())?;
 
     Ok(!existing_signatures.contains_key(signer))
 }
@@ -51,31 +45,39 @@ impl super::PendingSignaturesDiscovery for WalkdirPendingDiscovery {
         let mut pending_files = Vec::new();
         let base = base_path.absolute_path();
 
-        for entry in walkdir::WalkDir::new(&base)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
+        for entry_result in walkdir::WalkDir::new(&base).into_iter() {
+            match entry_result {
+                Ok(entry) => {
+                    let path = entry.path();
 
-            if path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name.ends_with(PENDING_SIGNATURES_SUFFIX))
-                .unwrap_or(false)
-            {
-                if let Ok(relative_path) = path.strip_prefix(&base) {
-                    match build_normalised_absolute_path(base.clone(), relative_path) {
-                        Ok(normalised) => pending_files.push(normalised),
-                        Err(e) => {
-                            tracing::warn!("Failed to normalize path {}: {}", path.display(), e);
+                    if path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| name.ends_with(PENDING_SIGNATURES_SUFFIX))
+                        .unwrap_or(false)
+                    {
+                        if let Ok(relative_path) = path.strip_prefix(&base) {
+                            match build_normalised_absolute_path(base.clone(), relative_path) {
+                                Ok(normalised) => pending_files.push(normalised),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to normalize path {}: {}",
+                                        path.display(),
+                                        e
+                                    );
+                                }
+                            }
+                        } else {
+                            tracing::warn!(
+                                "File {} is not under base path {}",
+                                path.display(),
+                                base.display()
+                            );
                         }
                     }
-                } else {
-                    tracing::warn!(
-                        "File {} is not under base path {}",
-                        path.display(),
-                        base.display()
-                    );
+                }
+                Err(e) => {
+                    tracing::error!("Error entry in directory traversal : {}", e);
                 }
             }
         }
