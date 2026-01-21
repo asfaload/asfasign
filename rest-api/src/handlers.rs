@@ -1,4 +1,4 @@
-use common::fs::names::PENDING_SIGNATURES_SUFFIX;
+use common::fs::names::subject_path_from_pending_signatures;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use rest_api_types::{
     GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
@@ -474,15 +474,14 @@ pub async fn get_pending_signatures_handler(
         })?;
 
     // Extract relative paths and convert from pending signature files to artifact files
-    let suffix = format!(".{}", PENDING_SIGNATURES_SUFFIX);
     let file_paths: Vec<String> = pending_files
         .iter()
-        .map(|p| {
-            let path = p.relative_path().display().to_string();
-            // Strip .signatures.json.pending suffix to get artifact path
-            path.trim_end_matches(suffix.as_str()).to_string()
+        .map(|np| {
+            let pending_sig_path = np.relative_path();
+            let artifact_path = subject_path_from_pending_signatures(&pending_sig_path)?;
+            Ok(artifact_path.to_string_lossy().to_string())
         })
-        .collect();
+        .collect::<Result<Vec<_>, ApiError>>()?;
 
     tracing::info!(
         request_id = %request_id,
