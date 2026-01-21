@@ -11,13 +11,8 @@ pub fn can_signer_add_signature(
         get_authorized_signers_for_file, get_individual_signatures,
     };
 
-    let authorized =
-        get_authorized_signers_for_file(pending_sig_path.absolute_path()).map_err(|e| {
-            SignedFileError::AggregateSignatureError(AggregateSignatureError::LogicError(format!(
-                "Failed to get authorized signers: {}",
-                e
-            )))
-        })?;
+    let authorized = get_authorized_signers_for_file(pending_sig_path.absolute_path())
+        .map_err(SignedFileError::AuthorisedSignersRetrievalFailure)?;
 
     if !authorized.contains(signer) {
         return Ok(false);
