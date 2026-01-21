@@ -290,6 +290,7 @@ mod tests {
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
 
+        // The keypair for which we will search pending sigs
         let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1").unwrap();
 
         let signers_config =
@@ -301,6 +302,7 @@ mod tests {
         fs::create_dir_all(&signers_dir).unwrap();
         fs::write(signers_dir.join(SIGNERS_FILE), signers_json).unwrap();
 
+        // dir1/file1.txt is not yet signed
         let artifact1_dir = temp_dir.path().join("dir1");
         fs::create_dir_all(&artifact1_dir).unwrap();
         let artifact1 = artifact1_dir.join("file1.txt");
@@ -308,6 +310,7 @@ mod tests {
         let pending1 = pending_signatures_path_for(&artifact1).unwrap();
         fs::write(&pending1, "{}").unwrap();
 
+        // dir2/file2.txt is signed
         let artifact2_dir = temp_dir.path().join("dir2");
         fs::create_dir_all(&artifact2_dir).unwrap();
         let artifact2 = artifact2_dir.join("file2.txt");
@@ -320,6 +323,7 @@ mod tests {
         });
         fs::write(&pending2, pending2_content.to_string()).unwrap();
 
+        // dir3/file3.txt is considered complete because the pending file is not present.
         let artifact3_dir = temp_dir.path().join("dir3");
         fs::create_dir_all(&artifact3_dir).unwrap();
         let artifact3 = artifact3_dir.join("file3.txt");
@@ -332,6 +336,7 @@ mod tests {
             .find_pending_for_signer(&normalised, &key_pair1.public_key())
             .unwrap();
 
+        // Only file1 is awaiting a signature
         assert_eq!(result.len(), 1);
         let path = result[0].relative_path().to_string_lossy().to_string();
         assert!(path.contains("file1.txt"));
