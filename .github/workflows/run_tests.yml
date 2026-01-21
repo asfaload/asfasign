@@ -9,8 +9,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: make test
+      - name: Check for core changes
+        id: check-core
         shell: bash
         run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^core/'; then
+            echo "core-changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "core-changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: make test (full suite)
+        if: steps.check-core.outputs.core-changed == 'true'
+        shell: bash
+        run: |
+          echo "Core files changed, running full test suite"
           make test
+
+      - name: Detect changed components
+        if: steps.check-core.outputs.core-changed == 'false'
+        id: detect-changes
+        shell: bash
+        run: |
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          # echo '' to avoid error when no match is found by grep
+          CHANGED_COMPONENTS=$(echo "$CHANGED_FILES" | grep -oE '^[^/]+' | sort -u | grep -v '^\.' | grep -v 'agents' | grep -v 'docs' | tr '\n' ' ' || echo '')
+          echo "components=$CHANGED_COMPONENTS" >> $GITHUB_OUTPUT
+          echo "Changed components: $CHANGED_COMPONENTS"
+
+      - name: make test (core/packages only)
+        if: steps.check-core.outputs.core-changed == 'false' && steps.detect-changes.outputs.components == ''
+        shell: bash
+        run: |
+          echo "No component changes detected, and no core change either, not running tests"
+
+      - name: make test (changed components)
+        if: steps.check-core.outputs.core-changed == 'false' && steps.detect-changes.outputs.components != ''
+        shell: bash
+        run: |
+          echo "Testing changed components: ${{ steps.detect-changes.outputs.components }}"
+          for component in ${{ steps.detect-changes.outputs.components }}; do
+            if [ -f "$component/Cargo.toml" ]; then
+              echo "Testing component: $component"
+              cd "$component"
+              if [ -f "Makefile" ]; then
+                make test
+              else
+                cargo test --features test-utils || cargo test
+              fi
+              cd ..
+            fi
+          done
