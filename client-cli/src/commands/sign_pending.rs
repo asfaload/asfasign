@@ -63,14 +63,3 @@ pub async fn handle_sign_pending_command(
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sign_pending_workflow() {
-        // Test would need mock backend
-        assert!(true);
-    }
-}
