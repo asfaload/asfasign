@@ -82,6 +82,15 @@ pub mod errors {
 
         #[error("Server configuration error: {0}")]
         ServerConfigError(#[from] ServerConfigError),
+
+        #[error("GitHub API error: {0}")]
+        GitHubApiError(String),
+
+        #[error("No active signers file found for repository")]
+        NoActiveSignersFile,
+
+        #[error("Invalid GitHub release URL format: {0}")]
+        InvalidGitHubUrl(String),
     }
 
     #[derive(Error, Debug)]
@@ -164,6 +173,9 @@ pub mod errors {
                 ApiError::ActorError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::RequestTooBig(_) => StatusCode::PAYLOAD_TOO_LARGE,
+                ApiError::GitHubApiError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::NoActiveSignersFile => StatusCode::BAD_REQUEST,
+                ApiError::InvalidGitHubUrl(_) => StatusCode::BAD_REQUEST,
             }
         }
     }
@@ -274,10 +286,22 @@ pub mod models {
     pub struct ListPendingResponse {
         pub file_paths: Vec<String>,
     }
+
+    pub struct RegisterGitHubReleaseRequest {
+        pub release_url: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RegisterGitHubReleaseResponse {
+        pub success: bool,
+        pub message: String,
+        pub index_file_path: Option<String>,
+    }
 }
 
 // Re-export commonly used types at the module level
 pub use models::{
-    GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
+    GetSignatureStatusResponse, ListPendingResponse, RegisterGitHubReleaseRequest,
+    RegisterGitHubReleaseResponse, RegisterRepoRequest, RegisterRepoResponse,
     SubmitSignatureRequest, SubmitSignatureResponse,
 };
