@@ -474,13 +474,13 @@ pub async fn get_pending_signatures_handler(
         })?;
 
     // Extract relative paths and convert from pending signature files to artifact files
+    let suffix = format!(".{}", PENDING_SIGNATURES_SUFFIX);
     let file_paths: Vec<String> = pending_files
         .iter()
         .map(|p| {
             let path = p.relative_path().display().to_string();
             // Strip .signatures.json.pending suffix to get artifact path
-            path.trim_end_matches(format!(".{}", PENDING_SIGNATURES_SUFFIX).as_str())
-                .to_string()
+            path.trim_end_matches(suffix.as_str()).to_string()
         })
         .collect();
 
