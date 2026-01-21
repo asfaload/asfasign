@@ -21,7 +21,9 @@ async fn test_register_github_release_endpoint() {
             }
         ]
     }"#;
-    tokio::fs::write(signers_dir.join("index.json"), signers_json).await.unwrap();
+    tokio::fs::write(signers_dir.join("index.json"), signers_json)
+        .await
+        .unwrap();
 
     let app_state = rest_api::state::init_state(git_repo_path.clone(), None);
 
@@ -38,10 +40,7 @@ async fn test_register_github_release_endpoint() {
         release_url: "testowner/testrepo/v1.0.0".to_string(),
     };
 
-    let response = server
-        .post("/github-release")
-        .json(&request_body)
-        .await;
+    let response = server.post("/github-release").json(&request_body).await;
 
     let response_json: serde_json::Value = response.json();
 
@@ -88,10 +87,7 @@ async fn test_register_github_release_no_signers_file() {
         release_url: "testowner/testrepo/v1.0.0".to_string(),
     };
 
-    let response = server
-        .post("/github-release")
-        .json(&request_body)
-        .await;
+    let response = server.post("/github-release").json(&request_body).await;
 
     assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
 
@@ -112,7 +108,9 @@ async fn test_register_github_release_invalid_url_format() {
         "required_signers": 1,
         "signers": []
     }"#;
-    tokio::fs::write(signers_dir.join("index.json"), signers_json).await.unwrap();
+    tokio::fs::write(signers_dir.join("index.json"), signers_json)
+        .await
+        .unwrap();
 
     let app_state = rest_api::state::init_state(git_repo_path.clone(), None);
 
@@ -129,10 +127,7 @@ async fn test_register_github_release_invalid_url_format() {
         release_url: "invalid".to_string(),
     };
 
-    let response = server
-        .post("/github-release")
-        .json(&request_body)
-        .await;
+    let response = server.post("/github-release").json(&request_body).await;
 
     assert_eq!(response.status_code(), StatusCode::BAD_REQUEST);
 }

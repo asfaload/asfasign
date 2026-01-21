@@ -39,11 +39,8 @@ pub fn init_state(git_repo_path: std::path::PathBuf, github_api_key: Option<Stri
     let signers_initialiser = SignersInitialiser::spawn(());
     let signature_collector = SignatureCollector::spawn(git_actor.clone());
 
-    let github_release_actor = GitHubReleaseActor::spawn((
-        git_actor.clone(),
-        github_api_key,
-        git_repo_path.clone(),
-    ));
+    let github_release_actor =
+        GitHubReleaseActor::spawn((git_actor.clone(), github_api_key, git_repo_path.clone()));
 
     AppState {
         git_repo_path,

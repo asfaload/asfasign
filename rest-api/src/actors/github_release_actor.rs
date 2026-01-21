@@ -65,8 +65,7 @@ impl Message<ProcessGitHubRelease> for GitHubReleaseActor {
         msg: ProcessGitHubRelease,
         ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
-        let result = self.process_release(msg, ctx).await;
-        result
+        self.process_release(msg, ctx).await
     }
 }
 
@@ -83,7 +82,8 @@ impl GitHubReleaseActor {
             "Processing GitHub release"
         );
 
-        let release: Release = self.octocrab
+        let release: Release = self
+            .octocrab
             .repos(&msg.owner, &msg.repo)
             .releases()
             .get_by_tag(&msg.release_tag)
@@ -114,13 +114,19 @@ impl GitHubReleaseActor {
             .await
             .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write index file: {}", e)))?;
 
-        let normalized_paths = NormalisedPaths::new(self.git_repo_path.clone(), full_index_path.clone())
-            .await
-            .map_err(|e| ApiError::InvalidFilePath(format!("Failed to normalize path: {}", e)))?;
+        let normalized_paths =
+            NormalisedPaths::new(self.git_repo_path.clone(), full_index_path.clone())
+                .await
+                .map_err(|e| {
+                    ApiError::InvalidFilePath(format!("Failed to normalize path: {}", e))
+                })?;
 
         let commit_msg = CommitFile {
             file_paths: vec![normalized_paths],
-            commit_message: format!("Add index for {}/{}/{}", msg.owner, msg.repo, msg.release_tag),
+            commit_message: format!(
+                "Add index for {}/{}/{}",
+                msg.owner, msg.repo, msg.release_tag
+            ),
             request_id: Uuid::new_v4().to_string(),
         };
 
