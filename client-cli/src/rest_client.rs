@@ -61,14 +61,14 @@ impl RestClient {
             .json(payload)
             .send()
             .await
-            .map_err(|e| AuthError::AuthDataPreparationError(format!("Network error: {}", e)))?;
+            .map_err(|e| AuthError::IoError(std::io::Error::other(e.to_string())))?;
 
         // Check if the request was successful
         if !response.status().is_success() {
-            return Err(AuthError::AuthDataPreparationError(format!(
+            return Err(AuthError::IoError(std::io::Error::other(format!(
                 "API request failed with status: {}",
                 response.status()
-            ))
+            )))
             .into());
         }
 
