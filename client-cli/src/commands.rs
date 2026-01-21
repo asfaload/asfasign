@@ -1,7 +1,9 @@
 use crate::{
-    cli::{Cli, Commands},
-    utils::get_password,
-    utils::PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
+    cli::{Cli, Commands, DEFAULT_BACKEND},
+    utils::{
+        get_password,
+        PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
+    },
 };
 
 pub mod add_to_aggregate;
@@ -141,7 +143,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             )?;
             let url = backend_url
                 .clone()
-                .unwrap_or_else(|| "http://127.0.0.1:3000".to_string());
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(list_pending::handle_list_pending_command(
                 &url,
@@ -167,7 +169,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             )?;
             let url = backend_url
                 .clone()
-                .unwrap_or_else(|| "http://127.0.0.1:3000".to_string());
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(sign_pending::handle_sign_pending_command(
                 file_path,

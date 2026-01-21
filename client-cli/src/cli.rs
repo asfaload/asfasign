@@ -1,6 +1,9 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+/// Default backend API URL
+pub const DEFAULT_BACKEND: &str = "http://127.0.0.1:3000";
+
 #[derive(Parser, Debug)]
 #[command(name = "client-cli")]
 #[command(about = "A CLI client for Asfaload operations")]
@@ -155,7 +158,7 @@ pub enum Commands {
         #[arg(short = 'K', long)]
         secret_key: PathBuf,
 
-        /// Backend API URL (optional, defaults to http://127.0.0.1:3000)
+        /// Backend API URL (optional, defaults to {DEFAULT_BACKEND})
         #[arg(short = 'u', long)]
         backend_url: Option<String>,
     },
@@ -177,7 +180,7 @@ pub enum Commands {
         #[arg(long, short = 'P', conflicts_with = "password")]
         password_file: Option<PathBuf>,
 
-        /// Backend API URL (optional, defaults to http://127.0.0.1:3000)
+        /// Backend API URL (optional, defaults to DEFAULT_BACKEND)
         #[arg(short = 'u', long)]
         backend_url: Option<String>,
     },
