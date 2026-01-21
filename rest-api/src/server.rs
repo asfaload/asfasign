@@ -2,7 +2,7 @@ use crate::{
     auth_middleware::auth_middleware,
     handlers::{
         add_file_handler, get_pending_signatures_handler, get_signature_status_handler,
-        register_repo_handler, submit_signature_handler,
+        register_github_release_handler, register_repo_handler, submit_signature_handler,
     },
     state::init_state,
 };
@@ -26,7 +26,7 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
     let canonical_repo_path = tokio::fs::canonicalize(&config.git_repo_path)
         .await
         .map_err(|e| ApiError::InvalidFilePath(format!("Invalid git repo path: {}", e)))?;
-    let app_state = init_state(canonical_repo_path);
+    let app_state = init_state(canonical_repo_path, config.github_api_key.clone());
     let governor_conf = GovernorConfigBuilder::default()
         .per_second(10)
         .burst_size(20)
@@ -38,6 +38,8 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
         })?;
 
     let register_router = Router::new().route("/register_repo", post(register_repo_handler));
+    let github_release_router =
+        Router::new().route("/github-release", post(register_github_release_handler));
     let add_file_router = Router::new()
         .route("/add-file", post(add_file_handler))
         .route("/pending_signatures", get(get_pending_signatures_handler))
@@ -53,6 +55,7 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
             get(get_signature_status_handler),
         );
     let app = register_router
+        .merge(github_release_router)
         .merge(add_file_router)
         .merge(signature_router)
         .layer(GovernorLayer::new(governor_conf))

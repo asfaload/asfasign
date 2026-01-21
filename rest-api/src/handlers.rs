@@ -505,3 +505,75 @@ fn extract_public_key_from_headers(
     features_lib::AsfaloadPublicKeys::from_base64(pub_key_header)
         .map_err(|_| ApiError::InvalidAuthenticationHeaders)
 }
+
+pub async fn register_github_release_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<rest_api_types::RegisterGitHubReleaseRequest>,
+) -> Result<Json<rest_api_types::RegisterGitHubReleaseResponse>, ApiError> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        release_url = %request.release_url,
+        "Received GitHub release registration request"
+    );
+    let (owner, repo, tag) = parse_release_url(&request.release_url)?;
+
+    let normalized_paths = NormalisedPaths::new(
+        state.git_repo_path.clone(),
+        PathBuf::from(format!("{}/{}", owner, repo)),
+    )
+    .await?;
+
+    let signers_file_path = normalized_paths
+        .absolute_path()
+        .join("asfaload.signers")
+        .join("index.json");
+
+    if !signers_file_path.exists() {
+        return Err(ApiError::NoActiveSignersFile);
+    }
+
+    let result = state
+        .github_release_actor
+        .ask(crate::actors::github_release_actor::ProcessGitHubRelease {
+            owner,
+            repo,
+            release_tag: tag,
+            normalized_paths,
+        })
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Actor message failed: {}", e)))?;
+
+    Ok(Json(rest_api_types::RegisterGitHubReleaseResponse {
+        success: true,
+        message: "Release registered successfully".to_string(),
+        index_file_path: Some(result.index_file_path),
+    }))
+}
+
+fn parse_release_url(url: &str) -> Result<(String, String, String), ApiError> {
+    let parts: Vec<&str> = url.split('/').collect();
+
+    if parts.len() < 3 {
+        return Err(ApiError::InvalidGitHubUrl(
+            "Invalid GitHub release URL format. Expected format: owner/repo/tag".to_string(),
+        ));
+    }
+
+    let owner = parts[parts.len() - 3].to_string();
+    let repo = parts[parts.len() - 2].to_string();
+    let tag = parts[parts.len() - 1].to_string();
+
+    if owner.is_empty() || repo.is_empty() || tag.is_empty() {
+        return Err(ApiError::InvalidGitHubUrl(
+            "Invalid GitHub release URL format. Owner, repo, and tag cannot be empty".to_string(),
+        ));
+    }
+
+    Ok((owner, repo, tag))
+}
