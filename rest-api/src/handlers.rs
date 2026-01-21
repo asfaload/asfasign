@@ -1,3 +1,4 @@
+use common::fs::names::PENDING_SIGNATURES_SUFFIX;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use rest_api_types::{
     GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
@@ -480,7 +481,8 @@ pub async fn get_pending_signatures_handler(
         .map(|p| {
             let path = p.relative_path().display().to_string();
             // Strip .signatures.json.pending suffix to get artifact path
-            path.trim_end_matches(".signatures.json.pending").to_string()
+            path.trim_end_matches(format!(".{}", PENDING_SIGNATURES_SUFFIX).as_str())
+                .to_string()
         })
         .collect();
 

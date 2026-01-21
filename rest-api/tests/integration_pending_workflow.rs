@@ -3,7 +3,7 @@ use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE, pending_signatures_path_for};
 use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_content, AsfaloadKeyPairs};
 use rest_api::server::run_server;
 use rest_api_auth::{
-    AuthInfo, AuthSignature, HEADER_NONCE, HEADER_SIGNATURE, HEADER_TIMESTAMP,
+    AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP,
 };
 use rest_api_test_helpers::{build_test_config, get_random_port, init_git_repo, wait_for_server};
 use rest_api_types::{ListPendingResponse, SubmitSignatureResponse};
@@ -78,7 +78,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
         .header(HEADER_TIMESTAMP, auth_signature1.auth_info().timestamp().to_rfc3339())
         .header(HEADER_NONCE, auth_signature1.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature1.signature().to_base64())
-        .header("X-Public-Key", key_pair1.public_key().to_base64())
+        .header(HEADER_PUBLIC_KEY, key_pair1.public_key().to_base64())
         .send()
         .await?;
 
@@ -110,7 +110,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
         .header(HEADER_TIMESTAMP, auth_signature2.auth_info().timestamp().to_rfc3339())
         .header(HEADER_NONCE, auth_signature2.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature2.signature().to_base64())
-        .header("X-Public-Key", key_pair1.public_key().to_base64())
+        .header(HEADER_PUBLIC_KEY, key_pair1.public_key().to_base64())
         .json(&submit_payload)
         .send()
         .await?;
@@ -132,7 +132,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
         .header(HEADER_TIMESTAMP, auth_signature3.auth_info().timestamp().to_rfc3339())
         .header(HEADER_NONCE, auth_signature3.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature3.signature().to_base64())
-        .header("X-Public-Key", key_pair1.public_key().to_base64())
+        .header(HEADER_PUBLIC_KEY, key_pair1.public_key().to_base64())
         .send()
         .await?;
 
@@ -152,7 +152,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
         .header(HEADER_TIMESTAMP, auth_signature4.auth_info().timestamp().to_rfc3339())
         .header(HEADER_NONCE, auth_signature4.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature4.signature().to_base64())
-        .header("X-Public-Key", key_pair2.public_key().to_base64())
+        .header(HEADER_PUBLIC_KEY, key_pair2.public_key().to_base64())
         .send()
         .await?;
 
