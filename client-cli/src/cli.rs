@@ -152,11 +152,11 @@ pub enum Commands {
     /// List files requiring your signature from the backend
     ListPending {
         /// Path to your secret key file
-        #[arg(short, long)]
+        #[arg(short = 'K', long)]
         secret_key: PathBuf,
 
         /// Backend API URL (optional, defaults to http://127.0.0.1:3000)
-        #[arg(short, long)]
+        #[arg(short = 'u', long)]
         backend_url: Option<String>,
     },
 

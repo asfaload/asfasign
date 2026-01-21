@@ -29,7 +29,7 @@ Files requiring your signature:
 
 ### Options
 
-- `--secret-key, -s` - Path to your secret key file (required)
+- `--secret-key, -K` - Path to your secret key file (required)
 - `--backend-url, -u` - Backend API URL (default: http://127.0.0.1:3000)
 
 ## Submitting Signatures
@@ -63,7 +63,7 @@ Success! Signature submitted
 ### Options
 
 - `file_path` - Path to the file (as shown by list-pending) (required)
-- `--secret-key, -s` - Path to your secret key file (required)
+- `--secret-key, -K` - Path to your secret key file (required)
 - `--backend-url, -u` - Backend API URL (default: http://127.0.0.1:3000)
 
 ## Example Workflow
