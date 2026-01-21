@@ -14,8 +14,10 @@ pub trait PendingSignaturesDiscovery: Send + Sync {
     /// Find all pending signature files in the repository.
     ///
     /// Returns paths to `.signatures.json.pending` files relative to base_path.
-    fn find_all_pending(&self, base_path: &NormalisedPaths)
-        -> Result<Vec<NormalisedPaths>, SignedFileError>;
+    fn find_all_pending(
+        &self,
+        base_path: &NormalisedPaths,
+    ) -> Result<Vec<NormalisedPaths>, SignedFileError>;
 
     /// Find pending signature files for a specific signer.
     ///

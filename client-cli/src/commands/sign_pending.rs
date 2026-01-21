@@ -1,5 +1,8 @@
 use crate::error::Result;
-use features_lib::{sha512_for_content, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
+use features_lib::{
+    sha512_for_content, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait,
+    AsfaloadSecretKeys,
+};
 
 /// Handle the sign-pending command.
 ///
@@ -48,7 +51,8 @@ pub async fn handle_sign_pending_command(
         &public_key,
         &signature,
         &secret_key,
-    ).await?;
+    )
+    .await?;
 
     // 7. Display result
     if response.is_complete {

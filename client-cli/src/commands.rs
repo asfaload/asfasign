@@ -143,7 +143,11 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .clone()
                 .unwrap_or_else(|| "http://127.0.0.1:3000".to_string());
             let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(list_pending::handle_list_pending_command(&url, secret_key, password.as_str()))?
+            runtime.block_on(list_pending::handle_list_pending_command(
+                &url,
+                secret_key,
+                password.as_str(),
+            ))?
         }
         Commands::SignPending {
             file_path,
@@ -165,7 +169,12 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .clone()
                 .unwrap_or_else(|| "http://127.0.0.1:3000".to_string());
             let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(sign_pending::handle_sign_pending_command(file_path, &url, secret_key, password.as_str()))?
+            runtime.block_on(sign_pending::handle_sign_pending_command(
+                file_path,
+                &url,
+                secret_key,
+                password.as_str(),
+            ))?
         }
     }
     Ok(())

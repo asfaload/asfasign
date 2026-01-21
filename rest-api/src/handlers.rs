@@ -15,6 +15,7 @@ use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
 use axum::{Json, extract::State, http::HeaderMap};
 use common::fs::names::PENDING_SIGNERS_DIR;
+use rest_api_auth::HEADER_PUBLIC_KEY;
 use rest_api_types::{
     errors::ApiError,
     models::{AddFileRequest, AddFileResponse},
@@ -439,8 +440,8 @@ pub async fn get_pending_signatures_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<ListPendingResponse>, ApiError> {
-    use crate::pending_discovery;
     use crate::path_validation::build_normalised_absolute_path;
+    use crate::pending_discovery;
 
     let request_id = headers
         .get("x-request-id")
@@ -456,11 +457,8 @@ pub async fn get_pending_signatures_handler(
     let public_key = extract_public_key_from_headers(&headers)?;
 
     // Create base path NormalisedPaths for scanning from repo root
-    let base_path = build_normalised_absolute_path(
-        state.git_repo_path.clone(),
-        PathBuf::from("."),
-    )
-    .map_err(|e| ApiError::InvalidFilePath(format!("Failed to normalize base path: {}", e)))?;
+    let base_path = build_normalised_absolute_path(state.git_repo_path.clone(), PathBuf::from("."))
+        .map_err(|e| ApiError::InvalidFilePath(format!("Failed to normalize base path: {}", e)))?;
 
     // Find pending files for this signer
     let discovery = pending_discovery::create_default_discovery();
@@ -500,7 +498,7 @@ fn extract_public_key_from_headers(
     headers: &HeaderMap,
 ) -> Result<features_lib::AsfaloadPublicKeys, ApiError> {
     let pub_key_header = headers
-        .get("X-Public-Key")
+        .get(HEADER_PUBLIC_KEY)
         .ok_or_else(|| ApiError::MissingAuthenticationHeaders)?
         .to_str()
         .map_err(|_| ApiError::InvalidAuthenticationHeaders)?;

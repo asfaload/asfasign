@@ -1,9 +1,11 @@
 use crate::error::Result;
 use crate::utils::create_auth_headers;
-use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait};
+use features_lib::{
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
+};
 use reqwest::Client;
-use serde_json::Value;
 use rest_api_types::{ListPendingResponse, SubmitSignatureRequest, SubmitSignatureResponse};
+use serde_json::Value;
 
 /// A client for interacting with the REST API with authentication
 pub struct RestClient {
@@ -66,12 +68,14 @@ impl RestClient {
             return Err(AuthError::AuthDataPreparationError(format!(
                 "API request failed with status: {}",
                 response.status()
-            )).into());
+            ))
+            .into());
         }
 
         // Parse and return the response
-        let response_json = response.json::<Value>().await
-            .map_err(|e| AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e)))?;
+        let response_json = response.json::<Value>().await.map_err(|e| {
+            AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+        })?;
 
         Ok(response_json)
     }
@@ -118,12 +122,15 @@ pub async fn get_pending_signatures(
     if !response.status().is_success() {
         return Err(AuthError::AuthDataPreparationError(format!(
             "GET {}: {}",
-            url, response.status()
-        )).into());
+            url,
+            response.status()
+        ))
+        .into());
     }
 
-    let response_body: ListPendingResponse = response.json().await
-        .map_err(|e| AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e)))?;
+    let response_body: ListPendingResponse = response.json().await.map_err(|e| {
+        AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+    })?;
 
     Ok(response_body)
 }
@@ -160,15 +167,17 @@ pub async fn fetch_file(backend_url: &str, file_path: &str) -> Result<Vec<u8>> {
         .map_err(|e| AuthError::AuthDataPreparationError(format!("Network error: {}", e)))?;
 
     if !response.status().is_success() {
-        return Err(
-            AuthError::AuthDataPreparationError(format!("GET {}: {}", url, response.status())).into(),
-        );
+        return Err(AuthError::AuthDataPreparationError(format!(
+            "GET {}: {}",
+            url,
+            response.status()
+        ))
+        .into());
     }
 
-    let content = response
-        .bytes()
-        .await
-        .map_err(|e| AuthError::AuthDataPreparationError(format!("Failed to read response: {}", e)))?;
+    let content = response.bytes().await.map_err(|e| {
+        AuthError::AuthDataPreparationError(format!("Failed to read response: {}", e))
+    })?;
 
     Ok(content.to_vec())
 }
@@ -214,8 +223,9 @@ pub async fn submit_signature(
     };
 
     // Create auth headers
-    let request_json = serde_json::to_string(&request)
-        .map_err(|e| AuthError::AuthDataPreparationError(format!("Failed to serialize request: {}", e)))?;
+    let request_json = serde_json::to_string(&request).map_err(|e| {
+        AuthError::AuthDataPreparationError(format!("Failed to serialize request: {}", e))
+    })?;
     let headers = create_auth_headers(&request_json, secret_key.clone())?;
 
     let client = Client::new();
@@ -230,12 +240,15 @@ pub async fn submit_signature(
     if !response.status().is_success() {
         return Err(AuthError::AuthDataPreparationError(format!(
             "POST {}: {}",
-            url, response.status()
-        )).into());
+            url,
+            response.status()
+        ))
+        .into());
     }
 
-    let response_body: SubmitSignatureResponse = response.json().await
-        .map_err(|e| AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e)))?;
+    let response_body: SubmitSignatureResponse = response.json().await.map_err(|e| {
+        AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+    })?;
 
     Ok(response_body)
 }

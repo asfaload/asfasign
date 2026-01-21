@@ -1,6 +1,9 @@
 use anyhow::Result;
 use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE, pending_signatures_path_for};
-use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_content, AsfaloadKeyPairs};
+use features_lib::{
+    AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
+    AsfaloadSignatureTrait, sha512_for_content,
+};
 use rest_api::server::run_server;
 use rest_api_auth::{
     AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP,
@@ -39,16 +42,19 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     // Setup signers configuration: require 2 out of 2 signatures
     let signers_config = SignersConfig::with_artifact_signers_only(
         2,
-        (vec![key_pair1.public_key().clone(), key_pair2.public_key().clone()], 2),
+        (
+            vec![
+                key_pair1.public_key().clone(),
+                key_pair2.public_key().clone(),
+            ],
+            2,
+        ),
     )?;
 
     // Create signers directory and write config
     let signers_dir = repo_path_buf.join(SIGNERS_DIR);
     fs::create_dir_all(&signers_dir)?;
-    fs::write(
-        signers_dir.join(SIGNERS_FILE),
-        signers_config.to_json()?,
-    )?;
+    fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?)?;
 
     // Create artifact file (simpler path for test)
     let file_path_str = "myartifact/release.txt";
@@ -75,7 +81,10 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
 
     let response1 = client
         .get(format!("http://127.0.0.1:{}/pending_signatures", port))
-        .header(HEADER_TIMESTAMP, auth_signature1.auth_info().timestamp().to_rfc3339())
+        .header(
+            HEADER_TIMESTAMP,
+            auth_signature1.auth_info().timestamp().to_rfc3339(),
+        )
         .header(HEADER_NONCE, auth_signature1.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature1.signature().to_base64())
         .header(HEADER_PUBLIC_KEY, key_pair1.public_key().to_base64())
@@ -107,7 +116,10 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
 
     let response2 = client
         .post(format!("http://127.0.0.1:{}/signatures", port))
-        .header(HEADER_TIMESTAMP, auth_signature2.auth_info().timestamp().to_rfc3339())
+        .header(
+            HEADER_TIMESTAMP,
+            auth_signature2.auth_info().timestamp().to_rfc3339(),
+        )
         .header(HEADER_NONCE, auth_signature2.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature2.signature().to_base64())
         .header(HEADER_PUBLIC_KEY, key_pair1.public_key().to_base64())
@@ -129,7 +141,10 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
 
     let response3 = client
         .get(format!("http://127.0.0.1:{}/pending_signatures", port))
-        .header(HEADER_TIMESTAMP, auth_signature3.auth_info().timestamp().to_rfc3339())
+        .header(
+            HEADER_TIMESTAMP,
+            auth_signature3.auth_info().timestamp().to_rfc3339(),
+        )
         .header(HEADER_NONCE, auth_signature3.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature3.signature().to_base64())
         .header(HEADER_PUBLIC_KEY, key_pair1.public_key().to_base64())
@@ -140,7 +155,10 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     assert_eq!(response3.status(), 200);
 
     let response3_body: ListPendingResponse = response3.json().await?;
-    println!("Pending files for key1 after signing: {:?}", response3_body.file_paths);
+    println!(
+        "Pending files for key1 after signing: {:?}",
+        response3_body.file_paths
+    );
     assert!(response3_body.file_paths.is_empty());
 
     // ===== Test 4: Verify key2 still sees pending file =====
@@ -149,7 +167,10 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
 
     let response4 = client
         .get(format!("http://127.0.0.1:{}/pending_signatures", port))
-        .header(HEADER_TIMESTAMP, auth_signature4.auth_info().timestamp().to_rfc3339())
+        .header(
+            HEADER_TIMESTAMP,
+            auth_signature4.auth_info().timestamp().to_rfc3339(),
+        )
         .header(HEADER_NONCE, auth_signature4.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature4.signature().to_base64())
         .header(HEADER_PUBLIC_KEY, key_pair2.public_key().to_base64())
