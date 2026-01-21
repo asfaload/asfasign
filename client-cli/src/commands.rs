@@ -130,11 +130,13 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::ListPending {
             secret_key,
+            password,
+            password_file,
             backend_url,
         } => {
             let password = get_password(
-                None,
-                None,
+                password.clone(),
+                password_file.as_deref(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",

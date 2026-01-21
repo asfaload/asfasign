@@ -158,6 +158,14 @@ pub enum Commands {
         #[arg(short = 'K', long)]
         secret_key: PathBuf,
 
+        /// Password for the key (conflicts with password_file)
+        #[arg(long, short, conflicts_with = "password_file")]
+        password: Option<String>,
+
+        /// Path to a file containing the password (conflicts with password)
+        #[arg(long, short = 'P', conflicts_with = "password")]
+        password_file: Option<PathBuf>,
+
         /// Backend API URL (optional, defaults to {DEFAULT_BACKEND})
         #[arg(short = 'u', long)]
         backend_url: Option<String>,
