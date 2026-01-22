@@ -401,6 +401,16 @@ pub mod models {
                         ));
                     }
 
+                    let owner = path_segments[releases_idx - 2];
+                    let repo = path_segments[releases_idx - 1];
+                    let tag = path_segments[releases_idx + 2];
+
+                    if owner.is_empty() || repo.is_empty() || tag.is_empty() {
+                        return Err(serde::de::Error::custom(
+                            "Owner, repo, and tag cannot be empty",
+                        ));
+                    }
+
                     Ok(RegisterGitHubReleaseRequest { release_url })
                 }
             }
