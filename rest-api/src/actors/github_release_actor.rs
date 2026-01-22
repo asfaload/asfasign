@@ -22,6 +22,7 @@ pub struct GitHubReleaseActor {
 
 pub struct ProcessGitHubRelease {
     pub release_url: url::Url,
+    pub request_id: String,
 }
 
 pub struct RegisterResult {
@@ -77,6 +78,7 @@ impl GitHubReleaseActor {
         _ctx: &mut Context<Self, Result<RegisterResult, ApiError>>,
     ) -> Result<RegisterResult, ApiError> {
         info!(
+            request_id = %msg.request_id,
             url = %msg.release_url,
             "Processing GitHub release"
         );
@@ -104,6 +106,7 @@ impl GitHubReleaseActor {
         }
 
         info!(
+            request_id = %msg.request_id,
             actor = %ACTOR_NAME,
             owner = %owner,
             repo = %repo,
@@ -169,6 +172,7 @@ impl GitHubReleaseActor {
             .map_err(|e| ApiError::InternalServerError(format!("Failed to commit file: {}", e)))?;
 
         info!(
+            request_id = %msg.request_id,
             actor = %ACTOR_NAME,
             index_path = %full_index_path.display(),
             "Successfully created index file"

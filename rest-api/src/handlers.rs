@@ -525,6 +525,7 @@ pub async fn register_github_release_handler(
     let result = state
         .github_release_actor
         .ask(crate::actors::github_release_actor::ProcessGitHubRelease {
+            request_id: request_id.to_string(),
             release_url: request.release_url,
         })
         .await
