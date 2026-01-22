@@ -6,6 +6,8 @@ pub enum SignedFileError {
     AggregateSignatureError(#[from] AggregateSignatureError),
     #[error("SignersFileError: {0}")]
     SignersFileError(#[from] SignersFileError),
+    #[error("Authorised signers retrieval failure: {0}")]
+    AuthorisedSignersRetrievalFailure(AggregateSignatureError),
 }
 
 #[derive(Debug, Error)]

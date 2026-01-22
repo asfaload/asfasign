@@ -145,7 +145,19 @@ pub fn signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBu
 pub fn pending_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     file_path_with_suffix(path_in, PENDING_SIGNATURES_SUFFIX)
 }
-
+pub fn subject_path_from_pending_signatures<P: AsRef<Path>>(
+    path_in: P,
+) -> std::io::Result<PathBuf> {
+    let suffix = format!(".{}", PENDING_SIGNATURES_SUFFIX);
+    let path_str = path_in.as_ref().to_str().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Invalid path: cannot convert to string",
+        )
+    })?;
+    let subject_str = path_str.trim_end_matches(&suffix);
+    Ok(PathBuf::from(subject_str))
+}
 // Return the copy of the signers file taken when initialising the signature
 // procedure for the file at path_in.
 pub fn local_signers_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
@@ -351,6 +363,44 @@ mod asfaload_index_tests {
         let expected_path = pending_dir.join(SIGNERS_FILE);
         assert_eq!(result, expected_path);
 
+        Ok(())
+    }
+
+    // test subject_path_from_pending_signatures
+    // ----------------------------------------
+    #[test]
+    fn test_subject_path_from_pending_signatures_basic_path() -> Result<()> {
+        let input = PathBuf::from_str("/my/path/to/file.signatures.json.pending")?;
+        let result = subject_path_from_pending_signatures(&input)?;
+        let expected = PathBuf::from_str("/my/path/to/file")?;
+        assert_eq!(result, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_subject_path_from_pending_signatures_simple_filename() -> Result<()> {
+        let input = PathBuf::from_str("file.signatures.json.pending")?;
+        let result = subject_path_from_pending_signatures(&input)?;
+        let expected = PathBuf::from_str("file")?;
+        assert_eq!(result, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_subject_path_from_pending_signatures_without_suffix() -> Result<()> {
+        let input = PathBuf::from_str("/my/path/to/file")?;
+        let result = subject_path_from_pending_signatures(&input)?;
+        let expected = PathBuf::from_str("/my/path/to/file")?;
+        assert_eq!(result, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_subject_path_from_pending_signatures_empty_path() -> Result<()> {
+        let input = PathBuf::new();
+        let result = subject_path_from_pending_signatures(&input)?;
+        let expected = PathBuf::new();
+        assert_eq!(result, expected);
         Ok(())
     }
 }

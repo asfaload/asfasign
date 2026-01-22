@@ -82,7 +82,7 @@ impl Display for NormalisedPaths {
 
 /// Build the absolute path for the requested_path relative to the base_repo_path.
 /// Note that the base_repo_path must exist.
-fn build_normalised_absolute_path<P1: AsRef<Path>, P2: AsRef<Path>>(
+pub fn build_normalised_absolute_path<P1: AsRef<Path>, P2: AsRef<Path>>(
     base_repo_path: P1,
     requested_path: P2,
 ) -> Result<NormalisedPaths, ApiError> {

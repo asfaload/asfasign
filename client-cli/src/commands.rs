@@ -1,13 +1,17 @@
 use crate::{
-    cli::{Cli, Commands},
-    utils::get_password,
-    utils::PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
+    cli::{Cli, Commands, DEFAULT_BACKEND},
+    utils::{
+        get_password,
+        PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
+    },
 };
 
 pub mod add_to_aggregate;
 pub mod is_agg_complete;
 pub mod keys;
+pub mod list_pending;
 pub mod sign_file;
+pub mod sign_pending;
 pub mod signers_file;
 pub mod verify_sig;
 use anyhow::Result;
@@ -123,6 +127,58 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 signatures_file,
                 signers_file,
             )?;
+        }
+        Commands::ListPending {
+            secret_key,
+            password,
+            password_file,
+            backend_url,
+        } => {
+            let password = get_password(
+                password.clone(),
+                password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
+                WithoutConfirmation,
+                true,
+            )?;
+            let url = backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(list_pending::handle_list_pending_command(
+                &url,
+                secret_key,
+                password.as_str(),
+            ))?
+        }
+        Commands::SignPending {
+            file_path,
+            secret_key,
+            password,
+            password_file,
+            backend_url,
+        } => {
+            let password = get_password(
+                password.clone(),
+                password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
+                WithoutConfirmation,
+                true,
+            )?;
+            let url = backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(sign_pending::handle_sign_pending_command(
+                file_path,
+                &url,
+                secret_key,
+                password.as_str(),
+            ))?
         }
     }
     Ok(())

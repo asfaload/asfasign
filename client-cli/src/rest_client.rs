@@ -1,7 +1,10 @@
 use crate::error::Result;
 use crate::utils::create_auth_headers;
-use features_lib::AsfaloadSecretKeys;
+use features_lib::{
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
+};
 use reqwest::Client;
+use rest_api_types::{ListPendingResponse, SubmitSignatureRequest, SubmitSignatureResponse};
 use serde_json::Value;
 
 /// A client for interacting with the REST API with authentication
@@ -42,6 +45,8 @@ impl RestClient {
         payload: &Value,
         secret_key: AsfaloadSecretKeys,
     ) -> Result<Value> {
+        use rest_api_auth::AuthError;
+
         // Convert payload to string
         let payload_string = payload.to_string();
 
@@ -56,22 +61,194 @@ impl RestClient {
             .json(payload)
             .send()
             .await
-            .map_err(|e| crate::error::ClientCliError::AuthError(e.to_string()))?;
+            .map_err(|e| AuthError::IoError(std::io::Error::other(e.to_string())))?;
 
         // Check if the request was successful
         if !response.status().is_success() {
-            return Err(crate::error::ClientCliError::AuthError(format!(
+            return Err(AuthError::IoError(std::io::Error::other(format!(
                 "API request failed with status: {}",
                 response.status()
-            )));
+            )))
+            .into());
         }
 
         // Parse and return the response
-        let response_json = response
-            .json::<Value>()
-            .await
-            .map_err(|e| crate::error::ClientCliError::AuthError(e.to_string()))?;
+        let response_json = response.json::<Value>().await.map_err(|e| {
+            AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+        })?;
 
         Ok(response_json)
     }
+}
+
+/// List pending signature files from the backend.
+///
+/// Makes an authenticated GET request to /pending_signatures endpoint.
+///
+/// # Arguments
+///
+/// * `backend_url` - Base URL of the backend API
+/// * `secret_key` - Your secret key for signing the request
+///
+/// # Returns
+///
+/// List of file paths that need your signature
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Authentication fails
+/// - Backend returns non-200 status
+/// - Response is malformed
+pub async fn get_pending_signatures(
+    backend_url: &str,
+    secret_key: AsfaloadSecretKeys,
+) -> Result<ListPendingResponse> {
+    use rest_api_auth::AuthError;
+
+    let url = format!("{}/pending_signatures", backend_url);
+
+    // Create auth headers (using empty payload for GET request)
+    let headers = create_auth_headers("", secret_key)?;
+
+    let client = Client::new();
+    let response = client
+        .get(&url)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|e| AuthError::AuthDataPreparationError(format!("Network error: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(AuthError::AuthDataPreparationError(format!(
+            "GET {}: {}",
+            url,
+            response.status()
+        ))
+        .into());
+    }
+
+    let response_body: ListPendingResponse = response.json().await.map_err(|e| {
+        AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+    })?;
+
+    Ok(response_body)
+}
+
+/// Fetch file content from the backend.
+///
+/// This is a helper for the sign-pending workflow. The client needs to
+/// fetch the actual file content to compute its hash and sign it.
+///
+/// # Arguments
+///
+/// * `backend_url` - Base URL of the backend API
+/// * `file_path` - Relative path to the file (as returned by list-pending)
+///
+/// # Returns
+///
+/// The file content as bytes
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Backend returns non-200 status
+/// - Network error occurs
+pub async fn fetch_file(backend_url: &str, file_path: &str) -> Result<Vec<u8>> {
+    use rest_api_auth::AuthError;
+
+    let url = format!("{}/files/{}", backend_url, file_path);
+
+    let client = Client::new();
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| AuthError::AuthDataPreparationError(format!("Network error: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(AuthError::AuthDataPreparationError(format!(
+            "GET {}: {}",
+            url,
+            response.status()
+        ))
+        .into());
+    }
+
+    let content = response.bytes().await.map_err(|e| {
+        AuthError::AuthDataPreparationError(format!("Failed to read response: {}", e))
+    })?;
+
+    Ok(content.to_vec())
+}
+
+/// Submit a signature for a file to the backend.
+///
+/// Makes an authenticated POST request to /signatures endpoint with the signature data.
+///
+/// # Arguments
+///
+/// * `backend_url` - Base URL of the backend API
+/// * `file_path` - Relative path to the file being signed
+/// * `public_key` - The signer's public key
+/// * `signature` - The signature data
+/// * `secret_key` - The secret key for authentication
+///
+/// # Returns
+///
+/// Submission response indicating whether the aggregate signature is now complete
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Authentication fails
+/// - Backend returns non-200 status
+/// - Response is malformed
+pub async fn submit_signature(
+    backend_url: &str,
+    file_path: &str,
+    public_key: &AsfaloadPublicKeys,
+    signature: &features_lib::AsfaloadSignatures,
+    secret_key: &AsfaloadSecretKeys,
+) -> Result<SubmitSignatureResponse> {
+    use rest_api_auth::AuthError;
+
+    let url = format!("{}/signatures", backend_url);
+
+    // Build the request
+    let request = SubmitSignatureRequest {
+        file_path: file_path.to_string(),
+        public_key: public_key.to_base64(),
+        signature: signature.to_base64(),
+    };
+
+    // Create auth headers
+    let request_json = serde_json::to_string(&request).map_err(|e| {
+        AuthError::AuthDataPreparationError(format!("Failed to serialize request: {}", e))
+    })?;
+    let headers = create_auth_headers(&request_json, secret_key.clone())?;
+
+    let client = Client::new();
+    let response = client
+        .post(&url)
+        .headers(headers)
+        .json(&request)
+        .send()
+        .await
+        .map_err(|e| AuthError::AuthDataPreparationError(format!("Network error: {}", e)))?;
+
+    if !response.status().is_success() {
+        return Err(AuthError::AuthDataPreparationError(format!(
+            "POST {}: {}",
+            url,
+            response.status()
+        ))
+        .into());
+    }
+
+    let response_body: SubmitSignatureResponse = response.json().await.map_err(|e| {
+        AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+    })?;
+
+    Ok(response_body)
 }

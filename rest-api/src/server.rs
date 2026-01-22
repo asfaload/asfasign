@@ -1,8 +1,8 @@
 use crate::{
     auth_middleware::auth_middleware,
     handlers::{
-        add_file_handler, get_signature_status_handler, register_repo_handler,
-        submit_signature_handler,
+        add_file_handler, get_pending_signatures_handler, get_signature_status_handler,
+        register_repo_handler, submit_signature_handler,
     },
     state::init_state,
 };
@@ -40,6 +40,7 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
     let register_router = Router::new().route("/register_repo", post(register_repo_handler));
     let add_file_router = Router::new()
         .route("/add-file", post(add_file_handler))
+        .route("/pending_signatures", get(get_pending_signatures_handler))
         .layer(axum::middleware::from_fn_with_state(
             app_state.clone(),
             auth_middleware,
