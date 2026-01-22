@@ -81,7 +81,9 @@ impl GitHubReleaseActor {
             "Processing GitHub release"
         );
 
-        let (owner, repo, tag) = parse_release_url(&msg.release_url)?;
+        let (owner, repo, tag, release_path) = parse_release_url(&msg.release_url)?;
+
+        let index_repo_path = self.git_repo_path.join(&release_path);
 
         let project_path = NormalisedPaths::new(
             self.git_repo_path.clone(),
@@ -103,6 +105,7 @@ impl GitHubReleaseActor {
             owner = %owner,
             repo = %repo,
             tag = %tag,
+            release_path = %release_path,
             "Extracted release info"
         );
 
@@ -132,7 +135,13 @@ impl GitHubReleaseActor {
 
         let index_content = self.generate_index_json(&assets)?;
 
-        let full_index_path = project_path.absolute_path().join(INDEX_FILE);
+        let full_index_path = index_repo_path.join(INDEX_FILE);
+
+        if let Some(parent) = full_index_path.parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
+            })?;
+        }
 
         fs::write(&full_index_path, index_content)
             .await
@@ -192,18 +201,43 @@ struct ReleaseAssetInfo {
     size: i64,
 }
 
-fn parse_release_url(url: &str) -> Result<(String, String, String), ApiError> {
-    let parts: Vec<&str> = url.split('/').collect();
+fn parse_release_url(url: &str) -> Result<(String, String, String, String), ApiError> {
+    let url_path = if url.starts_with("http://") || url.starts_with("https://") {
+        url.trim_start_matches("http://")
+            .trim_start_matches("https://")
+            .to_string()
+    } else {
+        url.to_string()
+    };
+
+    let parts: Vec<&str> = url_path.split('/').collect();
 
     if parts.len() < 3 {
         return Err(ApiError::InvalidGitHubUrl(
-            "Invalid GitHub release URL format. Expected format: owner/repo/tag".to_string(),
+            "Invalid GitHub release URL format. Expected format: owner/repo/tag or full URL"
+                .to_string(),
         ));
     }
 
-    let owner = parts[parts.len() - 3].to_string();
-    let repo = parts[parts.len() - 2].to_string();
-    let tag = parts[parts.len() - 1].to_string();
+    let (owner, repo, tag) = if parts.len() == 3 {
+        (
+            parts[0].to_string(),
+            parts[1].to_string(),
+            parts[2].to_string(),
+        )
+    } else {
+        let last_index = parts.len() - 1;
+        let owner_index = if parts[last_index - 1] == "tag" && last_index >= 3 {
+            last_index - 3
+        } else {
+            last_index - 2
+        };
+        (
+            parts[owner_index].to_string(),
+            parts[owner_index + 1].to_string(),
+            parts[owner_index + 2].to_string(),
+        )
+    };
 
     if owner.is_empty() || repo.is_empty() || tag.is_empty() {
         return Err(ApiError::InvalidGitHubUrl(
@@ -211,5 +245,5 @@ fn parse_release_url(url: &str) -> Result<(String, String, String), ApiError> {
         ));
     }
 
-    Ok((owner, repo, tag))
+    Ok((owner, repo, tag, url_path))
 }
