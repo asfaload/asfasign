@@ -42,15 +42,21 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        let request_body = RegisterGitHubReleaseRequest {
-            release_url: "testowner/testrepo/v1.0.0".to_string(),
-        };
+        // Validate the URL through RegisterGitHubReleaseRequest::new()
+        let _ = RegisterGitHubReleaseRequest::new(
+            "https://github.com/testowner/testrepo/releases/tag/v1.0.0".to_string(),
+        )?;
+
+        // Manually construct JSON to ensure proper serialization
+        let json_body = serde_json::json!({
+            "release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
+        });
 
         let response = tokio::time::timeout(
             Duration::from_secs(10),
             client
                 .post(url_for("github-release", port))
-                .json(&request_body)
+                .json(&json_body)
                 .send(),
         )
         .await;
@@ -117,27 +123,34 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        let request_body = RegisterGitHubReleaseRequest {
-            release_url: "testowner/testrepo/v1.0.0".to_string(),
-        };
+        // Validate the URL through RegisterGitHubReleaseRequest::new()
+        let _ = RegisterGitHubReleaseRequest::new(
+            "https://github.com/testowner/testrepo/releases/tag/v1.0.0".to_string(),
+        )?;
+
+        // Manually construct JSON to ensure proper serialization
+        let json_body = serde_json::json!({
+            "release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
+        });
 
         let response = tokio::time::timeout(
             Duration::from_secs(5),
             client
                 .post(url_for("github-release", port))
-                .json(&request_body)
+                .json(&json_body)
                 .send(),
         )
         .await
         .map_err(|e| anyhow::anyhow!("Timeout: {}", e))??;
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let status = response.status();
+        let text = response.text().await?;
 
-        let response_json: Value = response.json().await?;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(
-            response_json["error"].as_str().unwrap().contains("signers"),
+            text.contains("signers"),
             "Expected error about signers file, got: {}",
-            response_json["error"]
+            text
         );
 
         server_handle.abort();
@@ -170,21 +183,20 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        let request_body = RegisterGitHubReleaseRequest {
-            release_url: "invalid".to_string(),
-        };
-
+        // Send invalid URL directly as JSON to test validation
         let response = tokio::time::timeout(
             Duration::from_secs(5),
             client
                 .post(url_for("github-release", port))
-                .json(&request_body)
+                .json(&serde_json::json!({
+                    "release_url": "invalid"
+                }))
                 .send(),
         )
         .await
         .map_err(|e| anyhow::anyhow!("Timeout: {}", e))??;
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
         server_handle.abort();
         Ok(())

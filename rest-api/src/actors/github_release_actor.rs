@@ -21,7 +21,7 @@ pub struct GitHubReleaseActor {
 }
 
 pub struct ProcessGitHubRelease {
-    pub release_url: String,
+    pub release_url: url::Url,
 }
 
 pub struct RegisterResult {
@@ -211,51 +211,50 @@ struct GithubReleaseInfo {
     release_path: NormalisedPaths,
 }
 
-async fn parse_release_url(url: &str, git_repo: PathBuf) -> Result<GithubReleaseInfo, ApiError> {
-    let url_path = if url.starts_with("http://") || url.starts_with("https://") {
-        url.trim_start_matches("http://")
-            .trim_start_matches("https://")
-            .to_string()
-    } else {
-        url.to_string()
-    };
+async fn parse_release_url(
+    url: &url::Url,
+    git_repo: PathBuf,
+) -> Result<GithubReleaseInfo, ApiError> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing host".to_string()))?;
 
-    let parts: Vec<&str> = url_path.split('/').collect();
-
-    if parts.len() < 3 {
+    if !host.ends_with("github.com") {
         return Err(ApiError::InvalidGitHubUrl(
-            "Invalid GitHub release URL format. Expected format: owner/repo/tag or full URL"
-                .to_string(),
+            "Only github.com URLs are supported".to_string(),
         ));
     }
 
-    let (owner, repo, tag) = if parts.len() == 3 {
-        (
-            parts[0].to_string(),
-            parts[1].to_string(),
-            parts[2].to_string(),
-        )
-    } else {
-        let last_index = parts.len() - 1;
-        let owner_index = if parts[last_index - 1] == "tag" && last_index >= 4 {
-            last_index - 4
-        } else {
-            last_index - 2
-        };
-        let tag = parts[last_index].to_string();
-        (
-            parts[owner_index].to_string(),
-            parts[owner_index + 1].to_string(),
-            tag,
-        )
-    };
+    let path_segments: Vec<_> = url
+        .path_segments()
+        .ok_or_else(|| ApiError::InvalidGitHubUrl("Invalid path".to_string()))?
+        .collect();
+
+    let releases_idx = path_segments
+        .iter()
+        .position(|&s| s == "releases")
+        .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing /releases/ in path".to_string()))?;
+
+    if releases_idx < 2
+        || releases_idx + 2 >= path_segments.len()
+        || path_segments[releases_idx + 1] != "tag"
+    {
+        return Err(ApiError::InvalidGitHubUrl(
+            "Invalid GitHub release URL structure".to_string(),
+        ));
+    }
+
+    let owner = path_segments[releases_idx - 2].to_string();
+    let repo = path_segments[releases_idx - 1].to_string();
+    let tag = path_segments[releases_idx + 2].to_string();
 
     if owner.is_empty() || repo.is_empty() || tag.is_empty() {
         return Err(ApiError::InvalidGitHubUrl(
-            "Invalid GitHub release URL format. Owner, repo, and tag cannot be empty".to_string(),
+            "Owner, repo, and tag cannot be empty".to_string(),
         ));
     }
 
+    let url_path = format!("{}/{}", host, url.path());
     let release_path = NormalisedPaths::new(git_repo, PathBuf::from(&url_path)).await?;
 
     Ok(GithubReleaseInfo {
@@ -272,32 +271,12 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_parse_release_url_short_format() {
-        let temp_dir = TempDir::new().unwrap();
-        let git_repo = temp_dir.path().to_path_buf();
-        let result = parse_release_url("owner/repo/v1.0.0", git_repo)
-            .await
-            .unwrap();
-
-        assert_eq!(result.owner, "owner");
-        assert_eq!(result.repo, "repo");
-        assert_eq!(result.tag, "v1.0.0");
-        assert_eq!(
-            result.release_path.relative_path(),
-            PathBuf::from("owner/repo/v1.0.0")
-        );
-    }
-
-    #[tokio::test]
     async fn test_parse_release_url_full_url() {
         let temp_dir = TempDir::new().unwrap();
         let git_repo = temp_dir.path().to_path_buf();
-        let result = parse_release_url(
-            "https://github.com/asfaload/asfald/releases/tag/v0.9.0",
-            git_repo,
-        )
-        .await
-        .unwrap();
+        let url =
+            url::Url::parse("https://github.com/asfaload/asfald/releases/tag/v0.9.0").unwrap();
+        let result = parse_release_url(&url, git_repo).await.unwrap();
 
         assert_eq!(result.owner, "asfaload");
         assert_eq!(result.repo, "asfald");
@@ -312,7 +291,8 @@ mod tests {
     async fn test_parse_release_url_invalid_too_short() {
         let temp_dir = TempDir::new().unwrap();
         let git_repo = temp_dir.path().to_path_buf();
-        let result = parse_release_url("owner/repo", git_repo).await;
+        let url = url::Url::parse("https://github.com/owner/repo").unwrap();
+        let result = parse_release_url(&url, git_repo).await;
 
         assert!(result.is_err());
     }
@@ -321,7 +301,8 @@ mod tests {
     async fn test_parse_release_url_empty_values() {
         let temp_dir = TempDir::new().unwrap();
         let git_repo = temp_dir.path().to_path_buf();
-        let result = parse_release_url("owner//tag", git_repo).await;
+        let url = url::Url::parse("https://github.com/asfaload/releases/tag/").unwrap();
+        let result = parse_release_url(&url, git_repo).await;
 
         assert!(result.is_err());
     }
