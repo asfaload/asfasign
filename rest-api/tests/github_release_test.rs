@@ -18,7 +18,9 @@ pub mod tests {
 
         let port = get_random_port().await?;
 
-        let signers_dir = git_repo_path.join("testowner/testrepo").join(SIGNERS_DIR);
+        let signers_dir = git_repo_path
+            .join("github.com/testowner/testrepo")
+            .join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
 
         let signers_json = r#"{
@@ -164,7 +166,9 @@ pub mod tests {
 
         let port = get_random_port().await?;
 
-        let signers_dir = git_repo_path.join("testowner/testrepo").join(SIGNERS_DIR);
+        let signers_dir = git_repo_path
+            .join("github.com/testowner/testrepo")
+            .join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
 
         let signers_json = r#"{
