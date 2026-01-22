@@ -81,9 +81,12 @@ impl GitHubReleaseActor {
             "Processing GitHub release"
         );
 
-        let (owner, repo, tag, release_path) = parse_release_url(&msg.release_url)?;
+        let release_info = parse_release_url(&msg.release_url, self.git_repo_path.clone()).await?;
 
-        let index_repo_path = self.git_repo_path.join(&release_path);
+        let owner = release_info.owner.clone();
+        let repo = release_info.repo.clone();
+        let tag = release_info.tag.clone();
+        let index_repo_path = release_info.release_path.absolute_path();
 
         let project_path = NormalisedPaths::new(
             self.git_repo_path.clone(),
@@ -105,7 +108,7 @@ impl GitHubReleaseActor {
             owner = %owner,
             repo = %repo,
             tag = %tag,
-            release_path = %release_path,
+            release_path = %release_info.release_path.relative_path().display(),
             "Extracted release info"
         );
 
@@ -201,7 +204,14 @@ struct ReleaseAssetInfo {
     size: i64,
 }
 
-fn parse_release_url(url: &str) -> Result<(String, String, String, String), ApiError> {
+struct GithubReleaseInfo {
+    owner: String,
+    repo: String,
+    tag: String,
+    release_path: NormalisedPaths,
+}
+
+async fn parse_release_url(url: &str, git_repo: PathBuf) -> Result<GithubReleaseInfo, ApiError> {
     let url_path = if url.starts_with("http://") || url.starts_with("https://") {
         url.trim_start_matches("http://")
             .trim_start_matches("https://")
@@ -227,15 +237,16 @@ fn parse_release_url(url: &str) -> Result<(String, String, String, String), ApiE
         )
     } else {
         let last_index = parts.len() - 1;
-        let owner_index = if parts[last_index - 1] == "tag" && last_index >= 3 {
-            last_index - 3
+        let owner_index = if parts[last_index - 1] == "tag" && last_index >= 4 {
+            last_index - 4
         } else {
             last_index - 2
         };
+        let tag = parts[last_index].to_string();
         (
             parts[owner_index].to_string(),
             parts[owner_index + 1].to_string(),
-            parts[owner_index + 2].to_string(),
+            tag,
         )
     };
 
@@ -245,5 +256,73 @@ fn parse_release_url(url: &str) -> Result<(String, String, String, String), ApiE
         ));
     }
 
-    Ok((owner, repo, tag, url_path))
+    let release_path = NormalisedPaths::new(git_repo, PathBuf::from(&url_path)).await?;
+
+    Ok(GithubReleaseInfo {
+        owner,
+        repo,
+        tag,
+        release_path,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_parse_release_url_short_format() {
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo = temp_dir.path().to_path_buf();
+        let result = parse_release_url("owner/repo/v1.0.0", git_repo)
+            .await
+            .unwrap();
+
+        assert_eq!(result.owner, "owner");
+        assert_eq!(result.repo, "repo");
+        assert_eq!(result.tag, "v1.0.0");
+        assert_eq!(
+            result.release_path.relative_path(),
+            PathBuf::from("owner/repo/v1.0.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_release_url_full_url() {
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo = temp_dir.path().to_path_buf();
+        let result = parse_release_url(
+            "https://github.com/asfaload/asfald/releases/tag/v0.9.0",
+            git_repo,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.owner, "asfaload");
+        assert_eq!(result.repo, "asfald");
+        assert_eq!(result.tag, "v0.9.0");
+        assert_eq!(
+            result.release_path.relative_path(),
+            PathBuf::from("github.com/asfaload/asfald/releases/tag/v0.9.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_release_url_invalid_too_short() {
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo = temp_dir.path().to_path_buf();
+        let result = parse_release_url("owner/repo", git_repo).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_parse_release_url_empty_values() {
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo = temp_dir.path().to_path_buf();
+        let result = parse_release_url("owner//tag", git_repo).await;
+
+        assert!(result.is_err());
+    }
 }
