@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::actors::git_actor::{CommitFile, GitActor};
 use crate::constants::INDEX_FILE;
 use crate::path_validation::NormalisedPaths;
@@ -10,6 +12,7 @@ use tokio::fs;
 use tracing::info;
 use uuid::Uuid;
 
+const ACTOR_NAME: &str = "github_release_actor";
 pub struct GitHubReleaseActor {
     git_actor: kameo::actor::ActorRef<GitActor>,
     octocrab: octocrab::Octocrab,
@@ -17,10 +20,7 @@ pub struct GitHubReleaseActor {
 }
 
 pub struct ProcessGitHubRelease {
-    pub owner: String,
-    pub repo: String,
-    pub release_tag: String,
-    pub normalized_paths: NormalisedPaths,
+    pub release_url: String,
 }
 
 pub struct RegisterResult {
@@ -39,7 +39,7 @@ impl Actor for GitHubReleaseActor {
         args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        info!("GitHubReleaseActor started");
+        info!(actor = ACTOR_NAME, "starting");
 
         let octocrab: octocrab::Octocrab = match &args.1 {
             Some(token) => octocrab::Octocrab::builder()
@@ -76,17 +76,40 @@ impl GitHubReleaseActor {
         _ctx: &mut Context<Self, Result<RegisterResult, ApiError>>,
     ) -> Result<RegisterResult, ApiError> {
         info!(
-            owner = %msg.owner,
-            repo = %msg.repo,
-            tag = %msg.release_tag,
+            url = %msg.release_url,
             "Processing GitHub release"
+        );
+
+        let (owner, repo, tag) = parse_release_url(&msg.release_url)?;
+
+        let project_path = NormalisedPaths::new(
+            self.git_repo_path.clone(),
+            PathBuf::from(format!("{}/{}", owner, repo)),
+        )
+        .await?;
+
+        let signers_file_path = project_path
+            .absolute_path()
+            .join("asfaload.signers")
+            .join("index.json");
+
+        if !signers_file_path.exists() {
+            return Err(ApiError::NoActiveSignersFile);
+        }
+
+        info!(
+            actor = %ACTOR_NAME,
+            owner = %owner,
+            repo = %repo,
+            tag = %tag,
+            "Extracted release info"
         );
 
         let release: Release = self
             .octocrab
-            .repos(&msg.owner, &msg.repo)
+            .repos(&owner, &repo)
             .releases()
-            .get_by_tag(&msg.release_tag)
+            .get_by_tag(&tag)
             .await
             .map_err(|e| ApiError::GitHubApiError(format!("Failed to fetch release: {}", e)))?;
 
@@ -108,7 +131,7 @@ impl GitHubReleaseActor {
 
         let index_content = self.generate_index_json(&assets)?;
 
-        let full_index_path = msg.normalized_paths.absolute_path().join(INDEX_FILE);
+        let full_index_path = project_path.absolute_path().join(INDEX_FILE);
 
         fs::write(&full_index_path, index_content)
             .await
@@ -123,10 +146,7 @@ impl GitHubReleaseActor {
 
         let commit_msg = CommitFile {
             file_paths: vec![normalized_paths],
-            commit_message: format!(
-                "Add index for {}/{}/{}",
-                msg.owner, msg.repo, msg.release_tag
-            ),
+            commit_message: format!("Add index for {}/{}/{}", owner, repo, tag),
             request_id: Uuid::new_v4().to_string(),
         };
 
@@ -136,6 +156,7 @@ impl GitHubReleaseActor {
             .map_err(|e| ApiError::InternalServerError(format!("Failed to commit file: {}", e)))?;
 
         info!(
+            actor = %ACTOR_NAME,
             index_path = %full_index_path.display(),
             "Successfully created index file"
         );
@@ -168,4 +189,26 @@ struct ReleaseAssetInfo {
     name: String,
     download_url: String,
     size: i64,
+}
+
+fn parse_release_url(url: &str) -> Result<(String, String, String), ApiError> {
+    let parts: Vec<&str> = url.split('/').collect();
+
+    if parts.len() < 3 {
+        return Err(ApiError::InvalidGitHubUrl(
+            "Invalid GitHub release URL format. Expected format: owner/repo/tag".to_string(),
+        ));
+    }
+
+    let owner = parts[parts.len() - 3].to_string();
+    let repo = parts[parts.len() - 2].to_string();
+    let tag = parts[parts.len() - 1].to_string();
+
+    if owner.is_empty() || repo.is_empty() || tag.is_empty() {
+        return Err(ApiError::InvalidGitHubUrl(
+            "Invalid GitHub release URL format. Owner, repo, and tag cannot be empty".to_string(),
+        ));
+    }
+
+    Ok((owner, repo, tag))
 }
