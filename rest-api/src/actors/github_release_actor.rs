@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crate::actors::git_actor::{CommitFile, GitActor};
 use crate::constants::INDEX_FILE;
 use crate::path_validation::NormalisedPaths;
+use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use octocrab::models::repos::Release;
@@ -90,8 +91,8 @@ impl GitHubReleaseActor {
 
         let signers_file_path = project_path
             .absolute_path()
-            .join("asfaload.signers")
-            .join("index.json");
+            .join(SIGNERS_DIR)
+            .join(SIGNERS_FILE);
 
         if !signers_file_path.exists() {
             return Err(ApiError::NoActiveSignersFile);

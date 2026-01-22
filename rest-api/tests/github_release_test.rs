@@ -1,5 +1,6 @@
 use axum::{http::StatusCode, routing::post};
 use axum_test::TestServer;
+use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE};
 use rest_api_types::RegisterGitHubReleaseRequest;
 use tempfile::TempDir;
 
@@ -8,7 +9,7 @@ async fn test_register_github_release_endpoint() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let git_repo_path = temp_dir.path().to_path_buf();
 
-    let signers_dir = git_repo_path.join("testowner/testrepo/asfaload.signers");
+    let signers_dir = git_repo_path.join("testowner/testrepo").join(SIGNERS_DIR);
     tokio::fs::create_dir_all(&signers_dir).await.unwrap();
 
     let signers_json = r#"{
@@ -21,7 +22,7 @@ async fn test_register_github_release_endpoint() {
             }
         ]
     }"#;
-    tokio::fs::write(signers_dir.join("index.json"), signers_json)
+    tokio::fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
         .await
         .unwrap();
 
@@ -100,7 +101,7 @@ async fn test_register_github_release_invalid_url_format() {
     let temp_dir = TempDir::new().expect("Failed to create temp directory");
     let git_repo_path = temp_dir.path().to_path_buf();
 
-    let signers_dir = git_repo_path.join("testowner/testrepo/asfaload.signers");
+    let signers_dir = git_repo_path.join("testowner/testrepo").join(SIGNERS_DIR);
     tokio::fs::create_dir_all(&signers_dir).await.unwrap();
 
     let signers_json = r#"{
@@ -108,7 +109,7 @@ async fn test_register_github_release_invalid_url_format() {
         "required_signers": 1,
         "signers": []
     }"#;
-    tokio::fs::write(signers_dir.join("index.json"), signers_json)
+    tokio::fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
         .await
         .unwrap();
 
