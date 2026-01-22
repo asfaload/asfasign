@@ -287,8 +287,189 @@ pub mod models {
         pub file_paths: Vec<String>,
     }
 
+    #[derive(Debug, Clone, Serialize)]
     pub struct RegisterGitHubReleaseRequest {
-        pub release_url: String,
+        pub release_url: url::Url,
+    }
+
+    impl<'de> serde::Deserialize<'de> for RegisterGitHubReleaseRequest {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            use serde::de::MapAccess;
+
+            enum Field {
+                ReleaseUrl,
+            }
+
+            impl<'de> serde::Deserialize<'de> for Field {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: serde::Deserializer<'de>,
+                {
+                    struct FieldVisitor;
+                    impl<'de> serde::de::Visitor<'de> for FieldVisitor {
+                        type Value = Field;
+
+                        fn expecting(
+                            &self,
+                            formatter: &mut std::fmt::Formatter,
+                        ) -> std::fmt::Result {
+                            formatter.write_str("`release_url`")
+                        }
+
+                        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+                        where
+                            E: serde::de::Error,
+                        {
+                            match value {
+                                "release_url" => Ok(Field::ReleaseUrl),
+                                _ => Err(serde::de::Error::unknown_field(value, &["release_url"])),
+                            }
+                        }
+                    }
+
+                    deserializer.deserialize_identifier(FieldVisitor)
+                }
+            }
+
+            struct RegisterGitHubReleaseVisitor;
+            impl<'de> serde::de::Visitor<'de> for RegisterGitHubReleaseVisitor {
+                type Value = RegisterGitHubReleaseRequest;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    formatter.write_str("struct RegisterGitHubReleaseRequest")
+                }
+
+                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                where
+                    A: MapAccess<'de>,
+                {
+                    let mut url_string: Option<String> = None;
+
+                    while let Some(field) = map.next_key()? {
+                        match field {
+                            Field::ReleaseUrl => {
+                                if url_string.is_none() {
+                                    url_string = Some(map.next_value()?);
+                                } else {
+                                    return Err(serde::de::Error::duplicate_field("release_url"));
+                                }
+                            }
+                        }
+                    }
+
+                    let url_string = url_string
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| serde::de::Error::missing_field("release_url"))?;
+
+                    let release_url = url::Url::parse(&url_string)
+                        .map_err(|e| serde::de::Error::custom(format!("Invalid URL: {}", e)))?;
+
+                    let host = release_url
+                        .host_str()
+                        .ok_or_else(|| serde::de::Error::custom("Missing host"))?;
+
+                    if !host.ends_with("github.com") {
+                        return Err(serde::de::Error::custom(
+                            "Only github.com URLs are supported",
+                        ));
+                    }
+
+                    let path_segments: Vec<_> = release_url
+                        .path_segments()
+                        .ok_or_else(|| serde::de::Error::custom("Invalid path"))?
+                        .collect();
+
+                    let releases_idx = path_segments
+                        .iter()
+                        .position(|&s| s == "releases")
+                        .ok_or_else(|| serde::de::Error::custom("Missing /releases/ in path"))?;
+
+                    if releases_idx < 2 {
+                        return Err(serde::de::Error::custom(
+                            "Invalid GitHub release URL structure",
+                        ));
+                    }
+
+                    if releases_idx + 2 >= path_segments.len()
+                        || path_segments[releases_idx + 1] != "tag"
+                    {
+                        return Err(serde::de::Error::custom(
+                            "Missing /tag/ after /releases/ in URL",
+                        ));
+                    }
+
+                    Ok(RegisterGitHubReleaseRequest { release_url })
+                }
+            }
+
+            deserializer.deserialize_struct(
+                "RegisterGitHubReleaseRequest",
+                &["release_url"],
+                RegisterGitHubReleaseVisitor,
+            )
+        }
+    }
+
+    impl RegisterGitHubReleaseRequest {
+        pub fn new(url_string: String) -> Result<Self, crate::errors::ApiError> {
+            let release_url = url::Url::parse(&url_string).map_err(|e| {
+                crate::errors::ApiError::InvalidGitHubUrl(format!("Invalid URL: {}", e))
+            })?;
+
+            let host = release_url.host_str().ok_or_else(|| {
+                crate::errors::ApiError::InvalidGitHubUrl("Missing host".to_string())
+            })?;
+
+            if !host.ends_with("github.com") {
+                return Err(crate::errors::ApiError::InvalidGitHubUrl(
+                    "Only github.com URLs are supported".to_string(),
+                ));
+            }
+
+            let path_segments: Vec<_> = release_url
+                .path_segments()
+                .ok_or_else(|| {
+                    crate::errors::ApiError::InvalidGitHubUrl("Invalid path".to_string())
+                })?
+                .collect();
+
+            let releases_idx = path_segments
+                .iter()
+                .position(|&s| s == "releases")
+                .ok_or_else(|| {
+                    crate::errors::ApiError::InvalidGitHubUrl(
+                        "Missing /releases/ in path".to_string(),
+                    )
+                })?;
+
+            if releases_idx < 2 {
+                return Err(crate::errors::ApiError::InvalidGitHubUrl(
+                    "Invalid GitHub release URL structure".to_string(),
+                ));
+            }
+
+            let owner = path_segments[releases_idx - 2];
+            let repo = path_segments[releases_idx - 1];
+
+            if releases_idx + 2 >= path_segments.len() || path_segments[releases_idx + 1] != "tag" {
+                return Err(crate::errors::ApiError::InvalidGitHubUrl(
+                    "Missing /tag/ after /releases/ in URL".to_string(),
+                ));
+            }
+
+            let tag = path_segments[releases_idx + 2];
+
+            if owner.is_empty() || repo.is_empty() || tag.is_empty() {
+                return Err(crate::errors::ApiError::InvalidGitHubUrl(
+                    "Owner, repo, and tag cannot be empty".to_string(),
+                ));
+            }
+
+            Ok(Self { release_url })
+        }
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
