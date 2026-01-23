@@ -92,14 +92,7 @@ impl GitHubReleaseActor {
         let project_path = NormalisedPaths::new(
             self.git_repo_path.clone(),
             PathBuf::new()
-                .join(
-                    msg.release_url
-                        .host_str()
-                        .ok_or(ApiError::InvalidGitHubUrl(format!(
-                            "Could not extract host from {}",
-                            &msg.release_url
-                        )))?,
-                )
+                .join(release_info.host)
                 .join(&owner)
                 .join(&repo),
         )
@@ -217,6 +210,7 @@ struct ReleaseAssetInfo {
 }
 
 struct GithubReleaseInfo {
+    host: String,
     owner: String,
     repo: String,
     tag: String,
@@ -232,6 +226,7 @@ async fn parse_release_url(
     let release_path = NormalisedPaths::new(git_repo, PathBuf::from(&url_path)).await?;
 
     Ok(GithubReleaseInfo {
+        host,
         owner,
         repo,
         tag,
