@@ -1,4 +1,4 @@
-use crate::actors::git_actor::{CommitFile, GitActor};
+use super::git_actor::{CommitFile, GitActor};
 use crate::file_auth::github_release::GithubReleaseAdder;
 use crate::file_auth::releases::ReleaseAdder;
 use crate::path_validation::NormalisedPaths;

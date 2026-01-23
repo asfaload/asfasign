@@ -721,8 +721,8 @@ pub mod tests {
         use features_lib::AsfaloadKeyPairTrait;
         use git2::Repository;
         use kameo::actor::Spawn;
-        use rest_api::actors::git_actor::GitActor;
-        use rest_api::actors::signers_initialiser::{
+        use rest_api::file_auth::actors::git_actor::GitActor;
+        use rest_api::file_auth::actors::signers_initialiser::{
             CleanupSignersRequest, InitialiseSignersRequest, SignersInitialiser,
         };
         use std::fs;
@@ -776,7 +776,7 @@ pub mod tests {
 
         let git_actor = GitActor::spawn(git_repo_path_clone.clone());
 
-        let write_commit_request = rest_api::actors::git_actor::CommitFile {
+        let write_commit_request = rest_api::file_auth::actors::git_actor::CommitFile {
             file_paths: vec![init_result.project_path.clone()],
             commit_message: "commit of test-123".to_string(),
             request_id: "test-123".to_string(),

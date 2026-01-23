@@ -4,14 +4,14 @@ use kameo::actor::{ActorRef, Spawn};
 
 use crate::{
     actors::{
-        git_actor::GitActor,
-        github_release_actor::GitHubReleaseActor,
         nonce_cache_actor::{NONCE_CACHE_DB, NonceCacheActor},
         nonce_cleanup_actor::NonceCleanupActor,
-        signature_collector::SignatureCollector,
-        signers_initialiser::SignersInitialiser,
     },
     file_auth::actors::forge_signers_validator::ForgeProjectValidator,
+    file_auth::actors::{
+        git_actor::GitActor, github_release_actor::GitHubReleaseActor,
+        signature_collector::SignatureCollector, signers_initialiser::SignersInitialiser,
+    },
 };
 
 #[derive(Clone)]
