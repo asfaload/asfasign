@@ -15,6 +15,8 @@ rest_api_auth = { path = "../rest_api_auth/" }
 sled = "0.34.7"
 config = "0.15.19"
 features_lib = { path = "../core/features_lib/" }
+url = { version = "2.5.8", features = ["serde"] }
+octocrab = "0.49.5"
 
 [lints]
 workspace = true

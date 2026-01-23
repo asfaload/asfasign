@@ -1,6 +1,6 @@
 use crate::path_validation::NormalisedPaths;
 use crate::path_validation::build_normalised_absolute_path;
-use common::errors::{AggregateSignatureError, SignedFileError};
+use common::errors::SignedFileError;
 use common::fs::names::PENDING_SIGNATURES_SUFFIX;
 
 pub fn can_signer_add_signature(

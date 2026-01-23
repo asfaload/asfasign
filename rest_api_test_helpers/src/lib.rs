@@ -109,6 +109,7 @@ pub fn build_test_config(git_repo_path: &Path, server_port: u16) -> rest_api::co
         git_repo_path: git_repo_path.to_path_buf(),
         server_port,
         log_level: "info".to_string(),
+        github_api_key: None,
     }
 }
 

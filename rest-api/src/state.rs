@@ -5,6 +5,7 @@ use kameo::actor::{ActorRef, Spawn};
 use crate::{
     actors::{
         git_actor::GitActor,
+        github_release_actor::GitHubReleaseActor,
         nonce_cache_actor::{NONCE_CACHE_DB, NonceCacheActor},
         nonce_cleanup_actor::NonceCleanupActor,
         signature_collector::SignatureCollector,
@@ -22,9 +23,10 @@ pub struct AppState {
     pub forge_project_validator: ActorRef<ForgeProjectValidator>,
     pub signers_initialiser: ActorRef<SignersInitialiser>,
     pub signature_collector: ActorRef<SignatureCollector>,
+    pub github_release_actor: ActorRef<GitHubReleaseActor>,
 }
 
-pub fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
+pub fn init_state(git_repo_path: std::path::PathBuf, github_api_key: Option<String>) -> AppState {
     let git_actor = GitActor::spawn(git_repo_path.clone());
 
     // Initialize nonce cache with database path
@@ -37,6 +39,9 @@ pub fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
     let signers_initialiser = SignersInitialiser::spawn(());
     let signature_collector = SignatureCollector::spawn(git_actor.clone());
 
+    let github_release_actor =
+        GitHubReleaseActor::spawn((git_actor.clone(), github_api_key, git_repo_path.clone()));
+
     AppState {
         git_repo_path,
         git_actor,
@@ -45,5 +50,6 @@ pub fn init_state(git_repo_path: std::path::PathBuf) -> AppState {
         forge_project_validator,
         signers_initialiser,
         signature_collector,
+        github_release_actor,
     }
 }

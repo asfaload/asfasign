@@ -82,6 +82,18 @@ pub mod errors {
 
         #[error("Server configuration error: {0}")]
         ServerConfigError(#[from] ServerConfigError),
+
+        #[error("GitHub API error: {0}")]
+        GitHubApiError(String),
+
+        #[error("No active signers file found for repository")]
+        NoActiveSignersFile,
+
+        #[error("Invalid GitHub release URL format: {0}")]
+        InvalidGitHubUrl(String),
+
+        #[error("Octocrab error: {0}")]
+        OctoCrabError(#[from] octocrab::Error),
     }
 
     #[derive(Error, Debug)]
@@ -164,6 +176,10 @@ pub mod errors {
                 ApiError::ActorError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::RequestTooBig(_) => StatusCode::PAYLOAD_TOO_LARGE,
+                ApiError::GitHubApiError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::NoActiveSignersFile => StatusCode::BAD_REQUEST,
+                ApiError::InvalidGitHubUrl(_) => StatusCode::BAD_REQUEST,
+                ApiError::OctoCrabError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }
@@ -197,6 +213,8 @@ pub mod environment {
 
 pub mod models {
     use serde::{Deserialize, Serialize};
+
+    use crate::github_helpers::validate_github_url;
 
     #[derive(Debug, Deserialize)]
     pub struct AddFileRequest {
@@ -274,10 +292,173 @@ pub mod models {
     pub struct ListPendingResponse {
         pub file_paths: Vec<String>,
     }
+
+    #[derive(Debug, Clone, Serialize)]
+    pub struct RegisterGitHubReleaseRequest {
+        pub release_url: url::Url,
+    }
+
+    impl<'de> serde::Deserialize<'de> for RegisterGitHubReleaseRequest {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            use serde::de::MapAccess;
+
+            enum Field {
+                ReleaseUrl,
+            }
+
+            impl<'de> serde::Deserialize<'de> for Field {
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: serde::Deserializer<'de>,
+                {
+                    struct FieldVisitor;
+                    impl<'de> serde::de::Visitor<'de> for FieldVisitor {
+                        type Value = Field;
+
+                        fn expecting(
+                            &self,
+                            formatter: &mut std::fmt::Formatter,
+                        ) -> std::fmt::Result {
+                            formatter.write_str("`release_url`")
+                        }
+
+                        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+                        where
+                            E: serde::de::Error,
+                        {
+                            match value {
+                                "release_url" => Ok(Field::ReleaseUrl),
+                                _ => Err(serde::de::Error::unknown_field(value, &["release_url"])),
+                            }
+                        }
+                    }
+
+                    deserializer.deserialize_identifier(FieldVisitor)
+                }
+            }
+
+            struct RegisterGitHubReleaseVisitor;
+            impl<'de> serde::de::Visitor<'de> for RegisterGitHubReleaseVisitor {
+                type Value = RegisterGitHubReleaseRequest;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    formatter.write_str("struct RegisterGitHubReleaseRequest")
+                }
+
+                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+                where
+                    A: MapAccess<'de>,
+                {
+                    let mut url_string: Option<String> = None;
+
+                    while let Some(field) = map.next_key()? {
+                        match field {
+                            Field::ReleaseUrl => {
+                                if url_string.is_none() {
+                                    url_string = Some(map.next_value()?);
+                                } else {
+                                    return Err(serde::de::Error::duplicate_field("release_url"));
+                                }
+                            }
+                        }
+                    }
+
+                    let url_string = url_string
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| serde::de::Error::missing_field("release_url"))?;
+
+                    let release_url = url::Url::parse(&url_string)
+                        .map_err(|e| serde::de::Error::custom(format!("Invalid URL: {}", e)))?;
+
+                    validate_github_url(&release_url)
+                        .map_err(|e| serde::de::Error::custom(e.to_string()))?;
+
+                    Ok(RegisterGitHubReleaseRequest { release_url })
+                }
+            }
+
+            deserializer.deserialize_struct(
+                "RegisterGitHubReleaseRequest",
+                &["release_url"],
+                RegisterGitHubReleaseVisitor,
+            )
+        }
+    }
+
+    impl RegisterGitHubReleaseRequest {
+        pub fn new(url_string: String) -> Result<Self, crate::errors::ApiError> {
+            let release_url = url::Url::parse(&url_string).map_err(|e| {
+                crate::errors::ApiError::InvalidGitHubUrl(format!("Invalid URL: {}", e))
+            })?;
+
+            validate_github_url(&release_url)?;
+
+            Ok(Self { release_url })
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RegisterGitHubReleaseResponse {
+        pub success: bool,
+        pub message: String,
+        pub index_file_path: Option<String>,
+    }
+}
+
+pub mod github_helpers {
+    use crate::errors::ApiError;
+
+    pub fn validate_github_url(
+        url: &url::Url,
+    ) -> Result<(String, String, String, String), ApiError> {
+        let host = url
+            .host_str()
+            .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing host".to_string()))?;
+
+        if !host.ends_with("github.com") {
+            return Err(ApiError::InvalidGitHubUrl(
+                "Only github.com URLs are supported".to_string(),
+            ));
+        }
+
+        let path_segments: Vec<_> = url
+            .path_segments()
+            .ok_or_else(|| ApiError::InvalidGitHubUrl("Invalid path".to_string()))?
+            .collect();
+
+        let releases_idx = path_segments
+            .iter()
+            .position(|&s| s == "releases")
+            .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing /releases/ in path".to_string()))?;
+
+        if releases_idx < 2
+            || releases_idx + 2 >= path_segments.len()
+            || path_segments[releases_idx + 1] != "tag"
+        {
+            return Err(ApiError::InvalidGitHubUrl(
+                "Invalid GitHub release URL structure trying to extract tag".to_string(),
+            ));
+        }
+
+        let owner = path_segments[releases_idx - 2].to_string();
+        let repo = path_segments[releases_idx - 1].to_string();
+        let tag = path_segments[releases_idx + 2].to_string();
+
+        if owner.is_empty() || repo.is_empty() || tag.is_empty() {
+            return Err(ApiError::InvalidGitHubUrl(
+                "Owner, repo, and tag cannot be empty".to_string(),
+            ));
+        }
+        Ok((host.to_string(), owner, repo, tag))
+    }
 }
 
 // Re-export commonly used types at the module level
 pub use models::{
-    GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
+    GetSignatureStatusResponse, ListPendingResponse, RegisterGitHubReleaseRequest,
+    RegisterGitHubReleaseResponse, RegisterRepoRequest, RegisterRepoResponse,
     SubmitSignatureRequest, SubmitSignatureResponse,
 };
