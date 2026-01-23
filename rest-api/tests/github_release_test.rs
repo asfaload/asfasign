@@ -11,8 +11,26 @@ pub mod tests {
     use tempfile::TempDir;
     use tokio::time::Duration;
 
+    fn setup_crypto_provider() {
+        use rustls::crypto::{CryptoProvider, ring};
+
+        // Use the provider corresponding to the 'ring' feature you selected
+        let provider = ring::default_provider();
+
+        // Attempt to set the default provider for the entire process.
+        // `set_default` is safer than `install_default` as it handles the case
+        // where another dependency might have already attempted an installation.
+        CryptoProvider::install_default(provider).unwrap();
+    }
+
     #[tokio::test]
     async fn test_register_github_release_endpoint() -> Result<()> {
+        // Upgrading octocrab to version 0.49.5 from 0.39 caused an error for this test:
+        //    Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+        //    Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+        //    See the documentation of the CryptoProvider type for more information.
+        // The only solution that worked was to define and call this function.
+        setup_crypto_provider();
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let git_repo_path = temp_dir.path().to_path_buf();
 
