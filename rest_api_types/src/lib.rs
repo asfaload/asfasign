@@ -91,6 +91,9 @@ pub mod errors {
 
         #[error("Invalid GitHub release URL format: {0}")]
         InvalidGitHubUrl(String),
+
+        #[error("Octocrab error: {0}")]
+        OctoCrabError(#[from] octocrab::Error),
     }
 
     #[derive(Error, Debug)]
@@ -176,6 +179,7 @@ pub mod errors {
                 ApiError::GitHubApiError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::NoActiveSignersFile => StatusCode::BAD_REQUEST,
                 ApiError::InvalidGitHubUrl(_) => StatusCode::BAD_REQUEST,
+                ApiError::OctoCrabError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }

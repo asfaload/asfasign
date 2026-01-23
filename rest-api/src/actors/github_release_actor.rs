@@ -36,7 +36,7 @@ impl Actor for GitHubReleaseActor {
         Option<String>,
         std::path::PathBuf,
     );
-    type Error = String;
+    type Error = ApiError;
 
     async fn on_start(
         args: Self::Args,
@@ -47,8 +47,7 @@ impl Actor for GitHubReleaseActor {
         let octocrab: octocrab::Octocrab = match &args.1 {
             Some(token) => octocrab::Octocrab::builder()
                 .personal_token(token.clone())
-                .build()
-                .unwrap_or_else(|_| octocrab::Octocrab::default()),
+                .build()?,
             None => octocrab::Octocrab::default(),
         };
 
