@@ -225,10 +225,7 @@ struct GithubReleaseInfo {
     release_path: NormalisedPaths,
 }
 
-async fn parse_release_url(
-    url: &url::Url,
-    git_repo: PathBuf,
-) -> Result<GithubReleaseInfo, ApiError> {
+fn validate_github_url(url: &url::Url) -> Result<(String, String, String, String), ApiError> {
     let host = url
         .host_str()
         .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing host".to_string()))?;
@@ -262,6 +259,13 @@ async fn parse_release_url(
     let repo = path_segments[releases_idx - 1].to_string();
     let tag = path_segments[releases_idx + 2].to_string();
 
+    Ok((host.to_string(), owner, repo, tag))
+}
+async fn parse_release_url(
+    url: &url::Url,
+    git_repo: PathBuf,
+) -> Result<GithubReleaseInfo, ApiError> {
+    let (host, owner, repo, tag) = validate_github_url(url)?;
     if owner.is_empty() || repo.is_empty() || tag.is_empty() {
         return Err(ApiError::InvalidGitHubUrl(
             "Owner, repo, and tag cannot be empty".to_string(),
