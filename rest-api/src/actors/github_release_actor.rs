@@ -30,6 +30,136 @@ pub struct RegisterResult {
     pub index_file_path: NormalisedPaths,
 }
 
+pub trait ReleaseAdder: std::fmt::Debug {
+    fn signers_file_path(&self) -> PathBuf;
+    async fn index_content(&self) -> Result<String, ApiError>;
+    async fn write_index(&self) -> Result<NormalisedPaths, ApiError>;
+}
+
+struct GithubReleaseAdder {
+    release_url: url::Url,
+    git_repo_path: PathBuf,
+    client: octocrab::Octocrab,
+    release_info: GithubReleaseInfo,
+}
+
+impl GithubReleaseAdder {
+    async fn new(
+        release_url: url::Url,
+        client: octocrab::Octocrab,
+        git_repo_path: PathBuf,
+    ) -> Result<Self, ApiError> {
+        let release_info = parse_release_url(&release_url, git_repo_path.clone()).await?;
+
+        Ok(Self {
+            release_url,
+            git_repo_path,
+            client,
+            release_info,
+        })
+    }
+
+    fn extract_assets(&self, release: &Release) -> Vec<ReleaseAssetInfo> {
+        release
+            .assets
+            .iter()
+            .map(|asset| ReleaseAssetInfo {
+                name: asset.name.clone(),
+                download_url: asset.browser_download_url.to_string(),
+                size: asset.size,
+            })
+            .collect()
+    }
+
+    fn generate_index_json(&self, assets: &[ReleaseAssetInfo]) -> Result<String, ApiError> {
+        let mut entries = json!({});
+
+        for asset in assets {
+            entries[&asset.name] = json!({
+                "url": asset.download_url,
+                "size": asset.size,
+            });
+        }
+
+        let index = json!({
+            "version": 1,
+            "files": entries
+        });
+
+        serde_json::to_string_pretty(&index)
+            .map_err(|e| ApiError::InternalServerError(format!("Failed to serialize index: {}", e)))
+    }
+}
+
+impl ReleaseAdder for GithubReleaseAdder {
+    fn signers_file_path(&self) -> PathBuf {
+        self.git_repo_path
+            .join(&self.release_info.host)
+            .join(&self.release_info.owner)
+            .join(&self.release_info.repo)
+            .join(SIGNERS_DIR)
+            .join(SIGNERS_FILE)
+    }
+
+    async fn index_content(&self) -> Result<String, ApiError> {
+        let release: Release = self
+            .client
+            .repos(&self.release_info.owner, &self.release_info.repo)
+            .releases()
+            .get_by_tag(&self.release_info.tag)
+            .await
+            .map_err(|e| ApiError::GitHubApiError(format!("Failed to fetch release: {}", e)))?;
+
+        let assets = self.extract_assets(&release);
+
+        if assets.is_empty() {
+            return Err(ApiError::GitHubApiError(
+                "No assets found in release".to_string(),
+            ));
+        }
+
+        self.generate_index_json(&assets)
+    }
+
+    async fn write_index(&self) -> Result<NormalisedPaths, ApiError> {
+        let signers_file_path = self.signers_file_path();
+        if !signers_file_path.exists() {
+            return Err(ApiError::NoActiveSignersFile);
+        }
+
+        let index_content = self.index_content().await?;
+
+        let full_index_path = self.release_info.release_path.join(INDEX_FILE).await?;
+        if let Some(parent) = full_index_path.absolute_path().parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
+            })?;
+        }
+
+        fs::write(&full_index_path, index_content)
+            .await
+            .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write index file: {}", e)))?;
+
+        info!(
+            actor = %ACTOR_NAME,
+            index_path = %full_index_path.relative_path().display(),
+            "Successfully created index file"
+        );
+
+        Ok(full_index_path)
+    }
+}
+
+impl std::fmt::Debug for GithubReleaseAdder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GithubReleaseAdder")
+            .field("release_url", &self.release_url)
+            .field("git_repo_path", &self.git_repo_path)
+            .field("release_info", &self.release_info)
+            .finish()
+    }
+}
+
 impl Actor for GitHubReleaseActor {
     type Args = (
         kameo::actor::ActorRef<GitActor>,
@@ -83,87 +213,31 @@ impl GitHubReleaseActor {
             "Processing GitHub release"
         );
 
-        let release_info = parse_release_url(&msg.release_url, self.git_repo_path.clone()).await?;
-
-        let owner = release_info.owner.clone();
-        let repo = release_info.repo.clone();
-        let tag = release_info.tag.clone();
-
-        let project_path = NormalisedPaths::new(
+        let adder = GithubReleaseAdder::new(
+            msg.release_url,
+            self.octocrab.clone(),
             self.git_repo_path.clone(),
-            PathBuf::new()
-                .join(release_info.host)
-                .join(&owner)
-                .join(&repo),
         )
         .await?;
-
-        let signers_file_path = project_path
-            .absolute_path()
-            .join(SIGNERS_DIR)
-            .join(SIGNERS_FILE);
-
-        if !signers_file_path.exists() {
-            return Err(ApiError::NoActiveSignersFile);
-        }
 
         info!(
             request_id = %msg.request_id,
             actor = %ACTOR_NAME,
-            owner = %owner,
-            repo = %repo,
-            tag = %tag,
-            release_path = %release_info.release_path.relative_path().display(),
+            owner = %adder.release_info.owner,
+            repo = %adder.release_info.repo,
+            tag = %adder.release_info.tag,
+            release_path = %adder.release_info.release_path.relative_path().display(),
             "Extracted release info"
         );
 
-        let release: Release = self
-            .octocrab
-            .repos(&owner, &repo)
-            .releases()
-            .get_by_tag(&tag)
-            .await
-            .map_err(|e| ApiError::GitHubApiError(format!("Failed to fetch release: {}", e)))?;
-
-        let assets: Vec<ReleaseAssetInfo> = release
-            .assets
-            .into_iter()
-            .map(|asset| ReleaseAssetInfo {
-                name: asset.name,
-                download_url: asset.browser_download_url.to_string(),
-                size: asset.size,
-            })
-            .collect();
-
-        if assets.is_empty() {
-            return Err(ApiError::GitHubApiError(
-                "No assets found in release".to_string(),
-            ));
-        }
-
-        let index_content = self.generate_index_json(&assets)?;
-
-        let full_index_path = release_info.release_path.join(INDEX_FILE).await?;
-        if let Some(parent) = full_index_path.absolute_path().parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
-            })?;
-        }
-
-        fs::write(&full_index_path, index_content)
-            .await
-            .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write index file: {}", e)))?;
-
-        let normalized_paths =
-            NormalisedPaths::new(self.git_repo_path.clone(), full_index_path.clone())
-                .await
-                .map_err(|e| {
-                    ApiError::InvalidFilePath(format!("Failed to normalize path: {}", e))
-                })?;
+        let index_file_path = adder.write_index().await?;
 
         let commit_msg = CommitFile {
-            file_paths: vec![normalized_paths],
-            commit_message: format!("Add index for {}/{}/{}", owner, repo, tag),
+            file_paths: vec![index_file_path.clone()],
+            commit_message: format!(
+                "Add index for {}/{}/{}",
+                adder.release_info.owner, adder.release_info.repo, adder.release_info.tag
+            ),
             request_id: Uuid::new_v4().to_string(),
         };
 
@@ -172,34 +246,7 @@ impl GitHubReleaseActor {
             .await
             .map_err(|e| ApiError::InternalServerError(format!("Failed to commit file: {}", e)))?;
 
-        info!(
-            request_id = %msg.request_id,
-            actor = %ACTOR_NAME,
-            index_path = %full_index_path.relative_path().display(),
-            "Successfully created index file"
-        );
-        Ok(RegisterResult {
-            index_file_path: full_index_path,
-        })
-    }
-
-    fn generate_index_json(&self, assets: &[ReleaseAssetInfo]) -> Result<String, ApiError> {
-        let mut entries = json!({});
-
-        for asset in assets {
-            entries[&asset.name] = json!({
-                "url": asset.download_url,
-                "size": asset.size,
-            });
-        }
-
-        let index = json!({
-            "version": 1,
-            "files": entries
-        });
-
-        serde_json::to_string_pretty(&index)
-            .map_err(|e| ApiError::InternalServerError(format!("Failed to serialize index: {}", e)))
+        Ok(RegisterResult { index_file_path })
     }
 }
 
@@ -209,6 +256,7 @@ struct ReleaseAssetInfo {
     size: i64,
 }
 
+#[derive(Debug)]
 struct GithubReleaseInfo {
     host: String,
     owner: String,
