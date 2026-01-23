@@ -8,6 +8,7 @@ use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use octocrab::models::repos::Release;
 use rest_api_types::errors::ApiError;
+use rest_api_types::github_helpers::validate_github_url;
 use serde_json::json;
 use tokio::fs;
 use tracing::info;
@@ -225,53 +226,11 @@ struct GithubReleaseInfo {
     release_path: NormalisedPaths,
 }
 
-fn validate_github_url(url: &url::Url) -> Result<(String, String, String, String), ApiError> {
-    let host = url
-        .host_str()
-        .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing host".to_string()))?;
-
-    if !host.ends_with("github.com") {
-        return Err(ApiError::InvalidGitHubUrl(
-            "Only github.com URLs are supported".to_string(),
-        ));
-    }
-
-    let path_segments: Vec<_> = url
-        .path_segments()
-        .ok_or_else(|| ApiError::InvalidGitHubUrl("Invalid path".to_string()))?
-        .collect();
-
-    let releases_idx = path_segments
-        .iter()
-        .position(|&s| s == "releases")
-        .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing /releases/ in path".to_string()))?;
-
-    if releases_idx < 2
-        || releases_idx + 2 >= path_segments.len()
-        || path_segments[releases_idx + 1] != "tag"
-    {
-        return Err(ApiError::InvalidGitHubUrl(
-            "Invalid GitHub release URL structure".to_string(),
-        ));
-    }
-
-    let owner = path_segments[releases_idx - 2].to_string();
-    let repo = path_segments[releases_idx - 1].to_string();
-    let tag = path_segments[releases_idx + 2].to_string();
-
-    Ok((host.to_string(), owner, repo, tag))
-}
 async fn parse_release_url(
     url: &url::Url,
     git_repo: PathBuf,
 ) -> Result<GithubReleaseInfo, ApiError> {
     let (host, owner, repo, tag) = validate_github_url(url)?;
-    if owner.is_empty() || repo.is_empty() || tag.is_empty() {
-        return Err(ApiError::InvalidGitHubUrl(
-            "Owner, repo, and tag cannot be empty".to_string(),
-        ));
-    }
-
     let url_path = format!("{}/{}", host, url.path());
     let release_path = NormalisedPaths::new(git_repo, PathBuf::from(&url_path)).await?;
 

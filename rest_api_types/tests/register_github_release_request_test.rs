@@ -69,7 +69,7 @@ fn test_deserialize_missing_tag() {
 
     assert!(result.is_err());
     let error = result.unwrap_err().to_string();
-    assert!(error.contains("tag"));
+    assert!(error.contains("tag"), "got {}", error);
 }
 
 #[test]
@@ -175,12 +175,14 @@ fn test_release_url_with_subdomain() {
 
     let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
 
-    assert!(result.is_ok());
-    let request = result.unwrap();
-    assert_eq!(
-        request.release_url.as_str(),
-        "https://github.example.org/owner/repo/releases/tag/v1.0.0"
-    );
+    match result {
+        Ok(_v) => panic!("Sholud only accept github.com urls"),
+        Err(e) => {
+            if !e.to_string().contains("Only github.com URLs are supported") {
+                panic!("Expected Only github.com URLs are supported, but got {}", e)
+            }
+        }
+    }
 }
 
 #[test]
@@ -219,8 +221,11 @@ fn test_release_url_with_trailing_slash() {
 
     let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
 
-    assert!(result.is_err());
-    let error = result.unwrap_err().to_string();
-    // The trailing slash creates an empty segment after tag
-    assert!(error.contains("tag") || error.contains("Owner, repo, and tag cannot be empty"));
+    match result {
+        Ok(v) => assert_eq!(
+            v.release_url.to_string(),
+            "https://github.com/owner/repo/releases/tag/v1.0.0/"
+        ),
+        Err(e) => panic!("{}", e),
+    }
 }

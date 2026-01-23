@@ -210,6 +210,8 @@ pub mod environment {
 pub mod models {
     use serde::{Deserialize, Serialize};
 
+    use crate::github_helpers::validate_github_url;
+
     #[derive(Debug, Deserialize)]
     pub struct AddFileRequest {
         pub file_path: String,
@@ -367,49 +369,8 @@ pub mod models {
                     let release_url = url::Url::parse(&url_string)
                         .map_err(|e| serde::de::Error::custom(format!("Invalid URL: {}", e)))?;
 
-                    let host = release_url
-                        .host_str()
-                        .ok_or_else(|| serde::de::Error::custom("Missing host"))?;
-
-                    if !host.ends_with("github.com") {
-                        return Err(serde::de::Error::custom(
-                            "Only github.com URLs are supported",
-                        ));
-                    }
-
-                    let path_segments: Vec<_> = release_url
-                        .path_segments()
-                        .ok_or_else(|| serde::de::Error::custom("Invalid path"))?
-                        .collect();
-
-                    let releases_idx = path_segments
-                        .iter()
-                        .position(|&s| s == "releases")
-                        .ok_or_else(|| serde::de::Error::custom("Missing /releases/ in path"))?;
-
-                    if releases_idx < 2 {
-                        return Err(serde::de::Error::custom(
-                            "Invalid GitHub release URL structure",
-                        ));
-                    }
-
-                    if releases_idx + 2 >= path_segments.len()
-                        || path_segments[releases_idx + 1] != "tag"
-                    {
-                        return Err(serde::de::Error::custom(
-                            "Missing /tag/ after /releases/ in URL",
-                        ));
-                    }
-
-                    let owner = path_segments[releases_idx - 2];
-                    let repo = path_segments[releases_idx - 1];
-                    let tag = path_segments[releases_idx + 2];
-
-                    if owner.is_empty() || repo.is_empty() || tag.is_empty() {
-                        return Err(serde::de::Error::custom(
-                            "Owner, repo, and tag cannot be empty",
-                        ));
-                    }
+                    validate_github_url(&release_url)
+                        .map_err(|e| serde::de::Error::custom(e.to_string()))?;
 
                     Ok(RegisterGitHubReleaseRequest { release_url })
                 }
@@ -487,6 +448,54 @@ pub mod models {
         pub success: bool,
         pub message: String,
         pub index_file_path: Option<String>,
+    }
+}
+
+pub mod github_helpers {
+    use crate::errors::ApiError;
+
+    pub fn validate_github_url(
+        url: &url::Url,
+    ) -> Result<(String, String, String, String), ApiError> {
+        let host = url
+            .host_str()
+            .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing host".to_string()))?;
+
+        if !host.ends_with("github.com") {
+            return Err(ApiError::InvalidGitHubUrl(
+                "Only github.com URLs are supported".to_string(),
+            ));
+        }
+
+        let path_segments: Vec<_> = url
+            .path_segments()
+            .ok_or_else(|| ApiError::InvalidGitHubUrl("Invalid path".to_string()))?
+            .collect();
+
+        let releases_idx = path_segments
+            .iter()
+            .position(|&s| s == "releases")
+            .ok_or_else(|| ApiError::InvalidGitHubUrl("Missing /releases/ in path".to_string()))?;
+
+        if releases_idx < 2
+            || releases_idx + 2 >= path_segments.len()
+            || path_segments[releases_idx + 1] != "tag"
+        {
+            return Err(ApiError::InvalidGitHubUrl(
+                "Invalid GitHub release URL structure trying to extract tag".to_string(),
+            ));
+        }
+
+        let owner = path_segments[releases_idx - 2].to_string();
+        let repo = path_segments[releases_idx - 1].to_string();
+        let tag = path_segments[releases_idx + 2].to_string();
+
+        if owner.is_empty() || repo.is_empty() || tag.is_empty() {
+            return Err(ApiError::InvalidGitHubUrl(
+                "Owner, repo, and tag cannot be empty".to_string(),
+            ));
+        }
+        Ok((host.to_string(), owner, repo, tag))
     }
 }
 
