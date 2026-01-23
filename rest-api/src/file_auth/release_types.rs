@@ -9,10 +9,18 @@ pub enum ReleaseUrlError {
     InvalidFormat(String),
     #[error("Missing tag in release URL")]
     MissingTag,
-    #[error("Unsupported release platform: {0}. Supported platforms: GitHub")]
+    #[error("Unsupported release platform: {0}. Supported platforms: GitHub, GitLab")]
     UnsupportedPlatform(String),
     #[error("Missing {0} in URL")]
     MissingComponent(String),
+}
+
+pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
+    fn host(&self) -> &str;
+    fn owner(&self) -> &str;
+    fn repo(&self) -> &str;
+    fn tag(&self) -> &str;
+    fn release_path(&self) -> &NormalisedPaths;
 }
 
 #[allow(async_fn_in_trait)]
@@ -26,4 +34,6 @@ pub trait ReleaseAdder: std::fmt::Debug {
     async fn index_content(&self) -> Result<String, ApiError>;
 
     async fn write_index(&self) -> Result<NormalisedPaths, ApiError>;
+
+    fn release_info(&self) -> &dyn ReleaseInfo;
 }

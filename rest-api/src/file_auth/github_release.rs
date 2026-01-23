@@ -1,5 +1,5 @@
 use crate::constants::INDEX_FILE;
-use crate::file_auth::release_types::ReleaseAdder;
+use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo};
 use crate::path_validation::NormalisedPaths;
 use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE};
 use octocrab::models::repos::Release;
@@ -24,6 +24,28 @@ pub struct GithubReleaseInfo {
     pub repo: String,
     pub tag: String,
     pub release_path: NormalisedPaths,
+}
+
+impl ReleaseInfo for GithubReleaseInfo {
+    fn host(&self) -> &str {
+        &self.host
+    }
+
+    fn owner(&self) -> &str {
+        &self.owner
+    }
+
+    fn repo(&self) -> &str {
+        &self.repo
+    }
+
+    fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    fn release_path(&self) -> &NormalisedPaths {
+        &self.release_path
+    }
 }
 
 struct ReleaseAssetInfo {
@@ -71,12 +93,18 @@ impl ReleaseAdder for GithubReleaseAdder {
             .releases()
             .get_by_tag(&self.release_info.tag)
             .await
-            .map_err(|e| ApiError::GitHubApiError(format!("Failed to fetch release: {}", e)))?;
+            .map_err(|e| {
+                ApiError::ReleaseApiError(
+                    "GitHub".to_string(),
+                    format!("Failed to fetch release: {}", e),
+                )
+            })?;
 
         let assets = self.extract_assets(&release);
 
         if assets.is_empty() {
-            return Err(ApiError::GitHubApiError(
+            return Err(ApiError::ReleaseApiError(
+                "GitHub".to_string(),
                 "No assets found in release".to_string(),
             ));
         }
@@ -110,10 +138,14 @@ impl ReleaseAdder for GithubReleaseAdder {
 
         Ok(full_index_path)
     }
+
+    fn release_info(&self) -> &dyn ReleaseInfo {
+        &self.release_info
+    }
 }
 
 impl GithubReleaseAdder {
-    pub fn release_info(&self) -> &GithubReleaseInfo {
+    pub fn release_info_concrete(&self) -> &GithubReleaseInfo {
         &self.release_info
     }
 

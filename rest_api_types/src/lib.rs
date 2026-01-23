@@ -83,6 +83,9 @@ pub mod errors {
         #[error("Server configuration error: {0}")]
         ServerConfigError(#[from] ServerConfigError),
 
+        #[error("{0} API error: {1}")]
+        ReleaseApiError(String, String),
+
         #[error("GitHub API error: {0}")]
         GitHubApiError(String),
 
@@ -97,9 +100,6 @@ pub mod errors {
 
         #[error("Invalid GitHub release URL format: {0}")]
         InvalidGitHubUrl(String),
-
-        #[error("Octocrab error: {0}")]
-        OctoCrabError(#[from] octocrab::Error),
     }
 
     #[derive(Error, Debug)]
@@ -183,11 +183,11 @@ pub mod errors {
                 ApiError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::RequestTooBig(_) => StatusCode::PAYLOAD_TOO_LARGE,
                 ApiError::GitHubApiError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::ReleaseApiError(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::NoActiveSignersFile => StatusCode::BAD_REQUEST,
                 ApiError::InvalidReleaseUrl(_) => StatusCode::BAD_REQUEST,
                 ApiError::UnsupportedReleasePlatform(_) => StatusCode::BAD_REQUEST,
                 ApiError::InvalidGitHubUrl(_) => StatusCode::BAD_REQUEST,
-                ApiError::OctoCrabError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }

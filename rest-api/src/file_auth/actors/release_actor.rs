@@ -86,17 +86,15 @@ impl ReleaseActor {
                     }
                 })?;
 
-        let release_info = match &adder {
-            ReleaseAdders::Github(github) => github.release_info(),
-        };
+        let release_info: &dyn crate::file_auth::release_types::ReleaseInfo = adder.release_info();
 
         info!(
             request_id = %msg.request_id,
             actor = %ACTOR_NAME,
-            owner = %release_info.owner,
-            repo = %release_info.repo,
-            tag = %release_info.tag,
-            release_path = %release_info.release_path.relative_path().display(),
+            owner = %release_info.owner(),
+            repo = %release_info.repo(),
+            tag = %release_info.tag(),
+            release_path = %release_info.release_path().relative_path().display(),
             "Extracted release info"
         );
 
@@ -106,7 +104,9 @@ impl ReleaseActor {
             file_paths: vec![index_file_path.clone()],
             commit_message: format!(
                 "Add index for {}/{}/{}",
-                release_info.owner, release_info.repo, release_info.tag
+                release_info.owner(),
+                release_info.repo(),
+                release_info.tag()
             ),
             request_id: Uuid::new_v4().to_string(),
         };
