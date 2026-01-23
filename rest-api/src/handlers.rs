@@ -537,6 +537,12 @@ pub async fn register_github_release_handler(
     Ok(Json(rest_api_types::RegisterGitHubReleaseResponse {
         success: true,
         message: "Release registered successfully".to_string(),
-        index_file_path: Some(result.index_file_path),
+        index_file_path: Some(
+            result
+                .index_file_path
+                .relative_path()
+                .to_string_lossy()
+                .to_string(),
+        ),
     }))
 }

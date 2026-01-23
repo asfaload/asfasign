@@ -27,7 +27,7 @@ pub struct ProcessGitHubRelease {
 }
 
 pub struct RegisterResult {
-    pub index_file_path: String,
+    pub index_file_path: NormalisedPaths,
 }
 
 impl Actor for GitHubReleaseActor {
@@ -88,7 +88,6 @@ impl GitHubReleaseActor {
         let owner = release_info.owner.clone();
         let repo = release_info.repo.clone();
         let tag = release_info.tag.clone();
-        let index_repo_path = release_info.release_path.absolute_path();
 
         let project_path = NormalisedPaths::new(
             self.git_repo_path.clone(),
@@ -151,9 +150,8 @@ impl GitHubReleaseActor {
 
         let index_content = self.generate_index_json(&assets)?;
 
-        let full_index_path = index_repo_path.join(INDEX_FILE);
-
-        if let Some(parent) = full_index_path.parent() {
+        let full_index_path = release_info.release_path.join(INDEX_FILE).await?;
+        if let Some(parent) = full_index_path.absolute_path().parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
                 ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
             })?;
@@ -184,11 +182,11 @@ impl GitHubReleaseActor {
         info!(
             request_id = %msg.request_id,
             actor = %ACTOR_NAME,
-            index_path = %full_index_path.display(),
+            index_path = %full_index_path.relative_path().display(),
             "Successfully created index file"
         );
         Ok(RegisterResult {
-            index_file_path: full_index_path.to_string_lossy().to_string(),
+            index_file_path: full_index_path,
         })
     }
 
