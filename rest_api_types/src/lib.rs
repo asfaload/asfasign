@@ -394,54 +394,7 @@ pub mod models {
                 crate::errors::ApiError::InvalidGitHubUrl(format!("Invalid URL: {}", e))
             })?;
 
-            let host = release_url.host_str().ok_or_else(|| {
-                crate::errors::ApiError::InvalidGitHubUrl("Missing host".to_string())
-            })?;
-
-            if !host.ends_with("github.com") {
-                return Err(crate::errors::ApiError::InvalidGitHubUrl(
-                    "Only github.com URLs are supported".to_string(),
-                ));
-            }
-
-            let path_segments: Vec<_> = release_url
-                .path_segments()
-                .ok_or_else(|| {
-                    crate::errors::ApiError::InvalidGitHubUrl("Invalid path".to_string())
-                })?
-                .collect();
-
-            let releases_idx = path_segments
-                .iter()
-                .position(|&s| s == "releases")
-                .ok_or_else(|| {
-                    crate::errors::ApiError::InvalidGitHubUrl(
-                        "Missing /releases/ in path".to_string(),
-                    )
-                })?;
-
-            if releases_idx < 2 {
-                return Err(crate::errors::ApiError::InvalidGitHubUrl(
-                    "Invalid GitHub release URL structure".to_string(),
-                ));
-            }
-
-            let owner = path_segments[releases_idx - 2];
-            let repo = path_segments[releases_idx - 1];
-
-            if releases_idx + 2 >= path_segments.len() || path_segments[releases_idx + 1] != "tag" {
-                return Err(crate::errors::ApiError::InvalidGitHubUrl(
-                    "Missing /tag/ after /releases/ in URL".to_string(),
-                ));
-            }
-
-            let tag = path_segments[releases_idx + 2];
-
-            if owner.is_empty() || repo.is_empty() || tag.is_empty() {
-                return Err(crate::errors::ApiError::InvalidGitHubUrl(
-                    "Owner, repo, and tag cannot be empty".to_string(),
-                ));
-            }
+            validate_github_url(&release_url)?;
 
             Ok(Self { release_url })
         }
