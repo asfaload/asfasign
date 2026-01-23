@@ -1,5 +1,5 @@
 use crate::constants::INDEX_FILE;
-use crate::file_auth::releases::ReleaseAdder;
+use crate::file_auth::release_types::ReleaseAdder;
 use crate::path_validation::NormalisedPaths;
 use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE};
 use octocrab::models::repos::Release;
@@ -32,59 +32,29 @@ struct ReleaseAssetInfo {
     size: i64,
 }
 
-impl GithubReleaseAdder {
-    pub async fn new(
-        release_url: url::Url,
-        client: octocrab::Octocrab,
+impl ReleaseAdder for GithubReleaseAdder {
+    async fn new(
+        release_url: &url::Url,
         git_repo_path: PathBuf,
-    ) -> Result<Self, ApiError> {
-        let release_info = parse_release_url(&release_url, &git_repo_path).await?;
+    ) -> Result<Self, crate::file_auth::release_types::ReleaseUrlError>
+    where
+        Self: Sized,
+    {
+        let client = octocrab::Octocrab::default();
+        let release_info = parse_release_url(release_url, &git_repo_path)
+            .await
+            .map_err(|e| {
+                crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(e.to_string())
+            })?;
 
         Ok(Self {
-            release_url,
+            release_url: release_url.clone(),
             git_repo_path,
             client,
             release_info,
         })
     }
 
-    pub fn release_info(&self) -> &GithubReleaseInfo {
-        &self.release_info
-    }
-
-    fn extract_assets(&self, release: &Release) -> Vec<ReleaseAssetInfo> {
-        release
-            .assets
-            .iter()
-            .map(|asset| ReleaseAssetInfo {
-                name: asset.name.clone(),
-                download_url: asset.browser_download_url.to_string(),
-                size: asset.size,
-            })
-            .collect()
-    }
-
-    fn generate_index_json(&self, assets: &[ReleaseAssetInfo]) -> Result<String, ApiError> {
-        let mut entries = json!({});
-
-        for asset in assets {
-            entries[&asset.name] = json!({
-                "url": asset.download_url,
-                "size": asset.size,
-            });
-        }
-
-        let index = json!({
-            "version": 1,
-            "files": entries
-        });
-
-        serde_json::to_string_pretty(&index)
-            .map_err(|e| ApiError::InternalServerError(format!("Failed to serialize index: {}", e)))
-    }
-}
-
-impl ReleaseAdder for GithubReleaseAdder {
     fn signers_file_path(&self) -> PathBuf {
         self.git_repo_path
             .join(&self.release_info.host)
@@ -139,6 +109,43 @@ impl ReleaseAdder for GithubReleaseAdder {
         );
 
         Ok(full_index_path)
+    }
+}
+
+impl GithubReleaseAdder {
+    pub fn release_info(&self) -> &GithubReleaseInfo {
+        &self.release_info
+    }
+
+    fn extract_assets(&self, release: &Release) -> Vec<ReleaseAssetInfo> {
+        release
+            .assets
+            .iter()
+            .map(|asset| ReleaseAssetInfo {
+                name: asset.name.clone(),
+                download_url: asset.browser_download_url.to_string(),
+                size: asset.size,
+            })
+            .collect()
+    }
+
+    fn generate_index_json(&self, assets: &[ReleaseAssetInfo]) -> Result<String, ApiError> {
+        let mut entries = json!({});
+
+        for asset in assets {
+            entries[&asset.name] = json!({
+                "url": asset.download_url,
+                "size": asset.size,
+            });
+        }
+
+        let index = json!({
+            "version": 1,
+            "files": entries
+        });
+
+        serde_json::to_string_pretty(&index)
+            .map_err(|e| ApiError::InternalServerError(format!("Failed to serialize index: {}", e)))
     }
 }
 

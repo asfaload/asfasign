@@ -9,8 +9,8 @@ use crate::{
     },
     file_auth::actors::forge_signers_validator::ForgeProjectValidator,
     file_auth::actors::{
-        git_actor::GitActor, github_release_actor::GitHubReleaseActor,
-        signature_collector::SignatureCollector, signers_initialiser::SignersInitialiser,
+        git_actor::GitActor, release_actor::ReleaseActor, signature_collector::SignatureCollector,
+        signers_initialiser::SignersInitialiser,
     },
 };
 
@@ -23,7 +23,7 @@ pub struct AppState {
     pub forge_project_validator: ActorRef<ForgeProjectValidator>,
     pub signers_initialiser: ActorRef<SignersInitialiser>,
     pub signature_collector: ActorRef<SignatureCollector>,
-    pub github_release_actor: ActorRef<GitHubReleaseActor>,
+    pub release_actor: ActorRef<ReleaseActor>,
 }
 
 pub fn init_state(git_repo_path: std::path::PathBuf, github_api_key: Option<String>) -> AppState {
@@ -39,8 +39,8 @@ pub fn init_state(git_repo_path: std::path::PathBuf, github_api_key: Option<Stri
     let signers_initialiser = SignersInitialiser::spawn(());
     let signature_collector = SignatureCollector::spawn(git_actor.clone());
 
-    let github_release_actor =
-        GitHubReleaseActor::spawn((git_actor.clone(), github_api_key, git_repo_path.clone()));
+    let release_actor =
+        ReleaseActor::spawn((git_actor.clone(), github_api_key, git_repo_path.clone()));
 
     AppState {
         git_repo_path,
@@ -50,6 +50,6 @@ pub fn init_state(git_repo_path: std::path::PathBuf, github_api_key: Option<Stri
         forge_project_validator,
         signers_initialiser,
         signature_collector,
-        github_release_actor,
+        release_actor,
     }
 }

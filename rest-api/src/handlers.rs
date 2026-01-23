@@ -508,11 +508,11 @@ fn extract_public_key_from_headers(
         .map_err(|_| ApiError::InvalidAuthenticationHeaders)
 }
 
-pub async fn register_github_release_handler(
+pub async fn register_release_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<rest_api_types::RegisterGitHubReleaseRequest>,
-) -> Result<Json<rest_api_types::RegisterGitHubReleaseResponse>, ApiError> {
+    Json(request): Json<rest_api_types::RegisterReleaseRequest>,
+) -> Result<Json<rest_api_types::RegisterReleaseResponse>, ApiError> {
     let request_id = headers
         .get("x-request-id")
         .and_then(|h| h.to_str().ok())
@@ -521,24 +521,22 @@ pub async fn register_github_release_handler(
     tracing::info!(
         request_id = %request_id,
         release_url = %request.release_url,
-        "Received GitHub release registration request"
+        "Received release registration request"
     );
 
     let result = state
-        .github_release_actor
-        .ask(
-            crate::file_auth::actors::github_release_actor::ProcessGitHubRelease {
-                request_id: request_id.to_string(),
-                release_url: request.release_url,
-            },
-        )
+        .release_actor
+        .ask(crate::file_auth::actors::release_actor::ProcessRelease {
+            request_id: request_id.to_string(),
+            release_url: request.release_url,
+        })
         .await
         .map_err(|e| match e {
             kameo::error::SendError::HandlerError(api_error) => api_error,
             other => ApiError::InternalServerError(format!("Actor message failed: {}", other)),
         })?;
 
-    Ok(Json(rest_api_types::RegisterGitHubReleaseResponse {
+    Ok(Json(rest_api_types::RegisterReleaseResponse {
         success: true,
         message: "Release registered successfully".to_string(),
         index_file_path: Some(

@@ -1,0 +1,29 @@
+use crate::path_validation::NormalisedPaths;
+use rest_api_types::errors::ApiError;
+use std::path::PathBuf;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum ReleaseUrlError {
+    #[error("Invalid release URL format: {0}")]
+    InvalidFormat(String),
+    #[error("Missing tag in release URL")]
+    MissingTag,
+    #[error("Unsupported release platform: {0}. Supported platforms: GitHub")]
+    UnsupportedPlatform(String),
+    #[error("Missing {0} in URL")]
+    MissingComponent(String),
+}
+
+#[allow(async_fn_in_trait)]
+pub trait ReleaseAdder: std::fmt::Debug {
+    async fn new(release_url: &url::Url, git_repo_path: PathBuf) -> Result<Self, ReleaseUrlError>
+    where
+        Self: Sized;
+
+    fn signers_file_path(&self) -> PathBuf;
+
+    async fn index_content(&self) -> Result<String, ApiError>;
+
+    async fn write_index(&self) -> Result<NormalisedPaths, ApiError>;
+}

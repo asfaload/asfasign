@@ -1,6 +1,6 @@
 use super::git_actor::{CommitFile, GitActor};
-use crate::file_auth::github_release::GithubReleaseAdder;
-use crate::file_auth::releases::ReleaseAdder;
+use crate::file_auth::release_types::ReleaseAdder;
+use crate::file_auth::releasers::ReleaseAdders;
 use crate::path_validation::NormalisedPaths;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
@@ -8,14 +8,13 @@ use rest_api_types::errors::ApiError;
 use tracing::info;
 use uuid::Uuid;
 
-const ACTOR_NAME: &str = "github_release_actor";
-pub struct GitHubReleaseActor {
+const ACTOR_NAME: &str = "release_actor";
+pub struct ReleaseActor {
     git_actor: kameo::actor::ActorRef<GitActor>,
-    octocrab: octocrab::Octocrab,
     git_repo_path: std::path::PathBuf,
 }
 
-pub struct ProcessGitHubRelease {
+pub struct ProcessRelease {
     pub release_url: url::Url,
     pub request_id: String,
 }
@@ -24,7 +23,7 @@ pub struct RegisterResult {
     pub index_file_path: NormalisedPaths,
 }
 
-impl Actor for GitHubReleaseActor {
+impl Actor for ReleaseActor {
     type Args = (
         kameo::actor::ActorRef<GitActor>,
         Option<String>,
@@ -38,59 +37,66 @@ impl Actor for GitHubReleaseActor {
     ) -> Result<Self, Self::Error> {
         info!(actor = ACTOR_NAME, "starting");
 
-        let octocrab: octocrab::Octocrab = match &args.1 {
-            Some(token) => octocrab::Octocrab::builder()
-                .personal_token(token.clone())
-                .build()?,
-            None => octocrab::Octocrab::default(),
-        };
-
         Ok(Self {
             git_actor: args.0,
-            octocrab,
             git_repo_path: args.2,
         })
     }
 }
 
-impl Message<ProcessGitHubRelease> for GitHubReleaseActor {
+impl Message<ProcessRelease> for ReleaseActor {
     type Reply = Result<RegisterResult, ApiError>;
 
     async fn handle(
         &mut self,
-        msg: ProcessGitHubRelease,
+        msg: ProcessRelease,
         ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         self.process_release(msg, ctx).await
     }
 }
 
-impl GitHubReleaseActor {
+impl ReleaseActor {
     async fn process_release(
         &self,
-        msg: ProcessGitHubRelease,
+        msg: ProcessRelease,
         _ctx: &mut Context<Self, Result<RegisterResult, ApiError>>,
     ) -> Result<RegisterResult, ApiError> {
         info!(
             request_id = %msg.request_id,
             url = %msg.release_url,
-            "Processing GitHub release"
+            "Processing release"
         );
 
-        let adder = GithubReleaseAdder::new(
-            msg.release_url,
-            self.octocrab.clone(),
-            self.git_repo_path.clone(),
-        )
-        .await?;
+        let adder: crate::file_auth::releasers::ReleaseAdders =
+            ReleaseAdders::new(&msg.release_url, self.git_repo_path.clone())
+                .await
+                .map_err(|e| match e {
+                    crate::file_auth::release_types::ReleaseUrlError::UnsupportedPlatform(
+                        platform,
+                    ) => ApiError::UnsupportedReleasePlatform(platform),
+                    crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(msg) => {
+                        ApiError::InvalidReleaseUrl(msg)
+                    }
+                    crate::file_auth::release_types::ReleaseUrlError::MissingTag => {
+                        ApiError::InvalidReleaseUrl("Missing tag in release URL".to_string())
+                    }
+                    crate::file_auth::release_types::ReleaseUrlError::MissingComponent(msg) => {
+                        ApiError::InvalidReleaseUrl(msg)
+                    }
+                })?;
+
+        let release_info = match &adder {
+            ReleaseAdders::Github(github) => github.release_info(),
+        };
 
         info!(
             request_id = %msg.request_id,
             actor = %ACTOR_NAME,
-            owner = %adder.release_info().owner,
-            repo = %adder.release_info().repo,
-            tag = %adder.release_info().tag,
-            release_path = %adder.release_info().release_path.relative_path().display(),
+            owner = %release_info.owner,
+            repo = %release_info.repo,
+            tag = %release_info.tag,
+            release_path = %release_info.release_path.relative_path().display(),
             "Extracted release info"
         );
 
@@ -100,9 +106,7 @@ impl GitHubReleaseActor {
             file_paths: vec![index_file_path.clone()],
             commit_message: format!(
                 "Add index for {}/{}/{}",
-                adder.release_info().owner,
-                adder.release_info().repo,
-                adder.release_info().tag
+                release_info.owner, release_info.repo, release_info.tag
             ),
             request_id: Uuid::new_v4().to_string(),
         };

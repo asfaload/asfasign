@@ -4,4 +4,6 @@ pub mod forges_types;
 pub mod github;
 pub mod github_release;
 pub mod gitlab;
+pub mod release_types;
+pub mod releasers;
 pub mod releases;

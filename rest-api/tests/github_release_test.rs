@@ -5,7 +5,7 @@ pub mod tests {
     use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE};
     use rest_api::server::run_server;
     use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
-    use rest_api_types::RegisterGitHubReleaseRequest;
+    use rest_api_types::RegisterReleaseRequest;
     use serde_json::Value;
     use std::fs;
     use tempfile::TempDir;
@@ -62,8 +62,8 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        // Validate the URL through RegisterGitHubReleaseRequest::new()
-        let _ = RegisterGitHubReleaseRequest::new(
+        // Validate the URL through RegisterReleaseRequest::new()
+        let _ = RegisterReleaseRequest::new(
             "https://github.com/testowner/testrepo/releases/tag/v1.0.0".to_string(),
         )?;
 
@@ -75,7 +75,7 @@ pub mod tests {
         let response = tokio::time::timeout(
             Duration::from_secs(10),
             client
-                .post(url_for("github-release", port))
+                .post(url_for("release", port))
                 .json(&json_body)
                 .send(),
         )
@@ -143,8 +143,8 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        // Validate the URL through RegisterGitHubReleaseRequest::new()
-        let _ = RegisterGitHubReleaseRequest::new(
+        // Validate the URL through RegisterReleaseRequest::new()
+        let _ = RegisterReleaseRequest::new(
             "https://github.com/testowner/testrepo/releases/tag/v1.0.0".to_string(),
         )?;
 
@@ -156,7 +156,7 @@ pub mod tests {
         let response = tokio::time::timeout(
             Duration::from_secs(5),
             client
-                .post(url_for("github-release", port))
+                .post(url_for("release", port))
                 .json(&json_body)
                 .send(),
         )
@@ -209,7 +209,7 @@ pub mod tests {
         let response = tokio::time::timeout(
             Duration::from_secs(5),
             client
-                .post(url_for("github-release", port))
+                .post(url_for("release", port))
                 .json(&serde_json::json!({
                     "release_url": "invalid"
                 }))
