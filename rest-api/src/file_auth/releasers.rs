@@ -1,5 +1,5 @@
 use crate::file_auth::github_release::GithubReleaseAdder;
-use crate::file_auth::gitlab_release::GitlabReleaseAdder;
+use crate::file_auth::gitlab_release::{GitLabClient, GitlabReleaseAdder};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseUrlError};
 use crate::path_validation::NormalisedPaths;
 use rest_api_types::errors::ApiError;
@@ -11,7 +11,7 @@ pub const GITLAB_RELEASE_HOSTS: &[&str] = &["gitlab.com"];
 #[derive(Debug)]
 pub enum ReleaseAdders {
     Github(GithubReleaseAdder),
-    Gitlab(GitlabReleaseAdder),
+    Gitlab(GitlabReleaseAdder<GitLabClient>),
 }
 
 impl ReleaseAdder for ReleaseAdders {
