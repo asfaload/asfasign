@@ -11,6 +11,8 @@ use std::path::PathBuf;
 use tokio::fs;
 use tracing::info;
 
+const MAX_FILE_SIZE_FOR_HASHING: u64 = 500 * 1024 * 1024; // 500MB
+
 #[derive(Debug, Deserialize)]
 struct GitlabReleaseLink {
     #[serde(default)]
@@ -78,6 +80,7 @@ struct ReleaseAssetInfo {
     name: String,
     download_url: String,
     size: u64,
+    sha256_hash: Option<String>,
 }
 
 impl ReleaseAdder for GitlabReleaseAdder {
@@ -243,6 +246,7 @@ impl GitlabReleaseAdder {
                     name: link.name.clone(),
                     download_url: link.direct_asset_url.clone(),
                     size: link.size.unwrap_or(0),
+                    sha256_hash: None,
                 });
             }
         }
