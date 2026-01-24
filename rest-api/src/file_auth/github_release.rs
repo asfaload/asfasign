@@ -51,7 +51,6 @@ impl ReleaseInfo for GithubReleaseInfo {
 struct ReleaseAssetInfo {
     name: String,
     download_url: String,
-    size: i64,
 }
 
 impl ReleaseAdder for GithubReleaseAdder {
@@ -156,7 +155,6 @@ impl GithubReleaseAdder {
             .map(|asset| ReleaseAssetInfo {
                 name: asset.name.clone(),
                 download_url: asset.browser_download_url.to_string(),
-                size: asset.size,
             })
             .collect()
     }
@@ -167,7 +165,6 @@ impl GithubReleaseAdder {
         for asset in assets {
             entries[&asset.name] = json!({
                 "url": asset.download_url,
-                "size": asset.size,
             });
         }
 

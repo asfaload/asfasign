@@ -19,7 +19,6 @@ struct GitlabReleaseLink {
     name: String,
     #[serde(rename = "direct_asset_url")]
     direct_asset_url: String,
-    size: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,7 +78,6 @@ impl ReleaseInfo for GitlabReleaseInfo {
 struct ReleaseAssetInfo {
     name: String,
     download_url: String,
-    size: u64,
     sha256_hash: Option<String>,
 }
 
@@ -148,13 +146,26 @@ impl ReleaseAdder for GitlabReleaseAdder {
             )
         })?;
 
-        let assets = self.extract_assets(&release)?;
+        let mut assets = self.extract_assets(&release)?;
 
         if assets.is_empty() {
             return Err(ApiError::ReleaseApiError(
                 "GitLab".to_string(),
                 "No assets found in release".to_string(),
             ));
+        }
+
+        let mut hash_tasks = Vec::new();
+        for asset in &assets {
+            let task = Self::download_and_hash_file(&asset.download_url, MAX_FILE_SIZE_FOR_HASHING);
+            hash_tasks.push(task);
+        }
+
+        let hash_results = futures::future::join_all(hash_tasks).await;
+
+        for (idx, result) in hash_results.into_iter().enumerate() {
+            let hash = result?;
+            assets[idx].sha256_hash = Some(hash);
         }
 
         self.generate_index_json(&assets)
@@ -245,7 +256,6 @@ impl GitlabReleaseAdder {
                 assets.push(ReleaseAssetInfo {
                     name: link.name.clone(),
                     download_url: link.direct_asset_url.clone(),
-                    size: link.size.unwrap_or(0),
                     sha256_hash: None,
                 });
             }
@@ -254,19 +264,91 @@ impl GitlabReleaseAdder {
         Ok(assets)
     }
 
+    async fn download_and_hash_file(url: &str, max_size: u64) -> Result<String, ApiError> {
+        use futures_util::StreamExt;
+        use reqwest;
+        use sha2::{Digest, Sha256};
+
+        let client = reqwest::Client::new();
+        let response = client.get(url).send().await.map_err(|e| {
+            ApiError::ReleaseApiError(
+                "GitLab".to_string(),
+                format!("Failed to download file: {}", e),
+            )
+        })?;
+
+        if response.status() != reqwest::StatusCode::OK {
+            return Err(ApiError::ReleaseApiError(
+                "GitLab".to_string(),
+                format!("HTTP error downloading file: {}", response.status()),
+            ));
+        }
+
+        let content_length = response.content_length().ok_or_else(|| {
+            ApiError::ReleaseApiError(
+                "GitLab".to_string(),
+                "Missing Content-Length header".to_string(),
+            )
+        })?;
+
+        if content_length > max_size {
+            return Err(ApiError::ReleaseApiError(
+                "GitLab".to_string(),
+                format!("File size {} exceeds limit {}", content_length, max_size),
+            ));
+        }
+
+        let mut hasher = Sha256::new();
+        let mut stream = response.bytes_stream();
+        let mut total_bytes = 0u64;
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.map_err(|e| {
+                ApiError::ReleaseApiError(
+                    "GitLab".to_string(),
+                    format!("Error reading download stream: {}", e),
+                )
+            })?;
+
+            total_bytes += chunk.len() as u64;
+
+            if total_bytes > max_size {
+                return Err(ApiError::ReleaseApiError(
+                    "GitLab".to_string(),
+                    format!("File size exceeded limit during download: {}", max_size),
+                ));
+            }
+
+            hasher.update(&chunk);
+        }
+
+        let hash_bytes = hasher.finalize();
+        Ok(hex::encode(hash_bytes))
+    }
+
     fn generate_index_json(&self, assets: &[ReleaseAssetInfo]) -> Result<String, ApiError> {
-        let mut entries = json!({});
+        let mut published_files = Vec::new();
 
         for asset in assets {
-            entries[&asset.name] = json!({
-                "url": asset.download_url,
-                "size": asset.size,
-            });
+            if let Some(hash) = &asset.sha256_hash {
+                published_files.push(json!({
+                    "fileName": asset.name,
+                    "algo": "Sha256",
+                    "source": "computed",
+                    "hash": hash,
+                }));
+            } else {
+                return Err(ApiError::InternalServerError(
+                    format!("Missing SHA256 hash for file: {}", asset.name).to_string(),
+                ));
+            }
         }
 
         let index = json!({
             "version": 1,
-            "files": entries
+            "mirroredOn": chrono::Utc::now().to_rfc3339(),
+            "publishedOn": chrono::Utc::now().to_rfc3339(),
+            "publishedFiles": published_files
         });
 
         serde_json::to_string_pretty(&index)
@@ -337,5 +419,24 @@ mod tests {
         let result = GitlabReleaseAdder::validate_and_parse_url(&url);
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_and_hash_file_size_limit() {
+        let mock_server = httpmock::MockServer::start();
+
+        let large_body = vec![0u8; 1000];
+
+        mock_server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/fake-asset.tar.gz");
+            then.status(200).body(&large_body);
+        });
+
+        let large_url = format!("{}/fake-asset.tar.gz", mock_server.url(""));
+        let result = GitlabReleaseAdder::download_and_hash_file(&large_url, 100).await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("exceeds limit"));
     }
 }
