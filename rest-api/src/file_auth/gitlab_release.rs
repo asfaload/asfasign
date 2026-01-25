@@ -134,7 +134,7 @@ impl ReleaseInfo for GitlabReleaseInfo {
 struct ReleaseAssetInfo {
     name: String,
     download_url: String,
-    sha256_hash: Option<String>,
+    hash: Option<FileChecksum>,
 }
 
 impl<C: GitLabClientTrait> ReleaseAdder for GitlabReleaseAdder<C>
@@ -205,17 +205,14 @@ where
             ));
         }
 
-        let mut hash_tasks = Vec::new();
-        for asset in &assets {
-            let task = Self::download_and_hash_file(&asset.download_url, MAX_FILE_SIZE_FOR_HASHING);
-            hash_tasks.push(task);
-        }
-
-        let hash_results = futures::future::join_all(hash_tasks).await;
-
-        for (idx, result) in hash_results.into_iter().enumerate() {
-            let hash = result?;
-            assets[idx].sha256_hash = Some(hash);
+        for asset in &mut assets {
+            let hash = Self::download_and_hash_file(&asset.download_url, MAX_FILE_SIZE_FOR_HASHING).await?;
+            asset.hash = Some(FileChecksum {
+                file_name: asset.name.clone(),
+                algo: HashAlgorithm::Sha256,
+                source: asset.download_url.clone(),
+                hash,
+            });
         }
 
         self.generate_index_json(&assets)
@@ -336,7 +333,7 @@ impl<C: GitLabClientTrait> GitlabReleaseAdder<C> {
                 assets.push(ReleaseAssetInfo {
                     name: link.name.clone(),
                     download_url: link.direct_asset_url.clone(),
-                    sha256_hash: None,
+                    hash: None,
                 });
             }
         }
@@ -410,18 +407,9 @@ impl<C: GitLabClientTrait> GitlabReleaseAdder<C> {
         let published_files: Vec<FileChecksum> = assets
             .iter()
             .map(|asset| {
-                let hash = asset.sha256_hash.as_ref().ok_or_else(|| {
-                    ApiError::InternalServerError(
-                        format!("Missing SHA256 hash for file: {}", asset.name).to_string(),
-                    )
-                })?;
-
-                Ok(FileChecksum {
-                    file_name: asset.name.clone(),
-                    algo: HashAlgorithm::Sha256,
-                    source: asset.download_url.clone(),
-                    hash: hash.clone(),
-                })
+                asset.hash.as_ref().ok_or_else(|| {
+                    ApiError::InternalServerError(format!("Missing hash for file: {}", asset.name).to_string())
+                }).cloned()
             })
             .collect::<Result<Vec<FileChecksum>, ApiError>>()?;
 

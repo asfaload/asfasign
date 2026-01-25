@@ -50,7 +50,8 @@ impl ReleaseInfo for GithubReleaseInfo {
 
 struct ReleaseAssetInfo {
     name: String,
-    hash: Option<String>,
+    download_url: String,
+    hash: Option<FileChecksum>,
 }
 
 impl ReleaseAdder for GithubReleaseAdder {
@@ -152,28 +153,29 @@ impl GithubReleaseAdder {
         release
             .assets
             .iter()
-            .map(|asset| ReleaseAssetInfo {
-                name: asset.name.clone(),
-                hash: asset.digest.as_ref().and_then(|d| {
-                    d.strip_prefix("sha256:").map(|s| s.to_string())
-                }),
+            .map(|asset| {
+                let download_url = asset.browser_download_url.to_string();
+                let hash = asset.digest.as_ref().and_then(|d| {
+                    d.strip_prefix("sha256:").map(|hash| FileChecksum {
+                        file_name: asset.name.clone(),
+                        algo: HashAlgorithm::Sha256,
+                        source: download_url.clone(),
+                        hash: hash.to_string(),
+                    })
+                });
+                ReleaseAssetInfo {
+                    name: asset.name.clone(),
+                    download_url,
+                    hash,
+                }
             })
             .collect()
     }
 
     fn generate_index_json(&self, assets: &[ReleaseAssetInfo], release: &Release) -> Result<String, ApiError> {
-        let release_url = self.release_url.to_string();
-
         let published_files: Vec<FileChecksum> = assets
             .iter()
-            .filter_map(|asset| {
-                asset.hash.as_ref().map(|hash| FileChecksum {
-                    file_name: asset.name.clone(),
-                    algo: HashAlgorithm::Sha256,
-                    source: release_url.clone(),
-                    hash: hash.clone(),
-                })
-            })
+            .filter_map(|asset| asset.hash.clone())
             .collect();
 
         let published_on = release.published_at.or(release.created_at).ok_or_else(|| {
