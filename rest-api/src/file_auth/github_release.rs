@@ -1,11 +1,11 @@
 use crate::constants::INDEX_FILE;
+use crate::file_auth::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo};
 use crate::path_validation::NormalisedPaths;
 use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE};
 use octocrab::models::repos::Release;
 use rest_api_types::errors::ApiError;
 use rest_api_types::github_helpers::validate_github_url;
-use serde_json::json;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
@@ -50,7 +50,7 @@ impl ReleaseInfo for GithubReleaseInfo {
 
 struct ReleaseAssetInfo {
     name: String,
-    download_url: String,
+    hash: Option<String>,
 }
 
 impl ReleaseAdder for GithubReleaseAdder {
@@ -108,7 +108,7 @@ impl ReleaseAdder for GithubReleaseAdder {
             ));
         }
 
-        self.generate_index_json(&assets)
+        self.generate_index_json(&assets, &release)
     }
 
     async fn write_index(&self) -> Result<NormalisedPaths, ApiError> {
@@ -154,24 +154,42 @@ impl GithubReleaseAdder {
             .iter()
             .map(|asset| ReleaseAssetInfo {
                 name: asset.name.clone(),
-                download_url: asset.browser_download_url.to_string(),
+                hash: asset.digest.as_ref().and_then(|d| {
+                    d.strip_prefix("sha256:").map(|s| s.to_string())
+                }),
             })
             .collect()
     }
 
-    fn generate_index_json(&self, assets: &[ReleaseAssetInfo]) -> Result<String, ApiError> {
-        let mut entries = json!({});
+    fn generate_index_json(&self, assets: &[ReleaseAssetInfo], release: &Release) -> Result<String, ApiError> {
+        let release_url = self.release_url.to_string();
 
-        for asset in assets {
-            entries[&asset.name] = json!({
-                "url": asset.download_url,
-            });
-        }
+        let published_files: Vec<FileChecksum> = assets
+            .iter()
+            .filter_map(|asset| {
+                asset.hash.as_ref().map(|hash| FileChecksum {
+                    file_name: asset.name.clone(),
+                    algo: HashAlgorithm::Sha256,
+                    source: release_url.clone(),
+                    hash: hash.clone(),
+                })
+            })
+            .collect();
 
-        let index = json!({
-            "version": 1,
-            "files": entries
-        });
+        let published_on = release.published_at.or(release.created_at).ok_or_else(|| {
+            ApiError::ReleaseApiError(
+                "GitHub".to_string(),
+                "No publication timestamp found in release".to_string(),
+            )
+        })?;
+        let mirrored_on = chrono::Utc::now();
+
+        let index = AsfaloadIndex {
+            mirrored_on,
+            published_on: published_on.to_utc(),
+            version: 1,
+            published_files,
+        };
 
         serde_json::to_string_pretty(&index)
             .map_err(|e| ApiError::InternalServerError(format!("Failed to serialize index: {}", e)))
