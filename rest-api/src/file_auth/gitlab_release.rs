@@ -1,4 +1,5 @@
 use crate::constants::INDEX_FILE;
+use crate::file_auth::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo, ReleaseUrlError};
 use crate::path_validation::NormalisedPaths;
 use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE};
@@ -6,7 +7,6 @@ use gitlab::GitlabBuilder;
 use gitlab::api::{AsyncQuery, projects};
 use rest_api_types::errors::ApiError;
 use serde::Deserialize;
-use serde_json::json;
 use std::path::PathBuf;
 use tokio::fs;
 use tracing::info;
@@ -407,29 +407,32 @@ impl<C: GitLabClientTrait> GitlabReleaseAdder<C> {
     }
 
     fn generate_index_json(&self, assets: &[ReleaseAssetInfo]) -> Result<String, ApiError> {
-        let mut published_files = Vec::new();
+        let published_files: Vec<FileChecksum> = assets
+            .iter()
+            .map(|asset| {
+                let hash = asset.sha256_hash.as_ref().ok_or_else(|| {
+                    ApiError::InternalServerError(
+                        format!("Missing SHA256 hash for file: {}", asset.name).to_string(),
+                    )
+                })?;
 
-        for asset in assets {
-            if let Some(hash) = &asset.sha256_hash {
-                published_files.push(json!({
-                    "fileName": asset.name,
-                    "algo": "Sha256",
-                    "source": "computed",
-                    "hash": hash,
-                }));
-            } else {
-                return Err(ApiError::InternalServerError(
-                    format!("Missing SHA256 hash for file: {}", asset.name).to_string(),
-                ));
-            }
-        }
+                Ok(FileChecksum {
+                    file_name: asset.name.clone(),
+                    algo: HashAlgorithm::Sha256,
+                    source: asset.download_url.clone(),
+                    hash: hash.clone(),
+                })
+            })
+            .collect::<Result<Vec<FileChecksum>, ApiError>>()?;
 
-        let index = json!({
-            "version": 1,
-            "mirroredOn": chrono::Utc::now().to_rfc3339(),
-            "publishedOn": chrono::Utc::now().to_rfc3339(),
-            "publishedFiles": published_files
-        });
+        let now = chrono::Utc::now();
+
+        let index = AsfaloadIndex {
+            mirrored_on: now,
+            published_on: now,
+            version: 1,
+            published_files,
+        };
 
         serde_json::to_string_pretty(&index)
             .map_err(|e| ApiError::InternalServerError(format!("Failed to serialize index: {}", e)))
@@ -655,7 +658,7 @@ mod tests {
         let file = &files[0];
         assert_eq!(file["fileName"], "test.tar.gz");
         assert_eq!(file["algo"], "Sha256");
-        assert_eq!(file["source"], "computed");
+        assert!(file["source"].as_str().unwrap().contains("/assets/test.tar.gz"));
 
         let hash = file["hash"].as_str().unwrap();
         assert_eq!(hash.len(), 64);
