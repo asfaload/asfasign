@@ -44,27 +44,67 @@ pub async fn auth_middleware(
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, ApiError> {
+    let request_id = get_header(&request, "x-request-id")?;
+    tracing::debug!(
+        request_id = %request_id,
+        "Starting authentication"
+    );
     // Clone header values before moving the request
     let timestamp = get_header(&request, HEADER_TIMESTAMP)?;
     let nonce = get_header(&request, HEADER_NONCE)?;
     let signature = get_header(&request, HEADER_SIGNATURE)?;
     let public_key = get_header(&request, HEADER_PUBLIC_KEY)?;
 
+    tracing::debug!(
+        request_id = %request_id,
+        timestamp = %timestamp,
+        nonce = %nonce,
+        signature = %signature,
+        public_key = %public_key,
+        "Extracted auth data"
+    );
     //Reject reused nonce
-    validate_nonce(state, &nonce).await?;
+    validate_nonce(state, &nonce).await.map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            error = %e,
+            "Failed to validate nonce"
+        );
+        e
+    })?;
 
     // Extract the request body for signature validation
     let (parts, body) = request.into_parts();
     let body_bytes = axum::body::to_bytes(body, MAX_BODY_SIZE)
         .await
-        .map_err(|e| ApiError::RequestTooBig(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                error = %e,
+                "Request too big"
+            );
+            ApiError::RequestTooBig(e.to_string())
+        })?;
 
     let payload = std::str::from_utf8(&body_bytes).map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            error = %e,
+            "Request too big"
+        );
         ApiError::InvalidRequestBody(format!("Request body contains invalid UTF-8: {}", e))
     })?;
 
     // Validate the authentication signature
-    AuthSignature::validate_from_headers(&timestamp, &nonce, &signature, &public_key, payload)?;
+    AuthSignature::validate_from_headers(&timestamp, &nonce, &signature, &public_key, payload)
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                error = %e,
+                "Could not validate signature"
+            );
+            e
+        })?;
 
     // Reconstruct the request with the original body
     let request = Request::from_parts(parts, axum::body::Body::from(body_bytes));
