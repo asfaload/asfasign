@@ -7,12 +7,11 @@ use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use tracing::info;
 use uuid::Uuid;
+use crate::file_auth::github_release::GithubReleaseAdder;
+#[cfg(not(feature = "test-utils"))]
+use crate::file_auth::github_release::GithubClient;
 #[cfg(feature = "test-utils")]
-use crate::file_auth::github_release::{GithubReleaseAdder};
-#[cfg(feature = "test-utils")]
-use crate::file_auth::github_release::test_utils::MockGithubClient;
-#[cfg(feature = "test-utils")]
-use crate::file_auth::github_release::test_utils::create_mock_release;
+use crate::file_auth::github_release::test_utils::{MockGithubClient, create_mock_release};
 
 const ACTOR_NAME: &str = "release_actor";
 pub struct ReleaseActor {
@@ -74,72 +73,51 @@ impl ReleaseActor {
             "Processing release"
         );
 
-        let adder: crate::file_auth::releasers::ReleaseAdders = {
-            #[cfg(feature = "test-utils")]
-            {
-                // In test mode with test-utils feature, use mock client
-                let mut mock_client = MockGithubClient::new();
-                mock_client.mock_release(create_mock_release());
+        let github_adder = {
+            let client = {
+                #[cfg(feature = "test-utils")]
+                {
+                    let mut mock_client = MockGithubClient::new();
+                    mock_client.mock_release(create_mock_release());
+                    mock_client
+                }
 
-                let github_adder = GithubReleaseAdder::new_with_client(
-                    &msg.release_url,
-                    self.git_repo_path.clone(),
-                    mock_client,
-                )
-                .await
-                .map_err(|e| {
-                    tracing::error!(
-                        actor = %ACTOR_NAME,
-                        error = %e,
-                        "Failed to initialise GithubReleaseAdder with mock client"
-                    );
-                    match e {
-                        crate::file_auth::release_types::ReleaseUrlError::UnsupportedPlatform(
-                            platform,
-                        ) => ApiError::UnsupportedReleasePlatform(platform),
-                        crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(msg) => {
-                            ApiError::InvalidReleaseUrl(msg)
-                        }
-                        crate::file_auth::release_types::ReleaseUrlError::MissingTag => {
-                            ApiError::InvalidReleaseUrl("Missing tag in release URL".to_string())
-                        }
-                        crate::file_auth::release_types::ReleaseUrlError::MissingComponent(msg) => {
-                            ApiError::InvalidReleaseUrl(msg)
-                        }
+                #[cfg(not(feature = "test-utils"))]
+                {
+                    GithubClient::new()
+                }
+            };
+
+            GithubReleaseAdder::new_with_client(
+                &msg.release_url,
+                self.git_repo_path.clone(),
+                client,
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    actor = %ACTOR_NAME,
+                    error = %e,
+                    "Failed to initialise GithubReleaseAdder"
+                );
+                match e {
+                    crate::file_auth::release_types::ReleaseUrlError::UnsupportedPlatform(
+                        platform,
+                    ) => ApiError::UnsupportedReleasePlatform(platform),
+                    crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(msg) => {
+                        ApiError::InvalidReleaseUrl(msg)
                     }
-                })?;
-
-                crate::file_auth::releasers::ReleaseAdders::Github(github_adder)
-            }
-
-            #[cfg(not(feature = "test-utils"))]
-            {
-                // In production, use real client
-                ReleaseAdders::new(&msg.release_url, self.git_repo_path.clone())
-                    .await
-                    .map_err(|e| {
-                        tracing::error!(
-                            actor = %ACTOR_NAME,
-                            error = %e,
-                            "Failed to initialise ReleaseAdders"
-                        );
-                        match e {
-                            crate::file_auth::release_types::ReleaseUrlError::UnsupportedPlatform(
-                                platform,
-                            ) => ApiError::UnsupportedReleasePlatform(platform),
-                            crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(msg) => {
-                                ApiError::InvalidReleaseUrl(msg)
-                            }
-                            crate::file_auth::release_types::ReleaseUrlError::MissingTag => {
-                                ApiError::InvalidReleaseUrl("Missing tag in release URL".to_string())
-                            }
-                            crate::file_auth::release_types::ReleaseUrlError::MissingComponent(msg) => {
-                                ApiError::InvalidReleaseUrl(msg)
-                            }
-                        }
-                    })?
-            }
+                    crate::file_auth::release_types::ReleaseUrlError::MissingTag => {
+                        ApiError::InvalidReleaseUrl("Missing tag in release URL".to_string())
+                    }
+                    crate::file_auth::release_types::ReleaseUrlError::MissingComponent(msg) => {
+                        ApiError::InvalidReleaseUrl(msg)
+                    }
+                }
+            })?
         };
+
+        let adder: ReleaseAdders = ReleaseAdders::Github(github_adder);
 
         let release_info: &dyn crate::file_auth::release_types::ReleaseInfo = adder.release_info();
 
