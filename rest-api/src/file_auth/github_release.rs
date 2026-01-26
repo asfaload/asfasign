@@ -10,10 +10,60 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
 
-pub struct GithubReleaseAdder {
+#[async_trait::async_trait]
+pub trait GithubClientTrait: Send + Sync {
+    async fn get_release_by_tag(
+        &self,
+        owner: &str,
+        repo: &str,
+        tag: &str,
+    ) -> Result<Release, ApiError>;
+}
+
+pub struct GithubClient {
+    client: octocrab::Octocrab,
+}
+
+impl GithubClient {
+    pub fn new() -> Self {
+        Self {
+            client: octocrab::Octocrab::default(),
+        }
+    }
+}
+
+impl Default for GithubClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait::async_trait]
+impl GithubClientTrait for GithubClient {
+    async fn get_release_by_tag(
+        &self,
+        owner: &str,
+        repo: &str,
+        tag: &str,
+    ) -> Result<Release, ApiError> {
+        self.client
+            .repos(owner, repo)
+            .releases()
+            .get_by_tag(tag)
+            .await
+            .map_err(|e| {
+                ApiError::ReleaseApiError(
+                    "GitHub".to_string(),
+                    format!("Failed to fetch release: {}", e),
+                )
+            })
+    }
+}
+
+pub struct GithubReleaseAdder<C: GithubClientTrait> {
     release_url: url::Url,
     git_repo_path: PathBuf,
-    client: octocrab::Octocrab,
+    pub client: C,
     release_info: GithubReleaseInfo,
 }
 
@@ -49,12 +99,13 @@ impl ReleaseInfo for GithubReleaseInfo {
 }
 
 struct ReleaseAssetInfo {
-    name: String,
-    download_url: String,
     hash: Option<FileChecksum>,
 }
 
-impl ReleaseAdder for GithubReleaseAdder {
+impl<C: GithubClientTrait> ReleaseAdder for GithubReleaseAdder<C>
+where
+    C: Default,
+{
     async fn new(
         release_url: &url::Url,
         git_repo_path: PathBuf,
@@ -62,7 +113,6 @@ impl ReleaseAdder for GithubReleaseAdder {
     where
         Self: Sized,
     {
-        let client = octocrab::Octocrab::default();
         let release_info = parse_release_url(release_url, &git_repo_path)
             .await
             .map_err(|e| {
@@ -72,7 +122,7 @@ impl ReleaseAdder for GithubReleaseAdder {
         Ok(Self {
             release_url: release_url.clone(),
             git_repo_path,
-            client,
+            client: C::default(),
             release_info,
         })
     }
@@ -89,16 +139,12 @@ impl ReleaseAdder for GithubReleaseAdder {
     async fn index_content(&self) -> Result<String, ApiError> {
         let release: Release = self
             .client
-            .repos(&self.release_info.owner, &self.release_info.repo)
-            .releases()
-            .get_by_tag(&self.release_info.tag)
-            .await
-            .map_err(|e| {
-                ApiError::ReleaseApiError(
-                    "GitHub".to_string(),
-                    format!("Failed to fetch release: {}", e),
-                )
-            })?;
+            .get_release_by_tag(
+                &self.release_info.owner,
+                &self.release_info.repo,
+                &self.release_info.tag,
+            )
+            .await?;
 
         let assets = self.extract_assets(&release);
 
@@ -144,9 +190,28 @@ impl ReleaseAdder for GithubReleaseAdder {
     }
 }
 
-impl GithubReleaseAdder {
+impl<C: GithubClientTrait> GithubReleaseAdder<C> {
     pub fn release_info_concrete(&self) -> &GithubReleaseInfo {
         &self.release_info
+    }
+
+    pub async fn new_with_client(
+        release_url: &url::Url,
+        git_repo_path: PathBuf,
+        client: C,
+    ) -> Result<Self, crate::file_auth::release_types::ReleaseUrlError> {
+        let release_info = parse_release_url(release_url, &git_repo_path)
+            .await
+            .map_err(|e| {
+                crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(e.to_string())
+            })?;
+
+        Ok(Self {
+            release_url: release_url.clone(),
+            git_repo_path,
+            client,
+            release_info,
+        })
     }
 
     fn extract_assets(&self, release: &Release) -> Vec<ReleaseAssetInfo> {
@@ -159,20 +224,20 @@ impl GithubReleaseAdder {
                     d.strip_prefix("sha256:").map(|hash| FileChecksum {
                         file_name: asset.name.clone(),
                         algo: HashAlgorithm::Sha256,
-                        source: download_url.clone(),
+                        source: download_url,
                         hash: hash.to_string(),
                     })
                 });
-                ReleaseAssetInfo {
-                    name: asset.name.clone(),
-                    download_url,
-                    hash,
-                }
+                ReleaseAssetInfo { hash }
             })
             .collect()
     }
 
-    fn generate_index_json(&self, assets: &[ReleaseAssetInfo], release: &Release) -> Result<String, ApiError> {
+    fn generate_index_json(
+        &self,
+        assets: &[ReleaseAssetInfo],
+        release: &Release,
+    ) -> Result<String, ApiError> {
         let published_files: Vec<FileChecksum> = assets
             .iter()
             .filter_map(|asset| asset.hash.clone())
@@ -198,7 +263,7 @@ impl GithubReleaseAdder {
     }
 }
 
-impl std::fmt::Debug for GithubReleaseAdder {
+impl<C: GithubClientTrait> std::fmt::Debug for GithubReleaseAdder<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GithubReleaseAdder")
             .field("release_url", &self.release_url)
@@ -266,5 +331,176 @@ mod tests {
         let result = parse_release_url(&url, &git_repo).await;
 
         assert!(result.is_err());
+    }
+
+    pub struct MockGithubClient {
+        release_response: Option<Release>,
+    }
+
+    impl MockGithubClient {
+        pub fn new() -> Self {
+            Self {
+                release_response: None,
+            }
+        }
+
+        pub fn mock_release(&mut self, release: Release) {
+            self.release_response = Some(release);
+        }
+    }
+
+    impl Default for MockGithubClient {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl GithubClientTrait for MockGithubClient {
+        async fn get_release_by_tag(
+            &self,
+            _owner: &str,
+            _repo: &str,
+            _tag: &str,
+        ) -> Result<Release, ApiError> {
+            self.release_response.clone().ok_or_else(|| {
+                ApiError::ReleaseApiError(
+                    "GitHub".to_string(),
+                    "No mock release configured".to_string(),
+                )
+            })
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_github_release_with_mock() {
+        use crate::file_auth::release_types::ReleaseAdder;
+
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let signers_dir = git_repo_path
+            .join("github.com/testowner/testrepo")
+            .join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).await.unwrap();
+
+        let signers_json = r#"{
+            "version": 1,
+            "required_signers": 1,
+            "signers": [
+                {
+                    "public_key": "test_key",
+                    "name": "Test Signer"
+                }
+            ]
+        }"#;
+        fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
+            .await
+            .unwrap();
+
+        let release_url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+
+        let mut mock_client = MockGithubClient::new();
+
+        let mut adder =
+            GithubReleaseAdder::new_with_client(&release_url, git_repo_path.clone(), mock_client)
+                .await
+                .unwrap();
+
+        let mock_release = create_mock_release();
+        adder.client.mock_release(mock_release);
+
+        let index_content = adder.index_content().await.unwrap();
+        let json: serde_json::Value = serde_json::from_str(&index_content).unwrap();
+
+        assert_eq!(json["version"], 1);
+        assert!(json["publishedFiles"].is_array());
+        let files = json["publishedFiles"].as_array().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0]["fileName"], "test.tar.gz");
+        assert_eq!(files[0]["algo"], "Sha256");
+        assert_eq!(
+            files[0]["hash"],
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        );
+    }
+
+    fn create_mock_release() -> Release {
+        let json_str = r#"{
+            "id": 123,
+            "node_id": "test_node_id",
+            "tag_name": "v1.0.0",
+            "name": "Test Release",
+            "html_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0",
+            "author": {
+                "login": "testowner",
+                "id": 1,
+                "node_id": "test_node_id",
+                "avatar_url": "https://github.com/images/error/testowner_happy.gif",
+                "gravatar_id": "",
+                "url": "https://api.github.com/users/testowner",
+                "html_url": "https://github.com/testowner",
+                "type": "User",
+                "site_admin": false,
+                "name": "Test Owner",
+                "email": "test@example.com",
+                "patch_url": "https://github.com/testowner/testrepo/patch/v1.0.0",
+                "events_url": "https://api.github.com/users/testowner/events{/privacy}",
+                "followers_url": "https://api.github.com/users/testowner/followers",
+                "following_url": "https://api.github.com/users/testowner/following{/other_user}",
+                "gists_url": "https://api.github.com/users/testowner/gists{/gist_id}",
+                "starred_url": "https://api.github.com/users/testowner/starred{/owner}{/repo}",
+                "subscriptions_url": "https://api.github.com/users/testowner/subscriptions",
+                "organizations_url": "https://api.github.com/users/testowner/orgs",
+                "repos_url": "https://api.github.com/users/testowner/repos",
+                "received_events_url": "https://api.github.com/users/testowner/received_events"
+            },
+            "assets": [{
+                "id": 456,
+                "node_id": "asset_node_id",
+                "name": "test.tar.gz",
+                "label": "Test Asset",
+                "state": "uploaded",
+                "content_type": "application/gzip",
+                "size": 1024,
+                "download_count": 10,
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "browser_download_url": "https://github.com/testowner/testrepo/releases/download/v1.0.0/test.tar.gz",
+                "digest": "sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                "url": "https://api.github.com/repos/testowner/testrepo/releases/assets/456",
+                "uploader": {
+                    "login": "testowner",
+                    "id": 1,
+                    "node_id": "test_node_id",
+                    "avatar_url": "https://github.com/images/error/testowner_happy.gif",
+                    "gravatar_id": "",
+                    "url": "https://api.github.com/users/testowner",
+                    "html_url": "https://github.com/testowner",
+                    "type": "User",
+                    "site_admin": false,
+                    "name": "Test Owner",
+                    "email": "test@example.com",
+                    "patch_url": "https://github.com/testowner/testrepo/patch/v1.0.0",
+                    "events_url": "https://api.github.com/users/testowner/events{/privacy}",
+                    "followers_url": "https://api.github.com/users/testowner/followers",
+                    "following_url": "https://api.github.com/users/testowner/following{/other_user}",
+                    "gists_url": "https://api.github.com/users/testowner/gists{/gist_id}",
+                    "starred_url": "https://api.github.com/users/testowner/starred{/owner}{/repo}",
+                    "subscriptions_url": "https://api.github.com/users/testowner/subscriptions",
+                    "organizations_url": "https://api.github.com/users/testowner/orgs",
+                    "repos_url": "https://api.github.com/users/testowner/repos",
+                    "received_events_url": "https://api.github.com/users/testowner/received_events"
+                }
+            }],
+            "published_at": "2024-01-01T00:00:00Z",
+            "created_at": "2024-01-01T00:00:00Z",
+            "draft": false,
+            "prerelease": false,
+            "target_commitish": "main"
+        }"#;
+        serde_json::from_str(json_str).unwrap()
     }
 }

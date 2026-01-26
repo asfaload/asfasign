@@ -206,7 +206,8 @@ where
         }
 
         for asset in &mut assets {
-            let hash = Self::download_and_hash_file(&asset.download_url, MAX_FILE_SIZE_FOR_HASHING).await?;
+            let hash = Self::download_and_hash_file(&asset.download_url, MAX_FILE_SIZE_FOR_HASHING)
+                .await?;
             asset.hash = Some(FileChecksum {
                 file_name: asset.name.clone(),
                 algo: HashAlgorithm::Sha256,
@@ -407,9 +408,15 @@ impl<C: GitLabClientTrait> GitlabReleaseAdder<C> {
         let published_files: Vec<FileChecksum> = assets
             .iter()
             .map(|asset| {
-                asset.hash.as_ref().ok_or_else(|| {
-                    ApiError::InternalServerError(format!("Missing hash for file: {}", asset.name).to_string())
-                }).cloned()
+                asset
+                    .hash
+                    .as_ref()
+                    .ok_or_else(|| {
+                        ApiError::InternalServerError(
+                            format!("Missing hash for file: {}", asset.name).to_string(),
+                        )
+                    })
+                    .cloned()
             })
             .collect::<Result<Vec<FileChecksum>, ApiError>>()?;
 
@@ -646,7 +653,12 @@ mod tests {
         let file = &files[0];
         assert_eq!(file["fileName"], "test.tar.gz");
         assert_eq!(file["algo"], "Sha256");
-        assert!(file["source"].as_str().unwrap().contains("/assets/test.tar.gz"));
+        assert!(
+            file["source"]
+                .as_str()
+                .unwrap()
+                .contains("/assets/test.tar.gz")
+        );
 
         let hash = file["hash"].as_str().unwrap();
         assert_eq!(hash.len(), 64);

@@ -79,50 +79,21 @@ pub mod tests {
                 .json(&json_body)
                 .send(),
         )
-        .await;
+        .await
+        .map_err(|e| anyhow::anyhow!("Timeout: {}", e))??
+        .error_for_status()
+        .map_err(|e| anyhow::anyhow!("HTTP error: {}", e))?;
 
-        match response {
-            Ok(Ok(resp)) => {
-                let status = resp.status();
-                let response_json: Value = resp.json().await?;
-                match status {
-                    StatusCode::OK => {
-                        assert_eq!(response_json["success"], true);
-                        assert!(response_json["index_file_path"].is_string());
-                    }
-                    StatusCode::INTERNAL_SERVER_ERROR => {
-                        if response_json.get("success").is_some() {
-                            assert_eq!(response_json["success"], false);
-                            assert!(response_json["message"].is_string());
-                        } else {
-                            assert!(
-                                response_json["error"].as_str().unwrap().contains("GitHub")
-                                    || response_json["error"].as_str().unwrap().contains("API")
-                                    || response_json["error"].as_str().unwrap().contains("Timeout")
-                            );
-                        }
-                    }
-                    status_code => {
-                        panic!(
-                            "Expected 200 or 500 status code, got {}: {}",
-                            status_code, response_json
-                        );
-                    }
-                }
-            }
-            Ok(Err(e)) => {
-                if e.is_timeout() || e.is_connect() {
-                    println!(
-                        "Request timed out or failed to connect (expected behavior for GitHub API call in tests)"
-                    );
-                } else {
-                    return Err(e.into());
-                }
-            }
-            Err(_) => {
-                println!("Request timed out (expected behavior for GitHub API call in tests)");
-            }
-        }
+        let status = response.status();
+
+        let response_json: Value = response.json().await?;
+
+        assert_eq!(status, StatusCode::OK, "Expected 200 OK status");
+        assert_eq!(response_json["success"], true, "Expected success=true");
+        assert!(
+            response_json["index_file_path"].is_string(),
+            "Expected index_file_path to be a string"
+        );
 
         server_handle.abort();
         Ok(())
@@ -130,6 +101,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_register_github_release_no_signers_file() -> Result<()> {
+        setup_crypto_provider();
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let git_repo_path = temp_dir.path().to_path_buf();
 
