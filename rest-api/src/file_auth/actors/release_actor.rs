@@ -35,7 +35,7 @@ impl Actor for ReleaseActor {
         args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        info!(actor = ACTOR_NAME, "starting");
+        tracing::info!(actor = ACTOR_NAME, "Release actor starting");
 
         Ok(Self {
             git_actor: args.0,
@@ -71,18 +71,25 @@ impl ReleaseActor {
         let adder: crate::file_auth::releasers::ReleaseAdders =
             ReleaseAdders::new(&msg.release_url, self.git_repo_path.clone())
                 .await
-                .map_err(|e| match e {
-                    crate::file_auth::release_types::ReleaseUrlError::UnsupportedPlatform(
-                        platform,
-                    ) => ApiError::UnsupportedReleasePlatform(platform),
-                    crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(msg) => {
-                        ApiError::InvalidReleaseUrl(msg)
-                    }
-                    crate::file_auth::release_types::ReleaseUrlError::MissingTag => {
-                        ApiError::InvalidReleaseUrl("Missing tag in release URL".to_string())
-                    }
-                    crate::file_auth::release_types::ReleaseUrlError::MissingComponent(msg) => {
-                        ApiError::InvalidReleaseUrl(msg)
+                .map_err(|e| {
+                    tracing::error!(
+                        actor = %ACTOR_NAME,
+                        error = %e,
+                        "Failed to initialise ReleaseAdders"
+                    );
+                    match e {
+                        crate::file_auth::release_types::ReleaseUrlError::UnsupportedPlatform(
+                            platform,
+                        ) => ApiError::UnsupportedReleasePlatform(platform),
+                        crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(msg) => {
+                            ApiError::InvalidReleaseUrl(msg)
+                        }
+                        crate::file_auth::release_types::ReleaseUrlError::MissingTag => {
+                            ApiError::InvalidReleaseUrl("Missing tag in release URL".to_string())
+                        }
+                        crate::file_auth::release_types::ReleaseUrlError::MissingComponent(msg) => {
+                            ApiError::InvalidReleaseUrl(msg)
+                        }
                     }
                 })?;
 
@@ -98,7 +105,21 @@ impl ReleaseActor {
             "Extracted release info"
         );
 
-        let index_file_path = adder.write_index().await?;
+        let index_file_path = adder.write_index().await.map_err(|e| {
+            tracing::error!(
+                request_id = %msg.request_id,
+                actor = %ACTOR_NAME,
+                error = %e,
+                "Could not write index file"
+            );
+            e
+        })?;
+        info!(
+            request_id = %msg.request_id,
+            actor = %ACTOR_NAME,
+            index_path = %index_file_path,
+            "Index file written",
+        );
 
         let commit_msg = CommitFile {
             file_paths: vec![index_file_path.clone()],
