@@ -1,4 +1,9 @@
 use super::git_actor::{CommitFile, GitActor};
+#[cfg(not(feature = "test-utils"))]
+use crate::file_auth::github_release::GithubClient;
+use crate::file_auth::github_release::GithubReleaseAdder;
+#[cfg(feature = "test-utils")]
+use crate::file_auth::github_release::test_utils::{MockGithubClient, create_mock_release};
 use crate::file_auth::release_types::ReleaseAdder;
 use crate::file_auth::releasers::ReleaseAdders;
 use crate::path_validation::NormalisedPaths;
@@ -7,11 +12,6 @@ use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use tracing::info;
 use uuid::Uuid;
-use crate::file_auth::github_release::GithubReleaseAdder;
-#[cfg(not(feature = "test-utils"))]
-use crate::file_auth::github_release::GithubClient;
-#[cfg(feature = "test-utils")]
-use crate::file_auth::github_release::test_utils::{MockGithubClient, create_mock_release};
 
 const ACTOR_NAME: &str = "release_actor";
 pub struct ReleaseActor {
@@ -77,9 +77,7 @@ impl ReleaseActor {
             let client = {
                 #[cfg(feature = "test-utils")]
                 {
-                    let mut mock_client = MockGithubClient::new();
-                    mock_client.mock_release(create_mock_release());
-                    mock_client
+                    MockGithubClient::new()
                 }
 
                 #[cfg(not(feature = "test-utils"))]

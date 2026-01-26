@@ -301,8 +301,9 @@ pub mod test_utils {
 
     impl MockGithubClient {
         pub fn new() -> Self {
+            let release = create_mock_release();
             Self {
-                release_response: None,
+                release_response: Some(release),
             }
         }
 
@@ -419,10 +420,10 @@ pub mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tempfile::TempDir;
     #[cfg(feature = "test-utils")]
     use super::test_utils::MockGithubClient;
+    use super::*;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_parse_release_url_full_url() {
@@ -462,11 +463,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
     #[cfg(feature = "test-utils")]
     async fn test_github_release_with_mock() {
-        use crate::file_auth::release_types::ReleaseAdder;
         use super::test_utils::create_mock_release;
+        use crate::file_auth::release_types::ReleaseAdder;
 
         let temp_dir = TempDir::new().unwrap();
         let git_repo_path = temp_dir.path().to_path_buf();
@@ -493,7 +493,7 @@ mod tests {
         let release_url =
             url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
 
-        let mut mock_client = MockGithubClient::new();
+        let mock_client = MockGithubClient::new();
 
         let mut adder =
             GithubReleaseAdder::new_with_client(&release_url, git_repo_path.clone(), mock_client)
