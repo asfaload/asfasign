@@ -10,7 +10,7 @@ use axum::{
     Router,
     routing::{get, post},
 };
-use rest_api_types::errors::ApiError;
+use rest_api_types::{errors::ApiError, rustls::setup_crypto_provider};
 use std::net::SocketAddr;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
@@ -23,6 +23,8 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
         git_repo_path = %config.git_repo_path.display(),
         "Starting REST API server"
     );
+    tracing::debug!("Selecting rustls crypto provider");
+    setup_crypto_provider();
     let canonical_repo_path = tokio::fs::canonicalize(&config.git_repo_path)
         .await
         .map_err(|e| ApiError::InvalidFilePath(format!("Invalid git repo path: {}", e)))?;

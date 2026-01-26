@@ -11,17 +11,6 @@ pub mod tests {
     use tempfile::TempDir;
     use tokio::time::Duration;
 
-    fn setup_crypto_provider() {
-        use rustls::crypto::{CryptoProvider, ring};
-
-        // Use the provider corresponding to the 'ring' feature you selected
-        let provider = ring::default_provider();
-
-        // Attempt to set the default provider for the entire process.
-        // `set_default` is safer than `install_default` as it handles the case
-        // where another dependency might have already attempted an installation.
-        CryptoProvider::install_default(provider).unwrap();
-    }
 
     #[tokio::test]
     async fn test_register_github_release_endpoint() -> Result<()> {

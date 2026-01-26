@@ -3721,6 +3721,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
  "tracing-appender",
  "tracing-subscriber",
 ]
@@ -3736,6 +3737,7 @@ dependencies = [
  "hyper 1.8.1",
  "octocrab",
  "rest_api_auth",
+ "rustls",
  "serde",
  "serde_json",
  "sled",

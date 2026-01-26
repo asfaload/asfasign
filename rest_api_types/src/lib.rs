@@ -463,6 +463,16 @@ pub mod github_helpers {
         Ok((host.to_string(), owner, repo, tag))
     }
 }
+pub mod rustls {
+    pub fn setup_crypto_provider() {
+        use rustls::crypto::{CryptoProvider, ring};
+
+        // Use the provider corresponding to the 'ring' feature you selected
+        let provider = ring::default_provider();
+
+        let _ = CryptoProvider::install_default(provider);
+    }
+}
 
 // Re-export commonly used types at the module level
 pub use models::{
