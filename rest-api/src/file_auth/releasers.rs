@@ -1,4 +1,6 @@
-use crate::file_auth::github_release::{GithubClient, GithubReleaseAdder};
+use crate::file_auth::github_release::GithubReleaseAdder;
+#[cfg(not(feature = "test-utils"))]
+use crate::file_auth::github_release::GithubClient;
 use crate::file_auth::gitlab_release::{GitLabClient, GitlabReleaseAdder};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseUrlError};
 use crate::path_validation::NormalisedPaths;
@@ -8,9 +10,15 @@ use std::path::PathBuf;
 pub const GITHUB_RELEASE_HOSTS: &[&str] = &["github.com"];
 pub const GITLAB_RELEASE_HOSTS: &[&str] = &["gitlab.com"];
 
+#[cfg(feature = "test-utils")]
+use crate::file_auth::github_release::test_utils::MockGithubClient;
+
 #[derive(Debug)]
 pub enum ReleaseAdders {
+    #[cfg(not(feature = "test-utils"))]
     Github(GithubReleaseAdder<GithubClient>),
+    #[cfg(feature = "test-utils")]
+    Github(GithubReleaseAdder<MockGithubClient>),
     Gitlab(GitlabReleaseAdder<GitLabClient>),
 }
 

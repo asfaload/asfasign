@@ -291,47 +291,9 @@ pub async fn parse_release_url(
     })
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
     use super::*;
-    use tempfile::TempDir;
-
-    #[tokio::test]
-    async fn test_parse_release_url_full_url() {
-        let temp_dir = TempDir::new().unwrap();
-        let git_repo = temp_dir.path().to_path_buf();
-        let url =
-            url::Url::parse("https://github.com/asfaload/asfald/releases/tag/v0.9.0").unwrap();
-        let result = parse_release_url(&url, &git_repo).await.unwrap();
-
-        assert_eq!(result.owner, "asfaload");
-        assert_eq!(result.repo, "asfald");
-        assert_eq!(result.tag, "v0.9.0");
-        assert_eq!(
-            result.release_path.relative_path(),
-            PathBuf::from("github.com/asfaload/asfald/releases/tag/v0.9.0")
-        );
-    }
-
-    #[tokio::test]
-    async fn test_parse_release_url_invalid_too_short() {
-        let temp_dir = TempDir::new().unwrap();
-        let git_repo = temp_dir.path().to_path_buf();
-        let url = url::Url::parse("https://github.com/owner/repo").unwrap();
-        let result = parse_release_url(&url, &git_repo).await;
-
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_parse_release_url_empty_values() {
-        let temp_dir = TempDir::new().unwrap();
-        let git_repo = temp_dir.path().to_path_buf();
-        let url = url::Url::parse("https://github.com/asfaload/releases/tag/").unwrap();
-        let result = parse_release_url(&url, &git_repo).await;
-
-        assert!(result.is_err());
-    }
 
     pub struct MockGithubClient {
         release_response: Option<Release>,
@@ -372,68 +334,18 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn test_github_release_with_mock() {
-        use crate::file_auth::release_types::ReleaseAdder;
-
-        let temp_dir = TempDir::new().unwrap();
-        let git_repo_path = temp_dir.path().to_path_buf();
-
-        let signers_dir = git_repo_path
-            .join("github.com/testowner/testrepo")
-            .join(SIGNERS_DIR);
-        fs::create_dir_all(&signers_dir).await.unwrap();
-
-        let signers_json = r#"{
-            "version": 1,
-            "required_signers": 1,
-            "signers": [
-                {
-                    "public_key": "test_key",
-                    "name": "Test Signer"
-                }
-            ]
-        }"#;
-        fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
-            .await
-            .unwrap();
-
-        let release_url =
-            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
-
-        let mut mock_client = MockGithubClient::new();
-
-        let mut adder =
-            GithubReleaseAdder::new_with_client(&release_url, git_repo_path.clone(), mock_client)
-                .await
-                .unwrap();
-
-        let mock_release = create_mock_release();
-        adder.client.mock_release(mock_release);
-
-        let index_content = adder.index_content().await.unwrap();
-        let json: serde_json::Value = serde_json::from_str(&index_content).unwrap();
-
-        assert_eq!(json["version"], 1);
-        assert!(json["publishedFiles"].is_array());
-        let files = json["publishedFiles"].as_array().unwrap();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0]["fileName"], "test.tar.gz");
-        assert_eq!(files[0]["algo"], "Sha256");
-        assert_eq!(
-            files[0]["hash"],
-            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-        );
-    }
-
-    fn create_mock_release() -> Release {
+    pub fn create_mock_release() -> Release {
         let json_str = r#"{
             "id": 123,
             "node_id": "test_node_id",
             "tag_name": "v1.0.0",
             "name": "Test Release",
             "html_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0",
+            "url": "https://api.github.com/repos/testowner/testrepo/releases/123",
+            "assets_url": "https://api.github.com/repos/testowner/testrepo/releases/123/assets",
+            "upload_url": "https://uploads.github.com/repos/testowner/testrepo/releases/123/assets{?name,label}",
+            "tarball_url": "https://api.github.com/repos/testowner/testrepo/tarball/v1.0.0",
+            "zipball_url": "https://api.github.com/repos/testowner/testrepo/zipball/v1.0.0",
             "author": {
                 "login": "testowner",
                 "id": 1,
@@ -502,5 +414,107 @@ mod tests {
             "target_commitish": "main"
         }"#;
         serde_json::from_str(json_str).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    #[cfg(feature = "test-utils")]
+    use super::test_utils::MockGithubClient;
+
+    #[tokio::test]
+    async fn test_parse_release_url_full_url() {
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo = temp_dir.path().to_path_buf();
+        let url =
+            url::Url::parse("https://github.com/asfaload/asfald/releases/tag/v0.9.0").unwrap();
+        let result = parse_release_url(&url, &git_repo).await.unwrap();
+
+        assert_eq!(result.owner, "asfaload");
+        assert_eq!(result.repo, "asfald");
+        assert_eq!(result.tag, "v0.9.0");
+        assert_eq!(
+            result.release_path.relative_path(),
+            PathBuf::from("github.com/asfaload/asfald/releases/tag/v0.9.0")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_release_url_invalid_too_short() {
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo = temp_dir.path().to_path_buf();
+        let url = url::Url::parse("https://github.com/owner/repo").unwrap();
+        let result = parse_release_url(&url, &git_repo).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_parse_release_url_empty_values() {
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo = temp_dir.path().to_path_buf();
+        let url = url::Url::parse("https://github.com/asfaload/releases/tag/").unwrap();
+        let result = parse_release_url(&url, &git_repo).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    #[cfg(feature = "test-utils")]
+    async fn test_github_release_with_mock() {
+        use crate::file_auth::release_types::ReleaseAdder;
+        use super::test_utils::create_mock_release;
+
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let signers_dir = git_repo_path
+            .join("github.com/testowner/testrepo")
+            .join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).await.unwrap();
+
+        let signers_json = r#"{
+            "version": 1,
+            "required_signers": 1,
+            "signers": [
+                {
+                    "public_key": "test_key",
+                    "name": "Test Signer"
+                }
+            ]
+        }"#;
+        fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
+            .await
+            .unwrap();
+
+        let release_url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+
+        let mut mock_client = MockGithubClient::new();
+
+        let mut adder =
+            GithubReleaseAdder::new_with_client(&release_url, git_repo_path.clone(), mock_client)
+                .await
+                .unwrap();
+
+        let mock_release = create_mock_release();
+        adder.client.mock_release(mock_release);
+
+        let index_content = adder.index_content().await.unwrap();
+        let json: serde_json::Value = serde_json::from_str(&index_content).unwrap();
+
+        assert_eq!(json["version"], 1);
+        assert!(json["publishedFiles"].is_array());
+        let files = json["publishedFiles"].as_array().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0]["fileName"], "test.tar.gz");
+        assert_eq!(files[0]["algo"], "Sha256");
+        assert_eq!(
+            files[0]["hash"],
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        );
     }
 }

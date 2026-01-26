@@ -4,15 +4,18 @@ pub mod tests {
     use axum::http::StatusCode;
     use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE};
     use rest_api::server::run_server;
-    use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
-    use rest_api_types::RegisterReleaseRequest;
+    use rest_api_test_helpers::{
+        build_test_config, get_random_port, print_logs, setup_file_logging, url_for,
+        wait_for_log_entry_with_request_id, wait_for_server,
+    };
+    use rest_api_types::{RegisterReleaseRequest, rustls::setup_crypto_provider};
     use serde_json::Value;
     use std::fs;
     use tempfile::TempDir;
     use tokio::time::Duration;
 
-
     #[tokio::test]
+    #[cfg(feature = "test-utils")]
     async fn test_register_github_release_endpoint() -> Result<()> {
         // Upgrading octocrab to version 0.49.5 from 0.39 caused an error for this test:
         //    Could not automatically determine the process-level CryptoProvider from Rustls crate features.
@@ -22,6 +25,10 @@ pub mod tests {
         setup_crypto_provider();
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let git_repo_path = temp_dir.path().to_path_buf();
+        print_logs();
+
+        // Initialize a git repository for the test
+        git2::Repository::init(&git_repo_path).expect("Failed to initialize git repository");
 
         let port = get_random_port().await?;
 
