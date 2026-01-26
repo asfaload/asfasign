@@ -32,8 +32,16 @@ pub fn init_state(git_repo_path: std::path::PathBuf, github_api_key: Option<Stri
     // Initialize nonce cache with database path
     // FIXME: support taking the dir for the nonce db from env var
     let nonce_db_path = git_repo_path.join(".app_cache").join(NONCE_CACHE_DB);
-    let nonce_cache_actor = NonceCacheActor::spawn(nonce_db_path.clone());
-    let nonce_cleanup_actor = NonceCleanupActor::spawn(nonce_db_path);
+    let db = sled::open(nonce_db_path)
+        .map_err(|e| {
+            tracing::debug!(
+                error = %e,
+                "Problem opening nonce cache"
+            );
+        })
+        .expect("Cannot open nonce cache database");
+    let nonce_cache_actor = NonceCacheActor::spawn(db.clone());
+    let nonce_cleanup_actor = NonceCleanupActor::spawn(db.clone());
 
     let forge_project_validator = ForgeProjectValidator::spawn(());
     let signers_initialiser = SignersInitialiser::spawn(());
