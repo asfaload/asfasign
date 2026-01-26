@@ -338,4 +338,241 @@ mod tests {
         let path = result[0].relative_path().to_string_lossy().to_string();
         assert!(path.contains("file1.txt"));
     }
+
+    #[test]
+    fn test_find_all_pending_discovers_pending_signers_files() {
+        use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
+        let temp_dir = TempDir::new().unwrap();
+        let normalised =
+            build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
+
+        let key_pair = features_lib::AsfaloadKeyPairs::new("pwd").unwrap();
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))
+                .unwrap();
+
+        let project_dir = temp_dir.path().join("project");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let pending_signers_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_signers_dir).unwrap();
+
+        let signers_file = pending_signers_dir.join(SIGNERS_FILE);
+        let signers_json = serde_json::to_string(&signers_config).unwrap();
+        fs::write(&signers_file, signers_json).unwrap();
+
+        let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
+        fs::write(&pending_signers_sig, "{}").unwrap();
+
+        let discovery = WalkdirPendingDiscovery::new();
+        let result = discovery.find_all_pending(&normalised).unwrap();
+
+        assert_eq!(result.len(), 1);
+        let path = result[0].relative_path().to_string_lossy().to_string();
+        assert!(path.contains("project"));
+        assert!(path.contains(PENDING_SIGNERS_DIR));
+        assert!(path.contains(SIGNERS_FILE));
+        assert!(path.contains(PENDING_SIGNATURES_SUFFIX));
+    }
+
+    #[test]
+    fn test_find_all_pending_discovers_both_artifacts_and_signers() {
+        use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
+        let temp_dir = TempDir::new().unwrap();
+        let normalised =
+            build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
+
+        let key_pair = features_lib::AsfaloadKeyPairs::new("pwd").unwrap();
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))
+                .unwrap();
+
+        let project_dir = temp_dir.path().join("project");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let pending_signers_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_signers_dir).unwrap();
+
+        let signers_file = pending_signers_dir.join(SIGNERS_FILE);
+        let signers_json = serde_json::to_string(&signers_config).unwrap();
+        fs::write(&signers_file, signers_json).unwrap();
+
+        let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
+        fs::write(&pending_signers_sig, "{}").unwrap();
+
+        let artifact = project_dir.join("artifact.txt");
+        fs::write(&artifact, "content").unwrap();
+        let pending_artifact_sig = pending_signatures_path_for(&artifact).unwrap();
+        fs::write(&pending_artifact_sig, "{}").unwrap();
+
+        let discovery = WalkdirPendingDiscovery::new();
+        let result = discovery.find_all_pending(&normalised).unwrap();
+
+        assert_eq!(result.len(), 2);
+        let paths: Vec<String> = result
+            .iter()
+            .map(|p| p.relative_path().to_string_lossy().to_string())
+            .collect();
+
+        let signers_found = paths
+            .iter()
+            .any(|p| p.contains(PENDING_SIGNERS_DIR) && p.contains(SIGNERS_FILE));
+        assert!(signers_found, "Pending signers file should be found");
+
+        let artifact_found = paths
+            .iter()
+            .any(|p| p.contains("artifact.txt") && p.contains(PENDING_SIGNATURES_SUFFIX));
+        assert!(artifact_found, "Pending artifact file should be found");
+    }
+
+    #[test]
+    fn test_find_pending_for_signer_includes_pending_signers_file() {
+        use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
+        let temp_dir = TempDir::new().unwrap();
+        let normalised =
+            build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
+
+        let key_pair = features_lib::AsfaloadKeyPairs::new("pwd").unwrap();
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))
+                .unwrap();
+
+        let project_dir = temp_dir.path().join("project");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let pending_signers_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_signers_dir).unwrap();
+
+        let signers_file = pending_signers_dir.join(SIGNERS_FILE);
+        let signers_json = serde_json::to_string(&signers_config).unwrap();
+        fs::write(&signers_file, signers_json.clone()).unwrap();
+
+        let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
+        fs::write(&pending_signers_sig, "{}").unwrap();
+
+        let discovery = WalkdirPendingDiscovery::new();
+        let result = discovery
+            .find_pending_for_signer(&normalised, &key_pair.public_key())
+            .unwrap();
+
+        assert_eq!(result.len(), 1);
+        let path = result[0].relative_path().to_string_lossy().to_string();
+        assert!(path.contains(PENDING_SIGNERS_DIR));
+        assert!(path.contains(SIGNERS_FILE));
+        assert!(path.contains(PENDING_SIGNATURES_SUFFIX));
+    }
+
+    #[test]
+    fn test_find_pending_for_signer_filters_signed_out_pending_signers() {
+        use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
+        let temp_dir = TempDir::new().unwrap();
+        let normalised =
+            build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
+
+        let key_pair = features_lib::AsfaloadKeyPairs::new("pwd").unwrap();
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))
+                .unwrap();
+
+        let project_dir = temp_dir.path().join("project");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let pending_signers_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_signers_dir).unwrap();
+
+        let signers_file = pending_signers_dir.join(SIGNERS_FILE);
+        let signers_json = serde_json::to_string(&signers_config).unwrap();
+        fs::write(&signers_file, signers_json.clone()).unwrap();
+
+        let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
+
+        let hash = sha512_for_file(&signers_file).unwrap();
+        let sig = key_pair.secret_key("pwd").unwrap().sign(&hash).unwrap();
+        let signed_content = serde_json::json!({
+            key_pair.public_key().to_base64(): sig.to_base64()
+        });
+        fs::write(&pending_signers_sig, signed_content.to_string()).unwrap();
+
+        let global_signers_dir = temp_dir.path().join(SIGNERS_DIR);
+        fs::create_dir_all(&global_signers_dir).unwrap();
+        fs::write(global_signers_dir.join(SIGNERS_FILE), signers_json).unwrap();
+
+        let discovery = WalkdirPendingDiscovery::new();
+        let result = discovery
+            .find_pending_for_signer(&normalised, &key_pair.public_key())
+            .unwrap();
+
+        assert!(
+            result.is_empty(),
+            "Signer should not see pending signers file as needing signature after signing"
+        );
+    }
+
+    #[test]
+    fn test_find_pending_for_signer_multiple_signers_partial_signatures() {
+        use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
+        let temp_dir = TempDir::new().unwrap();
+        let normalised =
+            build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
+
+        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1").unwrap();
+        let key_pair2 = features_lib::AsfaloadKeyPairs::new("pwd2").unwrap();
+
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            2,
+            (
+                vec![
+                    key_pair1.public_key().clone(),
+                    key_pair2.public_key().clone(),
+                ],
+                2,
+            ),
+        )
+        .unwrap();
+
+        let project_dir = temp_dir.path().join("project");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let pending_signers_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_signers_dir).unwrap();
+
+        let signers_file = pending_signers_dir.join(SIGNERS_FILE);
+        let signers_json = serde_json::to_string(&signers_config).unwrap();
+        fs::write(&signers_file, signers_json.clone()).unwrap();
+
+        let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
+        fs::write(&pending_signers_sig, "{}").unwrap();
+
+        let global_signers_dir = temp_dir.path().join(SIGNERS_DIR);
+        fs::create_dir_all(&global_signers_dir).unwrap();
+        fs::write(global_signers_dir.join(SIGNERS_FILE), signers_json).unwrap();
+
+        let discovery = WalkdirPendingDiscovery::new();
+
+        let result1 = discovery
+            .find_pending_for_signer(&normalised, &key_pair1.public_key())
+            .unwrap();
+        let result2 = discovery
+            .find_pending_for_signer(&normalised, &key_pair2.public_key())
+            .unwrap();
+
+        assert_eq!(
+            result1.len(),
+            1,
+            "Signer1 should see pending signers file as needing signature"
+        );
+        assert_eq!(
+            result2.len(),
+            1,
+            "Signer2 should see pending signers file as needing signature"
+        );
+
+        let path1 = result1[0].relative_path().to_string_lossy().to_string();
+        let path2 = result2[0].relative_path().to_string_lossy().to_string();
+        assert_eq!(
+            path1, path2,
+            "Both signers should see the same pending file"
+        );
+        assert!(path1.contains(PENDING_SIGNERS_DIR));
+    }
 }
