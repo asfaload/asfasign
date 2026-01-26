@@ -1,4 +1,6 @@
-use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use common::fs::names::{
+    PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE, pending_signatures_path_for,
+};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
@@ -158,6 +160,41 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             "Wrote signers file to disk"
         );
 
+        // Write an empty signers file so missing signatures works for these newly added signers
+        // files
+        let pending_signers_sig_path =
+            pending_signatures_path_for(signers_normalised_paths.absolute_path());
+        match pending_signers_sig_path {
+            Ok(ref path) => {
+                tokio::fs::write(path, "{}").await.map_err(|e| {
+                    tracing::error!(
+                        request_id = %msg.request_id,
+                        error = %e,
+                        path = %path.display(),
+                        "Failed to write pending signers signature file"
+                    );
+                    ApiError::FileWriteFailed(format!(
+                        "Failed to write pending signers signature file {}: {}",
+                        path.display(),
+                        e
+                    ))
+                })?;
+
+                tracing::debug!(
+                    request_id = %msg.request_id,
+                    file_path = %path.display(),
+                    "Wrote pending signers signature file to disk"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    request_id = %msg.request_id,
+                    error = %e,
+                    "Failed to compute pending signers signature path"
+                );
+            }
+        }
+
         let history_json = "[]";
         tokio::fs::write(&history_normalised_paths, history_json)
             .await
@@ -262,6 +299,7 @@ mod tests {
 
     use super::*;
     use anyhow::Result;
+    use common::fs::names::pending_signatures_path_for;
     use kameo::actor::Spawn;
 
     #[tokio::test]
@@ -296,6 +334,14 @@ mod tests {
         assert!(signers_pending_dir.exists());
         assert!(init_result.signers_file_path.absolute_path().exists());
         assert!(init_result.history_file_path.absolute_path().exists());
+
+        let pending_signers_sig_path =
+            pending_signatures_path_for(&init_result.signers_file_path.absolute_path())?;
+        assert!(pending_signers_sig_path.exists());
+        let pending_sig_content = tokio::fs::read_to_string(&pending_signers_sig_path)
+            .await
+            .unwrap();
+        assert_eq!(pending_sig_content, "{}");
 
         let history_content =
             tokio::fs::read_to_string(&init_result.history_file_path.absolute_path())
