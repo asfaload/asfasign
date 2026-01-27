@@ -1,16 +1,19 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
 use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
-pub fn setup_asfald_project_registered(
-    repo_path: PathBuf,
+pub fn setup_asfald_project_registered<P: AsRef<Path>>(
+    repo_path: P,
     signers_config_json: impl Into<String>,
 ) -> Result<PathBuf> {
     // Test the scenario where:
     // - There is a pending signers file at ./github.com/asfaload/asfald/asfaload.signers.pending/index.json
     // - There is NO asfaload.signers directory sibling or in parent directories
     // - Only asfaload.signers.history.json exists, which is not a signers directory
-    let root = repo_path;
+    let root = repo_path.as_ref();
 
     // Create the directory structure:
     // root/
