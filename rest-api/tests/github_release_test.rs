@@ -11,9 +11,7 @@ pub mod tests {
     use tokio::time::Duration;
 
     #[cfg(feature = "test-utils")]
-    use rest_api_test_helpers::{
-        print_logs, setup_file_logging, wait_for_log_entry_with_request_id,
-    };
+    use rest_api_test_helpers::print_logs;
     #[cfg(feature = "test-utils")]
     use serde_json::Value;
 

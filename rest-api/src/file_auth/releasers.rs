@@ -149,4 +149,56 @@ mod tests {
         assert!(!GITHUB_RELEASE_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
         assert!(!GITLAB_RELEASE_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
     }
+
+    #[tokio::test]
+    #[cfg(feature = "test-utils")]
+    async fn test_release_adders_github_release() {
+        use crate::file_auth::release_types::ReleaseAdder;
+        use constants::{SIGNERS_DIR, SIGNERS_FILE};
+        use tempfile::TempDir;
+        use tokio::fs;
+
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let signers_dir = git_repo_path
+            .join("github.com/testowner/testrepo")
+            .join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).await.unwrap();
+
+        let signers_json = r#"{
+            "version": 1,
+            "required_signers": 1,
+            "signers": [
+                {
+                    "public_key": "test_key",
+                    "name": "Test Signer"
+                }
+            ]
+        }"#;
+        fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
+            .await
+            .unwrap();
+
+        let release_url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+
+        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone())
+            .await
+            .unwrap();
+
+        let index_content = adder.index_content().await.unwrap();
+        let json: serde_json::Value = serde_json::from_str(&index_content).unwrap();
+
+        assert_eq!(json["version"], 1);
+        assert!(json["publishedFiles"].is_array());
+        let files = json["publishedFiles"].as_array().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0]["fileName"], "test.tar.gz");
+        assert_eq!(files[0]["algo"], "Sha256");
+        assert_eq!(
+            files[0]["hash"],
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        );
+    }
 }
