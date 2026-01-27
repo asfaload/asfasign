@@ -1,8 +1,8 @@
-use crate::file_auth::github_release::GithubReleaseAdder;
 #[cfg(not(feature = "test-utils"))]
 use crate::file_auth::github_release::GithubClient;
-use crate::file_auth::gitlab_release::{GitLabClient, GitlabReleaseAdder};
-use crate::file_auth::release_types::{ReleaseAdder, ReleaseUrlError};
+use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
+use crate::file_auth::gitlab_release::{GitLabClient, GitlabReleaseAdder, GitlabReleaseInfo};
+use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo, ReleaseUrlError};
 use crate::path_validation::NormalisedPaths;
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
@@ -68,7 +68,7 @@ impl ReleaseAdder for ReleaseAdders {
         }
     }
 
-    fn release_info(&self) -> &dyn crate::file_auth::release_types::ReleaseInfo {
+    fn release_info(&self) -> ReleaseInfos {
         match self {
             Self::Github(github) => github.release_info(),
             Self::Gitlab(gitlab) => gitlab.release_info(),
@@ -76,6 +76,48 @@ impl ReleaseAdder for ReleaseAdders {
     }
 }
 
+#[derive(Debug)]
+pub enum ReleaseInfos {
+    Github(GithubReleaseInfo),
+    Gitlab(GitlabReleaseInfo),
+}
+
+impl ReleaseInfo for ReleaseInfos {
+    fn host(&self) -> &str {
+        match self {
+            Self::Github(github) => github.host(),
+            Self::Gitlab(gitlab) => gitlab.host(),
+        }
+    }
+
+    fn owner(&self) -> &str {
+        match self {
+            Self::Github(github) => github.owner(),
+            Self::Gitlab(gitlab) => gitlab.owner(),
+        }
+    }
+
+    fn repo(&self) -> &str {
+        match self {
+            Self::Github(github) => github.repo(),
+            Self::Gitlab(gitlab) => gitlab.repo(),
+        }
+    }
+
+    fn tag(&self) -> &str {
+        match self {
+            Self::Github(github) => github.tag(),
+            Self::Gitlab(gitlab) => gitlab.tag(),
+        }
+    }
+
+    fn release_path(&self) -> &NormalisedPaths {
+        match self {
+            Self::Github(github) => github.release_path(),
+            Self::Gitlab(gitlab) => gitlab.release_path(),
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

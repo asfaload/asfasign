@@ -1,10 +1,5 @@
 use super::git_actor::{CommitFile, GitActor};
-#[cfg(not(feature = "test-utils"))]
-use crate::file_auth::github_release::GithubClient;
-use crate::file_auth::github_release::GithubReleaseAdder;
-#[cfg(feature = "test-utils")]
-use crate::file_auth::github_release::test_utils::{MockGithubClient, create_mock_release};
-use crate::file_auth::release_types::ReleaseAdder;
+use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo};
 use crate::file_auth::releasers::ReleaseAdders;
 use crate::path_validation::NormalisedPaths;
 use kameo::message::Context;
@@ -73,24 +68,7 @@ impl ReleaseActor {
             "Processing release"
         );
 
-        let github_adder = {
-            let client = {
-                #[cfg(feature = "test-utils")]
-                {
-                    MockGithubClient::new()
-                }
-
-                #[cfg(not(feature = "test-utils"))]
-                {
-                    GithubClient::new()
-                }
-            };
-
-            GithubReleaseAdder::new_with_client(
-                &msg.release_url,
-                self.git_repo_path.clone(),
-                client,
-            )
+        let adder = ReleaseAdders::new(&msg.release_url, self.git_repo_path.clone())
             .await
             .map_err(|e| {
                 tracing::error!(
@@ -112,12 +90,9 @@ impl ReleaseActor {
                         ApiError::InvalidReleaseUrl(msg)
                     }
                 }
-            })?
-        };
+            })?;
 
-        let adder: ReleaseAdders = ReleaseAdders::Github(github_adder);
-
-        let release_info: &dyn crate::file_auth::release_types::ReleaseInfo = adder.release_info();
+        let release_info = adder.release_info();
 
         info!(
             request_id = %msg.request_id,

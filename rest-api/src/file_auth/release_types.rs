@@ -1,4 +1,4 @@
-use crate::path_validation::NormalisedPaths;
+use crate::{file_auth::releasers::ReleaseInfos, path_validation::NormalisedPaths};
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -35,5 +35,5 @@ pub trait ReleaseAdder: std::fmt::Debug {
 
     async fn write_index(&self) -> Result<NormalisedPaths, ApiError>;
 
-    fn release_info(&self) -> &dyn ReleaseInfo;
+    fn release_info(&self) -> ReleaseInfos;
 }

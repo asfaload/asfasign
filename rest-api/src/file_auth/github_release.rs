@@ -1,6 +1,7 @@
 use crate::constants::INDEX_FILE;
 use crate::file_auth::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo};
+use crate::file_auth::releasers::ReleaseInfos;
 use crate::path_validation::NormalisedPaths;
 use constants::{SIGNERS_DIR, SIGNERS_FILE};
 use octocrab::models::repos::Release;
@@ -67,7 +68,7 @@ pub struct GithubReleaseAdder<C: GithubClientTrait> {
     release_info: GithubReleaseInfo,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GithubReleaseInfo {
     pub host: String,
     pub owner: String,
@@ -185,8 +186,8 @@ where
         Ok(full_index_path)
     }
 
-    fn release_info(&self) -> &dyn ReleaseInfo {
-        &self.release_info
+    fn release_info(&self) -> ReleaseInfos {
+        ReleaseInfos::Github(self.release_info.clone())
     }
 }
 
