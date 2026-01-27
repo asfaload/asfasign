@@ -7,6 +7,7 @@ edition = "2024"
 signatures = { path = "../signatures" }
 minisign = "0.8.0"
 constants = { path = "../constants/" }
+common = { path = "../common/" }
 anyhow = "1.0.100"
 
 [lints]

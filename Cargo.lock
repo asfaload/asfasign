@@ -4565,6 +4565,7 @@ name = "test_helpers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "common",
  "constants",
  "minisign",
  "signatures",

@@ -117,16 +117,18 @@ mod tests {
     use super::*;
     use crate::path_validation::build_normalised_absolute_path;
     use crate::pending_discovery::PendingSignaturesDiscovery;
-    use common::fs::names::pending_signatures_path_for;
+    use common::determine_file_type;
+    use common::fs::names::{find_global_signers_for, pending_signatures_path_for};
     use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{
         AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
         AsfaloadSignatureTrait, sha512_for_file,
     };
-    use signers_file_types::SignersConfig;
+    use signers_file_types::{SignersConfig, parse_signers_config};
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
+    use test_helpers::scenarios::setup_asfald_project_registered;
 
     #[test]
     fn test_find_all_pending_discovers_pending_files() {
@@ -341,6 +343,55 @@ mod tests {
     }
 
     #[test]
+    fn test_find_pending_for_signer_file_after_registration() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let normalised =
+            build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
+
+        // The keypair for which we will search pending sigs
+        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1").unwrap();
+
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (vec![key_pair1.public_key().clone()], 1))
+                .unwrap();
+        let signers_json = serde_json::to_string(&signers_config).unwrap();
+        let signers_file = setup_asfald_project_registered(temp_dir.path(), signers_json)?;
+        let pending_signatures_file = pending_signatures_path_for(&signers_file)?;
+        // First check the signers file was written correctly
+        let json_from_file = fs::read_to_string(&signers_file)?;
+        let signers_config_from_file = parse_signers_config(json_from_file.as_str())?;
+        assert_eq!(signers_config_from_file.artifact_signers().len(), 1);
+        assert_eq!(
+            signers_file
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_string_lossy(),
+            PENDING_SIGNERS_DIR,
+            "signers file was placed in wrong directory"
+        );
+        assert_eq!(
+            signers_file.file_name().unwrap(),
+            SIGNERS_FILE,
+            "signers file was not named correctly"
+        );
+        assert!(pending_signatures_file.exists());
+        let file_type = determine_file_type(signers_file);
+        assert_eq!(
+            file_type,
+            common::FileType::InitialSigners,
+            "File type of new signers file should be InitialSigners"
+        );
+
+        // Now seach for all pending signature, which should be the number of artifact signers in
+        // the newly written pending signers file.
+        let discovery = WalkdirPendingDiscovery::new();
+        let result = discovery.find_all_pending(&normalised).unwrap();
+        assert_eq!(result.len(), 1);
+        Ok(())
+    }
+    #[test]
     fn test_find_all_pending_discovers_pending_signers_files() {
         use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
         let temp_dir = TempDir::new().unwrap();
@@ -438,11 +489,55 @@ mod tests {
             SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))
                 .unwrap();
         let signers_json = serde_json::to_string(&signers_config).unwrap();
-        let signers_file =
-            setup_asfald_project_registered(temp_dir.path().to_path_buf(), signers_json)?;
+        let signers_file = setup_asfald_project_registered(temp_dir.path(), signers_json)?;
+        let pending_signatures_file = pending_signatures_path_for(&signers_file)?;
 
-        let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
-        fs::write(&pending_signers_sig, "{}").unwrap();
+        // First check the signers file was written correctly
+        let json_from_file = fs::read_to_string(&signers_file)?;
+        let signers_config_from_file = parse_signers_config(json_from_file.as_str())?;
+        assert_eq!(signers_config_from_file.artifact_signers().len(), 1);
+        assert_eq!(
+            signers_file
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_string_lossy(),
+            PENDING_SIGNERS_DIR,
+            "signers file was placed in wrong directory"
+        );
+        assert_eq!(
+            signers_file.file_name().unwrap(),
+            SIGNERS_FILE,
+            "signers file was not named correctly"
+        );
+        assert!(pending_signatures_file.exists());
+        let file_type = determine_file_type(&signers_file);
+        assert_eq!(
+            file_type,
+            common::FileType::InitialSigners,
+            "File type of new signers file should be InitialSigners"
+        );
+
+        // Check that we don't find a global signers file as expected
+        let global_signers = find_global_signers_for(&signers_file);
+        match global_signers {
+            Ok(v) => panic!(
+                "Unexpectedly found a global signers at {} ",
+                v.to_string_lossy()
+            ),
+            Err(e) => {
+                if !e
+                    .to_string()
+                    .contains("No signers file found in parent directories")
+                {
+                    panic!(
+                        "Expected 'No signers file found in parent directories' but got {}",
+                        e
+                    );
+                }
+            }
+        }
 
         let discovery = WalkdirPendingDiscovery::new();
         let result = discovery
