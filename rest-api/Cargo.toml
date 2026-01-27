@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-test-utils = []
+test-utils = ["httpmock"]
 
 [dependencies]
+httpmock = { version = "0.7", optional = true }
 axum = { version = "0.8.7", features = ["json"] }
 config = "0.15.19"
 tokio = { version = "1.0", features = [
@@ -58,7 +59,6 @@ urlencoding = "2.1"
 
 [dev-dependencies]
 tempfile = "3"
-httpmock = "0.7"
 axum-test = "18.5.0"
 tower = "0.5"
 tokio = { version = "1.0", features = [

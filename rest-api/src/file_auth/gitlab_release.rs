@@ -12,6 +12,20 @@ use std::path::PathBuf;
 use tokio::fs;
 use tracing::info;
 
+#[cfg(not(feature = "test-utils"))]
+pub type GitLabClient = ProductionGitLabClient;
+#[cfg(not(feature = "test-utils"))]
+async fn get_client(host: String, token: String) -> Result<GitLabClient, ApiError> {
+    ProductionGitLabClient::new(host.as_str(), token.as_str()).await
+}
+#[cfg(feature = "test-utils")]
+pub type GitLabClient = MockGitLabClient;
+
+#[cfg(feature = "test-utils")]
+async fn get_client(_host: String, _token: String) -> Result<GitLabClient, ApiError> {
+    Ok(GitLabClient::new())
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct GitlabReleaseLink {
     #[serde(default)]
@@ -36,11 +50,11 @@ pub trait GitLabClientTrait: Send + Sync {
     ) -> Result<GitlabRelease, ApiError>;
 }
 
-pub struct GitLabClient {
+pub struct ProductionGitLabClient {
     inner: gitlab::AsyncGitlab,
 }
 
-impl GitLabClient {
+impl ProductionGitLabClient {
     pub async fn new(host: &str, token: &str) -> Result<Self, ApiError> {
         let builder = GitlabBuilder::new(host, token);
         let inner = builder.build_async().await.map_err(|e| {
@@ -54,7 +68,7 @@ impl GitLabClient {
 }
 
 #[async_trait::async_trait]
-impl GitLabClientTrait for GitLabClient {
+impl GitLabClientTrait for ProductionGitLabClient {
     async fn query_release(
         &self,
         namespace: &str,
@@ -84,14 +98,14 @@ impl GitLabClientTrait for GitLabClient {
 
 const MAX_FILE_SIZE_FOR_HASHING: u64 = 500 * 1024 * 1024; // 500MB
 
-pub struct GitlabReleaseAdder<C: GitLabClientTrait> {
+pub struct GitlabReleaseAdder {
     release_url: url::Url,
     git_repo_path: PathBuf,
-    client: C,
+    client: GitLabClient,
     release_info: GitlabReleaseInfo,
 }
 
-impl<C: GitLabClientTrait> std::fmt::Debug for GitlabReleaseAdder<C> {
+impl std::fmt::Debug for GitlabReleaseAdder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GitlabReleaseAdder")
             .field("release_url", &self.release_url)
@@ -138,22 +152,21 @@ struct ReleaseAssetInfo {
     hash: Option<FileChecksum>,
 }
 
-impl<C: GitLabClientTrait> ReleaseAdder for GitlabReleaseAdder<C>
-where
-    C: From<GitLabClient>,
-{
+impl ReleaseAdder for GitlabReleaseAdder {
     async fn new(release_url: &url::Url, git_repo_path: PathBuf) -> Result<Self, ReleaseUrlError>
     where
         Self: Sized,
     {
         let (host, namespace, project, tag) = Self::validate_and_parse_url(release_url)?;
 
-        let production_client = GitLabClient::new(&host, "GITLAB_TOKEN")
+        let client = get_client(host.clone(), "GITLAB_TOKEN".to_string())
             .await
             .map_err(|e| {
-                ReleaseUrlError::InvalidFormat(format!("Failed to create client: {}", e))
+                tracing::error!(
+            error = %e,
+            "could not get gitlab client");
+                ReleaseUrlError::InvalidFormat(e.to_string())
             })?;
-        let client: C = production_client.into();
 
         let url_path = format!("{}/-/releases/{}", host, tag);
         let release_path = NormalisedPaths::new(git_repo_path.clone(), PathBuf::from(&url_path))
@@ -252,11 +265,11 @@ where
     }
 }
 
-impl<C: GitLabClientTrait> GitlabReleaseAdder<C> {
+impl GitlabReleaseAdder {
     pub async fn new_with_client(
         release_url: &url::Url,
         git_repo_path: PathBuf,
-        client: C,
+        client: GitLabClient,
     ) -> Result<Self, ReleaseUrlError> {
         let (host, namespace, project, tag) = Self::validate_and_parse_url(release_url)?;
 
@@ -435,8 +448,8 @@ impl<C: GitLabClientTrait> GitlabReleaseAdder<C> {
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(feature = "test-utils")]
+pub mod test_utils {
     use super::*;
     use httpmock;
     use std::collections::HashMap;
@@ -453,7 +466,7 @@ mod tests {
         pub fn new() -> Self {
             Self {
                 server: httpmock::MockServer::start(),
-                release_response: None,
+                release_response: Some(create_mock_release()),
                 asset_responses: Arc::new(Mutex::new(HashMap::new())),
             }
         }
@@ -496,6 +509,21 @@ mod tests {
         }
     }
 
+    pub fn create_mock_release() -> GitlabRelease {
+        GitlabRelease {
+            assets: Some(vec![GitlabReleaseLink {
+                name: "test.tar.gz".to_string(),
+                direct_asset_url: "https://gitlab.com/testnamespace/testproject/-/releases/v1.0.0/downloads/test.tar.gz".to_string(),
+            }]),
+        }
+    }
+
+    impl Default for MockGitLabClient {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     #[async_trait::async_trait]
     impl GitLabClientTrait for MockGitLabClient {
         async fn query_release(
@@ -512,18 +540,22 @@ mod tests {
             })
         }
     }
+}
 
-    impl From<GitLabClient> for MockGitLabClient {
-        fn from(_production: GitLabClient) -> Self {
-            Self::new()
-        }
-    }
+#[cfg(feature = "test-utils")]
+pub use test_utils::MockGitLabClient;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(feature = "test-utils")]
+    use httpmock;
 
     #[test]
     fn test_parse_gitlab_releases_url() {
         let url = url::Url::parse("https://gitlab.com/group/project/-/releases/v1.0.0").unwrap();
         let (host, namespace, project, tag) =
-            GitlabReleaseAdder::<GitLabClient>::validate_and_parse_url(&url).unwrap();
+            GitlabReleaseAdder::validate_and_parse_url(&url).unwrap();
 
         assert_eq!(host, "gitlab.com");
         assert_eq!(namespace, "group");
@@ -534,8 +566,7 @@ mod tests {
     #[test]
     fn test_parse_gitlab_tags_url() {
         let url = url::Url::parse("https://gitlab.com/group/project/-/tags/v1.0.0").unwrap();
-        let (_, _, _, tag) =
-            GitlabReleaseAdder::<GitLabClient>::validate_and_parse_url(&url).unwrap();
+        let (_, _, _, tag) = GitlabReleaseAdder::validate_and_parse_url(&url).unwrap();
 
         assert_eq!(tag, "v1.0.0");
     }
@@ -544,8 +575,7 @@ mod tests {
     fn test_parse_gitlab_nested_namespace() {
         let url =
             url::Url::parse("https://gitlab.com/group/subgroup/project/-/releases/v1.0.0").unwrap();
-        let (_, namespace, _, _) =
-            GitlabReleaseAdder::<GitLabClient>::validate_and_parse_url(&url).unwrap();
+        let (_, namespace, _, _) = GitlabReleaseAdder::validate_and_parse_url(&url).unwrap();
 
         assert_eq!(namespace, "group/subgroup");
     }
@@ -553,7 +583,7 @@ mod tests {
     #[test]
     fn test_invalid_gitlab_url_missing_separator() {
         let url = url::Url::parse("https://gitlab.com/group/project/v1.0.0").unwrap();
-        let result = GitlabReleaseAdder::<GitLabClient>::validate_and_parse_url(&url);
+        let result = GitlabReleaseAdder::validate_and_parse_url(&url);
 
         assert!(result.is_err());
     }
@@ -561,7 +591,7 @@ mod tests {
     #[test]
     fn test_invalid_gitlab_url_missing_tag() {
         let url = url::Url::parse("https://gitlab.com/group/project/-/releases/").unwrap();
-        let result = GitlabReleaseAdder::<GitLabClient>::validate_and_parse_url(&url);
+        let result = GitlabReleaseAdder::validate_and_parse_url(&url);
 
         assert!(result.is_err());
     }
@@ -569,7 +599,7 @@ mod tests {
     #[test]
     fn test_invalid_gitlab_url_empty_namespace() {
         let url = url::Url::parse("https://gitlab.com//project/-/releases/v1.0.0").unwrap();
-        let result = GitlabReleaseAdder::<GitLabClient>::validate_and_parse_url(&url);
+        let result = GitlabReleaseAdder::validate_and_parse_url(&url);
 
         assert!(result.is_err());
     }
@@ -577,33 +607,15 @@ mod tests {
     #[test]
     fn test_invalid_gitlab_url_empty_project() {
         let url = url::Url::parse("https://gitlab.com/group//-/releases/v1.0.0").unwrap();
-        let result = GitlabReleaseAdder::<GitLabClient>::validate_and_parse_url(&url);
+        let result = GitlabReleaseAdder::validate_and_parse_url(&url);
 
         assert!(result.is_err());
     }
 
     #[tokio::test]
-    async fn test_download_and_hash_file_size_limit() {
-        let mock_server = httpmock::MockServer::start();
-
-        let large_body = vec![0u8; 1000];
-
-        mock_server.mock(|when, then| {
-            when.method(httpmock::Method::GET)
-                .path("/fake-asset.tar.gz");
-            then.status(200).body(&large_body);
-        });
-
-        let large_url = format!("{}/fake-asset.tar.gz", mock_server.url(""));
-        let result =
-            GitlabReleaseAdder::<GitLabClient>::download_and_hash_file(&large_url, 100).await;
-
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("exceeds limit"));
-    }
-
-    #[tokio::test]
+    #[cfg(feature = "test-utils")]
     async fn test_gitlab_release_hash_computation() {
+        use crate::file_auth::gitlab_release::test_utils::MockGitLabClient;
         use crate::file_auth::release_types::ReleaseAdder;
         use sha2::{Digest, Sha256};
         use url::Url;
@@ -666,5 +678,25 @@ mod tests {
 
         let expected_hash = hex::encode(Sha256::digest(test_content));
         assert_eq!(hash, expected_hash);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "test-utils")]
+    async fn test_download_and_hash_file_size_limit() {
+        let mock_server = httpmock::MockServer::start();
+
+        let large_body = vec![0u8; 1000];
+
+        mock_server.mock(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/fake-asset.tar.gz");
+            then.status(200).body(&large_body);
+        });
+
+        let large_url = format!("{}/fake-asset.tar.gz", mock_server.url(""));
+        let result = GitlabReleaseAdder::download_and_hash_file(&large_url, 100).await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("exceeds limit"));
     }
 }

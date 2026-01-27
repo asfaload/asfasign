@@ -1,7 +1,7 @@
 #[cfg(not(feature = "test-utils"))]
 use crate::file_auth::github_release::GithubClient;
 use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
-use crate::file_auth::gitlab_release::{GitLabClient, GitlabReleaseAdder, GitlabReleaseInfo};
+use crate::file_auth::gitlab_release::{GitlabReleaseAdder, GitlabReleaseInfo};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo, ReleaseUrlError};
 use crate::path_validation::NormalisedPaths;
 use rest_api_types::errors::ApiError;
@@ -16,10 +16,10 @@ use crate::file_auth::github_release::test_utils::MockGithubClient;
 #[derive(Debug)]
 pub enum ReleaseAdders {
     #[cfg(not(feature = "test-utils"))]
-    Github(GithubReleaseAdder<GithubClient>),
+    Github(Box<GithubReleaseAdder<GithubClient>>),
     #[cfg(feature = "test-utils")]
-    Github(GithubReleaseAdder<MockGithubClient>),
-    Gitlab(GitlabReleaseAdder<GitLabClient>),
+    Github(Box<GithubReleaseAdder<MockGithubClient>>),
+    Gitlab(Box<GitlabReleaseAdder>),
 }
 
 impl ReleaseAdder for ReleaseAdders {
@@ -33,10 +33,10 @@ impl ReleaseAdder for ReleaseAdders {
 
         if GITHUB_RELEASE_HOSTS.contains(&host) {
             let github_adder = GithubReleaseAdder::new(release_url, git_repo_path).await?;
-            Ok(Self::Github(github_adder))
+            Ok(Self::Github(Box::new(github_adder)))
         } else if GITLAB_RELEASE_HOSTS.contains(&host) {
             let gitlab_adder = GitlabReleaseAdder::new(release_url, git_repo_path).await?;
-            Ok(Self::Gitlab(gitlab_adder))
+            Ok(Self::Gitlab(Box::new(gitlab_adder)))
         } else {
             Err(ReleaseUrlError::UnsupportedPlatform(format!(
                 "{}. Supported: GitHub ({}), GitLab ({})",
@@ -56,15 +56,15 @@ impl ReleaseAdder for ReleaseAdders {
 
     async fn index_content(&self) -> Result<String, ApiError> {
         match self {
-            Self::Github(github) => github.index_content().await,
-            Self::Gitlab(gitlab) => gitlab.index_content().await,
+            Self::Github(github) => github.as_ref().index_content().await,
+            Self::Gitlab(gitlab) => gitlab.as_ref().index_content().await,
         }
     }
 
     async fn write_index(&self) -> Result<NormalisedPaths, ApiError> {
         match self {
-            Self::Github(github) => github.write_index().await,
-            Self::Gitlab(gitlab) => gitlab.write_index().await,
+            Self::Github(github) => github.as_ref().write_index().await,
+            Self::Gitlab(gitlab) => gitlab.as_ref().write_index().await,
         }
     }
 
@@ -200,5 +200,74 @@ mod tests {
             files[0]["hash"],
             "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
         );
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "test-utils")]
+    async fn test_release_adders_gitlab_release() {
+        use crate::file_auth::gitlab_release::test_utils::MockGitLabClient;
+        use crate::file_auth::gitlab_release::{
+            GitlabRelease, GitlabReleaseAdder, GitlabReleaseLink,
+        };
+        use crate::file_auth::release_types::ReleaseAdder;
+        use constants::{SIGNERS_DIR, SIGNERS_FILE};
+        use tempfile::TempDir;
+        use tokio::fs;
+
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let signers_dir = git_repo_path
+            .join("gitlab.com/testnamespace/testproject")
+            .join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).await.unwrap();
+
+        let signers_json = r#"{
+            "version": 1,
+            "required_signers": 1,
+            "signers": [
+                {
+                    "public_key": "test_key",
+                    "name": "Test Signer"
+                }
+            ]
+        }"#;
+        fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
+            .await
+            .unwrap();
+
+        let mut mock_client = MockGitLabClient::new();
+        let test_content = b"test file for hashing";
+        mock_client.mock_asset("/downloads/test.tar.gz", test_content);
+
+        let _release = GitlabRelease {
+            assets: Some(vec![GitlabReleaseLink {
+                name: "test.tar.gz".to_string(),
+                direct_asset_url: format!("{}/downloads/test.tar.gz", mock_client.url()),
+            }]),
+        };
+
+        mock_client.mock_release(_release);
+
+        let release_url =
+            url::Url::parse("https://gitlab.com/testnamespace/testproject/-/releases/v1.0.0")
+                .unwrap();
+
+        let adder =
+            GitlabReleaseAdder::new_with_client(&release_url, git_repo_path.clone(), mock_client)
+                .await
+                .unwrap();
+
+        let index_content = adder.index_content().await.unwrap();
+        let json: serde_json::Value = serde_json::from_str(&index_content).unwrap();
+
+        assert_eq!(json["version"], 1);
+        assert!(json["publishedFiles"].is_array());
+        let files = json["publishedFiles"].as_array().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0]["fileName"], "test.tar.gz");
+        assert_eq!(files[0]["algo"], "Sha256");
+        let hash = files[0]["hash"].as_str().unwrap();
+        assert_eq!(hash.len(), 64);
     }
 }

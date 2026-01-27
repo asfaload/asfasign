@@ -413,13 +413,16 @@ mod tests {
         mock.assert();
     }
 
+    #[cfg(feature = "test-utils")]
+    use httpmock::{Method::GET, MockServer};
+    #[cfg(feature = "test-utils")]
+    use std::time::Duration;
+    #[cfg(feature = "test-utils")]
     use std::time::Instant;
     use tokio;
 
-    use httpmock::{Method::GET, MockServer};
-    use std::time::Duration;
-
     #[tokio::test]
+    #[cfg(feature = "test-utils")]
     async fn test_fetch_success_on_first_try() {
         let server = MockServer::start_async().await;
         let mock = server.mock(|when, then| {
@@ -439,6 +442,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "test-utils")]
     async fn test_fetch_non_429_error_status_fails_immediately() {
         let server = MockServer::start_async().await;
         let mock = server.mock(|when, then| {
@@ -458,6 +462,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "test-utils")]
     async fn test_fetch_429_without_retry_after_uses_backoff_and_retries() {
         let server = MockServer::start_async().await;
         let mock = server.mock(|when, then| {
@@ -490,6 +495,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "test-utils")]
     async fn test_fetch_429_with_retry_after_header_uses_it_instead_of_backoff() {
         let server = MockServer::start_async().await;
         let mock = server.mock(|when, then| {
@@ -521,6 +527,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "test-utils")]
     async fn test_fetch_succeeds_on_second_attempt_after_429() {
         let server = MockServer::start_async().await;
 
