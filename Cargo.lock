@@ -791,6 +791,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "test_helpers",
  "thiserror 2.0.17",
 ]
 
@@ -4563,6 +4564,8 @@ dependencies = [
 name = "test_helpers"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "constants",
  "minisign",
  "signatures",
 ]

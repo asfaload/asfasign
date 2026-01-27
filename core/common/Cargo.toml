@@ -21,3 +21,4 @@ workspace = true
 [dev-dependencies]
 anyhow = "1.0.99"
 tempfile = "3.21.0"
+test_helpers = { path = "../test_helpers/" }

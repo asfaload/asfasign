@@ -14,7 +14,7 @@ use crate::file_auth::github::get_project_normalised_paths;
 use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
 use axum::{Json, extract::State, http::HeaderMap};
-use common::fs::names::PENDING_SIGNERS_DIR;
+use constants::PENDING_SIGNERS_DIR;
 use rest_api_auth::HEADER_PUBLIC_KEY;
 use rest_api_types::{
     errors::ApiError,
