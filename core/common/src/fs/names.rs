@@ -204,6 +204,8 @@ mod asfaload_index_tests {
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
 
+    use crate::test_helpers::scenarios::setup_asfald_project_registered;
+
     use super::*;
 
     #[test]

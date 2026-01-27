@@ -1,7 +1,10 @@
 pub mod errors;
 pub mod fs;
+pub mod test_helpers;
 
-use crate::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, find_global_signers_for};
+use crate::fs::names::{
+    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE, find_global_signers_for,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha512, digest::typenum};
 use std::fmt;
@@ -270,6 +273,8 @@ impl SignedFileLoader {
 
 #[cfg(test)]
 mod asfaload_common_tests {
+    use crate::test_helpers::scenarios::setup_asfald_project_registered;
+
     use super::*;
     use anyhow::Result;
     use sha2::{Digest, Sha512};
@@ -348,6 +353,20 @@ mod asfaload_common_tests {
             _ => panic!("Computing sha of empty value should be an error"),
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_determine_file_type_github_hierarchy() -> Result<()> {
+        let pending_index_file = setup_asfald_project_registered()?;
+        // This should be InitialSigners because there's NO asfaload.signers dir
+        // in asfald/ or any parent directory
+        assert_eq!(
+            determine_file_type(&pending_index_file),
+            FileType::InitialSigners,
+            "Pending signers file in github.com/asfaload/asfald/ with no \
+             asfaload.signers directory should be InitialSigners"
+        );
         Ok(())
     }
 
