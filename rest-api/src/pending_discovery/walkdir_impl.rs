@@ -1,6 +1,7 @@
 use crate::path_validation::NormalisedPaths;
 use crate::path_validation::build_normalised_absolute_path;
 use common::errors::SignedFileError;
+use common::fs::names::subject_path_from_pending_signatures;
 use constants::PENDING_SIGNATURES_SUFFIX;
 
 pub fn can_signer_add_signature(
@@ -11,8 +12,8 @@ pub fn can_signer_add_signature(
         get_authorized_signers_for_file, get_individual_signatures,
     };
 
-    let authorized = get_authorized_signers_for_file(pending_sig_path.absolute_path())
-        .map_err(SignedFileError::AuthorisedSignersRetrievalFailure)?;
+    let subject_path = subject_path_from_pending_signatures(pending_sig_path.absolute_path())?;
+    let authorized = get_authorized_signers_for_file(&subject_path)?;
 
     if !authorized.contains(signer) {
         return Ok(false);
