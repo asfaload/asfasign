@@ -1,7 +1,7 @@
 pub mod errors;
 pub mod fs;
 
-use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha512, digest::typenum};
 use std::fmt;

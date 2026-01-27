@@ -4,15 +4,18 @@ pub mod tests {
     use axum::http::StatusCode;
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
     use rest_api::server::run_server;
-    use rest_api_test_helpers::{
-        build_test_config, get_random_port, print_logs, setup_file_logging, url_for,
-        wait_for_log_entry_with_request_id, wait_for_server,
-    };
+    use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
     use rest_api_types::{RegisterReleaseRequest, rustls::setup_crypto_provider};
-    use serde_json::Value;
     use std::fs;
     use tempfile::TempDir;
     use tokio::time::Duration;
+
+    #[cfg(feature = "test-utils")]
+    use rest_api_test_helpers::{
+        print_logs, setup_file_logging, wait_for_log_entry_with_request_id,
+    };
+    #[cfg(feature = "test-utils")]
+    use serde_json::Value;
 
     #[tokio::test]
     #[cfg(feature = "test-utils")]
