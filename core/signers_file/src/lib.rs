@@ -3,11 +3,9 @@ use chrono::{DateTime, Utc};
 use common::{
     SignedFileLoader,
     errors::{AggregateSignatureError, SignersFileError},
-    fs::names::{
-        PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
-        find_global_signers_for, pending_signatures_path_for, signatures_path_for,
-    },
+    fs::names::{find_global_signers_for, pending_signatures_path_for, signatures_path_for},
 };
+use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
@@ -465,11 +463,9 @@ pub fn parse_history_file(json_str: &str) -> Result<HistoryFile, serde_json::Err
 mod tests {
     use super::*;
     use anyhow::Result;
-    use common::fs::names::PENDING_SIGNATURES_SUFFIX;
-    use common::fs::names::SIGNATURES_SUFFIX;
-    use common::fs::names::SIGNERS_SUFFIX;
     use common::fs::names::local_signers_path_for;
     use common::sha512_for_file;
+    use constants::{PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signatures::keys::AsfaloadSignatureTrait;

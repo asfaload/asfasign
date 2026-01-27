@@ -1,21 +1,9 @@
 use std::path::{Path, PathBuf};
 
-// FIXME: we could improve this by reusing defined const in future consts,
-// but it seems too much of a burden at this time.
-// We might want to look at https://crates.io/crates/constcat
-pub const PENDING_SUFFIX: &str = "pending";
-
-pub const SIGNATURES_SUFFIX: &str = "signatures.json";
-pub const PENDING_SIGNATURES_SUFFIX: &str = "signatures.json.pending";
-pub const REVOCATION_SUFFIX: &str = "revocation.json";
-pub const REVOKED_SUFFIX: &str = "revoked";
-pub const SIGNERS_SUFFIX: &str = "signers.json";
-pub const SIGNERS_DIR: &str = "asfaload.signers";
-pub const PENDING_SIGNERS_DIR: &str = "asfaload.signers.pending";
-pub const SIGNERS_FILE: &str = "index.json";
-pub const PENDING_SIGNERS_FILE: &str = "index.json.pending";
-pub const SIGNERS_HISTORY_SUFFIX: &str = "history.json";
-pub const SIGNERS_HISTORY_FILE: &str = "asfaload.signers.history.json";
+use constants::{
+    PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, REVOCATION_SUFFIX, REVOKED_SUFFIX,
+    SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_SUFFIX,
+};
 
 /// Find the active signers file by traversing parent directories
 pub fn find_global_signers_for(file_path: &Path) -> Result<PathBuf, std::io::Error> {
@@ -203,8 +191,6 @@ mod asfaload_index_tests {
     use anyhow::Result;
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
-
-    use crate::test_helpers::scenarios::setup_asfald_project_registered;
 
     use super::*;
 

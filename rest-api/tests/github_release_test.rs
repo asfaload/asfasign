@@ -2,7 +2,7 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
-    use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE};
+    use constants::{SIGNERS_DIR, SIGNERS_FILE};
     use rest_api::server::run_server;
     use rest_api_test_helpers::{
         build_test_config, get_random_port, print_logs, setup_file_logging, url_for,

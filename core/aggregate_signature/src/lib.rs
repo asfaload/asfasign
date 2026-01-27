@@ -637,11 +637,12 @@ impl AggregateSignature<PendingSignature> {
 mod tests {
     use super::*;
     use anyhow::Result;
-    use common::fs::names::{
-        PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR,
-        SIGNERS_FILE, SIGNERS_SUFFIX, create_local_signers_for,
-    };
+    use common::fs::names::create_local_signers_for;
     use common::{ArtifactMarker, SignedFile};
+    use constants::{
+        PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR,
+        SIGNERS_FILE, SIGNERS_SUFFIX,
+    };
     use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
     use signatures::types::AsfaloadKeyPairs;
     use signers_file_types::{

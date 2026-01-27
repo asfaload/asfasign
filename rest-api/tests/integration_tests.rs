@@ -695,7 +695,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_register_repo_cleans_up_on_repo_handler_failure() -> Result<(), anyhow::Error> {
-        use common::fs::names::PENDING_SIGNERS_DIR;
+        use constants::PENDING_SIGNERS_DIR;
         use features_lib::AsfaloadKeyPairTrait;
         use git2::Repository;
         use kameo::actor::Spawn;
@@ -1109,8 +1109,8 @@ pub mod tests {
     #[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_submit_partial_signature() -> Result<(), anyhow::Error> {
-        use common::fs::names::SIGNERS_DIR;
-        use common::fs::names::SIGNERS_FILE;
+        use constants::SIGNERS_DIR;
+        use constants::SIGNERS_FILE;
         use features_lib::{
             AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
             AsfaloadSignatureTrait, sha512_for_file,

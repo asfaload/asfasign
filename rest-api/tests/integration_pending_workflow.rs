@@ -1,5 +1,6 @@
 use anyhow::Result;
-use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE, pending_signatures_path_for};
+use common::fs::names::pending_signatures_path_for;
+use constants::{SIGNERS_DIR, SIGNERS_FILE};
 use features_lib::{
     AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
     AsfaloadSignatureTrait, sha512_for_content,

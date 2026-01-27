@@ -2,7 +2,7 @@ use crate::constants::INDEX_FILE;
 use crate::file_auth::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo, ReleaseUrlError};
 use crate::path_validation::NormalisedPaths;
-use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE};
+use constants::{SIGNERS_DIR, SIGNERS_FILE};
 use gitlab::GitlabBuilder;
 use gitlab::api::{AsyncQuery, projects};
 use rest_api_types::errors::ApiError;

@@ -2,9 +2,7 @@ pub mod errors;
 pub mod fs;
 pub mod test_helpers;
 
-use crate::fs::names::{
-    PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE, find_global_signers_for,
-};
+use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha512, digest::typenum};
 use std::fmt;

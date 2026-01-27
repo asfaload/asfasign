@@ -13,6 +13,7 @@ sha2 = "0.10.9"
 thiserror = "2.0.17"
 anyhow = "1.0.99"
 tempfile = "3.21.0"
+constants = { path = "../constants/" }
 
 [lints]
 workspace = true

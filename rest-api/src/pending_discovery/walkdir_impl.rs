@@ -1,7 +1,7 @@
 use crate::path_validation::NormalisedPaths;
 use crate::path_validation::build_normalised_absolute_path;
 use common::errors::SignedFileError;
-use common::fs::names::PENDING_SIGNATURES_SUFFIX;
+use constants::PENDING_SIGNATURES_SUFFIX;
 
 pub fn can_signer_add_signature(
     pending_sig_path: &NormalisedPaths,
@@ -117,7 +117,8 @@ mod tests {
     use super::*;
     use crate::path_validation::build_normalised_absolute_path;
     use crate::pending_discovery::PendingSignaturesDiscovery;
-    use common::fs::names::{SIGNERS_DIR, SIGNERS_FILE, pending_signatures_path_for};
+    use common::fs::names::pending_signatures_path_for;
+    use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{
         AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
         AsfaloadSignatureTrait, sha512_for_file,
@@ -341,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_find_all_pending_discovers_pending_signers_files() {
-        use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
+        use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
         let temp_dir = TempDir::new().unwrap();
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
@@ -377,7 +378,6 @@ mod tests {
 
     #[test]
     fn test_find_all_pending_discovers_both_artifacts_and_signers() {
-        use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
         let temp_dir = TempDir::new().unwrap();
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
@@ -426,8 +426,9 @@ mod tests {
     }
 
     #[test]
-    fn test_find_pending_for_signer_includes_pending_signers_file() {
-        use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
+    fn test_find_pending_for_signer_includes_pending_signers_file() -> anyhow::Result<()> {
+        use test_helpers::scenarios::setup_asfald_project_registered;
+
         let temp_dir = TempDir::new().unwrap();
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
@@ -436,16 +437,9 @@ mod tests {
         let signers_config =
             SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))
                 .unwrap();
-
-        let project_dir = temp_dir.path().join("project");
-        fs::create_dir_all(&project_dir).unwrap();
-
-        let pending_signers_dir = project_dir.join(PENDING_SIGNERS_DIR);
-        fs::create_dir_all(&pending_signers_dir).unwrap();
-
-        let signers_file = pending_signers_dir.join(SIGNERS_FILE);
         let signers_json = serde_json::to_string(&signers_config).unwrap();
-        fs::write(&signers_file, signers_json.clone()).unwrap();
+        let signers_file =
+            setup_asfald_project_registered(temp_dir.path().to_path_buf(), signers_json)?;
 
         let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
         fs::write(&pending_signers_sig, "{}").unwrap();
@@ -460,11 +454,11 @@ mod tests {
         assert!(path.contains(PENDING_SIGNERS_DIR));
         assert!(path.contains(SIGNERS_FILE));
         assert!(path.contains(PENDING_SIGNATURES_SUFFIX));
+        Ok(())
     }
 
     #[test]
     fn test_find_pending_for_signer_filters_signed_out_pending_signers() {
-        use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
         let temp_dir = TempDir::new().unwrap();
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
@@ -510,7 +504,6 @@ mod tests {
 
     #[test]
     fn test_find_pending_for_signer_multiple_signers_partial_signatures() {
-        use common::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
         let temp_dir = TempDir::new().unwrap();
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();

@@ -1,6 +1,5 @@
-use common::fs::names::{
-    PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE, pending_signatures_path_for,
-};
+use common::fs::names::pending_signatures_path_for;
+use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;

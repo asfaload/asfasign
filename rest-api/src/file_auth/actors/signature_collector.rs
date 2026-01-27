@@ -252,7 +252,7 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::fs::names::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
+    use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait, sha512_for_file};
     use git2::{Repository, Signature};
     use kameo::actor::Spawn;
