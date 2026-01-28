@@ -1,28 +1,8 @@
 use crate::path_validation::NormalisedPaths;
 use crate::path_validation::build_normalised_absolute_path;
 use common::errors::SignedFileError;
-use common::fs::names::subject_path_from_pending_signatures;
 use constants::PENDING_SIGNATURES_SUFFIX;
-
-pub fn can_signer_add_signature(
-    pending_sig_path: &NormalisedPaths,
-    signer: &features_lib::AsfaloadPublicKeys,
-) -> Result<bool, SignedFileError> {
-    use features_lib::aggregate_signature_helpers::{
-        get_authorized_signers_for_file, get_individual_signatures,
-    };
-
-    let subject_path = subject_path_from_pending_signatures(pending_sig_path.absolute_path())?;
-    let authorized = get_authorized_signers_for_file(&subject_path)?;
-
-    if !authorized.contains(signer) {
-        return Ok(false);
-    }
-
-    let existing_signatures = get_individual_signatures(pending_sig_path.absolute_path())?;
-
-    Ok(!existing_signatures.contains_key(signer))
-}
+use features_lib::can_signer_add_signature;
 
 pub struct WalkdirPendingDiscovery;
 
@@ -172,117 +152,6 @@ mod tests {
         let result = discovery.find_all_pending(&normalised).unwrap();
 
         assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_can_signer_add_signature_authorized() {
-        let temp_dir = TempDir::new().unwrap();
-
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_pwd").unwrap();
-        let public_key = key_pair.public_key();
-
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1)).unwrap();
-        let signers_json = serde_json::to_string(&signers_config).unwrap();
-
-        let artifact_dir = temp_dir.path().join("nested");
-        fs::create_dir_all(&artifact_dir).unwrap();
-        let artifact_path = artifact_dir.join("artifact.txt");
-        fs::write(&artifact_path, "content").unwrap();
-
-        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
-        fs::create_dir_all(&signers_dir).unwrap();
-        fs::write(signers_dir.join(SIGNERS_FILE), signers_json).unwrap();
-
-        let pending_sig_path = pending_signatures_path_for(&artifact_path).unwrap();
-        let pending_content = serde_json::json!({});
-        fs::write(&pending_sig_path, pending_content.to_string()).unwrap();
-
-        let normalised = build_normalised_absolute_path(
-            temp_dir.path(),
-            pending_sig_path.strip_prefix(temp_dir.path()).unwrap(),
-        )
-        .unwrap();
-
-        let result = can_signer_add_signature(&normalised, &public_key);
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-    }
-
-    #[test]
-    fn test_can_signer_add_signature_unauthorized() {
-        let temp_dir = TempDir::new().unwrap();
-
-        let key_pair1 = features_lib::AsfaloadKeyPairs::new("test_pwd1").unwrap();
-        let key_pair2 = features_lib::AsfaloadKeyPairs::new("test_pwd2").unwrap();
-        let public_key1 = key_pair1.public_key();
-        let public_key2 = key_pair2.public_key();
-
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![public_key1.clone()], 1)).unwrap();
-        let signers_json = serde_json::to_string(&signers_config).unwrap();
-
-        let artifact_dir = temp_dir.path().join("nested");
-        fs::create_dir_all(&artifact_dir).unwrap();
-        let artifact_path = artifact_dir.join("artifact.txt");
-        fs::write(&artifact_path, "content").unwrap();
-
-        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
-        fs::create_dir_all(&signers_dir).unwrap();
-        fs::write(signers_dir.join(SIGNERS_FILE), signers_json).unwrap();
-
-        let pending_sig_path = pending_signatures_path_for(&artifact_path).unwrap();
-        fs::write(&pending_sig_path, "{}").unwrap();
-
-        let normalised = build_normalised_absolute_path(
-            temp_dir.path(),
-            pending_sig_path.strip_prefix(temp_dir.path()).unwrap(),
-        )
-        .unwrap();
-
-        let result = can_signer_add_signature(&normalised, &public_key2);
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
-    }
-
-    #[test]
-    fn test_can_signer_add_signature_already_signed() {
-        let temp_dir = TempDir::new().unwrap();
-
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_pwd").unwrap();
-        let public_key = key_pair.public_key();
-
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1)).unwrap();
-        let signers_json = serde_json::to_string(&signers_config).unwrap();
-
-        let artifact_dir = temp_dir.path().join("nested");
-        fs::create_dir_all(&artifact_dir).unwrap();
-        let artifact_path = artifact_dir.join("artifact.txt");
-        fs::write(&artifact_path, "content").unwrap();
-
-        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
-        fs::create_dir_all(&signers_dir).unwrap();
-        fs::write(signers_dir.join(SIGNERS_FILE), signers_json).unwrap();
-
-        let pending_sig_path = pending_signatures_path_for(&artifact_path).unwrap();
-        let hash = sha512_for_file(&artifact_path).unwrap();
-        let secret_key = key_pair.secret_key("test_pwd").unwrap();
-        let signature = secret_key.sign(&hash).unwrap();
-        let pending_content = serde_json::json!({
-            public_key.to_base64(): signature.to_base64()
-        });
-        fs::write(&pending_sig_path, pending_content.to_string()).unwrap();
-
-        let normalised = build_normalised_absolute_path(
-            temp_dir.path(),
-            pending_sig_path.strip_prefix(temp_dir.path()).unwrap(),
-        )
-        .unwrap();
-
-        let result = can_signer_add_signature(&normalised, &public_key);
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
     }
 
     #[test]
