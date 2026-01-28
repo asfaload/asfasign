@@ -8,6 +8,8 @@ pub enum SignedFileError {
     SignersFileError(#[from] SignersFileError),
     #[error("Authorised signers retrieval failure: {0}")]
     AuthorisedSignersRetrievalFailure(AggregateSignatureError),
+    #[error("stdio error: {0}")]
+    StdIoError(#[from] std::io::Error),
 }
 
 #[derive(Debug, Error)]

@@ -9,6 +9,7 @@ minisign = "0.8.0"
 serde_json = "1.0.143"
 thiserror = "2.0.12"
 common = { path = "../common/" }
+constants = { path = "../constants/" }
 serde = "1.0.228"
 
 [dev-dependencies]

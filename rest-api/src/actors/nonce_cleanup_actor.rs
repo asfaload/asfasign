@@ -4,7 +4,6 @@ use kameo::prelude::{Actor, Message};
 use rest_api_auth::AUTH_SIGNATURE_VALIDITY_MINUTES;
 use rest_api_types::errors::{ActorError, ApiError};
 use sled;
-use std::path::PathBuf;
 use tokio::{task, time};
 
 const CLEANUP_INTERVAL_MINUTES: i64 = AUTH_SIGNATURE_VALIDITY_MINUTES
@@ -27,13 +26,8 @@ pub struct NonceCleanupActor {
 }
 
 impl NonceCleanupActor {
-    pub fn new(db_path: PathBuf) -> Result<Self, ActorError> {
-        let db = sled::open(&db_path)?;
-
-        tracing::info!(
-            db_path = %db_path.display(),
-            "NonceCleanupActor initialized"
-        );
+    pub fn new(db: sled::Db) -> Result<Self, ActorError> {
+        tracing::info!("NonceCleanupActor initialized");
 
         Ok(Self {
             db,
@@ -122,14 +116,14 @@ impl Message<NonceCleanupMessage> for NonceCleanupActor {
 }
 
 impl Actor for NonceCleanupActor {
-    type Args = PathBuf;
+    type Args = sled::Db;
     type Error = ActorError;
 
     async fn on_start(
         args: Self::Args,
         actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        tracing::info!(db_path = %args.display(), "NonceCleanupActor starting");
+        tracing::info!("NonceCleanupActor starting");
         let actor = Self::new(args)?;
 
         // Start cleanup cycle immediately
@@ -182,12 +176,9 @@ mod tests {
     #[tokio::test]
     async fn test_nonce_cleanup_actor_creation() -> Result<()> {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let db_path = temp_dir.path().to_path_buf();
+        let db = sled::open(temp_dir.path())?;
 
-        let actor = NonceCleanupActor::new(db_path.clone())?;
-
-        // Verify the database was created
-        assert!(db_path.exists(), "Database path should exist");
+        let actor = NonceCleanupActor::new(db)?;
 
         // Verify cleanup interval is set correctly
         let expected_interval = Duration::minutes(AUTH_SIGNATURE_VALIDITY_MINUTES * 2);
@@ -332,21 +323,14 @@ mod tests {
     async fn test_nonce_cleanup_actor_lifecycle() -> Result<()> {
         // Arrange
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let db_path = temp_dir.path().to_path_buf();
+        let db = create_test_database_with_nonces(temp_dir.path())?;
 
-        // We create the database in a dedicated scope, otherwise the actor
-        // would not be able to acquire the lock on the db.
-        {
-            // Create test database with expired nonces
-            let db = create_test_database_with_nonces(temp_dir.path())?;
-
-            let initial_count: usize = db.iter().count();
-            assert_eq!(initial_count, 5, "Should have 5 initial entries");
-        }
+        let initial_count: usize = db.iter().count();
+        assert_eq!(initial_count, 5, "Should have 5 initial entries");
 
         // Act - Spawn the actor using the correct Kameo pattern
         let actor_ref: kameo::actor::ActorRef<NonceCleanupActor> =
-            NonceCleanupActor::spawn(db_path.clone());
+            NonceCleanupActor::spawn(db);
         actor_ref.wait_for_startup_result().await?;
         assert!(actor_ref.is_alive(), "Actor should be alive");
 

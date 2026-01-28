@@ -83,17 +83,23 @@ pub mod errors {
         #[error("Server configuration error: {0}")]
         ServerConfigError(#[from] ServerConfigError),
 
+        #[error("{0} API error: {1}")]
+        ReleaseApiError(String, String),
+
         #[error("GitHub API error: {0}")]
         GitHubApiError(String),
 
         #[error("No active signers file found for repository")]
         NoActiveSignersFile,
 
+        #[error("Invalid release URL format: {0}")]
+        InvalidReleaseUrl(String),
+
+        #[error("Unsupported release platform: {0}")]
+        UnsupportedReleasePlatform(String),
+
         #[error("Invalid GitHub release URL format: {0}")]
         InvalidGitHubUrl(String),
-
-        #[error("Octocrab error: {0}")]
-        OctoCrabError(#[from] octocrab::Error),
     }
 
     #[derive(Error, Debug)]
@@ -177,9 +183,11 @@ pub mod errors {
                 ApiError::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::RequestTooBig(_) => StatusCode::PAYLOAD_TOO_LARGE,
                 ApiError::GitHubApiError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::ReleaseApiError(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::NoActiveSignersFile => StatusCode::BAD_REQUEST,
+                ApiError::InvalidReleaseUrl(_) => StatusCode::BAD_REQUEST,
+                ApiError::UnsupportedReleasePlatform(_) => StatusCode::BAD_REQUEST,
                 ApiError::InvalidGitHubUrl(_) => StatusCode::BAD_REQUEST,
-                ApiError::OctoCrabError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }
@@ -294,11 +302,11 @@ pub mod models {
     }
 
     #[derive(Debug, Clone, Serialize)]
-    pub struct RegisterGitHubReleaseRequest {
+    pub struct RegisterReleaseRequest {
         pub release_url: url::Url,
     }
 
-    impl<'de> serde::Deserialize<'de> for RegisterGitHubReleaseRequest {
+    impl<'de> serde::Deserialize<'de> for RegisterReleaseRequest {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: serde::Deserializer<'de>,
@@ -340,12 +348,12 @@ pub mod models {
                 }
             }
 
-            struct RegisterGitHubReleaseVisitor;
-            impl<'de> serde::de::Visitor<'de> for RegisterGitHubReleaseVisitor {
-                type Value = RegisterGitHubReleaseRequest;
+            struct RegisterReleaseVisitor;
+            impl<'de> serde::de::Visitor<'de> for RegisterReleaseVisitor {
+                type Value = RegisterReleaseRequest;
 
                 fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                    formatter.write_str("struct RegisterGitHubReleaseRequest")
+                    formatter.write_str("struct RegisterReleaseRequest")
                 }
 
                 fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -376,22 +384,22 @@ pub mod models {
                     validate_github_url(&release_url)
                         .map_err(|e| serde::de::Error::custom(e.to_string()))?;
 
-                    Ok(RegisterGitHubReleaseRequest { release_url })
+                    Ok(RegisterReleaseRequest { release_url })
                 }
             }
 
             deserializer.deserialize_struct(
-                "RegisterGitHubReleaseRequest",
+                "RegisterReleaseRequest",
                 &["release_url"],
-                RegisterGitHubReleaseVisitor,
+                RegisterReleaseVisitor,
             )
         }
     }
 
-    impl RegisterGitHubReleaseRequest {
+    impl RegisterReleaseRequest {
         pub fn new(url_string: String) -> Result<Self, crate::errors::ApiError> {
             let release_url = url::Url::parse(&url_string).map_err(|e| {
-                crate::errors::ApiError::InvalidGitHubUrl(format!("Invalid URL: {}", e))
+                crate::errors::ApiError::InvalidReleaseUrl(format!("Invalid URL: {}", e))
             })?;
 
             validate_github_url(&release_url)?;
@@ -401,7 +409,7 @@ pub mod models {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RegisterGitHubReleaseResponse {
+    pub struct RegisterReleaseResponse {
         pub success: bool,
         pub message: String,
         pub index_file_path: Option<String>,
@@ -455,10 +463,20 @@ pub mod github_helpers {
         Ok((host.to_string(), owner, repo, tag))
     }
 }
+pub mod rustls {
+    pub fn setup_crypto_provider() {
+        use rustls::crypto::{CryptoProvider, ring};
+
+        // Use the provider corresponding to the 'ring' feature you selected
+        let provider = ring::default_provider();
+
+        let _ = CryptoProvider::install_default(provider);
+    }
+}
 
 // Re-export commonly used types at the module level
 pub use models::{
-    GetSignatureStatusResponse, ListPendingResponse, RegisterGitHubReleaseRequest,
-    RegisterGitHubReleaseResponse, RegisterRepoRequest, RegisterRepoResponse,
-    SubmitSignatureRequest, SubmitSignatureResponse,
+    GetSignatureStatusResponse, ListPendingResponse, RegisterReleaseRequest,
+    RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse, SubmitSignatureRequest,
+    SubmitSignatureResponse,
 };

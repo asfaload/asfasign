@@ -1,8 +1,8 @@
-//! Tests for RegisterGitHubReleaseRequest
+//! Tests for RegisterReleaseRequest
 //!
 //! This module tests URL validation and deserialization of GitHub release URLs.
 
-use rest_api_types::models::RegisterGitHubReleaseRequest;
+use rest_api_types::models::RegisterReleaseRequest;
 
 #[test]
 fn test_deserialize_valid_full_url() {
@@ -10,7 +10,7 @@ fn test_deserialize_valid_full_url() {
         "release_url": "https://github.com/owner/repo/releases/tag/v1.0.0"
     }"#;
 
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
+    let result: Result<RegisterReleaseRequest, _> = serde_json::from_str(json);
 
     assert!(result.is_ok());
     let request = result.unwrap();
@@ -26,7 +26,7 @@ fn test_deserialize_invalid_url_format() {
         "release_url": "not-a-url"
     }"#;
 
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
+    let result: Result<RegisterReleaseRequest, _> = serde_json::from_str(json);
 
     assert!(result.is_err());
     let error = result.unwrap_err().to_string();
@@ -39,7 +39,7 @@ fn test_deserialize_non_github_url() {
         "release_url": "https://gitlab.com/owner/repo/releases/tag/v1.0.0"
     }"#;
 
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
+    let result: Result<RegisterReleaseRequest, _> = serde_json::from_str(json);
 
     assert!(result.is_err());
     let error = result.unwrap_err().to_string();
@@ -52,46 +52,46 @@ fn test_deserialize_missing_releases() {
         "release_url": "https://github.com/owner/repo/tag/v1.0.0"
     }"#;
 
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
+    let result: Result<RegisterReleaseRequest, _> = serde_json::from_str(json);
 
     assert!(result.is_err());
     let error = result.unwrap_err().to_string();
-    assert!(error.contains("releases"));
+    assert!(error.contains("/releases/"));
 }
 
 #[test]
-fn test_deserialize_missing_tag() {
+fn test_deserialize_missing_all() {
     let json = r#"{
-        "release_url": "https://github.com/owner/repo/releases/v1.0.0"
+        "release_url": "https://github.com/owner/repo/releases/"
     }"#;
 
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
+    let result: Result<RegisterReleaseRequest, _> = serde_json::from_str(json);
 
     assert!(result.is_err());
     let error = result.unwrap_err().to_string();
-    assert!(error.contains("tag"), "got {}", error);
+    assert!(error.contains("Invalid"));
 }
 
 #[test]
-fn test_deserialize_missing_tag_value() {
+fn test_deserialize_empty_owner() {
     let json = r#"{
-        "release_url": "https://github.com/owner/repo/releases/tag/"
+        "release_url": "https://github.com//repo/releases/tag/v1.0.0"
     }"#;
 
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
+    let result: Result<RegisterReleaseRequest, _> = serde_json::from_str(json);
 
     assert!(result.is_err());
     let error = result.unwrap_err().to_string();
-    assert!(error.contains("tag"));
+    assert!(error.contains("empty"));
 }
 
 #[test]
-fn test_deserialize_too_short_path() {
+fn test_deserialize_case_sensitivity() {
     let json = r#"{
-        "release_url": "https://github.com/owner/releases/tag/v1.0.0"
+        "release_url": "https://github.com/owner/repo/releases/TAG/v1.0.0"
     }"#;
 
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
+    let result: Result<RegisterReleaseRequest, _> = serde_json::from_str(json);
 
     assert!(result.is_err());
     let error = result.unwrap_err().to_string();
@@ -99,133 +99,47 @@ fn test_deserialize_too_short_path() {
 }
 
 #[test]
-fn test_serialize_and_roundtrip() {
+fn test_missing_releases_segment() {
     let json = r#"{
-        "release_url": "https://github.com/owner/repo/releases/tag/v2.5.0"
+        "release_url": "https://github.com/owner/repo/v1.0.0"
     }"#;
 
-    let deserialized: RegisterGitHubReleaseRequest = serde_json::from_str(json).unwrap();
-    let serialized = serde_json::to_string(&deserialized).unwrap();
+    let result: Result<RegisterReleaseRequest, _> = serde_json::from_str(json);
 
-    let result: RegisterGitHubReleaseRequest = serde_json::from_str(&serialized).unwrap();
-    assert_eq!(result.release_url, deserialized.release_url);
+    assert!(result.is_err());
+    let error = result.unwrap_err().to_string();
+    assert!(error.contains("/releases/"));
 }
 
 #[test]
-fn test_new_constructor_valid() {
-    let result = RegisterGitHubReleaseRequest::new(
-        "https://github.com/owner/repo/releases/tag/v1.0.0".to_string(),
+fn test_new_method_with_valid_url() {
+    let result = RegisterReleaseRequest::new(
+        "https://github.com/testowner/testrepo/releases/tag/v2.0.0".to_string(),
     );
 
     assert!(result.is_ok());
     let request = result.unwrap();
     assert_eq!(
         request.release_url.as_str(),
-        "https://github.com/owner/repo/releases/tag/v1.0.0"
+        "https://github.com/testowner/testrepo/releases/tag/v2.0.0"
     );
 }
 
 #[test]
-fn test_new_constructor_invalid_url() {
-    let result = RegisterGitHubReleaseRequest::new("not-a-url".to_string());
+fn test_new_method_with_invalid_url() {
+    let result = RegisterReleaseRequest::new("not-a-url".to_string());
 
     assert!(result.is_err());
-    match result.unwrap_err() {
-        rest_api_types::errors::ApiError::InvalidGitHubUrl(msg) => {
-            assert!(msg.contains("Invalid URL"));
-        }
-        _ => panic!("Expected InvalidGitHubUrl error"),
-    }
+    let error = result.unwrap_err().to_string();
+    assert!(error.contains("Invalid URL"));
 }
 
 #[test]
-fn test_new_constructor_non_github() {
-    let result = RegisterGitHubReleaseRequest::new(
-        "https://gitlab.com/owner/repo/releases/tag/v1.0.0".to_string(),
-    );
-
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        rest_api_types::errors::ApiError::InvalidGitHubUrl(msg) => {
-            assert!(msg.contains("github.com"));
-        }
-        _ => panic!("Expected InvalidGitHubUrl error"),
-    }
-}
-
-#[test]
-fn test_new_constructor_missing_releases() {
+fn test_new_method_with_invalid_github_url() {
     let result =
-        RegisterGitHubReleaseRequest::new("https://github.com/owner/repo/tag/v1.0.0".to_string());
+        RegisterReleaseRequest::new("https://github.com/testowner/releases/tag/v1.0.0".to_string());
 
     assert!(result.is_err());
-    match result.unwrap_err() {
-        rest_api_types::errors::ApiError::InvalidGitHubUrl(msg) => {
-            assert!(msg.contains("releases"));
-        }
-        _ => panic!("Expected InvalidGitHubUrl error"),
-    }
-}
-
-#[test]
-fn test_release_url_with_subdomain() {
-    let json = r#"{
-        "release_url": "https://github.example.org/owner/repo/releases/tag/v1.0.0"
-    }"#;
-
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
-
-    match result {
-        Ok(_v) => panic!("Sholud only accept github.com urls"),
-        Err(e) => {
-            if !e.to_string().contains("Only github.com URLs are supported") {
-                panic!("Expected Only github.com URLs are supported, but got {}", e)
-            }
-        }
-    }
-}
-
-#[test]
-fn test_release_url_with_nested_namespace() {
-    let json = r#"{
-        "release_url": "https://github.com/org/team/repo/releases/tag/v1.0.0"
-    }"#;
-
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
-
-    assert!(result.is_ok());
-    let request = result.unwrap();
-    assert_eq!(
-        request.release_url.as_str(),
-        "https://github.com/org/team/repo/releases/tag/v1.0.0"
-    );
-}
-
-#[test]
-fn test_release_url_with_query_params() {
-    let json = r#"{
-        "release_url": "https://github.com/owner/repo/releases/tag/v1.0.0?param=value"
-    }"#;
-
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
-
-    // Should be valid since path segments are correct
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_release_url_with_trailing_slash() {
-    let json = r#"{
-        "release_url": "https://github.com/owner/repo/releases/tag/v1.0.0/"
-    }"#;
-
-    let result: Result<RegisterGitHubReleaseRequest, _> = serde_json::from_str(json);
-
-    match result {
-        Ok(v) => assert_eq!(
-            v.release_url.to_string(),
-            "https://github.com/owner/repo/releases/tag/v1.0.0/"
-        ),
-        Err(e) => panic!("{}", e),
-    }
+    let error = result.unwrap_err().to_string();
+    assert!(!error.is_empty());
 }

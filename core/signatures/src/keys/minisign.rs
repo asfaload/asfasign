@@ -292,7 +292,7 @@ mod asfaload_index_tests {
     use std::{fs::File, path::PathBuf};
 
     use anyhow::{Context, Result};
-    use common::fs::names::PENDING_SIGNATURES_SUFFIX;
+    use constants::PENDING_SIGNATURES_SUFFIX;
     use tempfile::TempDir;
 
     use super::*;

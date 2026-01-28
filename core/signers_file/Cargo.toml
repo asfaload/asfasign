@@ -13,6 +13,7 @@ tempfile = "3.21.0"
 sha2 = "0.10.9"
 anyhow = "1.0.99"
 common = { path = "../common/" }
+constants = { path = "../constants/" }
 signers_file_types = { path = "../signers_file_types/" }
 aggregate_signature = { path = "../aggregate_signature/" }
 chrono = { version = "0.4.42", features = ["serde"] }

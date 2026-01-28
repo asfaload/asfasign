@@ -3,7 +3,6 @@ use kameo::prelude::{Actor, Message};
 use rest_api_auth::AUTH_SIGNATURE_VALIDITY_MINUTES;
 use rest_api_types::errors::ActorError;
 use sled;
-use std::path::PathBuf;
 
 pub const NONCE_CACHE_DB: &str = "nonce_cache.db";
 // FIXME: risk of overflow?
@@ -27,13 +26,8 @@ pub struct NonceCacheActor {
 }
 
 impl NonceCacheActor {
-    pub fn new(db_path: PathBuf) -> Result<Self, ActorError> {
-        let db = sled::open(&db_path)?;
-
-        tracing::info!(
-            db_path = %db_path.display(),
-            "NonceCacheActor initialized"
-        );
+    pub fn new(db: sled::Db) -> Result<Self, ActorError> {
+        tracing::info!("NonceCacheActor initialized");
 
         Ok(Self {
             db,
@@ -85,14 +79,14 @@ impl Message<NonceCacheMessage> for NonceCacheActor {
 }
 
 impl Actor for NonceCacheActor {
-    type Args = PathBuf;
+    type Args = sled::Db;
     type Error = ActorError;
 
     async fn on_start(
         args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        tracing::info!(db_path = %args.display(), "NonceCacheActor starting");
+        tracing::info!("NonceCacheActor starting");
         Self::new(args)
     }
 }
@@ -102,7 +96,6 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use kameo::actor::Spawn;
-    use std::path::PathBuf;
     use tempfile::TempDir;
     use uuid::Uuid;
 
@@ -110,8 +103,9 @@ mod tests {
     async fn test_nonce_cache_actor_creation() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let db_path = temp_dir.path().join("test_nonce.db");
+        let db = sled::open(db_path).unwrap();
 
-        let actor = NonceCacheActor::new(db_path);
+        let actor = NonceCacheActor::new(db);
 
         assert!(
             actor.is_ok(),
@@ -123,8 +117,9 @@ mod tests {
     async fn test_nonce_acceptance_first_time() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let db_path = temp_dir.path().join("test_nonce.db");
+        let db = sled::open(db_path).unwrap();
 
-        let mut actor = NonceCacheActor::new(db_path).expect("Failed to create actor");
+        let mut actor = NonceCacheActor::new(db).expect("Failed to create actor");
 
         let nonce = "test_nonce_12345".to_string();
 
@@ -142,8 +137,9 @@ mod tests {
     async fn test_nonce_rejection_replay_attack() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let db_path = temp_dir.path().join("test_nonce.db");
+        let db = sled::open(db_path).unwrap();
 
-        let mut actor = NonceCacheActor::new(db_path).expect("Failed to create actor");
+        let mut actor = NonceCacheActor::new(db).expect("Failed to create actor");
 
         let nonce = "test_nonce_replay".to_string();
 
@@ -167,30 +163,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_nonce_cache_database_error() {
-        let invalid_path = PathBuf::from("/invalid/path/that/does/not/exist/test.db");
-
-        let actor_result = NonceCacheActor::new(invalid_path);
-
-        assert!(
-            actor_result.is_err(),
-            "Actor creation should fail with invalid path"
-        );
-
-        match actor_result.unwrap_err() {
-            ActorError::SledError(_) => {} // Expected
-            #[allow(unreachable_patterns)]
-            other => panic!("Expected SledError, got: {:?}", other),
-        }
-    }
-
-    #[tokio::test]
     async fn test_concurrent_message_handling() -> Result<()> {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let db_path = temp_dir
             .path()
             .join(format!("nonce_concurrent_msg_{}.db", Uuid::new_v4()));
-        let actor_ref = NonceCacheActor::spawn(db_path);
+        let db = sled::open(db_path).unwrap();
+
+        let actor_ref = NonceCacheActor::spawn(db);
         actor_ref.wait_for_startup().await;
 
         let nonce = "concurrent_message_nonce".to_string();
@@ -228,9 +208,10 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let db_name = format!("nonce_message_{}.db", Uuid::new_v4());
         let db_path = temp_dir.path().join(db_name);
+        let db = sled::open(db_path).unwrap();
 
         // Create and start the actor using spawn method
-        let actor_ref: kameo::actor::ActorRef<NonceCacheActor> = NonceCacheActor::spawn(db_path);
+        let actor_ref: kameo::actor::ActorRef<NonceCacheActor> = NonceCacheActor::spawn(db);
 
         let nonce = "message_test_nonce".to_string();
         let message = NonceCacheMessage::CheckAndStoreNonce {

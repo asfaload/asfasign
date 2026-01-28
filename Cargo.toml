@@ -12,7 +12,7 @@ members = [
   "rest-api",
   "rest_api_test_helpers",
   "rest_api_types",
-  "rest_api_auth",
+  "rest_api_auth", "core/constants",
 ]
 exclude = ["rest_api_auth", "client_cli"]
 

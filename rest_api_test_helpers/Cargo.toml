@@ -16,6 +16,7 @@ rest_api_auth = { path = "../rest_api_auth/" }
 features_lib = { path = "../core/features_lib/" }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing = "0.1.44"
 
 [lints]
 workspace = true

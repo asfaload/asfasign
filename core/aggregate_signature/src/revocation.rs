@@ -1,12 +1,7 @@
 // aggregate_signature/src/revocation.rs
 
-use common::{
-    errors::RevocationError,
-    fs::names::{
-        REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX,
-        find_global_signers_for,
-    },
-};
+use common::{errors::RevocationError, fs::names::find_global_signers_for};
+use constants::{REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
@@ -232,10 +227,10 @@ mod tests {
 
     use super::*;
     use common::fs::names::{
-        REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX,
         local_signers_path_for, revocation_path_for, revocation_signatures_path_for,
         revocation_signers_path_for, revoked_signatures_path_for, signatures_path_for,
     };
+    use constants::{REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
     use signatures::types::AsfaloadPublicKeys;
     use std::path::PathBuf;
 
@@ -563,10 +558,8 @@ mod tests {
     //--------------------
 
     use chrono::Utc;
-    use common::{
-        AsfaloadHashes,
-        fs::names::{SIGNERS_DIR, SIGNERS_FILE, find_global_signers_for},
-    };
+    use common::{AsfaloadHashes, fs::names::find_global_signers_for};
+    use constants::{SIGNERS_DIR, SIGNERS_FILE};
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signers_file_types::{
         KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfigProposal,

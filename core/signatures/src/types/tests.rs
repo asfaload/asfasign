@@ -3,7 +3,7 @@ use crate::keys::{
 };
 use anyhow::{Context, Result};
 use common::errors::keys::{KeyError, SignatureError};
-use common::fs::names::PENDING_SIGNATURES_SUFFIX;
+use constants::PENDING_SIGNATURES_SUFFIX;
 use std::fs;
 use tempfile::TempDir;
 

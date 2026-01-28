@@ -7,14 +7,14 @@ use rest_api_types::{
 
 use std::{path::PathBuf, str::FromStr};
 
-use crate::actors::git_actor::CommitFile;
+use crate::file_auth::actors::git_actor::CommitFile;
 use crate::file_auth::forges::ForgeInfo;
 use crate::file_auth::forges::ForgeTrait;
 use crate::file_auth::github::get_project_normalised_paths;
 use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
 use axum::{Json, extract::State, http::HeaderMap};
-use common::fs::names::PENDING_SIGNERS_DIR;
+use constants::PENDING_SIGNERS_DIR;
 use rest_api_auth::HEADER_PUBLIC_KEY;
 use rest_api_types::{
     errors::ApiError,
@@ -171,7 +171,7 @@ pub async fn register_repo_handler(
         .map_err(|e| map_to_user_error(e, "Project authentication failed"))?;
 
     // Step 2: Initialise signers - create directory structure and files
-    let init_request = crate::actors::signers_initialiser::InitialiseSignersRequest {
+    let init_request = crate::file_auth::actors::signers_initialiser::InitialiseSignersRequest {
         project_path: project_normalised_paths,
         signers_config: signers_proposal.signers_config.clone(),
         git_repo_path: state.git_repo_path.clone(),
@@ -185,7 +185,7 @@ pub async fn register_repo_handler(
         .map_err(|e| map_to_user_error(e, "Signers initialisation failed"))?;
 
     // Step 3: Write and commit files via Git actor
-    let write_commit_request = crate::actors::git_actor::CommitFile {
+    let write_commit_request = crate::file_auth::actors::git_actor::CommitFile {
         file_paths: vec![init_result.project_path.clone()],
         commit_message: format!(
             "Adding {}",
@@ -205,12 +205,13 @@ pub async fn register_repo_handler(
 
         match init_result.project_path.join(PENDING_SIGNERS_DIR).await {
             Ok(pending_dir) => {
-                let cleanup_request = crate::actors::signers_initialiser::CleanupSignersRequest {
-                    signers_file_path: init_result.signers_file_path.clone(),
-                    history_file_path: init_result.history_file_path.clone(),
-                    pending_dir,
-                    request_id: request_id.to_string(),
-                };
+                let cleanup_request =
+                    crate::file_auth::actors::signers_initialiser::CleanupSignersRequest {
+                        signers_file_path: init_result.signers_file_path.clone(),
+                        history_file_path: init_result.history_file_path.clone(),
+                        pending_dir,
+                        request_id: request_id.to_string(),
+                    };
 
                 if let Err(cleanup_err) = state.signers_initialiser.ask(cleanup_request).await {
                     tracing::error!(
@@ -322,12 +323,13 @@ pub async fn submit_signature_handler(
         .map_err(|_| ApiError::InvalidRequestBody("Invalid signature format".to_string()))?;
 
     // Send signature collection request to the actor
-    let collector_request = crate::actors::signature_collector::CollectSignatureRequest {
-        file_path: file_path.clone(),
-        public_key,
-        signature,
-        request_id: request_id.to_string(),
-    };
+    let collector_request =
+        crate::file_auth::actors::signature_collector::CollectSignatureRequest {
+            file_path: file_path.clone(),
+            public_key,
+            signature,
+            request_id: request_id.to_string(),
+        };
 
     let collector_result = state
         .signature_collector
@@ -402,7 +404,7 @@ pub async fn get_signature_status_handler(
     }
 
     // Send status request to the actor
-    let status_request = crate::actors::signature_collector::GetSignatureStatusRequest {
+    let status_request = crate::file_auth::actors::signature_collector::GetSignatureStatusRequest {
         file_path: file_path.clone(),
         request_id: request_id.to_string(),
     };
@@ -506,11 +508,11 @@ fn extract_public_key_from_headers(
         .map_err(|_| ApiError::InvalidAuthenticationHeaders)
 }
 
-pub async fn register_github_release_handler(
+pub async fn register_release_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<rest_api_types::RegisterGitHubReleaseRequest>,
-) -> Result<Json<rest_api_types::RegisterGitHubReleaseResponse>, ApiError> {
+    Json(request): Json<rest_api_types::RegisterReleaseRequest>,
+) -> Result<Json<rest_api_types::RegisterReleaseResponse>, ApiError> {
     let request_id = headers
         .get("x-request-id")
         .and_then(|h| h.to_str().ok())
@@ -519,12 +521,12 @@ pub async fn register_github_release_handler(
     tracing::info!(
         request_id = %request_id,
         release_url = %request.release_url,
-        "Received GitHub release registration request"
+        "Received release registration request"
     );
 
     let result = state
-        .github_release_actor
-        .ask(crate::actors::github_release_actor::ProcessGitHubRelease {
+        .release_actor
+        .ask(crate::file_auth::actors::release_actor::ProcessRelease {
             request_id: request_id.to_string(),
             release_url: request.release_url,
         })
@@ -534,7 +536,7 @@ pub async fn register_github_release_handler(
             other => ApiError::InternalServerError(format!("Actor message failed: {}", other)),
         })?;
 
-    Ok(Json(rest_api_types::RegisterGitHubReleaseResponse {
+    Ok(Json(rest_api_types::RegisterReleaseResponse {
         success: true,
         message: "Release registered successfully".to_string(),
         index_file_path: Some(
