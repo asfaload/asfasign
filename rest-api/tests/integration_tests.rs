@@ -457,9 +457,6 @@ pub mod tests {
         // wait works (eg drop the guard before aborting)
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        server_handle.abort();
-        drop(_guard);
-
         wait_for_log_entry_with_request_id(&log_path, request_id).await?;
 
         let content = fs::read_to_string(&log_path)?;
@@ -486,6 +483,8 @@ pub mod tests {
             .filter_map(|e| e.get("level").and_then(|l| l.as_str()))
             .collect();
         assert!(levels.contains(&"INFO"), "Should have INFO level entries");
+
+        server_handle.abort();
 
         Ok(())
     }
