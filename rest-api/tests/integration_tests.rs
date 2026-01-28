@@ -891,7 +891,9 @@ pub mod tests {
         let secret_key = key_pair.secret_key("test_password")?;
         let signature = secret_key.sign(&digest)?;
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone(), None);
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
 
         let app = axum::Router::new()
             .route(
@@ -987,7 +989,9 @@ pub mod tests {
         let secret_key = key_pair.secret_key("test_password")?;
         let signature = secret_key.sign(&digest)?;
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone(), None);
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
 
         let app = axum::Router::new()
             .route(
@@ -1082,7 +1086,9 @@ pub mod tests {
         let artifact_file = git_repo_path.join("data.txt");
         tokio::fs::write(&artifact_file, "test data").await?;
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone(), None);
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
 
         let app = axum::Router::new()
             .route(
@@ -1158,7 +1164,9 @@ pub mod tests {
         let secret_key2 = key_pair2.secret_key("test_password2")?;
         let signature2 = secret_key2.sign(&digest)?;
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone(), None);
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
 
         let app = axum::Router::new()
             .route(
@@ -1254,7 +1262,9 @@ pub mod tests {
         let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
         let public_key = key_pair.public_key();
 
-        let app_state = rest_api::state::init_state(git_repo_path.clone(), None);
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
 
         let app = axum::Router::new()
             .route(

@@ -11,6 +11,11 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::info;
 
+#[cfg(not(feature = "test-utils"))]
+pub type GithubClientWrapper = GithubClient;
+#[cfg(feature = "test-utils")]
+pub type GithubClientWrapper = test_utils::MockGithubClient;
+
 #[async_trait::async_trait]
 pub trait GithubClientTrait: Send + Sync {
     async fn get_release_by_tag(
@@ -26,16 +31,8 @@ pub struct GithubClient {
 }
 
 impl GithubClient {
-    pub fn new() -> Self {
-        Self {
-            client: octocrab::Octocrab::default(),
-        }
-    }
-}
-
-impl Default for GithubClient {
-    fn default() -> Self {
-        Self::new()
+    pub fn new(client: octocrab::Octocrab) -> Self {
+        Self { client }
     }
 }
 
@@ -59,6 +56,32 @@ impl GithubClientTrait for GithubClient {
                 )
             })
     }
+}
+
+#[cfg(not(feature = "test-utils"))]
+fn create_github_client(config: &crate::config::AppConfig) -> Result<GithubClient, ApiError> {
+    let client = if let Some(api_key) = &config.github_api_key {
+        octocrab::Octocrab::builder()
+            .personal_token(api_key.clone())
+            .build()
+            .map_err(|e| {
+                ApiError::ReleaseApiError(
+                    "GitHub".to_string(),
+                    format!("Failed to create client with API key: {}", e),
+                )
+            })?
+    } else {
+        tracing::warn!("No GitHub API key provided, using anonymous client (rate limited)");
+        octocrab::Octocrab::default()
+    };
+    Ok(GithubClient::new(client))
+}
+
+#[cfg(feature = "test-utils")]
+fn create_github_client(
+    _config: &crate::config::AppConfig,
+) -> Result<test_utils::MockGithubClient, ApiError> {
+    Ok(test_utils::MockGithubClient::new())
 }
 
 pub struct GithubReleaseAdder<C: GithubClientTrait> {
@@ -103,13 +126,11 @@ struct ReleaseAssetInfo {
     hash: Option<FileChecksum>,
 }
 
-impl<C: GithubClientTrait> ReleaseAdder for GithubReleaseAdder<C>
-where
-    C: Default,
-{
+impl ReleaseAdder for GithubReleaseAdder<GithubClientWrapper> {
     async fn new(
         release_url: &url::Url,
         git_repo_path: PathBuf,
+        config: &crate::config::AppConfig,
     ) -> Result<Self, crate::file_auth::release_types::ReleaseUrlError>
     where
         Self: Sized,
@@ -120,10 +141,17 @@ where
                 crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(e.to_string())
             })?;
 
+        let client = create_github_client(config).map_err(|e| {
+            crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(format!(
+                "Failed to create GitHub client: {}",
+                e
+            ))
+        })?;
+
         Ok(Self {
             release_url: release_url.clone(),
             git_repo_path,
-            client: C::default(),
+            client,
             release_info,
         })
     }

@@ -11,6 +11,7 @@ use uuid::Uuid;
 const ACTOR_NAME: &str = "release_actor";
 pub struct ReleaseActor {
     git_actor: kameo::actor::ActorRef<GitActor>,
+    config: crate::config::AppConfig,
     git_repo_path: std::path::PathBuf,
 }
 
@@ -26,7 +27,7 @@ pub struct RegisterResult {
 impl Actor for ReleaseActor {
     type Args = (
         kameo::actor::ActorRef<GitActor>,
-        Option<String>,
+        crate::config::AppConfig,
         std::path::PathBuf,
     );
     type Error = ApiError;
@@ -39,6 +40,7 @@ impl Actor for ReleaseActor {
 
         Ok(Self {
             git_actor: args.0,
+            config: args.1,
             git_repo_path: args.2,
         })
     }
@@ -68,7 +70,7 @@ impl ReleaseActor {
             "Processing release"
         );
 
-        let adder = ReleaseAdders::new(&msg.release_url, self.git_repo_path.clone())
+        let adder = ReleaseAdders::new(&msg.release_url, self.git_repo_path.clone(), &self.config)
             .await
             .map_err(|e| {
                 tracing::error!(

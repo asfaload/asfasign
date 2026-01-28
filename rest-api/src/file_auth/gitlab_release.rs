@@ -153,20 +153,27 @@ struct ReleaseAssetInfo {
 }
 
 impl ReleaseAdder for GitlabReleaseAdder {
-    async fn new(release_url: &url::Url, git_repo_path: PathBuf) -> Result<Self, ReleaseUrlError>
+    async fn new(
+        release_url: &url::Url,
+        git_repo_path: PathBuf,
+        config: &crate::config::AppConfig,
+    ) -> Result<Self, ReleaseUrlError>
     where
         Self: Sized,
     {
         let (host, namespace, project, tag) = Self::validate_and_parse_url(release_url)?;
 
-        let client = get_client(host.clone(), "GITLAB_TOKEN".to_string())
-            .await
-            .map_err(|e| {
-                tracing::error!(
+        let token = config.gitlab_api_key.clone().ok_or_else(|| {
+            tracing::error!("GitLab API key required but not configured");
+            ReleaseUrlError::InvalidFormat("GitLab API key required but not configured".to_string())
+        })?;
+
+        let client = get_client(host.clone(), token).await.map_err(|e| {
+            tracing::error!(
             error = %e,
             "could not get gitlab client");
-                ReleaseUrlError::InvalidFormat(e.to_string())
-            })?;
+            ReleaseUrlError::InvalidFormat(e.to_string())
+        })?;
 
         let url_path = format!("{}/-/releases/{}", host, tag);
         let release_path = NormalisedPaths::new(git_repo_path.clone(), PathBuf::from(&url_path))

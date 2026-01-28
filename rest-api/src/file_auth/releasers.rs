@@ -23,7 +23,11 @@ pub enum ReleaseAdders {
 }
 
 impl ReleaseAdder for ReleaseAdders {
-    async fn new(release_url: &url::Url, git_repo_path: PathBuf) -> Result<Self, ReleaseUrlError>
+    async fn new(
+        release_url: &url::Url,
+        git_repo_path: PathBuf,
+        config: &crate::config::AppConfig,
+    ) -> Result<Self, ReleaseUrlError>
     where
         Self: Sized,
     {
@@ -32,10 +36,10 @@ impl ReleaseAdder for ReleaseAdders {
             .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
 
         if GITHUB_RELEASE_HOSTS.contains(&host) {
-            let github_adder = GithubReleaseAdder::new(release_url, git_repo_path).await?;
+            let github_adder = GithubReleaseAdder::new(release_url, git_repo_path, config).await?;
             Ok(Self::Github(Box::new(github_adder)))
         } else if GITLAB_RELEASE_HOSTS.contains(&host) {
-            let gitlab_adder = GitlabReleaseAdder::new(release_url, git_repo_path).await?;
+            let gitlab_adder = GitlabReleaseAdder::new(release_url, git_repo_path, config).await?;
             Ok(Self::Gitlab(Box::new(gitlab_adder)))
         } else {
             Err(ReleaseUrlError::UnsupportedPlatform(format!(
@@ -150,6 +154,8 @@ mod tests {
         assert!(!GITLAB_RELEASE_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
     }
 
+    #[cfg(feature = "test-utils")]
+    use rest_api_test_helpers::get_random_port;
     #[tokio::test]
     #[cfg(feature = "test-utils")]
     async fn test_release_adders_github_release() {
@@ -183,7 +189,16 @@ mod tests {
         let release_url =
             url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
 
-        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone())
+        let port = get_random_port().await.unwrap();
+        let mock_config = crate::config::AppConfig {
+            server_port: port,
+            git_repo_path: temp_dir.path().to_path_buf(),
+            log_level: "info".to_string(),
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
             .await
             .unwrap();
 

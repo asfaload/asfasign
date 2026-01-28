@@ -111,6 +111,7 @@ pub fn build_test_config(git_repo_path: &Path, server_port: u16) -> rest_api::co
         server_port,
         log_level: "info".to_string(),
         github_api_key: None,
+        gitlab_api_key: None,
     }
 }
 

@@ -26,7 +26,7 @@ pub struct AppState {
     pub release_actor: ActorRef<ReleaseActor>,
 }
 
-pub fn init_state(git_repo_path: std::path::PathBuf, github_api_key: Option<String>) -> AppState {
+pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppConfig) -> AppState {
     let git_actor = GitActor::spawn(git_repo_path.clone());
 
     // Initialize nonce cache with database path
@@ -47,8 +47,7 @@ pub fn init_state(git_repo_path: std::path::PathBuf, github_api_key: Option<Stri
     let signers_initialiser = SignersInitialiser::spawn(());
     let signature_collector = SignatureCollector::spawn(git_actor.clone());
 
-    let release_actor =
-        ReleaseActor::spawn((git_actor.clone(), github_api_key, git_repo_path.clone()));
+    let release_actor = ReleaseActor::spawn((git_actor.clone(), config, git_repo_path.clone()));
 
     AppState {
         git_repo_path,

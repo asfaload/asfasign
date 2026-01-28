@@ -25,7 +25,11 @@ pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
 
 #[allow(async_fn_in_trait)]
 pub trait ReleaseAdder: std::fmt::Debug {
-    async fn new(release_url: &url::Url, git_repo_path: PathBuf) -> Result<Self, ReleaseUrlError>
+    async fn new(
+        release_url: &url::Url,
+        git_repo_path: PathBuf,
+        config: &crate::config::AppConfig,
+    ) -> Result<Self, ReleaseUrlError>
     where
         Self: Sized;
 
