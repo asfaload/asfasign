@@ -3676,6 +3676,7 @@ dependencies = [
  "kameo",
  "normalize-path",
  "octocrab",
+ "regex",
  "reqwest 0.13.1",
  "rest_api_auth",
  "rest_api_test_helpers",

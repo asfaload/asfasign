@@ -1,6 +1,6 @@
 pub mod errors {
 
-    use axum::{Json, http::StatusCode, response::IntoResponse};
+    use axum::{http::StatusCode, response::IntoResponse, Json};
     use thiserror::Error;
 
     use super::models::ErrorResponse;
@@ -100,6 +100,9 @@ pub mod errors {
 
         #[error("Invalid GitHub release URL format: {0}")]
         InvalidGitHubUrl(String),
+
+        #[error("File not found: {0}")]
+        FileNotFound(String),
     }
 
     #[derive(Error, Debug)]
@@ -188,6 +191,7 @@ pub mod errors {
                 ApiError::InvalidReleaseUrl(_) => StatusCode::BAD_REQUEST,
                 ApiError::UnsupportedReleasePlatform(_) => StatusCode::BAD_REQUEST,
                 ApiError::InvalidGitHubUrl(_) => StatusCode::BAD_REQUEST,
+                ApiError::FileNotFound(_) => StatusCode::NOT_FOUND,
             }
         }
     }
@@ -465,7 +469,7 @@ pub mod github_helpers {
 }
 pub mod rustls {
     pub fn setup_crypto_provider() {
-        use rustls::crypto::{CryptoProvider, ring};
+        use rustls::crypto::{ring, CryptoProvider};
 
         // Use the provider corresponding to the 'ring' feature you selected
         let provider = ring::default_provider();
