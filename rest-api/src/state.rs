@@ -4,14 +4,14 @@ use kameo::actor::{ActorRef, Spawn};
 
 use crate::{
     actors::{
-        git_actor::GitActor,
-        github_release_actor::GitHubReleaseActor,
         nonce_cache_actor::{NONCE_CACHE_DB, NonceCacheActor},
         nonce_cleanup_actor::NonceCleanupActor,
-        signature_collector::SignatureCollector,
-        signers_initialiser::SignersInitialiser,
     },
     file_auth::actors::forge_signers_validator::ForgeProjectValidator,
+    file_auth::actors::{
+        git_actor::GitActor, release_actor::ReleaseActor, signature_collector::SignatureCollector,
+        signers_initialiser::SignersInitialiser,
+    },
 };
 
 #[derive(Clone)]
@@ -23,24 +23,31 @@ pub struct AppState {
     pub forge_project_validator: ActorRef<ForgeProjectValidator>,
     pub signers_initialiser: ActorRef<SignersInitialiser>,
     pub signature_collector: ActorRef<SignatureCollector>,
-    pub github_release_actor: ActorRef<GitHubReleaseActor>,
+    pub release_actor: ActorRef<ReleaseActor>,
 }
 
-pub fn init_state(git_repo_path: std::path::PathBuf, github_api_key: Option<String>) -> AppState {
+pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppConfig) -> AppState {
     let git_actor = GitActor::spawn(git_repo_path.clone());
 
     // Initialize nonce cache with database path
     // FIXME: support taking the dir for the nonce db from env var
     let nonce_db_path = git_repo_path.join(".app_cache").join(NONCE_CACHE_DB);
-    let nonce_cache_actor = NonceCacheActor::spawn(nonce_db_path.clone());
-    let nonce_cleanup_actor = NonceCleanupActor::spawn(nonce_db_path);
+    let db = sled::open(nonce_db_path)
+        .map_err(|e| {
+            tracing::error!(
+                error = %e,
+                "Problem opening nonce cache"
+            );
+        })
+        .expect("Cannot open nonce cache database");
+    let nonce_cache_actor = NonceCacheActor::spawn(db.clone());
+    let nonce_cleanup_actor = NonceCleanupActor::spawn(db.clone());
 
     let forge_project_validator = ForgeProjectValidator::spawn(());
     let signers_initialiser = SignersInitialiser::spawn(());
     let signature_collector = SignatureCollector::spawn(git_actor.clone());
 
-    let github_release_actor =
-        GitHubReleaseActor::spawn((git_actor.clone(), github_api_key, git_repo_path.clone()));
+    let release_actor = ReleaseActor::spawn((git_actor.clone(), config));
 
     AppState {
         git_repo_path,
@@ -50,6 +57,6 @@ pub fn init_state(git_repo_path: std::path::PathBuf, github_api_key: Option<Stri
         forge_project_validator,
         signers_initialiser,
         signature_collector,
-        github_release_actor,
+        release_actor,
     }
 }

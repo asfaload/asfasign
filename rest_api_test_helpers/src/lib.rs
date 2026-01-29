@@ -21,7 +21,8 @@ use tokio::{
     net::TcpStream,
     time::{Instant, timeout},
 };
-use tracing_subscriber::EnvFilter;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
 
 //
 // Helper function to initialize a git repository in a temporary directory
@@ -110,6 +111,7 @@ pub fn build_test_config(git_repo_path: &Path, server_port: u16) -> rest_api::co
         server_port,
         log_level: "info".to_string(),
         github_api_key: None,
+        gitlab_api_key: None,
     }
 }
 
@@ -383,4 +385,24 @@ pub fn print_logs() {
         .with_env_filter(EnvFilter::from_default_env())
         .with_test_writer()
         .init();
+}
+
+pub fn setup_file_logging(
+    temp_dir: &Path,
+) -> Result<(
+    WorkerGuard,
+    std::path::PathBuf,
+    tracing::subscriber::DefaultGuard,
+)> {
+    let log_path = temp_dir.join("test.log");
+    let appender = tracing_appender::rolling::never(temp_dir, "test.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(appender);
+
+    let subscriber = Registry::default()
+        .with(EnvFilter::new("info"))
+        .with(fmt::layer().json().with_writer(non_blocking));
+
+    let default_guard = tracing::subscriber::set_default(subscriber);
+
+    Ok((guard, log_path, default_guard))
 }

@@ -14,6 +14,7 @@ pub struct AppConfig {
     #[serde(default = "default_log_level")]
     pub log_level: String,
     pub github_api_key: Option<String>,
+    pub gitlab_api_key: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -22,6 +23,7 @@ pub struct AppConfigOptions {
     pub git_repo_path: Option<PathBuf>,
     pub log_level: Option<String>,
     pub github_api_key: Option<String>,
+    pub gitlab_api_key: Option<String>,
 }
 
 impl Default for AppConfigOptions {
@@ -31,6 +33,7 @@ impl Default for AppConfigOptions {
             git_repo_path: None,
             log_level: Some("info".to_string()),
             github_api_key: None,
+            gitlab_api_key: None,
         }
     }
 }
@@ -82,6 +85,7 @@ mod tests {
             git_repo_path: None,
             log_level: None,
             github_api_key: None,
+            gitlab_api_key: None,
         };
 
         let result = build_config_from_defaults(defaults);
@@ -116,6 +120,7 @@ mod tests {
             git_repo_path: Some(git_path.clone()),
             log_level: Some("info".to_string()),
             github_api_key: None,
+            gitlab_api_key: None,
         };
 
         let result = build_config_from_defaults(defaults);
@@ -141,6 +146,7 @@ mod tests {
             git_repo_path: Some(git_path.clone()),
             log_level: None,
             github_api_key: None,
+            gitlab_api_key: None,
         };
 
         let result = build_config_from_defaults(defaults);

@@ -1,7 +1,7 @@
 pub mod errors;
 pub mod fs;
 
-use crate::fs::names::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, find_global_signers_for};
+use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha512, digest::typenum};
 use std::fmt;
@@ -10,6 +10,8 @@ use std::fs::File;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::str::FromStr;
+
+use crate::fs::names::find_global_signers_for;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -277,6 +279,7 @@ mod asfaload_common_tests {
     use std::io::Write;
     use std::path::Path;
     use tempfile::{NamedTempFile, TempDir};
+    use test_helpers::scenarios::setup_asfald_project_registered;
     //
     // Helper to convert byte array to hex string
     fn to_hex(bytes: &[u8]) -> String {
@@ -348,6 +351,22 @@ mod asfaload_common_tests {
             _ => panic!("Computing sha of empty value should be an error"),
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_determine_file_type_github_hierarchy() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let pending_index_file =
+            setup_asfald_project_registered(temp_dir.path().to_path_buf(), "{}")?;
+        // This should be InitialSigners because there's NO asfaload.signers dir
+        // in asfald/ or any parent directory
+        assert_eq!(
+            determine_file_type(&pending_index_file),
+            FileType::InitialSigners,
+            "Pending signers file in github.com/asfaload/asfald/ with no \
+             asfaload.signers directory should be InitialSigners"
+        );
         Ok(())
     }
 

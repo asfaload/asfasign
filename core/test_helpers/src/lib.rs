@@ -1,3 +1,4 @@
+pub mod scenarios;
 use signatures::keys::AsfaloadKeyPairTrait;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::AsfaloadKeyPairs;
