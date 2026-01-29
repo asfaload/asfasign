@@ -34,7 +34,7 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
     let nonce_db_path = git_repo_path.join(".app_cache").join(NONCE_CACHE_DB);
     let db = sled::open(nonce_db_path)
         .map_err(|e| {
-            tracing::debug!(
+            tracing::error!(
                 error = %e,
                 "Problem opening nonce cache"
             );
