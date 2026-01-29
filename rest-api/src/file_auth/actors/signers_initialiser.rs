@@ -185,12 +185,18 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
                     "Wrote pending signers signature file to disk"
                 );
             }
+
+            // As the path is constructed above it should not occur
             Err(e) => {
                 tracing::error!(
                     request_id = %msg.request_id,
                     error = %e,
                     "Failed to compute pending signers signature path"
                 );
+                return Err(ApiError::FileWriteFailed(format!(
+                    "Failed to compute pending signers signature path: {}",
+                    e
+                )));
             }
         }
 
