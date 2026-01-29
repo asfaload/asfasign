@@ -548,3 +548,107 @@ pub async fn register_release_handler(
         ),
     }))
 }
+
+/// Handler to fetch a file's raw content from the repository.
+///
+/// Returns the raw file content as bytes. Used by client CLI to fetch files
+/// that need to be signed (e.g., in the sign-pending workflow).
+///
+/// # Arguments
+/// * `state` - Application state with git repo path
+/// * `axum::extract::Path(file_path)` - URL path parameter containing the file path
+///
+/// # Returns
+/// The raw file content as bytes with appropriate content-type header
+///
+/// # Errors
+/// Returns `ApiError` if:
+/// - File path is invalid or contains traversal attempts
+/// - File does not exist
+/// - File cannot be read
+pub async fn get_file_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(file_path): axum::extract::Path<String>,
+) -> Result<(axum::http::StatusCode, axum::http::HeaderMap, Vec<u8>), ApiError> {
+    use axum::http::header;
+
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        file_path = %file_path,
+        "Received file fetch request"
+    );
+
+    // The file_path we get is sanitised, and making it normalised
+    // further validates it against path traversals
+    let normalised_paths = NormalisedPaths::new(state.git_repo_path, PathBuf::from(&file_path))
+        .await
+        .map_err(|e| ApiError::InvalidFilePath(format!("Invalid file path: {}", e)))?;
+
+    let absolute_path = normalised_paths.absolute_path();
+
+    // Verify the file exists
+    if !absolute_path.exists() {
+        tracing::warn!(
+            request_id = %request_id,
+            file_path = %file_path,
+            absolute_path = %absolute_path.display(),
+            "File not found"
+        );
+        return Err(ApiError::FileNotFound(format!(
+            "File not found: {}",
+            file_path
+        )));
+    }
+
+    // Verify it's a file (not a directory)
+    if !absolute_path.is_file() {
+        tracing::warn!(
+            request_id = %request_id,
+            file_path = %file_path,
+            absolute_path = %absolute_path.display(),
+            "Path requested is not a file"
+        );
+        return Err(ApiError::InvalidFilePath(format!(
+            "Path is not a file: {}",
+            file_path
+        )));
+    }
+
+    // Read the file content
+    let content = tokio::fs::read(&absolute_path).await.map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            file_path = %file_path,
+            error = %e,
+            "Failed to read file"
+        );
+        ApiError::InternalServerError(format!("Failed to read file: {}", e))
+    })?;
+
+    tracing::info!(
+        request_id = %request_id,
+        file_path = %file_path,
+        size = content.len(),
+        "Successfully read file"
+    );
+
+    // Build response headers
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/octet-stream"),
+    );
+    headers.insert(
+        header::CONTENT_LENGTH,
+        header::HeaderValue::from_str(&content.len().to_string())
+            .unwrap_or_else(|_| header::HeaderValue::from_static("0")),
+    );
+
+    Ok((axum::http::StatusCode::OK, headers, content))
+}
