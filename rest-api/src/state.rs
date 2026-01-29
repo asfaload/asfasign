@@ -47,7 +47,7 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
     let signers_initialiser = SignersInitialiser::spawn(());
     let signature_collector = SignatureCollector::spawn(git_actor.clone());
 
-    let release_actor = ReleaseActor::spawn((git_actor.clone(), config, git_repo_path.clone()));
+    let release_actor = ReleaseActor::spawn((git_actor.clone(), config));
 
     AppState {
         git_repo_path,

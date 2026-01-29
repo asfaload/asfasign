@@ -12,7 +12,6 @@ const ACTOR_NAME: &str = "release_actor";
 pub struct ReleaseActor {
     git_actor: kameo::actor::ActorRef<GitActor>,
     config: crate::config::AppConfig,
-    git_repo_path: std::path::PathBuf,
 }
 
 pub struct ProcessRelease {
@@ -25,11 +24,7 @@ pub struct RegisterResult {
 }
 
 impl Actor for ReleaseActor {
-    type Args = (
-        kameo::actor::ActorRef<GitActor>,
-        crate::config::AppConfig,
-        std::path::PathBuf,
-    );
+    type Args = (kameo::actor::ActorRef<GitActor>, crate::config::AppConfig);
     type Error = ApiError;
 
     async fn on_start(
@@ -41,7 +36,6 @@ impl Actor for ReleaseActor {
         Ok(Self {
             git_actor: args.0,
             config: args.1,
-            git_repo_path: args.2,
         })
     }
 }
@@ -70,29 +64,33 @@ impl ReleaseActor {
             "Processing release"
         );
 
-        let adder = ReleaseAdders::new(&msg.release_url, self.git_repo_path.clone(), &self.config)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    actor = %ACTOR_NAME,
-                    error = %e,
-                    "Failed to initialise GithubReleaseAdder"
-                );
-                match e {
-                    crate::file_auth::release_types::ReleaseUrlError::UnsupportedPlatform(
-                        platform,
-                    ) => ApiError::UnsupportedReleasePlatform(platform),
-                    crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(msg) => {
-                        ApiError::InvalidReleaseUrl(msg)
-                    }
-                    crate::file_auth::release_types::ReleaseUrlError::MissingTag => {
-                        ApiError::InvalidReleaseUrl("Missing tag in release URL".to_string())
-                    }
-                    crate::file_auth::release_types::ReleaseUrlError::MissingComponent(msg) => {
-                        ApiError::InvalidReleaseUrl(msg)
-                    }
+        let adder = ReleaseAdders::new(
+            &msg.release_url,
+            self.config.git_repo_path.clone(),
+            &self.config,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                actor = %ACTOR_NAME,
+                error = %e,
+                "Failed to initialise GithubReleaseAdder"
+            );
+            match e {
+                crate::file_auth::release_types::ReleaseUrlError::UnsupportedPlatform(platform) => {
+                    ApiError::UnsupportedReleasePlatform(platform)
                 }
-            })?;
+                crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(msg) => {
+                    ApiError::InvalidReleaseUrl(msg)
+                }
+                crate::file_auth::release_types::ReleaseUrlError::MissingTag => {
+                    ApiError::InvalidReleaseUrl("Missing tag in release URL".to_string())
+                }
+                crate::file_auth::release_types::ReleaseUrlError::MissingComponent(msg) => {
+                    ApiError::InvalidReleaseUrl(msg)
+                }
+            }
+        })?;
 
         let release_info = adder.release_info();
 
