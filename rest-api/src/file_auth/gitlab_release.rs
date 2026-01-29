@@ -175,7 +175,7 @@ impl ReleaseAdder for GitlabReleaseAdder {
             ReleaseUrlError::InvalidFormat(e.to_string())
         })?;
 
-        let url_path = format!("{}/-/releases/{}", host, tag);
+        let url_path = path_on_disk(&host, release_url.path());
         let release_path = NormalisedPaths::new(git_repo_path.clone(), PathBuf::from(&url_path))
             .await
             .map_err(|e| {
@@ -272,6 +272,13 @@ impl ReleaseAdder for GitlabReleaseAdder {
     }
 }
 
+fn path_on_disk(host: impl Into<String>, path: impl Into<String>) -> String {
+    let path = path.into();
+    // Ensure we handle both absolute and relative path correctly
+    let fixed_path = path.strip_prefix('/').unwrap_or(&path);
+    format!("{}/{}", host.into(), fixed_path)
+}
+
 impl GitlabReleaseAdder {
     pub async fn new_with_client(
         release_url: &url::Url,
@@ -280,7 +287,7 @@ impl GitlabReleaseAdder {
     ) -> Result<Self, ReleaseUrlError> {
         let (host, namespace, project, tag) = Self::validate_and_parse_url(release_url)?;
 
-        let url_path = format!("{}/-/releases/{}", host, tag);
+        let url_path = path_on_disk(&host, release_url.path());
         let release_path = NormalisedPaths::new(git_repo_path.clone(), PathBuf::from(&url_path))
             .await
             .map_err(|e| {
@@ -693,17 +700,69 @@ mod tests {
         let mock_server = httpmock::MockServer::start();
 
         let large_body = vec![0u8; 1000];
-
-        mock_server.mock(|when, then| {
-            when.method(httpmock::Method::GET)
-                .path("/fake-asset.tar.gz");
-            then.status(200).body(&large_body);
-        });
-
-        let large_url = format!("{}/fake-asset.tar.gz", mock_server.url(""));
-        let result = GitlabReleaseAdder::download_and_hash_file(&large_url, 100).await;
+        let test_url = url::Url::parse(&format!(
+            "{}/group/project/-/releases/v1.0.0/",
+            mock_client.url()
+        ))
+        .unwrap();
+        let asset_url = test_url.join("asset.tgz").unwrap();
+        let test_url_string = test_url.to_string();
+        dbg!(&test_url_string);
+        mock_client.mock_asset(asset_url.path(), &large_body);
+        let adder = GitlabReleaseAdder::new_with_client(
+            &test_url,
+            temp_dir.path().to_path_buf(),
+            mock_client,
+        )
+        .await
+        .expect("Failed to create GitLab release adder");
+        let result = adder
+            .download_and_hash_file(&asset_url.to_string(), 100)
+            .await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("exceeds limit"));
+    }
+
+    #[test]
+    fn test_path_on_disk_basic() {
+        let result = path_on_disk("gitlab.com", "/group/project/-/releases/v1.0.0");
+        assert_eq!(result, "gitlab.com/group/project/-/releases/v1.0.0");
+    }
+
+    #[test]
+    fn test_path_on_disk_empty_path() {
+        let result = path_on_disk("gitlab.com", "");
+        assert_eq!(result, "gitlab.com/");
+    }
+
+    #[test]
+    fn test_path_on_disk_nested_namespace() {
+        let result = path_on_disk(
+            "gitlab.com",
+            "/group/subgroup1/subgroup2/project/-/releases/v1.0.0",
+        );
+        assert_eq!(
+            result,
+            "gitlab.com/group/subgroup1/subgroup2/project/-/releases/v1.0.0"
+        );
+    }
+
+    #[test]
+    fn test_path_on_disk_with_port() {
+        let result = path_on_disk(
+            "gitlab.example.com:8080",
+            "/group/project/-/releases/v1.0.0",
+        );
+        assert_eq!(
+            result,
+            "gitlab.example.com:8080/group/project/-/releases/v1.0.0"
+        );
+    }
+
+    #[test]
+    fn test_path_on_disk_path_without_leading_slash() {
+        let result = path_on_disk("gitlab.com", "group/project/-/releases/v1.0.0");
+        assert_eq!(result, "gitlab.com/group/project/-/releases/v1.0.0");
     }
 }

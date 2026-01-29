@@ -285,5 +285,19 @@ mod tests {
         assert_eq!(files[0]["algo"], "Sha256");
         let hash = files[0]["hash"].as_str().unwrap();
         assert_eq!(hash.len(), 64);
+
+        let index_path = adder.write_index().await.unwrap();
+
+        use crate::constants::INDEX_FILE;
+        let expected_relative_path = PathBuf::from("gitlab.com")
+            .join("testnamespace")
+            .join("testproject")
+            .join("-/releases")
+            .join("v1.0.0")
+            .join(INDEX_FILE);
+        assert_eq!(index_path.relative_path(), expected_relative_path);
+
+        let expected_absolute_path = git_repo_path.join(&expected_relative_path);
+        assert!(expected_absolute_path.exists());
     }
 }
