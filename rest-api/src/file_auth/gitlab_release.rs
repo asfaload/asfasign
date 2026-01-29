@@ -103,6 +103,7 @@ pub struct GitlabReleaseAdder {
     git_repo_path: PathBuf,
     client: GitLabClient,
     release_info: GitlabReleaseInfo,
+    reqwest_client: reqwest::Client,
 }
 
 impl std::fmt::Debug for GitlabReleaseAdder {
@@ -190,11 +191,14 @@ impl ReleaseAdder for GitlabReleaseAdder {
             release_path,
         };
 
+        let reqwest_client = reqwest::Client::new();
+
         Ok(GitlabReleaseAdder {
             release_url: release_url.clone(),
             git_repo_path,
             client,
             release_info,
+            reqwest_client,
         })
     }
 
@@ -227,7 +231,8 @@ impl ReleaseAdder for GitlabReleaseAdder {
         }
 
         for asset in &mut assets {
-            let hash = Self::download_and_hash_file(&asset.download_url, MAX_FILE_SIZE_FOR_HASHING)
+            let hash = self
+                .download_and_hash_file(&asset.download_url, MAX_FILE_SIZE_FOR_HASHING)
                 .await?;
             asset.hash = Some(FileChecksum {
                 file_name: asset.name.clone(),
@@ -307,6 +312,7 @@ impl GitlabReleaseAdder {
             git_repo_path,
             client,
             release_info,
+            reqwest_client: reqwest::Client::new(),
         })
     }
 
@@ -370,13 +376,10 @@ impl GitlabReleaseAdder {
         Ok(assets)
     }
 
-    async fn download_and_hash_file(url: &str, max_size: u64) -> Result<String, ApiError> {
+    async fn download_and_hash_file(&self, url: &str, max_size: u64) -> Result<String, ApiError> {
         use futures_util::StreamExt;
-        use reqwest;
         use sha2::{Digest, Sha256};
-
-        let client = reqwest::Client::new();
-        let response = client.get(url).send().await.map_err(|e| {
+        let response = self.reqwest_client.get(url).send().await.map_err(|e| {
             ApiError::ReleaseApiError(
                 "GitLab".to_string(),
                 format!("Failed to download file: {}", e),
@@ -562,9 +565,6 @@ pub use test_utils::MockGitLabClient;
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "test-utils")]
-    use httpmock;
-
     #[test]
     fn test_parse_gitlab_releases_url() {
         let url = url::Url::parse("https://gitlab.com/group/project/-/releases/v1.0.0").unwrap();
@@ -697,8 +697,8 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "test-utils")]
     async fn test_download_and_hash_file_size_limit() {
-        let mock_server = httpmock::MockServer::start();
-
+        let temp_dir = tempfile::tempdir().expect("Could not create temp dir");
+        let mock_client = MockGitLabClient::new();
         let large_body = vec![0u8; 1000];
         let test_url = url::Url::parse(&format!(
             "{}/group/project/-/releases/v1.0.0/",
@@ -716,12 +716,13 @@ mod tests {
         )
         .await
         .expect("Failed to create GitLab release adder");
-        let result = adder
-            .download_and_hash_file(&asset_url.to_string(), 100)
-            .await;
+        let result = adder.download_and_hash_file(&asset_url.to_string(), 100).await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("exceeds limit"));
+        let e = result.unwrap_err();
+        if !e.to_string().contains("exceeds limit") {
+            panic!("got unexpected {}", e)
+        }
     }
 
     #[test]
