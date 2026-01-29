@@ -1,6 +1,6 @@
 use crate::constants::INDEX_FILE;
 use crate::file_auth::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
-use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo, ReleaseUrlError};
+use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
 use crate::file_auth::releasers::ReleaseInfos;
 use crate::path_validation::NormalisedPaths;
 use constants::{SIGNERS_DIR, SIGNERS_FILE};
@@ -157,7 +157,7 @@ impl ReleaseAdder for GitlabReleaseAdder {
         release_url: &url::Url,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
-    ) -> Result<Self, ReleaseUrlError>
+    ) -> Result<Self, ReleaseError>
     where
         Self: Sized,
     {
@@ -165,7 +165,7 @@ impl ReleaseAdder for GitlabReleaseAdder {
 
         let token = config.gitlab_api_key.clone().ok_or_else(|| {
             tracing::error!("GitLab API key required but not configured");
-            ReleaseUrlError::InvalidFormat("GitLab API key required but not configured".to_string())
+            ReleaseError::ClientError("GitLab API key required but not configured".to_string())
         })?;
 
         let client = get_client(host.clone(), token).await.map_err(|e| {

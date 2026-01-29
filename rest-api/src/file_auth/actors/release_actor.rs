@@ -1,5 +1,5 @@
 use super::git_actor::{CommitFile, GitActor};
-use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo};
+use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
 use crate::file_auth::releasers::ReleaseAdders;
 use crate::path_validation::NormalisedPaths;
 use kameo::message::Context;
@@ -77,18 +77,17 @@ impl ReleaseActor {
                 "Failed to initialise GithubReleaseAdder"
             );
             match e {
-                crate::file_auth::release_types::ReleaseUrlError::UnsupportedPlatform(platform) => {
-                    ApiError::UnsupportedReleasePlatform(platform)
-                }
-                crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(msg) => {
-                    ApiError::InvalidReleaseUrl(msg)
-                }
-                crate::file_auth::release_types::ReleaseUrlError::MissingTag => {
-                    ApiError::InvalidReleaseUrl("Missing tag in release URL".to_string())
-                }
-                crate::file_auth::release_types::ReleaseUrlError::MissingComponent(msg) => {
-                    ApiError::InvalidReleaseUrl(msg)
-                }
+                ReleaseError::ReleaseUrlError(url_error) => match url_error {
+                    ReleaseUrlError::UnsupportedPlatform(platform) => {
+                        ApiError::UnsupportedReleasePlatform(platform)
+                    }
+                    ReleaseUrlError::InvalidFormat(msg) => ApiError::InvalidReleaseUrl(msg),
+                    ReleaseUrlError::MissingTag => {
+                        ApiError::InvalidReleaseUrl("Missing tag in release URL".to_string())
+                    }
+                    ReleaseUrlError::MissingComponent(msg) => ApiError::InvalidReleaseUrl(msg),
+                },
+                ReleaseError::ClientError(e) => ApiError::InternalServerError(e),
             }
         })?;
 

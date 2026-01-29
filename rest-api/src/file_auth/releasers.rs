@@ -1,8 +1,8 @@
 #[cfg(not(feature = "test-utils"))]
-use crate::file_auth::github_release::GithubClient;
+use crate::file_auth::github_release::ProductionGithubClient;
 use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
 use crate::file_auth::gitlab_release::{GitlabReleaseAdder, GitlabReleaseInfo};
-use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo, ReleaseUrlError};
+use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
 use crate::path_validation::NormalisedPaths;
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
@@ -16,7 +16,7 @@ use crate::file_auth::github_release::test_utils::MockGithubClient;
 #[derive(Debug)]
 pub enum ReleaseAdders {
     #[cfg(not(feature = "test-utils"))]
-    Github(Box<GithubReleaseAdder<GithubClient>>),
+    Github(Box<GithubReleaseAdder<ProductionGithubClient>>),
     #[cfg(feature = "test-utils")]
     Github(Box<GithubReleaseAdder<MockGithubClient>>),
     Gitlab(Box<GitlabReleaseAdder>),
@@ -27,7 +27,7 @@ impl ReleaseAdder for ReleaseAdders {
         release_url: &url::Url,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
-    ) -> Result<Self, ReleaseUrlError>
+    ) -> Result<Self, ReleaseError>
     where
         Self: Sized,
     {
@@ -47,7 +47,8 @@ impl ReleaseAdder for ReleaseAdders {
                 host,
                 GITHUB_RELEASE_HOSTS.join(", "),
                 GITLAB_RELEASE_HOSTS.join(", ")
-            )))
+            ))
+            .into())
         }
     }
 

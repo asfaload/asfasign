@@ -4,6 +4,14 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+pub enum ReleaseError {
+    #[error("Invalid release URL format: {0}")]
+    ReleaseUrlError(#[from] ReleaseUrlError),
+    #[error("Client error: {0}")]
+    ClientError(String),
+}
+
+#[derive(Debug, Error)]
 pub enum ReleaseUrlError {
     #[error("Invalid release URL format: {0}")]
     InvalidFormat(String),
@@ -29,7 +37,7 @@ pub trait ReleaseAdder: std::fmt::Debug {
         release_url: &url::Url,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
-    ) -> Result<Self, ReleaseUrlError>
+    ) -> Result<Self, ReleaseError>
     where
         Self: Sized;
 

@@ -1,6 +1,6 @@
 use crate::constants::INDEX_FILE;
 use crate::file_auth::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
-use crate::file_auth::release_types::{ReleaseAdder, ReleaseInfo};
+use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
 use crate::file_auth::releasers::ReleaseInfos;
 use crate::path_validation::NormalisedPaths;
 use constants::{SIGNERS_DIR, SIGNERS_FILE};
@@ -133,21 +133,16 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
         release_url: &url::Url,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
-    ) -> Result<Self, crate::file_auth::release_types::ReleaseUrlError>
+    ) -> Result<Self, crate::file_auth::release_types::ReleaseError>
     where
         Self: Sized,
     {
         let release_info = parse_release_url(release_url, &git_repo_path)
             .await
-            .map_err(|e| {
-                crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(e.to_string())
-            })?;
+            .map_err(|e| ReleaseUrlError::InvalidFormat(e.to_string()))?;
 
         let client = create_github_client(config).map_err(|e| {
-            crate::file_auth::release_types::ReleaseUrlError::InvalidFormat(format!(
-                "Failed to create GitHub client: {}",
-                e
-            ))
+            ReleaseError::ClientError(format!("Failed to create GitHub client: {}", e))
         })?;
 
         Ok(Self {
