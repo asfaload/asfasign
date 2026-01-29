@@ -12,9 +12,9 @@ use tokio::fs;
 use tracing::info;
 
 #[cfg(not(feature = "test-utils"))]
-pub type GithubClientWrapper = GithubClient;
+pub type GithubClient = ProductionGithubClient;
 #[cfg(feature = "test-utils")]
-pub type GithubClientWrapper = test_utils::MockGithubClient;
+pub type GithubClient = test_utils::MockGithubClient;
 
 #[async_trait::async_trait]
 pub trait GithubClientTrait: Send + Sync {
@@ -26,18 +26,18 @@ pub trait GithubClientTrait: Send + Sync {
     ) -> Result<Release, ApiError>;
 }
 
-pub struct GithubClient {
+pub struct ProductionGithubClient {
     client: octocrab::Octocrab,
 }
 
-impl GithubClient {
+impl ProductionGithubClient {
     pub fn new(client: octocrab::Octocrab) -> Self {
         Self { client }
     }
 }
 
 #[async_trait::async_trait]
-impl GithubClientTrait for GithubClient {
+impl GithubClientTrait for ProductionGithubClient {
     async fn get_release_by_tag(
         &self,
         owner: &str,
@@ -59,7 +59,9 @@ impl GithubClientTrait for GithubClient {
 }
 
 #[cfg(not(feature = "test-utils"))]
-fn create_github_client(config: &crate::config::AppConfig) -> Result<GithubClient, ApiError> {
+fn create_github_client(
+    config: &crate::config::AppConfig,
+) -> Result<ProductionGithubClient, ApiError> {
     let client = if let Some(api_key) = &config.github_api_key {
         octocrab::Octocrab::builder()
             .personal_token(api_key.clone())
@@ -74,7 +76,7 @@ fn create_github_client(config: &crate::config::AppConfig) -> Result<GithubClien
         tracing::warn!("No GitHub API key provided, using anonymous client (rate limited)");
         octocrab::Octocrab::default()
     };
-    Ok(GithubClient::new(client))
+    Ok(ProductionGithubClient::new(client))
 }
 
 #[cfg(feature = "test-utils")]
@@ -126,7 +128,7 @@ struct ReleaseAssetInfo {
     hash: Option<FileChecksum>,
 }
 
-impl ReleaseAdder for GithubReleaseAdder<GithubClientWrapper> {
+impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
     async fn new(
         release_url: &url::Url,
         git_repo_path: PathBuf,
