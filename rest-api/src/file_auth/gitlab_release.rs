@@ -173,7 +173,7 @@ impl ReleaseAdder for GitlabReleaseAdder {
             tracing::error!(
             error = %e,
             "could not get gitlab client");
-            ReleaseUrlError::InvalidFormat(e.to_string())
+            ReleaseError::ClientError(e.to_string())
         })?;
 
         let url_path = path_on_disk(&host, release_url.path());
