@@ -4,10 +4,12 @@ use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, R
 use crate::file_auth::releasers::ReleaseInfos;
 use crate::path_validation::NormalisedPaths;
 use constants::{SIGNERS_DIR, SIGNERS_FILE};
+use futures_util::StreamExt;
 use gitlab::GitlabBuilder;
 use gitlab::api::{AsyncQuery, projects};
 use rest_api_types::errors::ApiError;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tokio::fs;
 use tracing::info;
@@ -377,8 +379,6 @@ impl GitlabReleaseAdder {
     }
 
     async fn download_and_hash_file(&self, url: &str, max_size: u64) -> Result<String, ApiError> {
-        use futures_util::StreamExt;
-        use sha2::{Digest, Sha256};
         let response = self.reqwest_client.get(url).send().await.map_err(|e| {
             ApiError::ReleaseApiError(
                 "GitLab".to_string(),
@@ -716,7 +716,9 @@ mod tests {
         )
         .await
         .expect("Failed to create GitLab release adder");
-        let result = adder.download_and_hash_file(&asset_url.to_string(), 100).await;
+        let result = adder
+            .download_and_hash_file(&asset_url.to_string(), 100)
+            .await;
 
         assert!(result.is_err());
         let e = result.unwrap_err();
