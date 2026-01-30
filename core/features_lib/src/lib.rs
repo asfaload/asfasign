@@ -22,6 +22,7 @@ pub use signatures::types::AsfaloadPublicKeys;
 pub use signatures::types::AsfaloadSecretKeys;
 pub use signatures::types::AsfaloadSignatures;
 
+pub use signers_file::activate_signers_file;
 use signers_file::sign_signers_file;
 pub use signers_file_types::SignersConfig;
 

@@ -4,7 +4,7 @@ use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
 };
 use reqwest::Client;
-use rest_api_types::{ListPendingResponse, SubmitSignatureRequest, SubmitSignatureResponse};
+use rest_api_types::{ListPendingResponse, RegisterReleaseResponse, SubmitSignatureRequest, SubmitSignatureResponse};
 use serde_json::Value;
 
 /// A client for interacting with the REST API with authentication
@@ -247,6 +247,68 @@ pub async fn submit_signature(
     }
 
     let response_body: SubmitSignatureResponse = response.json().await.map_err(|e| {
+        AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+    })?;
+
+    Ok(response_body)
+}
+
+/// Register a GitHub release with the backend.
+///
+/// Makes an authenticated POST request to /release endpoint.
+///
+/// # Arguments
+///
+/// * `backend_url` - Base URL of the backend API
+/// * `release_url` - URL of the GitHub release to register
+/// * `secret_key` - The secret key for signing the request
+///
+/// # Returns
+///
+/// Registration response with success status and index file path
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Authentication fails
+/// - Backend returns non-200 status
+/// - Response is malformed
+pub async fn register_release(
+    backend_url: &str,
+    release_url: &str,
+    secret_key: AsfaloadSecretKeys,
+) -> Result<RegisterReleaseResponse> {
+    use rest_api_auth::AuthError;
+
+    let url = format!("{}/release", backend_url);
+
+    let payload = serde_json::json!({
+        "release_url": release_url
+    });
+
+    let payload_string = payload.to_string();
+    let headers = create_auth_headers(&payload_string, secret_key)?;
+
+    let client = Client::new();
+    let response = client
+        .post(&url)
+        .headers(headers)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| AuthError::AuthDataPreparationError(format!("Network error: {}", e)))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(AuthError::AuthDataPreparationError(format!(
+            "POST {}: {} - {}",
+            url, status, error_text
+        ))
+        .into());
+    }
+
+    let response_body: RegisterReleaseResponse = response.json().await.map_err(|e| {
         AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
     })?;
 

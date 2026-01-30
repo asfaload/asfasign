@@ -2,7 +2,10 @@ use crate::file_auth::actors::git_actor::{CommitFile, GitActor};
 use crate::handlers::map_to_user_error;
 use crate::path_validation::NormalisedPaths;
 use common::errors::AggregateSignatureError;
-use features_lib::{AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState};
+use features_lib::{
+    AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState, SignedFileLoader,
+    activate_signers_file,
+};
 use kameo::actor::ActorRef;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
@@ -177,6 +180,30 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
             })?;
         let is_complete = new_state.is_complete();
 
+        // If signature is complete and this is a signers file, activate it
+        if is_complete {
+            let signed_file = SignedFileLoader::load(&msg.file_path);
+            if (signed_file.is_initial_signers() || signed_file.is_signers())
+                && let SignatureWithState::Complete(complete_agg_sig) = new_state
+            {
+                activate_signers_file(&complete_agg_sig).map_err(|e| {
+                    tracing::error!(
+                        actor = ACTOR_NAME,
+                        request_id = %msg.request_id,
+                        error = %e,
+                        "failed to activate signers file"
+                    );
+                    ApiError::InternalServerError(format!("Failed to activate signers file: {}", e))
+                })?;
+                tracing::info!(
+                    actor = ACTOR_NAME,
+                    request_id = %msg.request_id,
+                    file_path = %msg.file_path.absolute_path().display(),
+                    "Successfully activated signers file"
+                );
+            }
+        }
+
         let commit_message = if is_complete {
             format!(
                 "completed signature collection for {}",
@@ -342,14 +369,22 @@ mod tests {
 
         assert!(collect_result.is_complete);
 
-        // The signers file doesn't move - only the signature file transitions
-        // from .pending to complete.
+        // After activation, the signers file should be in the active directory
+        let active_dir = project_dir.join(SIGNERS_DIR);
+        let active_signers_path = active_dir.join(SIGNERS_FILE);
+
+        // The signers file should have been moved to the active directory
+        assert!(active_signers_path.exists());
+
         // The signature path is {file_path}.signatures.json for a complete signature
-        let complete_sig_path = format!("{}.{}", pending_signers_path.display(), SIGNATURES_SUFFIX);
+        let complete_sig_path = format!("{}.{}", active_signers_path.display(), SIGNATURES_SUFFIX);
         let complete_sig_path = std::path::PathBuf::from(complete_sig_path);
 
-        // The signature file should exist
+        // The signature file should exist in the active directory
         assert!(complete_sig_path.exists());
+
+        // The pending directory should no longer exist
+        assert!(!pending_dir.exists());
 
         Ok(())
     }
@@ -452,11 +487,16 @@ mod tests {
         assert!(result1.is_ok());
         assert!(result1.unwrap().is_complete);
 
+        // After activation, the file path changes from pending to active directory
+        let active_signers_path = project_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
+        let active_file_path =
+            make_normalised_paths(&temp_dir, active_signers_path.strip_prefix(&temp_dir)?).await;
+
         // Try to add the same signature again - should fail with "already complete"
-        // (because after first signature, the signature file is now complete)
+        // (because after first signature, the signature file is now complete and activated)
         let result2 = actor_ref
             .ask(CollectSignatureRequest {
-                file_path,
+                file_path: active_file_path,
                 public_key,
                 signature,
                 request_id: "duplicate-sign".to_string(),
