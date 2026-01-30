@@ -1,10 +1,8 @@
-use assert_cmd::Command;
 use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
 use predicates::prelude::*;
-
 #[test]
 fn test_register_release_cli_help() {
-    let mut cmd = Command::cargo_bin("client-cli").unwrap();
+    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
     cmd.arg("register-release").arg("--help");
     cmd.assert()
         .success()
@@ -13,7 +11,7 @@ fn test_register_release_cli_help() {
 
 #[test]
 fn test_register_release_requires_url() {
-    let mut cmd = Command::cargo_bin("client-cli").unwrap();
+    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
     cmd.arg("register-release");
     cmd.assert()
         .failure()
@@ -22,7 +20,7 @@ fn test_register_release_requires_url() {
 
 #[test]
 fn test_register_release_requires_secret_key() {
-    let mut cmd = Command::cargo_bin("client-cli").unwrap();
+    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
     cmd.arg("register-release")
         .arg("https://github.com/testowner/testrepo/releases/tag/v1.0.0");
     cmd.assert()
@@ -38,7 +36,7 @@ fn test_register_release_network_error_without_server() {
     let secret_key = AsfaloadKeyPairs::new("test_password_123").unwrap();
     secret_key.save(&key_path).unwrap();
 
-    let mut cmd = Command::cargo_bin("client-cli").unwrap();
+    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
     cmd.arg("register-release")
         .arg("https://github.com/testowner/testrepo/releases/tag/v1.0.0")
         .arg("-K")
