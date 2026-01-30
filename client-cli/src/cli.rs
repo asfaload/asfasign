@@ -192,6 +192,28 @@ pub enum Commands {
         #[arg(short = 'u', long)]
         backend_url: Option<String>,
     },
+
+    /// Register a GitHub release with the backend
+    RegisterRelease {
+        /// URL of the GitHub release to register
+        release_url: String,
+
+        /// Path to your secret key file
+        #[arg(short = 'K', long)]
+        secret_key: PathBuf,
+
+        /// Password for the key (conflicts with password_file)
+        #[arg(long, short, conflicts_with = "password_file")]
+        password: Option<String>,
+
+        /// Path to a file containing the password (conflicts with password)
+        #[arg(long, short = 'P', conflicts_with = "password")]
+        password_file: Option<PathBuf>,
+
+        /// Backend API URL (optional, defaults to DEFAULT_BACKEND)
+        #[arg(short = 'u', long)]
+        backend_url: Option<String>,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -221,6 +243,7 @@ impl Commands {
             Self::IsAggComplete { .. } => "IS_AGG_COMPLETE",
             Self::ListPending { .. } => "LIST_PENDING",
             Self::SignPending { .. } => "SIGN_PENDING",
+            Self::RegisterRelease { .. } => "REGISTER_RELEASE",
         }
     }
 
