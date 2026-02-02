@@ -2,6 +2,7 @@ use crate::file_auth::actors::git_actor::{CommitFile, GitActor};
 use crate::handlers::map_to_user_error;
 use crate::path_validation::NormalisedPaths;
 use common::errors::AggregateSignatureError;
+use constants::SIGNERS_DIR;
 use features_lib::{
     AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState, SignedFileLoader,
     activate_signers_file,
@@ -180,12 +181,13 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
             })?;
         let is_complete = new_state.is_complete();
 
-        // If signature is complete and this is a signers file, activate it
-        if is_complete {
+        let commit_msg = if let SignatureWithState::Complete(complete_agg_sig) = new_state {
             let signed_file = SignedFileLoader::load(&msg.file_path);
-            if (signed_file.is_initial_signers() || signed_file.is_signers())
-                && let SignatureWithState::Complete(complete_agg_sig) = new_state
-            {
+            // If signature is complete and this is a signers file, activate it
+            // In that case, the dirname changes for a signers file, which influences
+            // the git commit
+            // ----------------------------------------------------------------
+            if signed_file.is_initial_signers() || signed_file.is_signers() {
                 activate_signers_file(&complete_agg_sig).map_err(|e| {
                     tracing::error!(
                         actor = ACTOR_NAME,
@@ -201,31 +203,54 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                     file_path = %msg.file_path.absolute_path().display(),
                     "Successfully activated signers file"
                 );
-            }
-        }
 
-        let commit_message = if is_complete {
-            format!(
-                "completed signature collection for {}",
-                msg.file_path.relative_path().display()
-            )
+                let new_dir = msg.file_path.parent().parent().join(SIGNERS_DIR).await?;
+
+                let commit_message = format!(
+                    "completed signature collection for {}",
+                    new_dir.relative_path().display()
+                );
+                CommitFile {
+                    file_paths: vec![new_dir],
+                    commit_message,
+                    request_id: msg.request_id.to_string(),
+                }
+            } else {
+                // For an artifact file, the dir name doesn't change
+                // -------------------------------------------
+                let commit_message = format!(
+                    "completed signature collection for {}",
+                    msg.file_path.relative_path().display(),
+                );
+                CommitFile {
+                    file_paths: vec![msg.file_path.parent()],
+                    commit_message,
+                    request_id: msg.request_id.to_string(),
+                }
+            }
         } else {
-            format!(
+            // If the signature is still partial, the dirname doesn't change,
+            // ---------------------------------
+            // even for signers files
+            let commit_message = format!(
                 "added partial signature for {}",
                 msg.file_path.relative_path().display(),
-            )
+            );
+            CommitFile {
+                file_paths: vec![msg.file_path.parent()],
+                commit_message,
+                request_id: msg.request_id.to_string(),
+            }
         };
 
-        let commit_msg = CommitFile {
-            file_paths: vec![msg.file_path.parent()],
-            commit_message,
-            request_id: msg.request_id.to_string(),
-        };
-
-        self.git_actor
-            .ask(commit_msg)
-            .await
-            .map_err(|e| map_to_user_error(e, "Failed to commit signature changes"))?;
+        self.git_actor.ask(commit_msg).await.map_err(|e| {
+            tracing::error!(
+                actor = ACTOR_NAME,
+                error = %e,
+                "Request to git actor failed: Failed to commit signature changes"
+            );
+            map_to_user_error(e, "Failed to commit signature changes")
+        })?;
         // Handle both complete and incomplete states appropriately
         tracing::info!(
             actor = ACTOR_NAME,
