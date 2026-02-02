@@ -3,7 +3,11 @@ pub mod tests {
     use anyhow::Result;
     use axum::http::StatusCode;
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
+    use features_lib::{
+        AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait,
+    };
     use rest_api::server::run_server;
+    use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
     use rest_api_types::{RegisterReleaseRequest, rustls::setup_crypto_provider};
     use std::fs;
@@ -32,6 +36,14 @@ pub mod tests {
         git2::Repository::init(&git_repo_path).expect("Failed to initialize git repository");
 
         let port = get_random_port().await?;
+
+        let test_key_path = temp_dir.path().join("test_key.json");
+        let test_password = "test_password_123";
+        let test_key_pair = AsfaloadKeyPairs::new(test_password)?;
+        test_key_pair.save(&test_key_path)?;
+        let test_secret_key = test_key_pair.secret_key(test_password)?;
+        let test_public_key = test_key_pair.public_key();
+        let public_key_b64 = test_public_key.to_base64();
 
         let signers_dir = git_repo_path
             .join("github.com/testowner/testrepo")
@@ -65,15 +77,23 @@ pub mod tests {
         )?;
 
         // Manually construct JSON to ensure proper serialization
-        let json_body = serde_json::json!({
+        let payload = serde_json::json!({
             "release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
         });
+        let payload_str = payload.to_string();
+
+        let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
+        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, &test_secret_key)?;
 
         let response = tokio::time::timeout(
             Duration::from_secs(10),
             client
                 .post(url_for("release", port))
-                .json(&json_body)
+                .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
+                .header(HEADER_NONCE, auth_info.nonce())
+                .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
+                .header(HEADER_PUBLIC_KEY, public_key_b64)
+                .json(&payload)
                 .send(),
         )
         .await
@@ -104,6 +124,11 @@ pub mod tests {
 
         let port = get_random_port().await?;
 
+        let test_key_pair = AsfaloadKeyPairs::new("test_password")?;
+        let test_secret_key = test_key_pair.secret_key("test_password")?;
+        let test_public_key = test_key_pair.public_key();
+        let public_key_b64 = test_public_key.to_base64();
+
         let config = build_test_config(&git_repo_path, port);
 
         let config_clone = config.clone();
@@ -121,11 +146,19 @@ pub mod tests {
         let json_body = serde_json::json!({
             "release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
         });
+        let payload_str = json_body.to_string();
+
+        let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
+        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, &test_secret_key)?;
 
         let response = tokio::time::timeout(
             Duration::from_secs(5),
             client
                 .post(url_for("release", port))
+                .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
+                .header(HEADER_NONCE, auth_info.nonce())
+                .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
+                .header(HEADER_PUBLIC_KEY, public_key_b64)
                 .json(&json_body)
                 .send(),
         )
@@ -148,6 +181,69 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_register_github_release_invalid_url_format() -> Result<()> {
+        setup_crypto_provider();
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let port = get_random_port().await?;
+
+        let test_key_pair = AsfaloadKeyPairs::new("test_password")?;
+        let test_secret_key = test_key_pair.secret_key("test_password")?;
+        let test_public_key = test_key_pair.public_key();
+        let public_key_b64 = test_public_key.to_base64();
+
+        let signers_dir = git_repo_path
+            .join("github.com/testowner/testrepo")
+            .join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
+
+        let signers_json = r#"{
+            "version": 1,
+            "required_signers": 1,
+            "signers": []
+        }"#;
+        fs::write(signers_dir.join(SIGNERS_FILE), signers_json)
+            .expect("Failed to write signers file");
+
+        let config = build_test_config(&git_repo_path, port);
+
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let client = reqwest::Client::new();
+
+        let json_body = serde_json::json!({
+            "release_url": "invalid"
+        });
+        let payload_str = json_body.to_string();
+
+        let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
+        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, &test_secret_key)?;
+
+        let response = tokio::time::timeout(
+            Duration::from_secs(5),
+            client
+                .post(url_for("release", port))
+                .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
+                .header(HEADER_NONCE, auth_info.nonce())
+                .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
+                .header(HEADER_PUBLIC_KEY, public_key_b64)
+                .json(&json_body)
+                .send(),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Timeout: {}", e))??;
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        server_handle.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_register_github_release_missing_auth() -> Result<()> {
+        setup_crypto_provider();
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let git_repo_path = temp_dir.path().to_path_buf();
 
@@ -180,14 +276,14 @@ pub mod tests {
             client
                 .post(url_for("release", port))
                 .json(&serde_json::json!({
-                    "release_url": "invalid"
+                    "release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
                 }))
                 .send(),
         )
         .await
         .map_err(|e| anyhow::anyhow!("Timeout: {}", e))??;
 
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
         server_handle.abort();
         Ok(())

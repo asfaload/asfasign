@@ -96,6 +96,13 @@ impl GitActor {
     ) -> Result<(), ApiError> {
         for path in &file_paths {
             if path.base_dir() != self.repo_path {
+                tracing::error!(
+                    actor = ACTOR_NAME,
+                    path = %path,
+                    path_base_dir = %path.base_dir().display(),
+                    repo_path = %self.repo_path.display(),
+                    "Invalid file path: base dir of path is not repo_path"
+                );
                 return Err(ApiError::InvalidFilePath(format!(
                     "File's base_dir ({}) != actor's git dir ({})",
                     path.base_dir().to_string_lossy(),
@@ -105,6 +112,7 @@ impl GitActor {
         }
 
         tracing::info!(
+            actor = ACTOR_NAME,
             request_id = %request_id,
             file_paths = %file_paths.iter()
                 .map(|p| p.relative_path().display().to_string())

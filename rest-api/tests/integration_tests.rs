@@ -957,6 +957,10 @@ pub mod tests {
     #[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_submit_signature_for_signers_file() -> Result<(), anyhow::Error> {
+        use constants::PENDING_SIGNERS_DIR;
+        use constants::SIGNATURES_SUFFIX;
+        use constants::SIGNERS_DIR;
+        use constants::SIGNERS_FILE;
         use features_lib::{
             AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
             AsfaloadSignatureTrait, sha512_for_file,
@@ -966,8 +970,6 @@ pub mod tests {
 
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
-
-        git2::Repository::init(&git_repo_path)?;
 
         let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
         let public_key = key_pair.public_key();
@@ -980,9 +982,11 @@ pub mod tests {
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
 
         let project_dir = git_repo_path.join("github.com/test/repo");
-        let pending_dir = project_dir.join("asfaload.signers.pending");
+        let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        let complete_dir = project_dir.join(SIGNERS_DIR);
         tokio::fs::create_dir_all(&pending_dir).await?;
-        let pending_signers_path = pending_dir.join("index.json");
+        let pending_signers_path = pending_dir.join(SIGNERS_FILE);
+        let complete_signers_path = complete_dir.join(SIGNERS_FILE);
         tokio::fs::write(pending_signers_path.clone(), &signers_json).await?;
 
         let digest = sha512_for_file(&pending_signers_path)?;
@@ -990,30 +994,29 @@ pub mod tests {
         let signature = secret_key.sign(&digest)?;
 
         let port = get_random_port().await?;
+        init_git_repo(&git_repo_path)?;
         let config = build_test_config(&git_repo_path, port);
-        let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
+        let config_clone = config.clone();
+        let (guard, log_path, _subscriber_guard) = setup_file_logging(temp_dir.path())?;
+        println!("Logs of server available at {}", log_path.display());
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
 
-        let app = axum::Router::new()
-            .route(
-                "/signatures",
-                axum::routing::post(rest_api::handlers::submit_signature_handler),
-            )
-            .with_state(app_state);
+        let client = reqwest::Client::new();
+        let payload = json!(&SubmitSignatureRequest {
+            file_path: "github.com/test/repo/asfaload.signers.pending/index.json".to_string(),
+            public_key: public_key.to_base64(),
+            signature: signature.to_base64(),
+        });
+        let response = client
+            .post(url_for("signatures", port))
+            .json(&payload)
+            .send()
+            .await?;
 
-        let server = axum_test::TestServer::new(app)?;
+        assert_eq!(response.status(), StatusCode::OK);
 
-        let response = server
-            .post("/signatures")
-            .json(&SubmitSignatureRequest {
-                file_path: "github.com/test/repo/asfaload.signers.pending/index.json".to_string(),
-                public_key: public_key.to_base64(),
-                signature: signature.to_base64(),
-            })
-            .await;
-
-        response.assert_status_ok();
-
-        let response_body = response.json::<SubmitSignatureResponse>();
+        let response_body = response.json::<SubmitSignatureResponse>().await?;
 
         assert!(
             response_body.is_complete,
@@ -1022,9 +1025,10 @@ pub mod tests {
 
         // Wait for the commit to be processed
         let expected_commit_message = format!(
-            "completed signature collection for {}",
-            "github.com/test/repo/asfaload.signers.pending/index.json"
+            "completed signature collection for {}/{}",
+            "github.com/test/repo", SIGNERS_DIR
         );
+
         wait_for_commit(git_repo_path.clone(), &expected_commit_message, None).await?;
 
         // Verify the commit was created with correct message
@@ -1034,7 +1038,7 @@ pub mod tests {
             "Commit message doesn't match expected format"
         );
 
-        let signature_file = format!("{}.signatures.json", pending_signers_path.display());
+        let signature_file = format!("{}.{}", complete_signers_path.display(), SIGNATURES_SUFFIX);
         let signature_file = std::path::PathBuf::from(signature_file);
         assert!(
             signature_file.exists(),
@@ -1042,8 +1046,12 @@ pub mod tests {
         );
 
         // Verify the signature file is tracked in git
-        let signature_file_path =
-            "github.com/test/repo/asfaload.signers.pending/index.json.signatures.json";
+        let signature_file_path_string = signature_file
+            .strip_prefix(&git_repo_path)?
+            .to_string_lossy()
+            .to_string();
+        let signature_file_path = signature_file_path_string.as_str();
+        drop(guard);
         assert!(
             file_is_tracked_in_git(&git_repo_path, signature_file_path)?,
             "Signature file should be tracked in git"
@@ -1055,6 +1063,7 @@ pub mod tests {
             "Signature file should be in the latest git commit"
         );
 
+        server_handle.abort();
         Ok(())
     }
 
