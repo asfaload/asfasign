@@ -4,7 +4,9 @@ use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
 };
 use reqwest::Client;
-use rest_api_types::{ListPendingResponse, RegisterReleaseResponse, SubmitSignatureRequest, SubmitSignatureResponse};
+use rest_api_types::{
+    ListPendingResponse, RegisterReleaseResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+};
 use serde_json::Value;
 
 /// A client for interacting with the REST API with authentication
@@ -300,7 +302,10 @@ pub async fn register_release(
 
     if !response.status().is_success() {
         let status = response.status();
-        let error_text = response.text().await.unwrap_or_default();
+        let error_text = match response.text().await {
+            Ok(text) => text,
+            Err(e) => format!("(could not read response body: {})", e),
+        };
         return Err(AuthError::AuthDataPreparationError(format!(
             "POST {}: {} - {}",
             url, status, error_text
