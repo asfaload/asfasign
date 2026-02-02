@@ -3,11 +3,13 @@ pub mod tests {
     use anyhow::Result;
     use axum::http::StatusCode;
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
+    use features_lib::{
+        AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait,
+    };
     use rest_api::server::run_server;
+    use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
     use rest_api_types::{RegisterReleaseRequest, rustls::setup_crypto_provider};
-    use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
-    use features_lib::{AsfaloadPublicKeyTrait, AsfaloadKeyPairTrait, AsfaloadSignatureTrait, AsfaloadSecretKeys, AsfaloadPublicKeys, AsfaloadKeyPairs};
     use std::fs;
     use tempfile::TempDir;
     use tokio::time::Duration;
