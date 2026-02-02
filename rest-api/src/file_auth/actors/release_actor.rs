@@ -1,6 +1,7 @@
 use super::git_actor::{CommitFile, GitActor};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
 use crate::file_auth::releasers::ReleaseAdders;
+use crate::helpers::{self, create_empty_aggregate_signature};
 use crate::path_validation::NormalisedPaths;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
@@ -119,10 +120,30 @@ impl ReleaseActor {
             "Index file written",
         );
 
+        // Create empty aggregate signature for the index file
+        let signature_file_path = create_empty_aggregate_signature(&index_file_path)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    request_id = %msg.request_id,
+                    actor = %ACTOR_NAME,
+                    error = %e,
+                    "Could not create empty aggregate signature for index file"
+                );
+                e
+            })?;
+
+        info!(
+            request_id = %msg.request_id,
+            actor = %ACTOR_NAME,
+            signature_path = %signature_file_path,
+            "Empty aggregate signature file created",
+        );
+
         let commit_msg = CommitFile {
-            file_paths: vec![index_file_path.clone()],
+            file_paths: vec![index_file_path.clone(), signature_file_path],
             commit_message: format!(
-                "Add index for {}/{}/{}",
+                "Add index and signature for {}/{}/{}",
                 release_info.owner(),
                 release_info.repo(),
                 release_info.tag()
