@@ -2,6 +2,7 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
+    use common::fs::names::pending_signatures_path_for;
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{
         AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait,
@@ -112,6 +113,37 @@ pub mod tests {
             "Expected index_file_path to be a string"
         );
 
+        // Verify index file exists and get its path from response
+        let index_path_str = response_json["index_file_path"]
+            .as_str()
+            .expect("index_file_path should be a string");
+
+        assert_eq!(
+            index_path_str,
+            "github.com/testowner/testrepo/releases/tag/v1.0.0/asfaload.index.json"
+        );
+
+        // The response gives a relative path, so we need to join it with git_repo_path
+        let index_path = git_repo_path.join(index_path_str);
+        assert!(
+            index_path.exists(),
+            "Index file should exist at {}",
+            index_path.display()
+        );
+
+        // Verify signature file exists
+        let sig_path = pending_signatures_path_for(&index_path)?;
+        assert!(
+            sig_path.exists(),
+            "Signature file should exist at {}",
+            sig_path.display()
+        );
+
+        let sig_content = tokio::fs::read_to_string(&sig_path).await?;
+        assert_eq!(
+            sig_content, "{}",
+            "Signature file should contain empty object"
+        );
         server_handle.abort();
         Ok(())
     }

@@ -1,4 +1,3 @@
-use common::fs::names::pending_signatures_path_for;
 use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
@@ -8,6 +7,7 @@ use signatures::types::AsfaloadPublicKeys;
 use signers_file_types::SignersConfig;
 use std::path::PathBuf;
 
+use crate::helpers::create_empty_aggregate_signature;
 use crate::path_validation::NormalisedPaths;
 
 #[derive(Debug, Clone)]
@@ -159,46 +159,23 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             "Wrote signers file to disk"
         );
 
-        // Write an empty signers file so missing signatures works for these newly added signers
-        // files
-        let pending_signers_sig_path =
-            pending_signatures_path_for(signers_normalised_paths.absolute_path());
-        match pending_signers_sig_path {
-            Ok(ref path) => {
-                tokio::fs::write(path, "{}").await.map_err(|e| {
-                    tracing::error!(
-                        request_id = %msg.request_id,
-                        error = %e,
-                        path = %path.display(),
-                        "Failed to write pending signers signature file"
-                    );
-                    ApiError::FileWriteFailed(format!(
-                        "Failed to write pending signers signature file {}: {}",
-                        path.display(),
-                        e
-                    ))
-                })?;
-
-                tracing::debug!(
-                    request_id = %msg.request_id,
-                    file_path = %path.display(),
-                    "Wrote pending signers signature file to disk"
-                );
-            }
-
-            // As the path is constructed above it should not occur
-            Err(e) => {
+        // Write an empty signature file so missing signatures can be reported
+        let signature_file_path = create_empty_aggregate_signature(&signers_normalised_paths)
+            .await
+            .map_err(|e| {
                 tracing::error!(
                     request_id = %msg.request_id,
                     error = %e,
-                    "Failed to compute pending signers signature path"
+                    "Failed to create empty aggregate signature for signers file"
                 );
-                return Err(ApiError::FileWriteFailed(format!(
-                    "Failed to compute pending signers signature path: {}",
-                    e
-                )));
-            }
-        }
+                e
+            })?;
+
+        tracing::debug!(
+            request_id = %msg.request_id,
+            file_path = %signature_file_path,
+            "Created empty aggregate signature file"
+        );
 
         let history_json = "[]";
         tokio::fs::write(&history_normalised_paths, history_json)
