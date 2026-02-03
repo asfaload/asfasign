@@ -192,8 +192,11 @@ where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    let signatures_map: HashMap<String, String> =
-        serde_json::from_slice(signatures_content_in.borrow())?;
+    let signature_content = signatures_content_in.borrow();
+    if signature_content.is_empty() {
+        return Ok(HashMap::new());
+    };
+    let signatures_map: HashMap<String, String> = serde_json::from_slice(signature_content)?;
 
     parse_individual_signatures_from_map(signatures_map)
 }
@@ -4592,6 +4595,19 @@ mod tests {
             Ok(_) => panic!("Expected JsonError but got Ok value!"),
             Err(AggregateSignatureError::JsonError(_)) => {}
             Err(e) => panic!("Expected JsonError but got {}", e),
+        }
+    }
+
+    #[test]
+    fn test_get_individual_signatures_from_bytes_empty() {
+        let empty = b"".to_vec();
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            get_individual_signatures_from_bytes(empty);
+
+        match result {
+            Ok(v) => assert_eq!(v.len(), 0),
+            Err(e) => panic!("Expected Ok value but got error {}", e),
         }
     }
 }
