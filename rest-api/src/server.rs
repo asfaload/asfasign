@@ -2,8 +2,8 @@ use crate::{
     auth_middleware::auth_middleware,
     handlers::{
         add_file_handler, get_file_handler, get_pending_signatures_handler,
-        get_signature_status_handler, register_release_handler, register_repo_handler,
-        submit_signature_handler,
+        get_signature_status_handler, get_signers_handler, register_release_handler,
+        register_repo_handler, submit_signature_handler,
     },
     state::init_state,
 };
@@ -62,11 +62,13 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
             get(get_signature_status_handler),
         );
     let files_router = Router::new().route("/files/{*file_path}", get(get_file_handler));
+    let signers_router = Router::new().route("/get-signers/{*file_path}", get(get_signers_handler));
     let app = register_router
         .merge(release_router)
         .merge(add_file_router)
         .merge(signature_router)
         .merge(files_router)
+        .merge(signers_router)
         .layer(GovernorLayer::new(governor_conf))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))

@@ -652,3 +652,97 @@ pub async fn get_file_handler(
 
     Ok((axum::http::StatusCode::OK, headers, content))
 }
+
+/// Handler to fetch the signers file for a given file path.
+///
+/// This endpoint takes a file path and returns the signers configuration
+/// that applies to that file. It uses find_global_signers_for to locate
+/// the appropriate signers file by traversing parent directories.
+///
+/// # Arguments
+/// * `state` - Application state with git repo path
+/// * `axum::extract::Path(file_path)` - URL path parameter containing the file path
+///
+/// # Returns
+/// The signers file content as JSON
+///
+/// # Errors
+/// Returns `ApiError` if:
+/// - File path is invalid or contains traversal attempts
+/// - No signers file found for the given path
+/// - Signers file cannot be read
+pub async fn get_signers_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(file_path): axum::extract::Path<String>,
+) -> Result<(axum::http::StatusCode, axum::http::HeaderMap, Vec<u8>), ApiError> {
+    use axum::http::header;
+    use common::fs::names::find_global_signers_for;
+
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        file_path = %file_path,
+        "Received get_signers request"
+    );
+
+    // Normalize the file path
+    let normalised_paths =
+        NormalisedPaths::new(state.git_repo_path.clone(), PathBuf::from(&file_path))
+            .await
+            .map_err(|e| ApiError::InvalidFilePath(format!("Invalid file path: {}", e)))?;
+
+    let absolute_path = normalised_paths.absolute_path();
+
+    // Find the global signers file for this path
+    let signers_path = find_global_signers_for(&absolute_path).map_err(|e| {
+        tracing::warn!(
+            request_id = %request_id,
+            file_path = %file_path,
+            absolute_path = %absolute_path.display(),
+            error = %e,
+            "No signers file found for path"
+        );
+        ApiError::FileNotFound(format!(
+            "No signers file found for: {}. Error: {}",
+            file_path, e
+        ))
+    })?;
+
+    // Read the signers file content
+    let content = tokio::fs::read(&signers_path).await.map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            signers_path = %signers_path.display(),
+            error = %e,
+            "Failed to read signers file"
+        );
+        ApiError::InternalServerError(format!("Failed to read signers file: {}", e))
+    })?;
+
+    tracing::info!(
+        request_id = %request_id,
+        file_path = %file_path,
+        signers_path = %signers_path.display(),
+        size = content.len(),
+        "Successfully retrieved signers file"
+    );
+
+    // Build response headers
+    let mut response_headers = axum::http::HeaderMap::new();
+    response_headers.insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/json"),
+    );
+    response_headers.insert(
+        header::CONTENT_LENGTH,
+        header::HeaderValue::from_str(&content.len().to_string())
+            .unwrap_or_else(|_| header::HeaderValue::from_static("0")),
+    );
+
+    Ok((axum::http::StatusCode::OK, response_headers, content))
+}

@@ -214,6 +214,20 @@ pub enum Commands {
         #[arg(short = 'u', long)]
         backend_url: Option<String>,
     },
+
+    /// Download a file with signature verification
+    Download {
+        /// URL of the file to download (e.g., https://github.com/user/repo/releases/download/v1.0.0/file.tar.gz)
+        file_url: String,
+
+        /// Output file path (optional, defaults to filename from URL)
+        #[arg(short = 'o', long)]
+        output: Option<PathBuf>,
+
+        /// Backend/mirror URL (optional, defaults to DEFAULT_BACKEND)
+        #[arg(short = 'u', long)]
+        backend_url: Option<String>,
+    },
 }
 
 const ENV_VAR_PREFIX: &str = "ASFALOAD";
@@ -244,6 +258,7 @@ impl Commands {
             Self::ListPending { .. } => "LIST_PENDING",
             Self::SignPending { .. } => "SIGN_PENDING",
             Self::RegisterRelease { .. } => "REGISTER_RELEASE",
+            Self::Download { .. } => "DOWNLOAD",
         }
     }
 

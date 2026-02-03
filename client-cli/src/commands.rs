@@ -16,6 +16,7 @@ pub mod signers_file;
 pub mod verify_sig;
 use anyhow::Result;
 
+pub mod download;
 pub mod register_release;
 
 /// Dispatches the command to the appropriate handler
@@ -208,6 +209,21 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 secret_key,
                 password.as_str(),
             ))?
+        }
+        Commands::Download {
+            file_url,
+            output,
+            backend_url,
+        } => {
+            let url = backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(download::handle_download_command(
+                file_url,
+                output.as_ref(),
+                &url,
+            ))?;
         }
     }
     Ok(())
