@@ -229,7 +229,9 @@ fn verify_file_hash<T: std::borrow::Borrow<Vec<u8>>>(
         HashAlgorithm::Sha256 => sha256_for_content(file_content)?,
         HashAlgorithm::Sha512 => {
             let hash = sha512_for_content(file_content)?;
-            hash.to_string().split(':').nth(1).unwrap_or("").to_string()
+            match hash {
+                AsfaloadHashes::Sha512(bytes) => hex::encode(bytes),
+            }
         }
         HashAlgorithm::Sha1 => {
             anyhow::bail!("SHA-1 use is discouraged, not implemented")
