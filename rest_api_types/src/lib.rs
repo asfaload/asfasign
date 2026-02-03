@@ -1,6 +1,6 @@
 pub mod errors {
 
-    use axum::{http::StatusCode, response::IntoResponse, Json};
+    use axum::{Json, http::StatusCode, response::IntoResponse};
     use thiserror::Error;
 
     use super::models::ErrorResponse;
@@ -469,7 +469,7 @@ pub mod github_helpers {
 }
 pub mod rustls {
     pub fn setup_crypto_provider() {
-        use rustls::crypto::{ring, CryptoProvider};
+        use rustls::crypto::{CryptoProvider, ring};
 
         // Use the provider corresponding to the 'ring' feature you selected
         let provider = ring::default_provider();
