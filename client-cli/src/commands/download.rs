@@ -102,20 +102,7 @@ pub async fn handle_download_command(
 /// Construct the index file path for the get-signers endpoint
 /// This returns the path to the index file relative to the git repo root
 fn construct_index_file_path(file_url: &reqwest::Url) -> Result<String> {
-    // Extract host and path from file URL
-    let host = file_url.host_str().context("URL has no host")?;
-    let path = file_url.path();
-
-    // Remove leading slash from path if present
-    let path = path.strip_prefix('/').unwrap_or(path);
-
-    // Remove filename from path to get directory, then add INDEX_FILE
-    let dir_path = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
-
-    // Translate GitHub release path: download -> tag
-    let translated_path = translate_github_release_path(dir_path);
-
-    Ok(format!("{}/{}/{}", host, translated_path, INDEX_FILE))
+    construct_file_repo_path(file_url, INDEX_FILE)
 }
 
 /// Construct a file path for the /files/ endpoint
