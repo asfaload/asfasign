@@ -185,6 +185,17 @@ where
     parse_individual_signatures_from_map(signatures_map)
 }
 
+pub fn get_individual_signatures_from_bytes<P, S>(
+    signatures_content: Vec<u8>,
+) -> Result<HashMap<P, S>, AggregateSignatureError>
+where
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
+    let signatures_map: HashMap<String, String> = serde_json::from_slice(&signatures_content)?;
+
+    parse_individual_signatures_from_map(signatures_map)
+}
 pub fn parse_individual_signatures_from_map<P, S>(
     signatures_map: HashMap<String, String>,
 ) -> Result<HashMap<P, S>, AggregateSignatureError>
@@ -4537,5 +4548,49 @@ mod tests {
         assert_eq!(signatures.len(), 1);
         assert!(signatures.contains_key(&pubkey));
         Ok(())
+    }
+
+    #[test]
+    fn test_get_individual_signatures_from_bytes_valid() -> Result<()> {
+        let test_keys = TestKeys::new(2);
+        let pubkey1 = test_keys.pub_key(0).unwrap().clone();
+        let seckey1 = test_keys.sec_key(0).unwrap();
+        let pubkey2 = test_keys.pub_key(1).unwrap().clone();
+        let seckey2 = test_keys.sec_key(1).unwrap();
+
+        let data = common::sha512_for_content(b"test data".to_vec())?;
+        let sig1 = seckey1.sign(&data)?;
+        let sig2 = seckey2.sign(&data)?;
+
+        let sig_map: HashMap<String, String> =
+            std::iter::once((pubkey1.to_base64(), sig1.to_base64()))
+                .chain(std::iter::once((pubkey2.to_base64(), sig2.to_base64())))
+                .collect();
+
+        let json_bytes = serde_json::to_vec(&sig_map)?;
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            get_individual_signatures_from_bytes(json_bytes);
+
+        assert!(result.is_ok());
+        let signatures = result.unwrap();
+        assert_eq!(signatures.len(), 2);
+        assert!(signatures.contains_key(&pubkey1));
+        assert!(signatures.contains_key(&pubkey2));
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_individual_signatures_from_bytes_invalid_json() {
+        let invalid_json = b"invalid json content".to_vec();
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            get_individual_signatures_from_bytes(invalid_json);
+
+        match result {
+            Ok(_) => panic!("Expected JsonError but got Ok value!"),
+            Err(AggregateSignatureError::JsonError(_)) => {}
+            Err(e) => panic!("Expected JsonError but got {}", e),
+        }
     }
 }

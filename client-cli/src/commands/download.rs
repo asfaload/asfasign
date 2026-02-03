@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use constants::{INDEX_FILE, SIGNATURES_SUFFIX};
 use features_lib::{
     AsfaloadHashes,
-    aggregate_signature_helpers::{check_groups, parse_individual_signatures_from_map},
+    aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
     sha512_for_content,
 };
 use reqwest::Client;
@@ -71,14 +71,12 @@ pub async fn handle_download_command(
     let signatures_content = download_file(&signatures_url)
         .await
         .context("Failed to download signatures file")?;
-    let signatures: HashMap<String, String> =
-        serde_json::from_slice(&signatures_content).context("Failed to parse signatures file")?;
 
     // Verify signatures of the index file
     let file_hash = sha512_for_content(index_content.clone())
         .context("Failed to compute hash of index file")?;
 
-    verify_signatures(&signatures, &signers_config, &file_hash)
+    verify_signatures(signatures_content, &signers_config, &file_hash)
         .context("Signature verification failed")?;
 
     println!("✓ Signatures verified successfully");
@@ -171,13 +169,13 @@ async fn download_file(url: &str) -> Result<Vec<u8>> {
 
 /// Verify signatures meet threshold requirements
 fn verify_signatures(
-    signatures: &HashMap<String, String>,
+    signatures_content: Vec<u8>,
     signers_config: &SignersConfig,
     data: &AsfaloadHashes,
 ) -> Result<()> {
     let mut typed_signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures> = HashMap::new();
 
-    let parsed_signatures = parse_individual_signatures_from_map(signatures.clone())
+    let parsed_signatures = get_individual_signatures_from_bytes(signatures_content.clone())
         .map_err(|e| anyhow::anyhow!("Failed to parse signatures: {}", e))?;
 
     for (pubkey, signature) in parsed_signatures {

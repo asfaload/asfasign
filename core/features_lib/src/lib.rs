@@ -170,6 +170,7 @@ pub mod aggregate_signature_helpers {
         check_groups, get_authorized_signers_for_file, load_signers_config,
     };
     use aggregate_signature::{
+        get_individual_signatures_from_bytes as get_individual_signatures_from_bytes_ori,
         get_individual_signatures_from_file as get_individual_signatures_ori,
         parse_individual_signatures_from_map as parse_individual_signatures_from_map_ori,
     };
@@ -185,6 +186,18 @@ pub mod aggregate_signature_helpers {
         AsfaloadSignatures: AsfaloadSignatureTrait,
     {
         get_individual_signatures_ori::<AsfaloadPublicKeys, AsfaloadSignatures, _>(sig_file_path)
+    }
+
+    pub fn get_individual_signatures_from_bytes(
+        signatures_content: Vec<u8>,
+    ) -> Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, AggregateSignatureError>
+    where
+        AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+        AsfaloadSignatures: AsfaloadSignatureTrait,
+    {
+        get_individual_signatures_from_bytes_ori::<AsfaloadPublicKeys, AsfaloadSignatures>(
+            signatures_content,
+        )
     }
 
     pub fn parse_individual_signatures_from_map(
