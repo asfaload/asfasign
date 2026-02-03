@@ -3,6 +3,9 @@ SHELL:=/bin/bash
 
 ## Run tests of all components
 test:
+	$(MAKE) clippy
+	$(MAKE) check-format
+
 	cargo test
 	# Some integration tests require the rest-api to accept registrations of
 	# signers files served on localhost, which should not happen in production.
@@ -13,6 +16,18 @@ test:
 ## Run tests with test-utils feature enabled (for integration tests)
 test-with-test-utils:
 	cargo test --features test-utils
+
+## Fix rust code formatting
+format:
+	cargo fmt --verbose
+
+## Check rust code formatting without fixing
+check-format:
+	cargo fmt --check
+
+## run clippy
+clippy:
+	cargo clippy
 
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"
