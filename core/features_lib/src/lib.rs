@@ -166,9 +166,12 @@ impl SignersFileTrait for SignersFile {
 pub mod aggregate_signature_helpers {
     use std::{collections::HashMap, path::Path};
 
-    use aggregate_signature::get_individual_signatures as get_individual_signatures_ori;
     pub use aggregate_signature::{
         check_groups, get_authorized_signers_for_file, load_signers_config,
+    };
+    use aggregate_signature::{
+        get_individual_signatures as get_individual_signatures_ori,
+        parse_individual_signatures_from_map as parse_individual_signatures_from_map_ori,
     };
     use common::errors::AggregateSignatureError;
     use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
@@ -182,5 +185,17 @@ pub mod aggregate_signature_helpers {
         AsfaloadSignatures: AsfaloadSignatureTrait,
     {
         get_individual_signatures_ori::<AsfaloadPublicKeys, AsfaloadSignatures, _>(sig_file_path)
+    }
+
+    pub fn parse_individual_signatures_from_map(
+        signatures_map: HashMap<String, String>,
+    ) -> Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, AggregateSignatureError>
+    where
+        AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+        AsfaloadSignatures: AsfaloadSignatureTrait,
+    {
+        parse_individual_signatures_from_map_ori::<AsfaloadPublicKeys, AsfaloadSignatures>(
+            signatures_map,
+        )
     }
 }

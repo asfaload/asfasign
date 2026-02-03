@@ -13,10 +13,14 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use constants::{INDEX_FILE, SIGNATURES_SUFFIX};
-use features_lib::{AsfaloadHashes, aggregate_signature_helpers::check_groups, sha512_for_content};
+use features_lib::{
+    AsfaloadHashes,
+    aggregate_signature_helpers::{check_groups, parse_individual_signatures_from_map},
+    sha512_for_content,
+};
 use reqwest::Client;
 use sha2::{Digest, Sha256};
-use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 use signers_file_types::SignersConfig;
 
@@ -171,17 +175,14 @@ fn verify_signatures(
     signers_config: &SignersConfig,
     data: &AsfaloadHashes,
 ) -> Result<()> {
-    // Parse signatures into typed format
     let mut typed_signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures> = HashMap::new();
 
-    // FIXME: Check if we should refactor to use  get_individual_signatures from core
-    for (pubkey_b64, sig_b64) in signatures {
-        let pubkey =
-            AsfaloadPublicKeys::from_base64(pubkey_b64).context("Failed to parse public key")?;
-        let signature =
-            AsfaloadSignatures::from_base64(sig_b64).context("Failed to parse signature")?;
+    let parsed_signatures = parse_individual_signatures_from_map(signatures.clone())
+        .map_err(|e| anyhow::anyhow!("Failed to parse signatures: {}", e))?;
 
-        // Verify signature is valid
+    for (pubkey, signature) in parsed_signatures {
+        let pubkey_b64 = pubkey.to_base64();
+
         if pubkey.verify(&signature, data).is_err() {
             eprintln!("Warning: Invalid signature from key {}", pubkey_b64);
             continue;
@@ -190,7 +191,6 @@ fn verify_signatures(
         typed_signatures.insert(pubkey, signature);
     }
 
-    // Check if artifact_signers threshold is met
     let artifact_groups = signers_config.artifact_signers();
     if artifact_groups.is_empty() {
         anyhow::bail!("No artifact_signers group defined in signers config");

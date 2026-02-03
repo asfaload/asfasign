@@ -176,15 +176,24 @@ where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    let mut signatures: HashMap<P, S> = HashMap::new();
-    // Attempt to read the signatures file, returning an empty set if not found.
     let signatures_map: HashMap<String, String> = match std::fs::File::open(&sig_file_path) {
         Ok(file) => serde_json::from_reader(file)?,
         Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
         Err(e) => return Err(e.into()),
     };
 
-    // Parse each entry
+    parse_individual_signatures_from_map(signatures_map)
+}
+
+pub fn parse_individual_signatures_from_map<P, S>(
+    signatures_map: HashMap<String, String>,
+) -> Result<HashMap<P, S>, AggregateSignatureError>
+where
+    P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
+    S: AsfaloadSignatureTrait,
+{
+    let mut signatures: HashMap<P, S> = HashMap::new();
+
     for (pubkey_b64, sig_b64) in signatures_map {
         let pubkey = P::from_base64(&pubkey_b64)
             .map_err(|e| AggregateSignatureError::PublicKey(format!("{}", e)))?;
