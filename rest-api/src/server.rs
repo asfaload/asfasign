@@ -61,8 +61,7 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
             "/signatures/{*file_path}",
             get(get_signature_status_handler),
         );
-    let files_router = Router::new()
-        .route("/files/{*file_path}", get(get_file_handler));
+    let files_router = Router::new().route("/files/{*file_path}", get(get_file_handler));
     let app = register_router
         .merge(release_router)
         .merge(add_file_router)

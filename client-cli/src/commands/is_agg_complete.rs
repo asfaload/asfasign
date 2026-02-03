@@ -1,8 +1,9 @@
 use crate::error::Result;
 
 use features_lib::{
+    SignedFileLoader,
     aggregate_signature_helpers::{check_groups, get_individual_signatures, load_signers_config},
-    sha512_for_file, SignedFileLoader,
+    sha512_for_file,
 };
 use std::path::Path;
 

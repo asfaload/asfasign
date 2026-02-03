@@ -329,8 +329,7 @@ mod tests {
         assert_eq!(initial_count, 5, "Should have 5 initial entries");
 
         // Act - Spawn the actor using the correct Kameo pattern
-        let actor_ref: kameo::actor::ActorRef<NonceCleanupActor> =
-            NonceCleanupActor::spawn(db);
+        let actor_ref: kameo::actor::ActorRef<NonceCleanupActor> = NonceCleanupActor::spawn(db);
         actor_ref.wait_for_startup_result().await?;
         assert!(actor_ref.is_alive(), "Actor should be alive");
 

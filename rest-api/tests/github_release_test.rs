@@ -2,7 +2,6 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
-    use common::fs::names::pending_signatures_path_for;
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{
         AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait,
@@ -15,6 +14,8 @@ pub mod tests {
     use tempfile::TempDir;
     use tokio::time::Duration;
 
+    #[cfg(feature = "test-utils")]
+    use common::fs::names::pending_signatures_path_for;
     #[cfg(feature = "test-utils")]
     use rest_api_test_helpers::print_logs;
     #[cfg(feature = "test-utils")]

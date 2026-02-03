@@ -10,12 +10,8 @@ pub async fn handle_register_release_command(
 ) -> Result<()> {
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
 
-    let response = crate::rest_client::register_release(
-        backend_url,
-        release_url,
-        secret_key,
-    )
-    .await?;
+    let response =
+        crate::rest_client::register_release(backend_url, release_url, secret_key).await?;
 
     if response.success {
         println!("Release registered successfully!");

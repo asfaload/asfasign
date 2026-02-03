@@ -1,4 +1,5 @@
 [workspace]
+resolver = "3"
 members = [
   "core/signatures",
   "core/signers_file",
@@ -12,7 +13,8 @@ members = [
   "rest-api",
   "rest_api_test_helpers",
   "rest_api_types",
-  "rest_api_auth", "core/constants",
+  "rest_api_auth",
+  "core/constants",
 ]
 exclude = ["rest_api_auth", "client_cli"]
 
