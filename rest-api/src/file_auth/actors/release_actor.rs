@@ -1,7 +1,7 @@
 use super::git_actor::{CommitFile, GitActor};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
 use crate::file_auth::releasers::ReleaseAdders;
-use crate::helpers::{self, create_empty_aggregate_signature};
+use crate::helpers::create_empty_aggregate_signature;
 use crate::path_validation::NormalisedPaths;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
