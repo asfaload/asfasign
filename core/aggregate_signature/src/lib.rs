@@ -4404,4 +4404,138 @@ mod tests {
         assert!(signatures.is_empty());
         Ok(())
     }
+
+    #[test]
+    fn test_parse_individual_signatures_from_map_valid() -> Result<()> {
+        let test_keys = TestKeys::new(2);
+        let pubkey1 = test_keys.pub_key(0).unwrap().clone();
+        let seckey1 = test_keys.sec_key(0).unwrap();
+        let pubkey2 = test_keys.pub_key(1).unwrap().clone();
+        let seckey2 = test_keys.sec_key(1).unwrap();
+
+        let data = common::sha512_for_content(b"test data".to_vec())?;
+        let sig1 = seckey1.sign(&data)?;
+        let sig2 = seckey2.sign(&data)?;
+
+        let sig_map: HashMap<String, String> =
+            std::iter::once((pubkey1.to_base64(), sig1.to_base64()))
+                .chain(std::iter::once((pubkey2.to_base64(), sig2.to_base64())))
+                .collect();
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            parse_individual_signatures_from_map(sig_map);
+
+        assert!(result.is_ok());
+        let signatures = result.unwrap();
+        assert_eq!(signatures.len(), 2);
+        assert!(signatures.contains_key(&pubkey1));
+        assert!(signatures.contains_key(&pubkey2));
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_individual_signatures_from_map_empty() -> Result<()> {
+        let empty_map: HashMap<String, String> = HashMap::new();
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            parse_individual_signatures_from_map(empty_map);
+
+        assert!(result.is_ok());
+        let signatures = result.unwrap();
+        assert!(signatures.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_individual_signatures_from_map_invalid_pubkey() -> Result<()> {
+        let test_keys = TestKeys::new(1);
+        let seckey = test_keys.sec_key(0).unwrap();
+
+        let data = common::sha512_for_content(b"test data".to_vec())?;
+        let sig = seckey.sign(&data)?;
+
+        let mut sig_map: HashMap<String, String> = HashMap::new();
+        sig_map.insert("invalid_base64_pubkey!!!".to_string(), sig.to_base64());
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            parse_individual_signatures_from_map(sig_map);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AggregateSignatureError::PublicKey(_) => {}
+            _ => panic!("Expected PublicKey error"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_individual_signatures_from_map_invalid_signature() -> Result<()> {
+        let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+
+        let mut sig_map: HashMap<String, String> = HashMap::new();
+        sig_map.insert(
+            pubkey.to_base64(),
+            "invalid_base64_signature!!!".to_string(),
+        );
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            parse_individual_signatures_from_map(sig_map);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AggregateSignatureError::Signature(_) => {}
+            _ => panic!("Expected Signature error"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_individual_signatures_from_map_first_entry_invalid() -> Result<()> {
+        let test_keys = TestKeys::new(2);
+        let pubkey2 = test_keys.pub_key(1).unwrap().clone();
+        let seckey2 = test_keys.sec_key(1).unwrap();
+
+        let data = common::sha512_for_content(b"test data".to_vec())?;
+        let sig2 = seckey2.sign(&data)?;
+
+        let mut sig_map: HashMap<String, String> = HashMap::new();
+        sig_map.insert(
+            "invalid_base64_pubkey".to_string(),
+            "any_signature".to_string(),
+        );
+        sig_map.insert(pubkey2.to_base64(), sig2.to_base64());
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            parse_individual_signatures_from_map(sig_map);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AggregateSignatureError::PublicKey(_) => {}
+            _ => panic!("Expected PublicKey error"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_individual_signatures_from_map_single_entry() -> Result<()> {
+        let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+        let seckey = test_keys.sec_key(0).unwrap();
+
+        let data = common::sha512_for_content(b"test data".to_vec())?;
+        let sig = seckey.sign(&data)?;
+
+        let sig_map: HashMap<String, String> =
+            std::iter::once((pubkey.to_base64(), sig.to_base64())).collect();
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            parse_individual_signatures_from_map(sig_map);
+
+        assert!(result.is_ok());
+        let signatures = result.unwrap();
+        assert_eq!(signatures.len(), 1);
+        assert!(signatures.contains_key(&pubkey));
+        Ok(())
+    }
 }
