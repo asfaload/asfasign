@@ -1,7 +1,7 @@
+use ClientCliError::PasswordStrengthError;
 use std::io::Read;
 use std::path::Path;
-use zxcvbn::{zxcvbn, Score};
-use ClientCliError::PasswordStrengthError;
+use zxcvbn::{Score, zxcvbn};
 
 use crate::error::{ClientCliError, Result};
 use features_lib::{AsfaloadSecretKeys, AsfaloadSignatureTrait};
@@ -105,7 +105,7 @@ fn validate_password(password: &str) -> Result<String> {
     // Check score
     match estimate.score() {
         Score::Zero | Score::One | Score::Two => {
-            return Err(PasswordStrengthError("Password is too weak".to_string()))
+            return Err(PasswordStrengthError("Password is too weak".to_string()));
         }
         // The enum is marked non-exhaustive, so we only match on the weaker ones, the rest is ok
         _ => {}

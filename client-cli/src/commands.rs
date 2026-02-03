@@ -1,8 +1,8 @@
 use crate::{
     cli::{Cli, Commands, DEFAULT_BACKEND},
     utils::{
-        get_password,
         PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
+        get_password,
     },
 };
 

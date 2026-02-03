@@ -1,7 +1,7 @@
 use crate::error::Result;
 use features_lib::{
-    sha512_for_content, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait,
-    AsfaloadSecretKeys,
+    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
+    sha512_for_content,
 };
 
 /// Handle the sign-pending command.
