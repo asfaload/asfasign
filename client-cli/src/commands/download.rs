@@ -71,8 +71,8 @@ pub async fn handle_download_command(
         .context("Failed to download signatures file")?;
 
     // Verify signatures of the index file
-    let file_hash = sha512_for_content(index_content.clone())
-        .context("Failed to compute hash of index file")?;
+    let file_hash =
+        sha512_for_content(&index_content).context("Failed to compute hash of index file")?;
 
     verify_signatures(signatures_content, &signers_config, &file_hash)
         .context("Signature verification failed")?;
@@ -86,7 +86,7 @@ pub async fn handle_download_command(
         .context("Failed to download file")?;
 
     // Verify file hash
-    verify_file_hash(&index, filename, file_content.clone())?;
+    verify_file_hash(&index, filename, &file_content)?;
 
     // Save file
     let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
@@ -173,7 +173,7 @@ fn verify_signatures(
 ) -> Result<()> {
     let mut typed_signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures> = HashMap::new();
 
-    let parsed_signatures = get_individual_signatures_from_bytes(signatures_content.clone())
+    let parsed_signatures = get_individual_signatures_from_bytes(signatures_content)
         .map_err(|e| anyhow::anyhow!("Failed to parse signatures: {}", e))?;
 
     for (pubkey, signature) in parsed_signatures {
@@ -207,7 +207,10 @@ fn verify_signatures(
 }
 
 /// Compute SHA-256 hash for content
-fn sha256_for_content(content: Vec<u8>) -> Result<String, std::io::Error> {
+fn sha256_for_content<T: std::borrow::Borrow<Vec<u8>>>(
+    content_in: T,
+) -> Result<String, std::io::Error> {
+    let content = content_in.borrow();
     if content.is_empty() {
         Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
@@ -220,7 +223,12 @@ fn sha256_for_content(content: Vec<u8>) -> Result<String, std::io::Error> {
 }
 
 /// Verify downloaded file hash matches index
-fn verify_file_hash(index: &AsfaloadIndex, filename: &str, file_content: Vec<u8>) -> Result<()> {
+fn verify_file_hash<T: std::borrow::Borrow<Vec<u8>>>(
+    index: &AsfaloadIndex,
+    filename: &str,
+    file_content_in: T,
+) -> Result<()> {
+    let file_content = file_content_in.borrow();
     let file_entry = index
         .published_files
         .iter()
