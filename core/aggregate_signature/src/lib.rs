@@ -169,7 +169,7 @@ where
 
 // Load individual signatures from the file.
 // If the file does not exist, act as if no signature was collected yet.
-pub fn get_individual_signatures<P, S, PP: AsRef<Path>>(
+pub fn get_individual_signatures_from_file<P, S, PP: AsRef<Path>>(
     sig_file_path: PP,
 ) -> Result<HashMap<P, S>, AggregateSignatureError>
 where
@@ -387,7 +387,7 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
 
     //  Load individual signatures if the complete signature file exists
     let signatures = if sig_file_path.exists() {
-        get_individual_signatures(&sig_file_path)?
+        get_individual_signatures_from_file(&sig_file_path)?
     } else {
         HashMap::new()
     };
@@ -470,7 +470,7 @@ fn generic_load_for_file<PP: AsRef<Path>>(
         // will return an error. If it is complete, we don't care about
         // its true return value
         is_aggregate_signature_complete(file_path, false)?;
-        let signatures = get_individual_signatures(&complete_sig_path)?;
+        let signatures = get_individual_signatures_from_file(&complete_sig_path)?;
         Ok(SignatureWithState::Complete(AggregateSignature::new(
             signatures,
             file_path.to_string_lossy().to_string(),
@@ -479,7 +479,7 @@ fn generic_load_for_file<PP: AsRef<Path>>(
     } else {
         // Load the pending signature file
         let pending_sig_file_path = pending_signatures_path_for(file_path)?;
-        let signatures = get_individual_signatures(pending_sig_file_path)?;
+        let signatures = get_individual_signatures_from_file(pending_sig_file_path)?;
 
         Ok(SignatureWithState::Pending(AggregateSignature::new(
             signatures,
@@ -655,7 +655,7 @@ pub fn can_signer_add_signature<PP: AsRef<Path>>(
     }
 
     let existing_signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures> =
-        get_individual_signatures(pending_sig_path)?;
+        get_individual_signatures_from_file(pending_sig_path)?;
 
     Ok(!existing_signatures.contains_key(signer))
 }
@@ -4270,5 +4270,138 @@ mod tests {
         let result = can_signer_add_signature(pending_sig_path, &public_key);
         assert!(result.is_ok());
         assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_get_individual_signatures_file_not_found() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let non_existent_path = temp_dir.path().join("non_existent.signatures.json");
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            get_individual_signatures_from_file(&non_existent_path);
+
+        assert!(result.is_ok());
+        let signatures = result.unwrap();
+        assert!(signatures.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_individual_signatures_valid_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let sig_file_path = temp_dir.path().join("test.signatures.json");
+
+        let test_keys = TestKeys::new(2);
+        let pubkey1 = test_keys.pub_key(0).unwrap().clone();
+        let seckey1 = test_keys.sec_key(0).unwrap();
+        let pubkey2 = test_keys.pub_key(1).unwrap().clone();
+        let seckey2 = test_keys.sec_key(1).unwrap();
+
+        let data = common::sha512_for_content(b"test data".to_vec())?;
+        let sig1 = seckey1.sign(&data)?;
+        let sig2 = seckey2.sign(&data)?;
+
+        let sig_map: HashMap<String, String> =
+            std::iter::once((pubkey1.to_base64(), sig1.to_base64()))
+                .chain(std::iter::once((pubkey2.to_base64(), sig2.to_base64())))
+                .collect();
+
+        let json_content = serde_json::to_string_pretty(&sig_map)?;
+        fs::write(&sig_file_path, json_content)?;
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            get_individual_signatures_from_file(&sig_file_path);
+
+        assert!(result.is_ok());
+        let signatures = result.unwrap();
+        assert_eq!(signatures.len(), 2);
+        assert!(signatures.contains_key(&pubkey1));
+        assert!(signatures.contains_key(&pubkey2));
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_individual_signatures_invalid_json() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let sig_file_path = temp_dir.path().join("test.signatures.json");
+
+        fs::write(&sig_file_path, "invalid json content")?;
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            get_individual_signatures_from_file(&sig_file_path);
+
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_individual_signatures_invalid_pubkey() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let sig_file_path = temp_dir.path().join("test.signatures.json");
+
+        let test_keys = TestKeys::new(1);
+        let seckey = test_keys.sec_key(0).unwrap();
+
+        let data = common::sha512_for_content(b"test data".to_vec())?;
+        let sig = seckey.sign(&data)?;
+
+        let mut sig_map: HashMap<String, String> = HashMap::new();
+        sig_map.insert("invalid_base64_pubkey".to_string(), sig.to_base64());
+
+        let json_content = serde_json::to_string_pretty(&sig_map)?;
+        fs::write(&sig_file_path, json_content)?;
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            get_individual_signatures_from_file(&sig_file_path);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AggregateSignatureError::PublicKey(_) => {}
+            _ => panic!("Expected PublicKey error"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_individual_signatures_invalid_signature() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let sig_file_path = temp_dir.path().join("test.signatures.json");
+
+        let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+
+        let mut sig_map: HashMap<String, String> = HashMap::new();
+        sig_map.insert(pubkey.to_base64(), "invalid_base64_signature".to_string());
+
+        let json_content = serde_json::to_string_pretty(&sig_map)?;
+        fs::write(&sig_file_path, json_content)?;
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            get_individual_signatures_from_file(&sig_file_path);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AggregateSignatureError::Signature(_) => {}
+            _ => panic!("Expected Signature error"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_individual_signatures_empty_file() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let sig_file_path = temp_dir.path().join("test.signatures.json");
+
+        let empty_map: HashMap<String, String> = HashMap::new();
+        let json_content = serde_json::to_string_pretty(&empty_map)?;
+        fs::write(&sig_file_path, json_content)?;
+
+        let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
+            get_individual_signatures_from_file(&sig_file_path);
+
+        assert!(result.is_ok());
+        let signatures = result.unwrap();
+        assert!(signatures.is_empty());
+        Ok(())
     }
 }
