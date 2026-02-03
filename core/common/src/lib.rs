@@ -1,5 +1,6 @@
 pub mod errors;
 pub mod fs;
+pub mod index_types;
 
 use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
 use serde::{Deserialize, Serialize};

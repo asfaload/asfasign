@@ -1,9 +1,9 @@
 use crate::constants::INDEX_FILE;
-use crate::file_auth::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
 use crate::file_auth::releasers::ReleaseInfos;
 use crate::path_validation::NormalisedPaths;
 use constants::{SIGNERS_DIR, SIGNERS_FILE};
+use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 use octocrab::models::repos::Release;
 use rest_api_types::errors::ApiError;
 use rest_api_types::github_helpers::validate_github_url;

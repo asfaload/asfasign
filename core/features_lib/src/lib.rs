@@ -10,6 +10,8 @@ pub use common::{SignedFileLoader, SignedFileWithKind};
 
 pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file};
 
+pub use common::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
+
 // Re-export traits for users
 pub use signatures::keys::AsfaloadKeyPairTrait;
 pub use signatures::keys::AsfaloadPublicKeyTrait;

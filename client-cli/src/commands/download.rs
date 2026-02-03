@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use constants::{INDEX_FILE, SIGNATURES_SUFFIX};
 use features_lib::{
-    AsfaloadHashes,
+    AsfaloadHashes, AsfaloadIndex, HashAlgorithm,
     aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
     sha512_for_content,
 };
@@ -23,8 +23,6 @@ use sha2::{Digest, Sha256};
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 use signers_file_types::SignersConfig;
-
-use crate::index_types::{AsfaloadIndex, HashAlgorithm};
 
 /// Handle the download command
 pub async fn handle_download_command(
