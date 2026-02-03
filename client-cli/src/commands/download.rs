@@ -46,8 +46,9 @@ pub async fn handle_download_command(
     let signers_content = download_file(&signers_url)
         .await
         .context("Failed to download signers file")?;
-    // FIXME: use core function
-    let signers_config = load_signers_config_from_bytes(&signers_content)?;
+    let signers_config =
+        signers_file_types::parse_signers_config(std::str::from_utf8(&signers_content)?)
+            .map_err(|e| anyhow::anyhow!("Failed to parse signers config: {}", e))?;
 
     // Download asfaload.index.json using /files/ endpoint as we have the exact location
     // on the backend
@@ -162,19 +163,6 @@ async fn download_file(url: &str) -> Result<Vec<u8>> {
         .context("Failed to read response body")?;
 
     Ok(content.to_vec())
-}
-
-/// Load signers config from bytes
-fn load_signers_config_from_bytes(content: &[u8]) -> Result<SignersConfig> {
-    let content_str = std::str::from_utf8(content).context("Signers file is not valid UTF-8")?;
-    load_signers_config_from_str(content_str)
-}
-
-/// Wrapper around load_signers_config that takes a string
-fn load_signers_config_from_str(content: &str) -> Result<SignersConfig> {
-    // Parse the signers config from string content
-    signers_file_types::parse_signers_config(content)
-        .map_err(|e| anyhow::anyhow!("Failed to parse signers config: {}", e))
 }
 
 /// Verify signatures meet threshold requirements
