@@ -237,10 +237,10 @@ fn verify_file_hash(index: &AsfaloadIndex, filename: &str, file_content: Vec<u8>
             hash.to_string().split(':').nth(1).unwrap_or("").to_string()
         }
         HashAlgorithm::Sha1 => {
-            anyhow::bail!("SHA-1 hash verification not yet implemented")
+            anyhow::bail!("SHA-1 use is discouraged, not implemented")
         }
         HashAlgorithm::Md5 => {
-            anyhow::bail!("MD5 hash verification not yet implemented")
+            anyhow::bail!("MD5 use is discouraged, not implemented")
         }
     };
 
