@@ -72,7 +72,7 @@ pub async fn handle_download_command(
 
     // Verify signatures of the index file
     let file_hash =
-        sha512_for_content(&index_content).context("Failed to compute hash of index file")?;
+        sha512_for_content(index_content).context("Failed to compute hash of index file")?;
 
     verify_signatures(signatures_content, &signers_config, &file_hash)
         .context("Signature verification failed")?;
@@ -86,7 +86,7 @@ pub async fn handle_download_command(
         .context("Failed to download file")?;
 
     // Verify file hash
-    verify_file_hash(&index, filename, &file_content)?;
+    verify_file_hash(&index, filename, file_content.as_slice())?;
 
     // Save file
     let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
@@ -194,7 +194,7 @@ fn verify_signatures(
 }
 
 /// Compute SHA-256 hash for content
-fn sha256_for_content<T: std::borrow::Borrow<Vec<u8>>>(
+fn sha256_for_content<T: std::borrow::Borrow<[u8]>>(
     content_in: T,
 ) -> Result<String, std::io::Error> {
     let content = content_in.borrow();
@@ -210,7 +210,7 @@ fn sha256_for_content<T: std::borrow::Borrow<Vec<u8>>>(
 }
 
 /// Verify downloaded file hash matches index
-fn verify_file_hash<T: std::borrow::Borrow<Vec<u8>>>(
+fn verify_file_hash<T: std::borrow::Borrow<[u8]>>(
     index: &AsfaloadIndex,
     filename: &str,
     file_content_in: T,

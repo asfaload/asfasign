@@ -185,7 +185,7 @@ where
     parse_individual_signatures_from_map(signatures_map)
 }
 
-pub fn get_individual_signatures_from_bytes<P, S, T: std::borrow::Borrow<Vec<u8>>>(
+pub fn get_individual_signatures_from_bytes<P, S, T: std::borrow::Borrow<[u8]>>(
     signatures_content_in: T,
 ) -> Result<HashMap<P, S>, AggregateSignatureError>
 where
