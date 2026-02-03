@@ -185,14 +185,15 @@ where
     parse_individual_signatures_from_map(signatures_map)
 }
 
-pub fn get_individual_signatures_from_bytes<P, S>(
-    signatures_content: Vec<u8>,
+pub fn get_individual_signatures_from_bytes<P, S, T: std::borrow::Borrow<Vec<u8>>>(
+    signatures_content_in: T,
 ) -> Result<HashMap<P, S>, AggregateSignatureError>
 where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    let signatures_map: HashMap<String, String> = serde_json::from_slice(&signatures_content)?;
+    let signatures_map: HashMap<String, String> =
+        serde_json::from_slice(signatures_content_in.borrow())?;
 
     parse_individual_signatures_from_map(signatures_map)
 }

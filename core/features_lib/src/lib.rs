@@ -190,15 +190,15 @@ pub mod aggregate_signature_helpers {
         get_individual_signatures_ori::<AsfaloadPublicKeys, AsfaloadSignatures, _>(sig_file_path)
     }
 
-    pub fn get_individual_signatures_from_bytes(
-        signatures_content: Vec<u8>,
+    pub fn get_individual_signatures_from_bytes<T: std::borrow::Borrow<Vec<u8>>>(
+        signatures_content_in: T,
     ) -> Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, AggregateSignatureError>
     where
         AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
         AsfaloadSignatures: AsfaloadSignatureTrait,
     {
-        get_individual_signatures_from_bytes_ori::<AsfaloadPublicKeys, AsfaloadSignatures>(
-            signatures_content,
+        get_individual_signatures_from_bytes_ori::<AsfaloadPublicKeys, AsfaloadSignatures, _>(
+            signatures_content_in.borrow(),
         )
     }
 
