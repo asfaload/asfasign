@@ -756,7 +756,6 @@ dependencies = [
  "assert_cmd",
  "chrono",
  "clap",
- "constants",
  "features_lib",
  "hex",
  "minisign",
@@ -770,7 +769,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "signatures",
- "signers_file_types",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
@@ -1429,6 +1427,8 @@ version = "0.1.0"
 dependencies = [
  "aggregate_signature",
  "common",
+ "constants",
+ "rest_api_types",
  "signatures",
  "signers_file",
  "signers_file_types",
@@ -3796,8 +3796,9 @@ name = "rest_api_auth"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "features_lib",
+ "common",
  "lazy_static",
+ "signatures",
  "thiserror 2.0.17",
  "uuid",
 ]
@@ -3827,7 +3828,6 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "config",
- "features_lib",
  "git2",
  "hyper 1.8.1",
  "octocrab",

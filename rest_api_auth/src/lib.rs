@@ -1,10 +1,8 @@
 use chrono::{DateTime, Utc};
-use features_lib::{
-    AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
-    AsfaloadSignatureTrait, AsfaloadSignatures,
-    errors::keys::{KeyError, SignError, SignatureError, VerifyError},
-    sha512_for_content,
-};
+use common::errors::keys::{KeyError, SignError, SignatureError, VerifyError};
+use common::sha512_for_content;
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
+use signatures::types::{AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatures};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -171,8 +169,9 @@ impl std::fmt::Display for AuthInfo {
 mod tests {
     use super::*;
     use chrono::{Duration, Utc};
-    use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
     use lazy_static::lazy_static;
+    use signatures::keys::AsfaloadKeyPairTrait;
+    use signatures::types::AsfaloadKeyPairs;
 
     // Shared test password
     const TEST_PASSWORD: &str = "test_password";
