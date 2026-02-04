@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{ClientCliError, Result};
 use crate::utils::create_auth_headers;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
@@ -47,8 +47,6 @@ impl RestClient {
         payload: &Value,
         secret_key: AsfaloadSecretKeys,
     ) -> Result<Value> {
-        use rest_api_auth::AuthError;
-
         // Convert payload to string
         let payload_string = payload.to_string();
 
@@ -63,20 +61,24 @@ impl RestClient {
             .json(payload)
             .send()
             .await
-            .map_err(|e| AuthError::IoError(std::io::Error::other(e.to_string())))?;
+            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
 
         // Check if the request was successful
         if !response.status().is_success() {
-            return Err(AuthError::IoError(std::io::Error::other(format!(
-                "API request failed with status: {}",
-                response.status()
-            )))
-            .into());
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ClientCliError::RequestFailed(format!(
+                "{}: {}",
+                status, error_text
+            )));
         }
 
         // Parse and return the response
         let response_json = response.json::<Value>().await.map_err(|e| {
-            AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+            ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
         })?;
 
         Ok(response_json)
@@ -106,8 +108,6 @@ pub async fn get_pending_signatures(
     backend_url: &str,
     secret_key: AsfaloadSecretKeys,
 ) -> Result<ListPendingResponse> {
-    use rest_api_auth::AuthError;
-
     let url = format!("{}/pending_signatures", backend_url);
 
     // Create auth headers (using empty payload for GET request)
@@ -119,19 +119,18 @@ pub async fn get_pending_signatures(
         .headers(headers)
         .send()
         .await
-        .map_err(|e| AuthError::AuthDataPreparationError(format!("Network error: {}", e)))?;
+        .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
 
     if !response.status().is_success() {
-        return Err(AuthError::AuthDataPreparationError(format!(
-            "GET {}: {}",
-            url,
-            response.status()
-        ))
-        .into());
+        return Err(ClientCliError::RequestFailed(format!(
+            "{}: {}",
+            response.status(),
+            response.text().await.unwrap_or("".to_string())
+        )));
     }
 
     let response_body: ListPendingResponse = response.json().await.map_err(|e| {
-        AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+        ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
     })?;
 
     Ok(response_body)
@@ -157,8 +156,6 @@ pub async fn get_pending_signatures(
 /// - Backend returns non-200 status
 /// - Network error occurs
 pub async fn fetch_file(backend_url: &str, file_path: &str) -> Result<Vec<u8>> {
-    use rest_api_auth::AuthError;
-
     let url = format!("{}/files/{}", backend_url, file_path);
 
     let client = Client::new();
@@ -166,19 +163,22 @@ pub async fn fetch_file(backend_url: &str, file_path: &str) -> Result<Vec<u8>> {
         .get(&url)
         .send()
         .await
-        .map_err(|e| AuthError::AuthDataPreparationError(format!("Network error: {}", e)))?;
+        .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
 
     if !response.status().is_success() {
-        return Err(AuthError::AuthDataPreparationError(format!(
-            "GET {}: {}",
-            url,
-            response.status()
-        ))
-        .into());
+        let status = response.status();
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(ClientCliError::RequestFailed(format!(
+            "GET {}: {} - {}",
+            url, status, error_text
+        )));
     }
 
     let content = response.bytes().await.map_err(|e| {
-        AuthError::AuthDataPreparationError(format!("Failed to read response: {}", e))
+        ClientCliError::ResponseParseError(format!("Failed to read response: {}", e))
     })?;
 
     Ok(content.to_vec())
@@ -213,8 +213,6 @@ pub async fn submit_signature(
     signature: &features_lib::AsfaloadSignatures,
     secret_key: &AsfaloadSecretKeys,
 ) -> Result<SubmitSignatureResponse> {
-    use rest_api_auth::AuthError;
-
     let url = format!("{}/signatures", backend_url);
 
     // Build the request
@@ -225,9 +223,8 @@ pub async fn submit_signature(
     };
 
     // Create auth headers
-    let request_json = serde_json::to_string(&request).map_err(|e| {
-        AuthError::AuthDataPreparationError(format!("Failed to serialize request: {}", e))
-    })?;
+    let request_json = serde_json::to_string(&request)
+        .map_err(|e| ClientCliError::InvalidInput(format!("Failed to serialize request: {}", e)))?;
     let headers = create_auth_headers(&request_json, secret_key.clone())?;
 
     let client = Client::new();
@@ -237,19 +234,22 @@ pub async fn submit_signature(
         .json(&request)
         .send()
         .await
-        .map_err(|e| AuthError::AuthDataPreparationError(format!("Network error: {}", e)))?;
+        .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
 
     if !response.status().is_success() {
-        return Err(AuthError::AuthDataPreparationError(format!(
-            "POST {}: {}",
-            url,
-            response.status()
-        ))
-        .into());
+        let status = response.status();
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(ClientCliError::RequestFailed(format!(
+            "{}: {}",
+            status, error_text
+        )));
     }
 
     let response_body: SubmitSignatureResponse = response.json().await.map_err(|e| {
-        AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+        ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
     })?;
 
     Ok(response_body)
@@ -280,8 +280,6 @@ pub async fn register_release(
     release_url: &str,
     secret_key: AsfaloadSecretKeys,
 ) -> Result<RegisterReleaseResponse> {
-    use rest_api_auth::AuthError;
-
     let url = format!("{}/release", backend_url);
 
     let payload = serde_json::json!({
@@ -298,7 +296,7 @@ pub async fn register_release(
         .json(&payload)
         .send()
         .await
-        .map_err(|e| AuthError::AuthDataPreparationError(format!("Network error: {}", e)))?;
+        .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -306,15 +304,14 @@ pub async fn register_release(
             Ok(text) => text,
             Err(e) => format!("(could not read response body: {})", e),
         };
-        return Err(AuthError::AuthDataPreparationError(format!(
-            "POST {}: {} - {}",
-            url, status, error_text
-        ))
-        .into());
+        return Err(ClientCliError::RequestFailed(format!(
+            "{}: {}",
+            status, error_text
+        )));
     }
 
     let response_body: RegisterReleaseResponse = response.json().await.map_err(|e| {
-        AuthError::AuthDataPreparationError(format!("Failed to parse response: {}", e))
+        ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
     })?;
 
     Ok(response_body)

@@ -6,7 +6,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if let Err(e) = handle_command(&cli) {
-        eprintln!("Error: {}", e);
+        eprintln!("{}", e);
         std::process::exit(1);
     }
 
