@@ -8,7 +8,7 @@ pub use common::{
 };
 pub use common::{SignedFileLoader, SignedFileWithKind};
 
-pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file};
+pub use common::{sha512_for_content, sha512_for_file, AsfaloadHashes};
 
 pub use common::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 
@@ -213,4 +213,8 @@ pub mod aggregate_signature_helpers {
             signatures_map,
         )
     }
+}
+
+pub mod constants {
+    pub use constants::*;
 }

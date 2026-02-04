@@ -756,7 +756,6 @@ dependencies = [
  "assert_cmd",
  "chrono",
  "clap",
- "constants",
  "features_lib",
  "hex",
  "minisign",
@@ -1429,6 +1428,7 @@ version = "0.1.0"
 dependencies = [
  "aggregate_signature",
  "common",
+ "constants",
  "signatures",
  "signers_file",
  "signers_file_types",

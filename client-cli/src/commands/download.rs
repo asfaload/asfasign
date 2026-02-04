@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use constants::{INDEX_FILE, SIGNATURES_SUFFIX};
+use features_lib::constants::{INDEX_FILE, SIGNATURES_SUFFIX};
 use features_lib::{
     AsfaloadHashes, AsfaloadIndex, HashAlgorithm,
     aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
