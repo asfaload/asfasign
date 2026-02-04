@@ -14,7 +14,7 @@ members = [
   "rest_api_test_helpers",
   "rest_api_types",
   "rest_api_auth",
-  "core/constants",
+  "core/constants", "client-lib",
 ]
 exclude = ["rest_api_auth", "client_cli"]
 

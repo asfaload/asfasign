@@ -756,6 +756,7 @@ dependencies = [
  "assert_cmd",
  "chrono",
  "clap",
+ "client-lib",
  "features_lib",
  "hex",
  "minisign",
@@ -774,6 +775,20 @@ dependencies = [
  "tokio",
  "uuid",
  "zxcvbn",
+]
+
+[[package]]
+name = "client-lib"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "features_lib",
+ "hex",
+ "reqwest 0.11.27",
+ "serde_json",
+ "sha2",
+ "signatures",
+ "tokio",
 ]
 
 [[package]]
