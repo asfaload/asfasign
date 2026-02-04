@@ -45,6 +45,15 @@ pub enum ClientCliError {
 
     #[error("Reqwest header error: {0}")]
     ReqwestHeaderError(#[from] reqwest::header::InvalidHeaderValue),
+
+    #[error("Network error: {0}")]
+    NetworkError(String),
+
+    #[error("Error response from server: {0}")]
+    RequestFailed(String),
+
+    #[error("Failed to parse server response: {0}")]
+    ResponseParseError(String),
 }
 
 // FIXME: remove this, creates more confusion than necessary
