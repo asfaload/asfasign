@@ -1,11 +1,10 @@
 //! Integration tests for download command
 
-use assert_cmd::Command;
 use predicates::prelude::*;
 
 #[test]
 fn test_download_missing_url() {
-    let mut cmd = Command::cargo_bin("client-cli").unwrap();
+    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
     cmd.arg("download");
 
     cmd.assert()
@@ -15,7 +14,7 @@ fn test_download_missing_url() {
 
 #[test]
 fn test_download_help() {
-    let mut cmd = Command::cargo_bin("client-cli").unwrap();
+    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
     cmd.args(["download", "--help"]);
 
     cmd.assert()
