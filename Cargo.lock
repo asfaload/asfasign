@@ -769,7 +769,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "signatures",
- "signers_file_types",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",

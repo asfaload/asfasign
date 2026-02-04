@@ -26,7 +26,7 @@ pub use signatures::types::AsfaloadSignatures;
 
 pub use signers_file::activate_signers_file;
 use signers_file::sign_signers_file;
-pub use signers_file_types::SignersConfig;
+pub use signers_file_types::{parse_signers_config, SignersConfig};
 
 // In this type argument we use AsfaloadPublicKeys and AsfaloadSignatures directly.
 // This allows the user of this type to not specify any type arguments.
@@ -218,7 +218,6 @@ pub mod aggregate_signature_helpers {
 pub mod constants {
     pub use constants::*;
 }
-
 pub mod rest_api {
     pub use rest_api_types::{
         ListPendingResponse, RegisterReleaseResponse, SubmitSignatureRequest,

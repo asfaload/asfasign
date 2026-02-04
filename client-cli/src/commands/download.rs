@@ -22,7 +22,7 @@ use reqwest::Client;
 use sha2::{Digest, Sha256};
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
-use signers_file_types::SignersConfig;
+use features_lib::{parse_signers_config, SignersConfig};
 
 /// Handle the download command
 pub async fn handle_download_command(
@@ -49,7 +49,7 @@ pub async fn handle_download_command(
         .await
         .context("Failed to download signers file")?;
     let signers_config =
-        signers_file_types::parse_signers_config(std::str::from_utf8(&signers_content)?)
+        parse_signers_config(std::str::from_utf8(&signers_content)?)
             .map_err(|e| anyhow::anyhow!("Failed to parse signers config: {}", e))?;
 
     // Download asfaload.index.json using /files/ endpoint as we have the exact location
