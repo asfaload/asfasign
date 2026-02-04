@@ -18,11 +18,11 @@ use features_lib::{
     aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
     sha512_for_content,
 };
+use features_lib::{SignersConfig, parse_signers_config};
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
-use features_lib::{parse_signers_config, SignersConfig};
 
 /// Handle the download command
 pub async fn handle_download_command(
@@ -48,9 +48,8 @@ pub async fn handle_download_command(
     let signers_content = download_file(&signers_url)
         .await
         .context("Failed to download signers file")?;
-    let signers_config =
-        parse_signers_config(std::str::from_utf8(&signers_content)?)
-            .map_err(|e| anyhow::anyhow!("Failed to parse signers config: {}", e))?;
+    let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)
+        .map_err(|e| anyhow::anyhow!("Failed to parse signers config: {}", e))?;
 
     // Download asfaload.index.json using /files/ endpoint as we have the exact location
     // on the backend
