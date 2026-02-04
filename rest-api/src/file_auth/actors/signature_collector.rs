@@ -149,7 +149,7 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
             })?;
 
         let pending_agg = signature_with_state.get_pending().ok_or_else(|| {
-            ApiError::InvalidRequestBody("Aggregate signature is already complete".to_string())
+            ApiError::SignatureAlreadyComplete("Cannot accept additional signatures".to_string())
         })?;
 
         let new_state = pending_agg
@@ -530,10 +530,17 @@ mod tests {
 
         assert!(result2.is_err());
         match result2.unwrap_err() {
-            kameo::error::SendError::HandlerError(ApiError::InvalidRequestBody(msg))
-                if msg.contains("already complete") => {}
+            kameo::error::SendError::HandlerError(ApiError::SignatureAlreadyComplete(msg)) => {
+                if msg.contains("Cannot accept additional signature") {
+                } else {
+                    panic!(
+                        "Expected Cannot accept additional signature message, but got {}",
+                        msg
+                    )
+                };
+            }
             e => panic!(
-                "Expected InvalidRequestBody with 'already complete', got {:?}",
+                "Expected SignatureAlreadyComplete with 'already complete', got {:?}",
                 e
             ),
         }

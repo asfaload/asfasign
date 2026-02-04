@@ -22,11 +22,19 @@ use rest_api_types::{
 };
 use tokio::io::AsyncWriteExt;
 
-pub fn map_to_user_error(error: impl std::fmt::Display, context: &str) -> ApiError {
-    tracing::error!(internal_error = %error, "{}", context);
-    ApiError::InternalServerError(
-        "Operation failed. Please check your request and try again.".to_string(),
-    )
+pub fn map_to_user_error<M>(
+    error: kameo::error::SendError<M, ApiError>,
+    context: &str,
+) -> ApiError {
+    match error {
+        kameo::error::SendError::HandlerError(api_error) => api_error,
+        other => {
+            tracing::error!(internal_error = %other, "{}", context);
+            ApiError::InternalServerError(
+                "Operation failed. Please check your request and try again.".to_string(),
+            )
+        }
+    }
 }
 
 pub async fn add_file_handler(

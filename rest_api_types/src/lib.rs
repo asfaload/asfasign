@@ -103,6 +103,9 @@ pub mod errors {
 
         #[error("File not found: {0}")]
         FileNotFound(String),
+
+        #[error("Signature already complete: {0}")]
+        SignatureAlreadyComplete(String),
     }
 
     #[derive(Error, Debug)]
@@ -192,6 +195,7 @@ pub mod errors {
                 ApiError::UnsupportedReleasePlatform(_) => StatusCode::BAD_REQUEST,
                 ApiError::InvalidGitHubUrl(_) => StatusCode::BAD_REQUEST,
                 ApiError::FileNotFound(_) => StatusCode::NOT_FOUND,
+                ApiError::SignatureAlreadyComplete(_) => StatusCode::CONFLICT,
             }
         }
     }
