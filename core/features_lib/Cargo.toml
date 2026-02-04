@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 common = { path = "../common/" }
 constants = { path = "../constants/" }
+rest_api_types = { path = "../../rest_api_types" }
 signatures = { path = "../signatures/" }
 signers_file = { path = "../signers_file/" }
 signers_file_types = { path = "../signers_file_types/" }

@@ -1,12 +1,10 @@
 use crate::error::Result;
 use crate::utils::create_auth_headers;
 use features_lib::{
+    rest_api::{ListPendingResponse, RegisterReleaseResponse, SubmitSignatureRequest, SubmitSignatureResponse},
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
 };
 use reqwest::Client;
-use rest_api_types::{
-    ListPendingResponse, RegisterReleaseResponse, SubmitSignatureRequest, SubmitSignatureResponse,
-};
 use serde_json::Value;
 
 /// A client for interacting with the REST API with authentication

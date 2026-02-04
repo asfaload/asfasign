@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 pub use common::errors;
 use common::fs::names::{find_global_signers_for, pending_signers_file_in_dir};
 pub use common::{
-    ArtifactMarker, FileType, InitialSignersFileMarker, SignedFile, SignersFileMarker,
-    errors::SignedFileError,
+    errors::SignedFileError, ArtifactMarker, FileType, InitialSignersFileMarker, SignedFile,
+    SignersFileMarker,
 };
 pub use common::{SignedFileLoader, SignedFileWithKind};
 
@@ -217,4 +217,11 @@ pub mod aggregate_signature_helpers {
 
 pub mod constants {
     pub use constants::*;
+}
+
+pub mod rest_api {
+    pub use rest_api_types::{
+        ListPendingResponse, RegisterReleaseResponse, SubmitSignatureRequest,
+        SubmitSignatureResponse,
+    };
 }
