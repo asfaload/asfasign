@@ -14,3 +14,4 @@ pub const SIGNERS_FILE: &str = "index.json";
 pub const PENDING_SIGNERS_FILE: &str = "index.json.pending";
 pub const SIGNERS_HISTORY_SUFFIX: &str = "history.json";
 pub const SIGNERS_HISTORY_FILE: &str = "asfaload.signers.history.json";
+pub const INDEX_FILE: &str = "asfaload.index.json";

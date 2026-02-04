@@ -5,7 +5,6 @@ pub mod github;
 pub mod github_release;
 pub mod gitlab;
 pub mod gitlab_release;
-pub mod index_types;
 pub mod release_types;
 pub mod releasers;
 pub mod releases;

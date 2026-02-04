@@ -1,5 +1,6 @@
 pub mod errors;
 pub mod fs;
+pub mod index_types;
 
 use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
 use serde::{Deserialize, Serialize};
@@ -74,7 +75,10 @@ impl TryFrom<String> for AsfaloadHashes {
     }
 }
 
-pub fn sha512_for_content(content: Vec<u8>) -> Result<AsfaloadHashes, std::io::Error> {
+pub fn sha512_for_content<T: std::borrow::Borrow<[u8]>>(
+    content_in: T,
+) -> Result<AsfaloadHashes, std::io::Error> {
+    let content = content_in.borrow();
     if content.is_empty() {
         Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,

@@ -10,6 +10,8 @@ pub use common::{SignedFileLoader, SignedFileWithKind};
 
 pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file};
 
+pub use common::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
+
 // Re-export traits for users
 pub use signatures::keys::AsfaloadKeyPairTrait;
 pub use signatures::keys::AsfaloadPublicKeyTrait;
@@ -166,9 +168,13 @@ impl SignersFileTrait for SignersFile {
 pub mod aggregate_signature_helpers {
     use std::{collections::HashMap, path::Path};
 
-    use aggregate_signature::get_individual_signatures as get_individual_signatures_ori;
     pub use aggregate_signature::{
         check_groups, get_authorized_signers_for_file, load_signers_config,
+    };
+    use aggregate_signature::{
+        get_individual_signatures_from_bytes as get_individual_signatures_from_bytes_ori,
+        get_individual_signatures_from_file as get_individual_signatures_ori,
+        parse_individual_signatures_from_map as parse_individual_signatures_from_map_ori,
     };
     use common::errors::AggregateSignatureError;
     use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
@@ -182,5 +188,29 @@ pub mod aggregate_signature_helpers {
         AsfaloadSignatures: AsfaloadSignatureTrait,
     {
         get_individual_signatures_ori::<AsfaloadPublicKeys, AsfaloadSignatures, _>(sig_file_path)
+    }
+
+    pub fn get_individual_signatures_from_bytes<T: std::borrow::Borrow<[u8]>>(
+        signatures_content_in: T,
+    ) -> Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, AggregateSignatureError>
+    where
+        AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+        AsfaloadSignatures: AsfaloadSignatureTrait,
+    {
+        get_individual_signatures_from_bytes_ori::<AsfaloadPublicKeys, AsfaloadSignatures, _>(
+            signatures_content_in.borrow(),
+        )
+    }
+
+    pub fn parse_individual_signatures_from_map(
+        signatures_map: HashMap<String, String>,
+    ) -> Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, AggregateSignatureError>
+    where
+        AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+        AsfaloadSignatures: AsfaloadSignatureTrait,
+    {
+        parse_individual_signatures_from_map_ori::<AsfaloadPublicKeys, AsfaloadSignatures>(
+            signatures_map,
+        )
     }
 }
