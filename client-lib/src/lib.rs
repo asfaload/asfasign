@@ -106,11 +106,36 @@ fn construct_file_repo_path(file_url: &reqwest::Url, filename: &str) -> Result<S
     let dir_path = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
 
     // Translate GitHub release path: download -> tag
-    let translated_path = translate_github_release_path(dir_path);
+    let translated_path = translate_download_to_release_path(host, dir_path);
 
     Ok(format!("{}/{}/{}", host, translated_path, filename))
 }
 
+enum Forges {
+    Github,
+}
+impl Forges {
+    pub fn from_host(host: &str) -> Result<Self> {
+        if host.contains("github.com") {
+            Ok(Self::Github)
+        } else {
+            Err(anyhow::anyhow!("Unsupported forge"))
+        }
+    }
+}
+/// When we download a file from a release, we use the download URL,
+/// which may be a variation of the release URL that was registered.
+/// Eg On github, the download url has the segments "/releases/download"
+/// while the release url has the segments "/releases/tag".
+/// This function translates the paths from the download url that
+/// we have, to the path of the release that was registered
+fn translate_download_to_release_path(host: &str, path: &str) -> String {
+    let forge =
+        Forges::from_host(host).unwrap_or_else(|_| panic!("Host not supported as forge: {}", host));
+    match forge {
+        Forges::Github => translate_github_release_path(path),
+    }
+}
 /// Translate GitHub release paths from /download/ to /tag/
 /// GitHub uses /releases/download/ for actual files but /releases/tag/ for metadata
 fn translate_github_release_path(path: &str) -> String {
