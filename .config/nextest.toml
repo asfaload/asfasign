@@ -1,0 +1,12 @@
+[profile.default]
+# Default profile settings
+retries = 2          # Retry flaky tests
+slow-timeout = "60s" # Mark tests as slow after 60s
+
+[profile.ci]
+# CI-optimized profile
+retries = 2
+fail-fast = false        # Run all tests even if some fail
+failure-output = "final" # Show failure output at the end
+# JUnit output for test analytics
+junit = { path = "junit.xml" }

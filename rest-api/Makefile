@@ -6,7 +6,7 @@ test:
 	$(MAKE) clippy
 	$(MAKE) check-format
 
-	cargo test
+	cargo nextest run
 	# Some integration tests require the rest-api to accept registrations of
 	# signers files served on localhost, which should not happen in production.
 	# This behaviour is enabled with the test-utils features, and tests requiring
@@ -15,7 +15,7 @@ test:
 
 ## Run tests with test-utils feature enabled (for integration tests)
 test-with-test-utils:
-	cargo test --features test-utils
+	cargo nextest run --features test-utils
 
 ## Fix rust code formatting
 format:
