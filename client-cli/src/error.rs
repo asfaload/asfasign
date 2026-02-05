@@ -1,5 +1,5 @@
-use features_lib::errors::AggregateSignatureError;
 use features_lib::errors::keys::{KeyError, SignError, SignatureError, VerifyError};
+use features_lib::errors::AggregateSignatureError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -45,6 +45,9 @@ pub enum ClientCliError {
 
     #[error("Reqwest header error: {0}")]
     ReqwestHeaderError(#[from] reqwest::header::InvalidHeaderValue),
+
+    #[error("Client library error: {0}")]
+    ClientLib(#[from] client_lib::ClientLibError),
 
     #[error("Network error: {0}")]
     NetworkError(String),
