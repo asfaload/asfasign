@@ -1,5 +1,7 @@
 mod error;
+mod types;
 pub use error::{ClientLibError, Result};
+pub use types::{DownloadEvent, DownloadResult};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
