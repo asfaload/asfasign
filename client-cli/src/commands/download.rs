@@ -8,5 +8,7 @@ pub async fn handle_download_command(
     output: Option<&PathBuf>,
     backend_url: &str,
 ) -> Result<()> {
-    client_lib::download_file_with_verification(file_url, output, backend_url).await
+    client_lib::download_file_with_verification(file_url, output, backend_url)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))
 }
