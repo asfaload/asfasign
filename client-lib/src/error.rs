@@ -56,4 +56,4 @@ pub enum ClientLibError {
     SignersFile(#[from] SignersFileError),
 }
 
-pub type Result<T> = std::result::Result<T, ClientLibError>;
+pub type AsfaloadLibResult<T> = std::result::Result<T, ClientLibError>;

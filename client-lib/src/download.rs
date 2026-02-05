@@ -1,6 +1,6 @@
 use crate::backend::{download_file, download_file_to_temp};
 use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
-use crate::{ClientLibError, DownloadEvent, DownloadResult};
+use crate::{AsfaloadLibResult, ClientLibError, DownloadEvent, DownloadResult};
 use features_lib::{
     AsfaloadIndex, HashAlgorithm,
     constants::{INDEX_FILE, SIGNATURES_SUFFIX},
@@ -38,7 +38,7 @@ pub async fn download_file_with_verification<F>(
     output: Option<&PathBuf>,
     backend_url: &str,
     mut on_event: F,
-) -> crate::Result<DownloadResult>
+) -> AsfaloadLibResult<DownloadResult>
 where
     F: FnMut(DownloadEvent) + Send,
 {
@@ -110,7 +110,8 @@ where
     // Download file to temp location with incremental hash computation
     let (temp_file, bytes_downloaded) = download_file_to_temp(file_url, &mut on_event, |chunk| {
         hasher.update(chunk);
-    }).await?;
+    })
+    .await?;
 
     on_event(DownloadEvent::FileDownloadCompleted { bytes_downloaded });
 
@@ -125,7 +126,10 @@ where
     // Move temp file to final destination (only happens if hash verification succeeded)
     let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
     temp_file.persist(&output_path).map_err(|e| {
-        ClientLibError::PersistError(format!("Failed to move temp file to {:?}: {}", output_path, e))
+        ClientLibError::PersistError(format!(
+            "Failed to move temp file to {:?}: {}",
+            output_path, e
+        ))
     })?;
 
     on_event(DownloadEvent::FileSaved {
@@ -145,11 +149,11 @@ where
     Ok(result)
 }
 
-fn construct_index_file_path(file_url: &Url) -> crate::Result<String> {
+fn construct_index_file_path(file_url: &Url) -> AsfaloadLibResult<String> {
     construct_file_repo_path(file_url, INDEX_FILE)
 }
 
-fn construct_file_repo_path(file_url: &Url, filename: &str) -> crate::Result<String> {
+fn construct_file_repo_path(file_url: &Url, filename: &str) -> AsfaloadLibResult<String> {
     let host = file_url
         .host_str()
         .ok_or_else(|| ClientLibError::InvalidUrl("URL has no host".to_string()))?;
@@ -169,7 +173,7 @@ enum Forges {
 }
 
 impl Forges {
-    pub fn from_host(host: &str) -> crate::Result<Self> {
+    pub fn from_host(host: &str) -> AsfaloadLibResult<Self> {
         if host.contains("github.com") {
             Ok(Self::Github)
         } else {

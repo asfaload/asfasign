@@ -1,8 +1,8 @@
-use crate::{ClientLibError, Result};
+use crate::{AsfaloadLibResult, ClientLibError};
 use features_lib::{
-    aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
     AsfaloadHashes, AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatures,
     SignersConfig,
+    aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
 };
 use std::collections::HashMap;
 
@@ -10,7 +10,7 @@ pub fn verify_signatures(
     signatures_content: Vec<u8>,
     signers_config: &SignersConfig,
     data: &AsfaloadHashes,
-) -> Result<(usize, usize)> {
+) -> AsfaloadLibResult<(usize, usize)> {
     let artifact_groups = signers_config.artifact_signers();
     if artifact_groups.is_empty() {
         return Err(ClientLibError::MissingArtifactSigners);
@@ -48,7 +48,7 @@ pub fn verify_signatures(
 pub fn get_file_hash_info(
     index: &AsfaloadIndex,
     filename: &str,
-) -> Result<(features_lib::HashAlgorithm, String)> {
+) -> AsfaloadLibResult<(features_lib::HashAlgorithm, String)> {
     let file_entry = index
         .published_files
         .iter()
@@ -62,7 +62,7 @@ pub fn verify_file_hash(
     index: &AsfaloadIndex,
     filename: &str,
     computed_hash: &str,
-) -> Result<features_lib::HashAlgorithm> {
+) -> AsfaloadLibResult<features_lib::HashAlgorithm> {
     use features_lib::HashAlgorithm;
 
     let file_entry = index

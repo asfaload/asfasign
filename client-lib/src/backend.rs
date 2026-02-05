@@ -1,10 +1,14 @@
-use crate::{ClientLibError, DownloadEvent, Result};
+use crate::{AsfaloadLibResult, ClientLibError, DownloadEvent};
 use futures_util::stream::StreamExt;
 use reqwest::Client;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
-pub async fn download_file<F, H>(url: &str, mut on_event: F, mut on_chunk: H) -> Result<Vec<u8>>
+pub async fn download_file<F, H>(
+    url: &str,
+    mut on_event: F,
+    mut on_chunk: H,
+) -> AsfaloadLibResult<Vec<u8>>
 where
     F: FnMut(DownloadEvent) + Send,
     H: FnMut(&[u8]) + Send,
@@ -58,7 +62,7 @@ pub async fn download_file_to_temp<F, H>(
     url: &str,
     mut on_event: F,
     mut on_chunk: H,
-) -> Result<(NamedTempFile, u64)>
+) -> AsfaloadLibResult<(NamedTempFile, u64)>
 where
     F: FnMut(DownloadEvent) + Send,
     H: FnMut(&[u8]) + Send,
