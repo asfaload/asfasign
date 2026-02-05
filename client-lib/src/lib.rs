@@ -18,11 +18,19 @@ use reqwest::Client;
 use sha2::{Digest, Sha256};
 
 /// Handle the download command
-pub async fn download_file_with_verification(
+pub async fn download_file_with_verification<F>(
     file_url: &str,
     output: Option<&PathBuf>,
     backend_url: &str,
-) -> Result<()> {
+    mut on_event: F,
+) -> Result<DownloadResult>
+where
+    F: FnMut(DownloadEvent) + Send,
+{
+    on_event(DownloadEvent::Starting {
+        file_url: file_url.to_string(),
+    });
+
     // Parse the URL to extract components
     let url = reqwest::Url::parse(file_url)
         .map_err(|e| ClientLibError::InvalidUrl(e.to_string()))?;
@@ -40,6 +48,7 @@ pub async fn download_file_with_verification(
     //  The backend will look for the signers file that applies
     let signers_url = format!("{}/get-signers/{}", backend_url, index_file_path);
     let signers_content = download_file(&signers_url).await?;
+    on_event(DownloadEvent::SignersDownloaded { bytes: signers_content.len() });
     let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)
         .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
 
@@ -48,6 +57,7 @@ pub async fn download_file_with_verification(
     let index_file_path = construct_file_repo_path(&url, INDEX_FILE)?;
     let index_url = format!("{}/files/{}", backend_url, index_file_path);
     let index_content = download_file(&index_url).await?;
+    on_event(DownloadEvent::IndexDownloaded { bytes: index_content.len() });
     let index: AsfaloadIndex = serde_json::from_slice(&index_content)?;
 
     // For signatures of the index we also can derive the location from the index location
@@ -55,28 +65,50 @@ pub async fn download_file_with_verification(
         construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
     let signatures_url = format!("{}/files/{}", backend_url, signatures_file_path);
     let signatures_content = download_file(&signatures_url).await?;
+    on_event(DownloadEvent::SignaturesDownloaded { bytes: signatures_content.len() });
 
     // Verify signatures of the index file
     let file_hash = sha512_for_content(index_content)?;
 
-    verify_signatures(signatures_content, &signers_config, &file_hash)?;
+    let (valid_count, invalid_count) =
+        verify_signatures(signatures_content, &signers_config, &file_hash)?;
 
-    println!("✓ Signatures verified successfully");
+    on_event(DownloadEvent::SignaturesVerified { valid_count, invalid_count });
 
-    //  Download actual file
-    println!("Downloading {}...", filename);
+    // Download actual file
+    on_event(DownloadEvent::FileDownloadStarted {
+        filename: filename.to_string(),
+        total_bytes: None,
+    });
     let file_content = download_file(file_url).await?;
 
+    let bytes_downloaded = file_content.len() as u64;
+    on_event(DownloadEvent::FileDownloadCompleted { bytes_downloaded });
+
     // Verify file hash
-    verify_file_hash(&index, filename, file_content.as_slice())?;
+    let hash_algorithm = verify_file_hash(&index, filename, file_content.as_slice())?;
+
+    on_event(DownloadEvent::FileHashVerified {
+        algorithm: hash_algorithm.clone(),
+    });
 
     // Save file
     let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
     tokio::fs::write(&output_path, file_content).await?;
 
-    println!("✓ File saved to: {}", output_path.display());
+    on_event(DownloadEvent::FileSaved { path: output_path.clone() });
 
-    Ok(())
+    let result = DownloadResult {
+        file_path: output_path,
+        bytes_downloaded,
+        signatures_verified: valid_count,
+        signatures_invalid: invalid_count,
+        hash_algorithm,
+    };
+
+    on_event(DownloadEvent::Completed(result.clone()));
+
+    Ok(result)
 }
 
 /// Construct the index file path for the get-signers endpoint
@@ -169,22 +201,21 @@ fn verify_signatures(
     signatures_content: Vec<u8>,
     signers_config: &SignersConfig,
     data: &AsfaloadHashes,
-) -> Result<()> {
+) -> Result<(usize, usize)> {
     let artifact_groups = signers_config.artifact_signers();
     if artifact_groups.is_empty() {
         return Err(ClientLibError::MissingArtifactSigners);
     }
 
     let mut typed_signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures> = HashMap::new();
+    let mut invalid_count = 0;
 
     let parsed_signatures = get_individual_signatures_from_bytes(signatures_content)
         .map_err(|e| ClientLibError::SignaturesParseError(e.to_string()))?;
 
     for (pubkey, signature) in parsed_signatures {
-        let pubkey_b64 = pubkey.to_base64();
-
         if pubkey.verify(&signature, data).is_err() {
-            eprintln!("Warning: Invalid signature from key {}", pubkey_b64);
+            invalid_count += 1;
             continue;
         }
 
@@ -201,9 +232,7 @@ fn verify_signatures(
     }
 
     let valid_count = typed_signatures.len();
-    println!("✓ Verified {} valid signature(s)", valid_count);
-
-    Ok(())
+    Ok((valid_count, invalid_count))
 }
 
 /// Compute SHA-256 hash for content
@@ -225,7 +254,7 @@ fn verify_file_hash<T: std::borrow::Borrow<[u8]>>(
     index: &AsfaloadIndex,
     filename: &str,
     file_content_in: T,
-) -> Result<()> {
+) -> Result<HashAlgorithm> {
     let file_content = file_content_in.borrow();
     let file_entry = index
         .published_files
@@ -234,9 +263,10 @@ fn verify_file_hash<T: std::borrow::Borrow<[u8]>>(
         .ok_or_else(|| ClientLibError::FileNotInIndex(filename.to_string()))?;
 
     let expected_hash_str = &file_entry.hash;
+    let algorithm = file_entry.algo.clone();
 
     // Compute hash based on the algorithm specified in the index
-    let computed_hash = match file_entry.algo {
+    let computed_hash = match algorithm {
         HashAlgorithm::Sha256 => sha256_for_content(file_content)?,
         HashAlgorithm::Sha512 => {
             let hash = sha512_for_content(file_content)?;
@@ -259,15 +289,5 @@ fn verify_file_hash<T: std::borrow::Borrow<[u8]>>(
         });
     }
 
-    println!(
-        "✓ File hash verified ({})",
-        match file_entry.algo {
-            HashAlgorithm::Sha256 => "SHA-256",
-            HashAlgorithm::Sha512 => "SHA-512",
-            HashAlgorithm::Sha1 => "SHA-1",
-            HashAlgorithm::Md5 => "MD5",
-        }
-    );
-
-    Ok(())
+    Ok(algorithm)
 }

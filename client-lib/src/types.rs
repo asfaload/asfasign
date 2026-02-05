@@ -39,6 +39,7 @@ pub enum DownloadEvent {
     Completed(DownloadResult),
 }
 
+#[derive(Clone)]
 pub struct DownloadResult {
     pub file_path: PathBuf,
     pub bytes_downloaded: u64,
