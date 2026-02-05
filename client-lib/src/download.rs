@@ -1,4 +1,4 @@
-use crate::backend::download_file;
+use crate::backend::{download_file, download_file_to_temp};
 use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
 use crate::{ClientLibError, DownloadEvent, DownloadResult};
 use features_lib::{
@@ -107,12 +107,11 @@ where
         total_bytes: None,
     });
 
-    // Download file with incremental hash computation
-    let file_content = download_file(file_url, &mut on_event, |chunk| {
+    // Download file to temp location with incremental hash computation
+    let (temp_file, bytes_downloaded) = download_file_to_temp(file_url, &mut on_event, |chunk| {
         hasher.update(chunk);
     }).await?;
 
-    let bytes_downloaded = file_content.len() as u64;
     on_event(DownloadEvent::FileDownloadCompleted { bytes_downloaded });
 
     // Finalize hash and verify
@@ -123,8 +122,11 @@ where
         algorithm: hash_algorithm.clone(),
     });
 
+    // Move temp file to final destination (only happens if hash verification succeeded)
     let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
-    tokio::fs::write(&output_path, file_content).await?;
+    temp_file.persist(&output_path).map_err(|e| {
+        ClientLibError::PersistError(format!("Failed to move temp file to {:?}: {}", output_path, e))
+    })?;
 
     on_event(DownloadEvent::FileSaved {
         path: output_path.clone(),

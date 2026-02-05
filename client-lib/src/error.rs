@@ -37,6 +37,9 @@ pub enum ClientLibError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("Failed to persist file: {0}")]
+    PersistError(String),
+
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
 
