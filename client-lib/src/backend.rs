@@ -1,8 +1,12 @@
-use crate::{ClientLibError, Result};
+use crate::{ClientLibError, DownloadEvent, Result};
 use futures_util::stream::StreamExt;
 use reqwest::Client;
 
-pub async fn download_file(url: &str) -> Result<Vec<u8>> {
+pub async fn download_file<F>(url: &str, mut on_event: F) -> Result<Vec<u8>>
+where
+    F: FnMut(DownloadEvent) + Send,
+{
+    let _ = on_event;
     let client = Client::new();
     let response = client.get(url).send().await?;
 
@@ -26,15 +30,15 @@ pub async fn download_file(url: &str) -> Result<Vec<u8>> {
 
 pub async fn download_signers(backend_url: &str, index_file_path: &str) -> Result<Vec<u8>> {
     let signers_url = format!("{}/get-signers/{}", backend_url, index_file_path);
-    download_file(&signers_url).await
+    download_file(&signers_url, |_| {}).await
 }
 
 pub async fn download_index(backend_url: &str, index_file_path: &str) -> Result<Vec<u8>> {
     let index_url = format!("{}/files/{}", backend_url, index_file_path);
-    download_file(&index_url).await
+    download_file(&index_url, |_| {}).await
 }
 
 pub async fn download_signatures(backend_url: &str, signatures_file_path: &str) -> Result<Vec<u8>> {
     let signatures_url = format!("{}/files/{}", backend_url, signatures_file_path);
-    download_file(&signatures_url).await
+    download_file(&signatures_url, |_| {}).await
 }

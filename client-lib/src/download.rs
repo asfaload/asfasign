@@ -35,7 +35,7 @@ where
     let index_file_path = construct_index_file_path(&url)?;
 
     let signers_url = format!("{}/get-signers/{}", backend_url, index_file_path);
-    let signers_content = download_file(&signers_url).await?;
+    let signers_content = download_file(&signers_url, |_| {}).await?;
     on_event(DownloadEvent::SignersDownloaded {
         bytes: signers_content.len(),
     });
@@ -43,7 +43,7 @@ where
         .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
 
     let index_url = format!("{}/files/{}", backend_url, index_file_path);
-    let index_content = download_file(&index_url).await?;
+    let index_content = download_file(&index_url, |_| {}).await?;
     on_event(DownloadEvent::IndexDownloaded {
         bytes: index_content.len(),
     });
@@ -52,7 +52,7 @@ where
     let signatures_file_path =
         construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
     let signatures_url = format!("{}/files/{}", backend_url, signatures_file_path);
-    let signatures_content = download_file(&signatures_url).await?;
+    let signatures_content = download_file(&signatures_url, |_| {}).await?;
     on_event(DownloadEvent::SignaturesDownloaded {
         bytes: signatures_content.len(),
     });
@@ -71,7 +71,7 @@ where
         filename: filename.to_string(),
         total_bytes: None,
     });
-    let file_content = download_file(file_url).await?;
+    let file_content = download_file(file_url, |event| on_event(event)).await?;
 
     let bytes_downloaded = file_content.len() as u64;
     on_event(DownloadEvent::FileDownloadCompleted { bytes_downloaded });
