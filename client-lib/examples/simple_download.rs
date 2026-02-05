@@ -1,5 +1,5 @@
-use client_lib::{download_file_with_verification, DownloadEvent, DownloadResult};
 use client_lib::ClientLibError;
+use client_lib::{DownloadEvent, DownloadResult, download_file_with_verification};
 
 #[tokio::main]
 async fn main() -> Result<(), ClientLibError> {
@@ -10,9 +10,16 @@ async fn main() -> Result<(), ClientLibError> {
         |event| {
             // Handle progress events
             match event {
-                DownloadEvent::FileDownloadProgress { bytes_downloaded, total_bytes, .. } => {
+                DownloadEvent::FileDownloadProgress {
+                    bytes_downloaded,
+                    total_bytes,
+                    ..
+                } => {
                     if let Some(total) = total_bytes {
-                        println!("Progress: {:.1}%", (bytes_downloaded as f64 / total as f64) * 100.0);
+                        println!(
+                            "Progress: {:.1}%",
+                            (bytes_downloaded as f64 / total as f64) * 100.0
+                        );
                     }
                 }
                 DownloadEvent::Completed(result) => {
@@ -21,8 +28,12 @@ async fn main() -> Result<(), ClientLibError> {
                 _ => {}
             }
         },
-    ).await?;
+    )
+    .await?;
 
-    println!("Successfully downloaded and verified: {}", result.file_path.display());
+    println!(
+        "Successfully downloaded and verified: {}",
+        result.file_path.display()
+    );
     Ok(())
 }

@@ -1,5 +1,5 @@
-use features_lib::errors::keys::{KeyError, SignError, SignatureError, VerifyError};
 use features_lib::errors::AggregateSignatureError;
+use features_lib::errors::keys::{KeyError, SignError, SignatureError, VerifyError};
 use thiserror::Error;
 
 #[derive(Error, Debug)]

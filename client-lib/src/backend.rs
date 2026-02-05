@@ -33,7 +33,8 @@ where
 
         if let Some(total) = total_bytes {
             let byte_milestone = bytes_downloaded >= last_progress_emitted + 1_048_576;
-            let percent_milestone = (bytes_downloaded * 10 / total) > (last_progress_emitted * 10 / total);
+            let percent_milestone =
+                (bytes_downloaded * 10 / total) > (last_progress_emitted * 10 / total);
 
             if byte_milestone || percent_milestone {
                 on_event(DownloadEvent::FileDownloadProgress {

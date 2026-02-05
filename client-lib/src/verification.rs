@@ -1,8 +1,9 @@
 use crate::{ClientLibError, Result};
 use features_lib::{
+    AsfaloadHashes, AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatures,
+    SignersConfig,
     aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
-    sha512_for_content, AsfaloadHashes, AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys,
-    AsfaloadSignatures, SignersConfig,
+    sha512_for_content,
 };
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;

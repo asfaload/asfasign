@@ -71,7 +71,7 @@ where
         filename: filename.to_string(),
         total_bytes: None,
     });
-    let file_content = download_file(file_url, |event| on_event(event)).await?;
+    let file_content = download_file(file_url, &mut on_event).await?;
 
     let bytes_downloaded = file_content.len() as u64;
     on_event(DownloadEvent::FileDownloadCompleted { bytes_downloaded });
