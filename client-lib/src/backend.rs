@@ -4,6 +4,8 @@ use reqwest::Client;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
+const ONE_MEGABYTE: u64 = 1_024 * 1_024;
+
 pub async fn download_file<F, H>(
     url: &str,
     mut on_event: F,
@@ -39,7 +41,7 @@ where
         on_chunk(&chunk);
 
         if let Some(total) = total_bytes {
-            let byte_milestone = bytes_downloaded >= last_progress_emitted + 1_048_576;
+            let byte_milestone = bytes_downloaded >= last_progress_emitted + ONE_MEGABYTE;
             let percent_milestone =
                 (bytes_downloaded * 10 / total) > (last_progress_emitted * 10 / total);
 
@@ -95,7 +97,7 @@ where
         on_chunk(&chunk);
 
         if let Some(total) = total_bytes {
-            let byte_milestone = bytes_downloaded >= last_progress_emitted + 1_048_576;
+            let byte_milestone = bytes_downloaded >= last_progress_emitted + ONE_MEGABYTE;
             let percent_milestone =
                 (bytes_downloaded * 10 / total) > (last_progress_emitted * 10 / total);
 
