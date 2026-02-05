@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0"
+thiserror = "2.0"
 features_lib = { path = "../core/features_lib/" }
 reqwest = { version = "0.11", features = ["json"] }
 sha2 = "0.10"

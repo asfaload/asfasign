@@ -1,7 +1,9 @@
+mod error;
+pub use error::{ClientLibError, Result};
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
 use features_lib::constants::{INDEX_FILE, SIGNATURES_SUFFIX};
 use features_lib::{
     AsfaloadHashes, AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatures,
