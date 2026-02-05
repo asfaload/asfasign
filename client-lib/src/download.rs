@@ -163,7 +163,7 @@ fn construct_file_repo_path(file_url: &Url, filename: &str) -> AsfaloadLibResult
 
     let dir_path = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
 
-    let translated_path = translate_download_to_release_path(host, dir_path);
+    let translated_path = translate_download_to_release_path(host, dir_path)?;
 
     Ok(format!("{}/{}/{}", host, translated_path, filename))
 }
@@ -182,11 +182,10 @@ impl Forges {
     }
 }
 
-fn translate_download_to_release_path(host: &str, path: &str) -> String {
-    let forge =
-        Forges::from_host(host).unwrap_or_else(|_| panic!("Host not supported as forge: {}", host));
+fn translate_download_to_release_path(host: &str, path: &str) -> AsfaloadLibResult<String> {
+    let forge = Forges::from_host(host)?;
     match forge {
-        Forges::Github => translate_github_release_path(path),
+        Forges::Github => Ok(translate_github_release_path(path)),
     }
 }
 
