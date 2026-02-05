@@ -1,8 +1,9 @@
 use crate::{ClientLibError, Result};
 use features_lib::{
+    AsfaloadHashes, AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatures,
+    SignersConfig,
     aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
-    sha512_for_content, AsfaloadHashes, AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys,
-    AsfaloadSignatures, SignersConfig,
+    sha512_for_content,
 };
 use hex;
 use sha2::{Digest, Sha256};
@@ -75,10 +76,10 @@ pub fn verify_file_hash(
         HashAlgorithm::Sha1 => {
             return Err(ClientLibError::UnsupportedHashAlgorithm(
                 HashAlgorithm::Sha1,
-            ))
+            ));
         }
         HashAlgorithm::Md5 => {
-            return Err(ClientLibError::UnsupportedHashAlgorithm(HashAlgorithm::Md5))
+            return Err(ClientLibError::UnsupportedHashAlgorithm(HashAlgorithm::Md5));
         }
     };
 

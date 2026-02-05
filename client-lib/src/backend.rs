@@ -1,13 +1,10 @@
 use crate::{ClientLibError, Result};
-use reqwest::Client;
 use futures_util::stream::StreamExt;
+use reqwest::Client;
 
 pub async fn download_file(url: &str) -> Result<Vec<u8>> {
     let client = Client::new();
-    let response = client
-        .get(url)
-        .send()
-        .await?;
+    let response = client.get(url).send().await?;
 
     if !response.status().is_success() {
         return Err(ClientLibError::HttpError {
