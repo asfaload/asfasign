@@ -4,8 +4,6 @@ use reqwest::Client;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
-const ONE_MEGABYTE: u64 = 1_024 * 1_024;
-
 pub async fn download_file<F, H>(
     url: &str,
     mut on_event: F,
