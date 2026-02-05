@@ -1,3 +1,4 @@
+mod backend;
 mod error;
 mod types;
 pub use error::{ClientLibError, Result};
@@ -13,8 +14,6 @@ use features_lib::{
     aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
     parse_signers_config, sha512_for_content,
 };
-use futures_util::stream::StreamExt;
-use reqwest::Client;
 use sha2::{Digest, Sha256};
 
 /// Handle the download command
@@ -168,32 +167,6 @@ fn translate_download_to_release_path(host: &str, path: &str) -> String {
 fn translate_github_release_path(path: &str) -> String {
     // Replace /releases/download/ with /releases/tag/
     path.replace("/releases/download/", "/releases/tag/")
-}
-
-/// Download file content from URL
-async fn download_file(url: &str) -> Result<Vec<u8>> {
-    let client = Client::new();
-    let response = client
-        .get(url)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        return Err(ClientLibError::HttpError {
-            status: response.status().as_u16(),
-            url: url.to_string(),
-        });
-    }
-
-    let mut buffer = Vec::new();
-    let mut stream = response.bytes_stream();
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        buffer.extend_from_slice(&chunk);
-    }
-
-    Ok(buffer)
 }
 
 /// Verify signatures meet threshold requirements
