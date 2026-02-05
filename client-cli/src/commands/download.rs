@@ -62,6 +62,7 @@ pub async fn handle_download_command(
                     bytes_downloaded as f64 / ONE_MEGABYTE,
                     total as f64 / ONE_MEGABYTE
                 );
+                let _ = std::io::stdout().flush();
             }
         }
         DownloadEvent::FileDownloadCompleted { bytes_downloaded } => {
