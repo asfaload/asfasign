@@ -170,6 +170,11 @@ fn verify_signatures(
     signers_config: &SignersConfig,
     data: &AsfaloadHashes,
 ) -> Result<()> {
+    let artifact_groups = signers_config.artifact_signers();
+    if artifact_groups.is_empty() {
+        anyhow::bail!("No artifact_signers group defined in signers config");
+    }
+
     let mut typed_signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures> = HashMap::new();
 
     let parsed_signatures = get_individual_signatures_from_bytes(signatures_content)
@@ -184,11 +189,6 @@ fn verify_signatures(
         }
 
         typed_signatures.insert(pubkey, signature);
-    }
-
-    let artifact_groups = signers_config.artifact_signers();
-    if artifact_groups.is_empty() {
-        anyhow::bail!("No artifact_signers group defined in signers config");
     }
 
     let is_complete = check_groups(artifact_groups, &typed_signatures, data);
