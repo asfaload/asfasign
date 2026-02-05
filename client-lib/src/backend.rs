@@ -49,18 +49,3 @@ where
 
     Ok(buffer)
 }
-
-pub async fn download_signers(backend_url: &str, index_file_path: &str) -> Result<Vec<u8>> {
-    let signers_url = format!("{}/get-signers/{}", backend_url, index_file_path);
-    download_file(&signers_url, |_| {}).await
-}
-
-pub async fn download_index(backend_url: &str, index_file_path: &str) -> Result<Vec<u8>> {
-    let index_url = format!("{}/files/{}", backend_url, index_file_path);
-    download_file(&index_url, |_| {}).await
-}
-
-pub async fn download_signatures(backend_url: &str, signatures_file_path: &str) -> Result<Vec<u8>> {
-    let signatures_url = format!("{}/files/{}", backend_url, signatures_file_path);
-    download_file(&signatures_url, |_| {}).await
-}

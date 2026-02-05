@@ -91,16 +91,3 @@ pub fn verify_file_hash(
 
     Ok(file_entry.algo.clone())
 }
-
-pub fn sha256_for_content<T: std::borrow::Borrow<[u8]>>(content_in: T) -> Result<String> {
-    let content = content_in.borrow();
-    if content.is_empty() {
-        Err(ClientLibError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "We don't compute the sha of an empty value",
-        )))
-    } else {
-        let result = Sha256::digest(content);
-        Ok(hex::encode(result))
-    }
-}
