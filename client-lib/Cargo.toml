@@ -6,11 +6,12 @@ edition = "2024"
 [dependencies]
 thiserror = "2.0"
 features_lib = { path = "../core/features_lib/" }
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = ["json", "stream"] }
 sha2 = "0.10"
 hex = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs"] }
 serde_json = "1.0"
+futures-util = "0.3"
 
 [lints]
 workspace = true

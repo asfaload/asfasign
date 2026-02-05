@@ -13,6 +13,7 @@ use features_lib::{
     aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
     parse_signers_config, sha512_for_content,
 };
+use futures_util::stream::StreamExt;
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 
@@ -140,7 +141,10 @@ fn translate_github_release_path(path: &str) -> String {
 /// Download file content from URL
 async fn download_file(url: &str) -> Result<Vec<u8>> {
     let client = Client::new();
-    let response = client.get(url).send().await?;
+    let response = client
+        .get(url)
+        .send()
+        .await?;
 
     if !response.status().is_success() {
         return Err(ClientLibError::HttpError {
@@ -149,9 +153,15 @@ async fn download_file(url: &str) -> Result<Vec<u8>> {
         });
     }
 
-    let content = response.bytes().await?;
+    let mut buffer = Vec::new();
+    let mut stream = response.bytes_stream();
 
-    Ok(content.to_vec())
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        buffer.extend_from_slice(&chunk);
+    }
+
+    Ok(buffer)
 }
 
 /// Verify signatures meet threshold requirements
