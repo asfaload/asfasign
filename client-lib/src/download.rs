@@ -1,12 +1,35 @@
 use crate::backend::download_file;
-use crate::verification::{verify_file_hash, verify_signatures};
+use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
 use crate::{ClientLibError, DownloadEvent, DownloadResult};
 use features_lib::{
-    AsfaloadIndex,
+    AsfaloadIndex, HashAlgorithm,
     constants::{INDEX_FILE, SIGNATURES_SUFFIX},
     parse_signers_config, sha512_for_content,
 };
 use reqwest::Url;
+use sha2::{Digest, Sha256, Sha512};
+
+/// Enum wrapping different hash algorithms for incremental hashing
+enum IncrementalHasher {
+    Sha256(Sha256),
+    Sha512(Sha512),
+}
+
+impl IncrementalHasher {
+    fn update(&mut self, data: &[u8]) {
+        match self {
+            IncrementalHasher::Sha256(h) => h.update(data),
+            IncrementalHasher::Sha512(h) => h.update(data),
+        }
+    }
+
+    fn finalize(self) -> Vec<u8> {
+        match self {
+            IncrementalHasher::Sha256(h) => h.finalize().to_vec(),
+            IncrementalHasher::Sha512(h) => h.finalize().to_vec(),
+        }
+    }
+}
 use std::path::PathBuf;
 
 /// Handle the download command
@@ -35,7 +58,7 @@ where
     let index_file_path = construct_index_file_path(&url)?;
 
     let signers_url = format!("{}/get-signers/{}", backend_url, index_file_path);
-    let signers_content = download_file(&signers_url, |_| {}).await?;
+    let signers_content = download_file(&signers_url, |_| {}, |_| {}).await?;
     on_event(DownloadEvent::SignersDownloaded {
         bytes: signers_content.len(),
     });
@@ -43,7 +66,7 @@ where
         .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
 
     let index_url = format!("{}/files/{}", backend_url, index_file_path);
-    let index_content = download_file(&index_url, |_| {}).await?;
+    let index_content = download_file(&index_url, |_| {}, |_| {}).await?;
     on_event(DownloadEvent::IndexDownloaded {
         bytes: index_content.len(),
     });
@@ -52,7 +75,7 @@ where
     let signatures_file_path =
         construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
     let signatures_url = format!("{}/files/{}", backend_url, signatures_file_path);
-    let signatures_content = download_file(&signatures_url, |_| {}).await?;
+    let signatures_content = download_file(&signatures_url, |_| {}, |_| {}).await?;
     on_event(DownloadEvent::SignaturesDownloaded {
         bytes: signatures_content.len(),
     });
@@ -67,16 +90,34 @@ where
         invalid_count,
     });
 
+    // Get hash algorithm before downloading so we can compute hash incrementally
+    let (hash_algorithm, _expected_hash) = get_file_hash_info(&index, filename)?;
+
+    // Create hasher based on algorithm
+    let mut hasher = match hash_algorithm {
+        HashAlgorithm::Sha256 => IncrementalHasher::Sha256(Sha256::new()),
+        HashAlgorithm::Sha512 => IncrementalHasher::Sha512(Sha512::new()),
+        HashAlgorithm::Sha1 | HashAlgorithm::Md5 => {
+            return Err(ClientLibError::UnsupportedHashAlgorithm(hash_algorithm));
+        }
+    };
+
     on_event(DownloadEvent::FileDownloadStarted {
         filename: filename.to_string(),
         total_bytes: None,
     });
-    let file_content = download_file(file_url, &mut on_event).await?;
+
+    // Download file with incremental hash computation
+    let file_content = download_file(file_url, &mut on_event, |chunk| {
+        hasher.update(chunk);
+    }).await?;
 
     let bytes_downloaded = file_content.len() as u64;
     on_event(DownloadEvent::FileDownloadCompleted { bytes_downloaded });
 
-    let hash_algorithm = verify_file_hash(&index, filename, file_content.as_slice())?;
+    // Finalize hash and verify
+    let computed_hash = hex::encode(hasher.finalize());
+    verify_file_hash(&index, filename, &computed_hash)?;
 
     on_event(DownloadEvent::FileHashVerified {
         algorithm: hash_algorithm.clone(),

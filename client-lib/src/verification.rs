@@ -1,11 +1,9 @@
 use crate::{ClientLibError, Result};
 use features_lib::{
+    aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
     AsfaloadHashes, AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatures,
     SignersConfig,
-    aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
-    sha512_for_content,
 };
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 pub fn verify_signatures(
@@ -46,10 +44,24 @@ pub fn verify_signatures(
     Ok((valid_count, invalid_count))
 }
 
+/// Get hash algorithm and expected hash for a file from the index
+pub fn get_file_hash_info(
+    index: &AsfaloadIndex,
+    filename: &str,
+) -> Result<(features_lib::HashAlgorithm, String)> {
+    let file_entry = index
+        .published_files
+        .iter()
+        .find(|f| f.file_name == filename)
+        .ok_or_else(|| ClientLibError::FileNotInIndex(filename.to_string()))?;
+
+    Ok((file_entry.algo.clone(), file_entry.hash.clone()))
+}
+
 pub fn verify_file_hash(
     index: &AsfaloadIndex,
     filename: &str,
-    file_content: &[u8],
+    computed_hash: &str,
 ) -> Result<features_lib::HashAlgorithm> {
     use features_lib::HashAlgorithm;
 
@@ -61,17 +73,7 @@ pub fn verify_file_hash(
 
     let expected_hash_str = &file_entry.hash;
 
-    let computed_hash = match file_entry.algo {
-        HashAlgorithm::Sha256 => {
-            let result = Sha256::digest(file_content);
-            hex::encode(result)
-        }
-        HashAlgorithm::Sha512 => {
-            let hash = sha512_for_content(file_content)?;
-            match hash {
-                AsfaloadHashes::Sha512(bytes) => hex::encode(bytes),
-            }
-        }
+    match file_entry.algo {
         HashAlgorithm::Sha1 => {
             return Err(ClientLibError::UnsupportedHashAlgorithm(
                 HashAlgorithm::Sha1,
@@ -80,7 +82,8 @@ pub fn verify_file_hash(
         HashAlgorithm::Md5 => {
             return Err(ClientLibError::UnsupportedHashAlgorithm(HashAlgorithm::Md5));
         }
-    };
+        _ => {} // Sha256 and Sha512 are supported
+    }
 
     if expected_hash_str.to_lowercase() != computed_hash.to_lowercase() {
         return Err(ClientLibError::HashMismatch {

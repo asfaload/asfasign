@@ -2,11 +2,11 @@ use crate::{ClientLibError, DownloadEvent, Result};
 use futures_util::stream::StreamExt;
 use reqwest::Client;
 
-pub async fn download_file<F>(url: &str, mut on_event: F) -> Result<Vec<u8>>
+pub async fn download_file<F, H>(url: &str, mut on_event: F, mut on_chunk: H) -> Result<Vec<u8>>
 where
     F: FnMut(DownloadEvent) + Send,
+    H: FnMut(&[u8]) + Send,
 {
-    let _ = on_event;
     let client = Client::new();
     let response = client.get(url).send().await?;
 
@@ -30,6 +30,7 @@ where
         let chunk_size = chunk.len() as u64;
         bytes_downloaded += chunk_size;
         buffer.extend_from_slice(&chunk);
+        on_chunk(&chunk);
 
         if let Some(total) = total_bytes {
             let byte_milestone = bytes_downloaded >= last_progress_emitted + 1_048_576;
