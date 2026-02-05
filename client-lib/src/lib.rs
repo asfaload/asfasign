@@ -4,14 +4,13 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use features_lib::constants::{INDEX_FILE, SIGNATURES_SUFFIX};
 use features_lib::{
-    AsfaloadHashes, AsfaloadIndex, HashAlgorithm, SignersConfig,
+    AsfaloadHashes, AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatures,
+    HashAlgorithm, SignersConfig,
     aggregate_signature_helpers::{check_groups, get_individual_signatures_from_bytes},
     parse_signers_config, sha512_for_content,
 };
 use reqwest::Client;
 use sha2::{Digest, Sha256};
-use signatures::keys::AsfaloadPublicKeyTrait;
-use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 
 /// Handle the download command
 pub async fn download_file_with_verification(
