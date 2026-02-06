@@ -60,10 +60,7 @@ pub fn get_file_hash_info(
     ComputedHash::from_algorithm_and_hex(file_entry.algo.clone(), file_entry.hash.clone())
 }
 
-pub fn verify_file_hash(
-    expected: &ComputedHash,
-    computed: &ComputedHash,
-) -> AsfaloadLibResult<()> {
+pub fn verify_file_hash(expected: &ComputedHash, computed: &ComputedHash) -> AsfaloadLibResult<()> {
     if expected.algorithm() != computed.algorithm() {
         return Err(ClientLibError::HashAlgorithmMismatch {
             expected: expected.algorithm(),

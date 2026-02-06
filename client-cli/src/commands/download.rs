@@ -24,7 +24,10 @@ pub async fn handle_download_command(
             if args.invalid_count > 0 {
                 println!("⚠ Warning: {} invalid signature(s)", args.invalid_count);
             }
-            println!("✓ Signatures verified successfully ({} valid)", args.valid_count);
+            println!(
+                "✓ Signatures verified successfully ({} valid)",
+                args.valid_count
+            );
         })
         .with_file_hash_verified(|args| {
             println!(
