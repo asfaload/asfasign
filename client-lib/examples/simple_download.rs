@@ -4,16 +4,16 @@ use client_lib::{DownloadCallbacks, DownloadResult, download_file_with_verificat
 #[tokio::main]
 async fn main() -> Result<(), ClientLibError> {
     let callbacks = DownloadCallbacks::default()
-        .with_file_download_progress(|bytes_downloaded, total_bytes, _chunk_size| {
-            if let Some(total) = total_bytes {
+        .with_file_download_progress(|args| {
+            if let Some(total) = args.total_bytes {
                 println!(
                     "Progress: {:.1}%",
-                    (bytes_downloaded as f64 / total as f64) * 100.0
+                    (args.bytes_downloaded as f64 / total as f64) * 100.0
                 );
             }
         })
-        .with_completed(|result| {
-            println!("Download complete: {:?}", result.file_path);
+        .with_completed(|args| {
+            println!("Download complete: {:?}", args.result.file_path);
         });
 
     let result: DownloadResult = download_file_with_verification(

@@ -43,6 +43,70 @@ pub enum DownloadEvent {
 }
 
 #[derive(Clone)]
+pub struct StartingArgs {
+    pub file_url: String,
+}
+
+#[derive(Clone)]
+pub struct SignersDownloadedArgs {
+    pub bytes: usize,
+}
+
+#[derive(Clone)]
+pub struct IndexDownloadedArgs {
+    pub bytes: usize,
+}
+
+#[derive(Clone)]
+pub struct SignaturesDownloadedArgs {
+    pub bytes: usize,
+}
+
+#[derive(Clone)]
+pub struct SignaturesVerifiedArgs {
+    pub valid_count: usize,
+    pub invalid_count: usize,
+}
+
+#[derive(Clone)]
+pub struct FileDownloadStartedArgs {
+    pub filename: String,
+    pub total_bytes: Option<u64>,
+}
+
+#[derive(Clone)]
+pub struct FileDownloadProgressArgs {
+    pub bytes_downloaded: u64,
+    pub total_bytes: Option<u64>,
+    pub chunk_size: usize,
+}
+
+#[derive(Clone)]
+pub struct ChunkReceivedArgs {
+    pub chunk: Vec<u8>,
+}
+
+#[derive(Clone)]
+pub struct FileDownloadCompletedArgs {
+    pub bytes_downloaded: u64,
+}
+
+#[derive(Clone)]
+pub struct FileHashVerifiedArgs {
+    pub algorithm: HashAlgorithm,
+}
+
+#[derive(Clone)]
+pub struct FileSavedArgs {
+    pub path: PathBuf,
+}
+
+#[derive(Clone)]
+pub struct CompletedArgs {
+    pub result: DownloadResult,
+}
+
+#[derive(Clone)]
 pub struct DownloadResult {
     pub file_path: PathBuf,
     pub bytes_downloaded: u64,
@@ -54,49 +118,61 @@ pub struct DownloadResult {
 #[allow(clippy::type_complexity)]
 #[derive(Default)]
 pub struct DownloadCallbacks {
-    pub on_starting: Option<Box<dyn Fn(&str) + Send>>,
-    pub on_signers_downloaded: Option<Box<dyn Fn(usize) + Send>>,
-    pub on_index_downloaded: Option<Box<dyn Fn(usize) + Send>>,
-    pub on_signatures_downloaded: Option<Box<dyn Fn(usize) + Send>>,
-    pub on_signatures_verified: Option<Box<dyn Fn(usize, usize) + Send>>,
-    pub on_file_download_started: Option<Box<dyn Fn(&str, Option<u64>) + Send>>,
-    pub on_file_download_progress: Option<Box<dyn Fn(u64, Option<u64>, usize) + Send>>,
+    pub on_starting: Option<Box<dyn Fn(&StartingArgs) + Send>>,
+    pub on_signers_downloaded: Option<Box<dyn Fn(&SignersDownloadedArgs) + Send>>,
+    pub on_index_downloaded: Option<Box<dyn Fn(&IndexDownloadedArgs) + Send>>,
+    pub on_signatures_downloaded: Option<Box<dyn Fn(&SignaturesDownloadedArgs) + Send>>,
+    pub on_signatures_verified: Option<Box<dyn Fn(&SignaturesVerifiedArgs) + Send>>,
+    pub on_file_download_started: Option<Box<dyn Fn(&FileDownloadStartedArgs) + Send>>,
+    pub on_file_download_progress: Option<Box<dyn Fn(&FileDownloadProgressArgs) + Send>>,
     // Note that although this function is Fn and not FnMut, you can still maintain
     // a changing state using an Arc (and for thread safety Atomic values)
-    pub on_chunk_received: Option<Box<dyn Fn(&[u8]) + Send>>,
-    pub on_file_download_completed: Option<Box<dyn Fn(u64) + Send>>,
-    pub on_file_hash_verified: Option<Box<dyn Fn(HashAlgorithm) + Send>>,
-    pub on_file_saved: Option<Box<dyn Fn(&std::path::Path) + Send>>,
-    pub on_completed: Option<Box<dyn Fn(&DownloadResult) + Send>>,
+    pub on_chunk_received: Option<Box<dyn Fn(&ChunkReceivedArgs) + Send>>,
+    pub on_file_download_completed: Option<Box<dyn Fn(&FileDownloadCompletedArgs) + Send>>,
+    pub on_file_hash_verified: Option<Box<dyn Fn(&FileHashVerifiedArgs) + Send>>,
+    pub on_file_saved: Option<Box<dyn Fn(&FileSavedArgs) + Send>>,
+    pub on_completed: Option<Box<dyn Fn(&CompletedArgs) + Send>>,
 }
 
 impl DownloadCallbacks {
-    pub fn with_starting<F: Fn(&str) + Send + 'static>(mut self, f: F) -> Self {
+    pub fn with_starting<F: Fn(&StartingArgs) + Send + 'static>(mut self, f: F) -> Self {
         self.on_starting = Some(Box::new(f));
         self
     }
 
-    pub fn with_signers_downloaded<F: Fn(usize) + Send + 'static>(mut self, f: F) -> Self {
+    pub fn with_signers_downloaded<F: Fn(&SignersDownloadedArgs) + Send + 'static>(
+        mut self,
+        f: F,
+    ) -> Self {
         self.on_signers_downloaded = Some(Box::new(f));
         self
     }
 
-    pub fn with_index_downloaded<F: Fn(usize) + Send + 'static>(mut self, f: F) -> Self {
+    pub fn with_index_downloaded<F: Fn(&IndexDownloadedArgs) + Send + 'static>(
+        mut self,
+        f: F,
+    ) -> Self {
         self.on_index_downloaded = Some(Box::new(f));
         self
     }
 
-    pub fn with_signatures_downloaded<F: Fn(usize) + Send + 'static>(mut self, f: F) -> Self {
+    pub fn with_signatures_downloaded<F: Fn(&SignaturesDownloadedArgs) + Send + 'static>(
+        mut self,
+        f: F,
+    ) -> Self {
         self.on_signatures_downloaded = Some(Box::new(f));
         self
     }
 
-    pub fn with_signatures_verified<F: Fn(usize, usize) + Send + 'static>(mut self, f: F) -> Self {
+    pub fn with_signatures_verified<F: Fn(&SignaturesVerifiedArgs) + Send + 'static>(
+        mut self,
+        f: F,
+    ) -> Self {
         self.on_signatures_verified = Some(Box::new(f));
         self
     }
 
-    pub fn with_file_download_started<F: Fn(&str, Option<u64>) + Send + 'static>(
+    pub fn with_file_download_started<F: Fn(&FileDownloadStartedArgs) + Send + 'static>(
         mut self,
         f: F,
     ) -> Self {
@@ -104,7 +180,7 @@ impl DownloadCallbacks {
         self
     }
 
-    pub fn with_file_download_progress<F: Fn(u64, Option<u64>, usize) + Send + 'static>(
+    pub fn with_file_download_progress<F: Fn(&FileDownloadProgressArgs) + Send + 'static>(
         mut self,
         f: F,
     ) -> Self {
@@ -112,27 +188,33 @@ impl DownloadCallbacks {
         self
     }
 
-    pub fn with_chunk_received<F: Fn(&[u8]) + Send + 'static>(mut self, f: F) -> Self {
+    pub fn with_chunk_received<F: Fn(&ChunkReceivedArgs) + Send + 'static>(mut self, f: F) -> Self {
         self.on_chunk_received = Some(Box::new(f));
         self
     }
 
-    pub fn with_file_download_completed<F: Fn(u64) + Send + 'static>(mut self, f: F) -> Self {
+    pub fn with_file_download_completed<F: Fn(&FileDownloadCompletedArgs) + Send + 'static>(
+        mut self,
+        f: F,
+    ) -> Self {
         self.on_file_download_completed = Some(Box::new(f));
         self
     }
 
-    pub fn with_file_hash_verified<F: Fn(HashAlgorithm) + Send + 'static>(mut self, f: F) -> Self {
+    pub fn with_file_hash_verified<F: Fn(&FileHashVerifiedArgs) + Send + 'static>(
+        mut self,
+        f: F,
+    ) -> Self {
         self.on_file_hash_verified = Some(Box::new(f));
         self
     }
 
-    pub fn with_file_saved<F: Fn(&std::path::Path) + Send + 'static>(mut self, f: F) -> Self {
+    pub fn with_file_saved<F: Fn(&FileSavedArgs) + Send + 'static>(mut self, f: F) -> Self {
         self.on_file_saved = Some(Box::new(f));
         self
     }
 
-    pub fn with_completed<F: Fn(&DownloadResult) + Send + 'static>(mut self, f: F) -> Self {
+    pub fn with_completed<F: Fn(&CompletedArgs) + Send + 'static>(mut self, f: F) -> Self {
         self.on_completed = Some(Box::new(f));
         self
     }
@@ -141,37 +223,51 @@ impl DownloadCallbacks {
 impl DownloadCallbacks {
     pub(crate) fn emit_starting(&self, file_url: &str) {
         if let Some(ref f) = self.on_starting {
-            f(file_url);
+            let args = StartingArgs {
+                file_url: file_url.to_string(),
+            };
+            f(&args);
         }
     }
 
     pub(crate) fn emit_signers_downloaded(&self, bytes: usize) {
         if let Some(ref f) = self.on_signers_downloaded {
-            f(bytes);
+            let args = SignersDownloadedArgs { bytes };
+            f(&args);
         }
     }
 
     pub(crate) fn emit_index_downloaded(&self, bytes: usize) {
         if let Some(ref f) = self.on_index_downloaded {
-            f(bytes);
+            let args = IndexDownloadedArgs { bytes };
+            f(&args);
         }
     }
 
     pub(crate) fn emit_signatures_downloaded(&self, bytes: usize) {
         if let Some(ref f) = self.on_signatures_downloaded {
-            f(bytes);
+            let args = SignaturesDownloadedArgs { bytes };
+            f(&args);
         }
     }
 
     pub(crate) fn emit_signatures_verified(&self, valid_count: usize, invalid_count: usize) {
         if let Some(ref f) = self.on_signatures_verified {
-            f(valid_count, invalid_count);
+            let args = SignaturesVerifiedArgs {
+                valid_count,
+                invalid_count,
+            };
+            f(&args);
         }
     }
 
     pub(crate) fn emit_file_download_started(&self, filename: &str, total_bytes: Option<u64>) {
         if let Some(ref f) = self.on_file_download_started {
-            f(filename, total_bytes);
+            let args = FileDownloadStartedArgs {
+                filename: filename.to_string(),
+                total_bytes,
+            };
+            f(&args);
         }
     }
 
@@ -182,37 +278,53 @@ impl DownloadCallbacks {
         chunk_size: usize,
     ) {
         if let Some(ref f) = self.on_file_download_progress {
-            f(bytes_downloaded, total_bytes, chunk_size);
+            let args = FileDownloadProgressArgs {
+                bytes_downloaded,
+                total_bytes,
+                chunk_size,
+            };
+            f(&args);
         }
     }
 
     pub(crate) fn emit_chunk_received(&self, chunk: &[u8]) {
         if let Some(ref f) = self.on_chunk_received {
-            f(chunk);
+            let args = ChunkReceivedArgs {
+                chunk: chunk.to_vec(),
+            };
+            f(&args);
         }
     }
 
     pub(crate) fn emit_file_download_completed(&self, bytes_downloaded: u64) {
         if let Some(ref f) = self.on_file_download_completed {
-            f(bytes_downloaded);
+            let args = FileDownloadCompletedArgs { bytes_downloaded };
+            f(&args);
         }
     }
 
     pub(crate) fn emit_file_hash_verified(&self, algorithm: HashAlgorithm) {
         if let Some(ref f) = self.on_file_hash_verified {
-            f(algorithm);
+            let args = FileHashVerifiedArgs { algorithm };
+            f(&args);
         }
     }
 
     pub(crate) fn emit_file_saved(&self, path: &std::path::Path) {
         if let Some(ref f) = self.on_file_saved {
-            f(path);
+            let args = FileSavedArgs {
+                path: path.to_path_buf(),
+            };
+            f(&args);
         }
     }
 
     pub(crate) fn emit_completed(&self, result: &DownloadResult) {
         if let Some(ref f) = self.on_completed {
-            f(result);
+            let args = CompletedArgs {
+                result: result.clone(),
+            };
+            f(&args);
         }
     }
 }
