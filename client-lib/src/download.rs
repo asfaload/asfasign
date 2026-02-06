@@ -57,7 +57,7 @@ pub async fn download_file_with_verification(
     callbacks.emit_signatures_verified(valid_count, invalid_count);
 
     // Get hash algorithm before downloading so we can compute hash incrementally
-    let (hash_algorithm, _expected_hash) = get_file_hash_info(&index, filename)?;
+    let (hash_algorithm, expected_hash) = get_file_hash_info(&index, filename)?;
 
     callbacks.emit_file_download_started(filename, None);
 
@@ -69,7 +69,7 @@ pub async fn download_file_with_verification(
     callbacks.emit_file_download_completed(bytes_downloaded);
 
     // Verify hash
-    verify_file_hash(&index, filename, &computed_hash)?;
+    verify_file_hash(&hash_algorithm, &expected_hash, &computed_hash)?;
 
     callbacks.emit_file_hash_verified(hash_algorithm.clone());
 
