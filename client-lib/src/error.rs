@@ -34,6 +34,12 @@ pub enum ClientLibError {
     #[error("Hash mismatch: expected '{expected}', got '{computed}'")]
     HashMismatch { expected: String, computed: String },
 
+    #[error("Hash algorithm mismatch: expected {expected:?}, got {computed:?}")]
+    HashAlgorithmMismatch {
+        expected: features_lib::HashAlgorithm,
+        computed: features_lib::HashAlgorithm,
+    },
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 

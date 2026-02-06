@@ -1,5 +1,5 @@
 use crate::constants::ONE_MEGABYTE;
-use crate::types::DownloadCallbacks;
+use crate::types::{ComputedHash, DownloadCallbacks};
 use crate::{AsfaloadLibResult, ClientLibError};
 use features_lib::HashAlgorithm;
 use futures_util::stream::StreamExt;
@@ -21,10 +21,10 @@ impl IncrementalHasher {
         }
     }
 
-    fn finalize(self) -> Vec<u8> {
+    fn finalize(self) -> ComputedHash {
         match self {
-            IncrementalHasher::Sha256(h) => h.finalize().to_vec(),
-            IncrementalHasher::Sha512(h) => h.finalize().to_vec(),
+            IncrementalHasher::Sha256(h) => ComputedHash::Sha256(hex::encode(h.finalize())),
+            IncrementalHasher::Sha512(h) => ComputedHash::Sha512(hex::encode(h.finalize())),
         }
     }
 }
@@ -45,7 +45,7 @@ pub async fn download_file_to_temp(
     url: &str,
     hash_algorithm: &HashAlgorithm,
     callbacks: &DownloadCallbacks,
-) -> AsfaloadLibResult<(NamedTempFile, u64, String)> {
+) -> AsfaloadLibResult<(NamedTempFile, u64, ComputedHash)> {
     let mut hasher = match hash_algorithm {
         HashAlgorithm::Sha256 => IncrementalHasher::Sha256(Sha256::new()),
         HashAlgorithm::Sha512 => IncrementalHasher::Sha512(Sha512::new()),
@@ -61,8 +61,7 @@ pub async fn download_file_to_temp(
         download_file_to_writer(client, url, &mut temp_file, &mut hasher, callbacks).await?;
     temp_file.flush()?;
 
-    let hash_bytes = hasher.finalize();
-    let computed_hash = hex::encode(hash_bytes);
+    let computed_hash = hasher.finalize();
 
     Ok((temp_file, bytes_downloaded, computed_hash))
 }
@@ -120,4 +119,43 @@ async fn download_file_to_writer<W: std::io::Write + Send>(
     writer.flush()?;
 
     Ok(bytes_downloaded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::ComputedHash;
+
+    #[test]
+    fn incremental_hasher_sha256_returns_computed_hash() {
+        let mut hasher = IncrementalHasher::Sha256(Sha256::new());
+        hasher.update(b"hello world");
+        let result = hasher.finalize();
+
+        match &result {
+            ComputedHash::Sha256(hex) => {
+                assert_eq!(hex.len(), 64);
+                // Known SHA256 of "hello world"
+                assert_eq!(
+                    hex,
+                    "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+                );
+            }
+            _ => panic!("Expected Sha256 variant"),
+        }
+    }
+
+    #[test]
+    fn incremental_hasher_sha512_returns_computed_hash() {
+        let mut hasher = IncrementalHasher::Sha512(Sha512::new());
+        hasher.update(b"hello world");
+        let result = hasher.finalize();
+
+        match &result {
+            ComputedHash::Sha512(hex) => {
+                assert_eq!(hex.len(), 128);
+            }
+            _ => panic!("Expected Sha512 variant"),
+        }
+    }
 }

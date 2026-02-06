@@ -1,3 +1,4 @@
+use crate::types::ComputedHash;
 use crate::{AsfaloadLibResult, ClientLibError};
 use features_lib::{
     AsfaloadHashes, AsfaloadIndex, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSignatures,
@@ -44,43 +45,36 @@ pub fn verify_signatures(
     Ok((valid_count, invalid_count))
 }
 
-/// Get hash algorithm and expected hash for a file from the index
+/// Get expected hash for a file from the index as a `ComputedHash`.
+/// Returns an error if the algorithm is unsupported (Sha1, Md5).
 pub fn get_file_hash_info(
     index: &AsfaloadIndex,
     filename: &str,
-) -> AsfaloadLibResult<(features_lib::HashAlgorithm, String)> {
+) -> AsfaloadLibResult<ComputedHash> {
     let file_entry = index
         .published_files
         .iter()
         .find(|f| f.file_name == filename)
         .ok_or_else(|| ClientLibError::FileNotInIndex(filename.to_string()))?;
 
-    Ok((file_entry.algo.clone(), file_entry.hash.clone()))
+    ComputedHash::from_algorithm_and_hex(file_entry.algo.clone(), file_entry.hash.clone())
 }
 
 pub fn verify_file_hash(
-    algo: &features_lib::HashAlgorithm,
-    expected_hash: &str,
-    computed_hash: &str,
+    expected: &ComputedHash,
+    computed: &ComputedHash,
 ) -> AsfaloadLibResult<()> {
-    use features_lib::HashAlgorithm;
-
-    match algo {
-        HashAlgorithm::Sha1 => {
-            return Err(ClientLibError::UnsupportedHashAlgorithm(
-                HashAlgorithm::Sha1,
-            ));
-        }
-        HashAlgorithm::Md5 => {
-            return Err(ClientLibError::UnsupportedHashAlgorithm(HashAlgorithm::Md5));
-        }
-        _ => {} // Sha256 and Sha512 are supported
+    if expected.algorithm() != computed.algorithm() {
+        return Err(ClientLibError::HashAlgorithmMismatch {
+            expected: expected.algorithm(),
+            computed: computed.algorithm(),
+        });
     }
 
-    if expected_hash.to_lowercase() != computed_hash.to_lowercase() {
+    if expected != computed {
         return Err(ClientLibError::HashMismatch {
-            expected: expected_hash.to_lowercase(),
-            computed: computed_hash.to_lowercase(),
+            expected: expected.hex_value().to_lowercase(),
+            computed: computed.hex_value().to_lowercase(),
         });
     }
 
@@ -92,56 +86,102 @@ mod tests {
     use super::*;
     use features_lib::HashAlgorithm;
 
+    // --- verify_file_hash tests ---
+
     #[test]
     fn verify_file_hash_sha256_matching() {
-        let hash = "abc123def456";
-        let result = verify_file_hash(&HashAlgorithm::Sha256, hash, hash);
+        let hash = ComputedHash::Sha256("abc123def456".to_string());
+        let result = verify_file_hash(&hash, &hash);
         assert!(result.is_ok());
     }
 
     #[test]
     fn verify_file_hash_sha512_matching() {
-        let hash = "abc123def456";
-        let result = verify_file_hash(&HashAlgorithm::Sha512, hash, hash);
+        let hash = ComputedHash::Sha512("abc123def456".to_string());
+        let result = verify_file_hash(&hash, &hash);
         assert!(result.is_ok());
     }
 
     #[test]
     fn verify_file_hash_case_insensitive() {
-        let result = verify_file_hash(&HashAlgorithm::Sha256, "ABC123DEF", "abc123def");
+        let a = ComputedHash::Sha256("ABC123DEF".to_string());
+        let b = ComputedHash::Sha256("abc123def".to_string());
+        let result = verify_file_hash(&a, &b);
         assert!(result.is_ok());
     }
 
     #[test]
     fn verify_file_hash_mismatch() {
-        let result = verify_file_hash(&HashAlgorithm::Sha256, "abc123", "def456");
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ClientLibError::HashMismatch { expected, computed } => {
+        let a = ComputedHash::Sha256("abc123".to_string());
+        let b = ComputedHash::Sha256("def456".to_string());
+        match verify_file_hash(&a, &b) {
+            Err(ClientLibError::HashMismatch { expected, computed }) => {
                 assert_eq!(expected, "abc123");
                 assert_eq!(computed, "def456");
             }
-            e => panic!("Expected HashMismatch, got: {e:?}"),
+            Err(e) => panic!("Expected HashMismatch, got: {e:?}"),
+            Ok(_) => panic!("Expected HashMismatch error, got Ok"),
         }
     }
 
     #[test]
-    fn verify_file_hash_sha1_unsupported() {
-        let result = verify_file_hash(&HashAlgorithm::Sha1, "abc", "abc");
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ClientLibError::UnsupportedHashAlgorithm(HashAlgorithm::Sha1) => {}
-            e => panic!("Expected UnsupportedHashAlgorithm(Sha1), got: {e:?}"),
+    fn verify_file_hash_algorithm_mismatch() {
+        let expected = ComputedHash::Sha256("abc123".to_string());
+        let computed = ComputedHash::Sha512("abc123".to_string());
+        match verify_file_hash(&expected, &computed) {
+            Err(ClientLibError::HashAlgorithmMismatch { .. }) => {}
+            Err(e) => panic!("Expected HashAlgorithmMismatch, got: {e:?}"),
+            Ok(_) => panic!("Expected HashAlgorithmMismatch error, got Ok"),
+        }
+    }
+
+    // --- get_file_hash_info tests ---
+
+    #[test]
+    fn get_file_hash_info_sha256() {
+        use chrono::Utc;
+        use features_lib::{AsfaloadIndex, FileChecksum};
+
+        let index = AsfaloadIndex {
+            mirrored_on: Utc::now(),
+            published_on: Utc::now(),
+            version: 1,
+            published_files: vec![FileChecksum {
+                file_name: "test.txt".to_string(),
+                algo: HashAlgorithm::Sha256,
+                source: "http://example.com/test.txt".to_string(),
+                hash: "abc123def456".to_string(),
+            }],
+        };
+
+        match get_file_hash_info(&index, "test.txt") {
+            Ok(ComputedHash::Sha256(hex)) => assert_eq!(hex, "abc123def456"),
+            Ok(other) => panic!("Expected Sha256 variant, got: {other}"),
+            Err(e) => panic!("Expected Ok, got: {e:?}"),
         }
     }
 
     #[test]
-    fn verify_file_hash_md5_unsupported() {
-        let result = verify_file_hash(&HashAlgorithm::Md5, "abc", "abc");
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ClientLibError::UnsupportedHashAlgorithm(HashAlgorithm::Md5) => {}
-            e => panic!("Expected UnsupportedHashAlgorithm(Md5), got: {e:?}"),
+    fn get_file_hash_info_unsupported_algo() {
+        use chrono::Utc;
+        use features_lib::{AsfaloadIndex, FileChecksum};
+
+        let index = AsfaloadIndex {
+            mirrored_on: Utc::now(),
+            published_on: Utc::now(),
+            version: 1,
+            published_files: vec![FileChecksum {
+                file_name: "test.txt".to_string(),
+                algo: HashAlgorithm::Sha1,
+                source: "http://example.com/test.txt".to_string(),
+                hash: "old_hash".to_string(),
+            }],
+        };
+
+        match get_file_hash_info(&index, "test.txt") {
+            Err(ClientLibError::UnsupportedHashAlgorithm(HashAlgorithm::Sha1)) => {}
+            Err(e) => panic!("Expected UnsupportedHashAlgorithm(Sha1), got: {e:?}"),
+            Ok(v) => panic!("Expected error, got: {v}"),
         }
     }
 }

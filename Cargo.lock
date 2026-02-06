@@ -781,6 +781,7 @@ dependencies = [
 name = "client-lib"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "digest",
  "features_lib",
  "futures-util",

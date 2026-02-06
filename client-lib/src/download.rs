@@ -56,22 +56,21 @@ pub async fn download_file_with_verification(
 
     callbacks.emit_signatures_verified(valid_count, invalid_count);
 
-    // Get hash algorithm before downloading so we can compute hash incrementally
-    let (hash_algorithm, expected_hash) = get_file_hash_info(&index, filename)?;
+    // Get expected hash from index (validates algorithm is supported)
+    let expected_hash = get_file_hash_info(&index, filename)?;
 
     callbacks.emit_file_download_started(filename, None);
 
-    // Download file to temp location
-    let callbacks_for_download = callbacks;
+    // Download file to temp location with incremental hash computation
     let (temp_file, bytes_downloaded, computed_hash) =
-        download_file_to_temp(&client, file_url, &hash_algorithm, callbacks_for_download).await?;
+        download_file_to_temp(&client, file_url, &expected_hash.algorithm(), callbacks).await?;
 
     callbacks.emit_file_download_completed(bytes_downloaded);
 
-    // Verify hash
-    verify_file_hash(&hash_algorithm, &expected_hash, &computed_hash)?;
+    // Verify hash (algorithm + value)
+    verify_file_hash(&expected_hash, &computed_hash)?;
 
-    callbacks.emit_file_hash_verified(hash_algorithm.clone());
+    callbacks.emit_file_hash_verified(computed_hash.algorithm());
 
     // Move temp file to final destination (only happens if hash verification succeeded)
     let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
@@ -89,7 +88,7 @@ pub async fn download_file_with_verification(
         bytes_downloaded,
         signatures_verified: valid_count,
         signatures_invalid: invalid_count,
-        hash_algorithm,
+        computed_hash,
     };
 
     callbacks.emit_completed(&result);

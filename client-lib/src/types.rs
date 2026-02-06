@@ -1,5 +1,67 @@
+use crate::ClientLibError;
 use features_lib::HashAlgorithm;
+use std::fmt;
 use std::path::PathBuf;
+
+/// Strongly-typed wrapper for computed file hashes.
+///
+/// Binds the hash algorithm to its hex-encoded value at the type level,
+/// preventing algorithm/value mismatches.
+#[derive(Clone, Debug)]
+pub enum ComputedHash {
+    /// SHA-256 hash (32 bytes, 64 hex characters)
+    Sha256(String),
+    /// SHA-512 hash (64 bytes, 128 hex characters)
+    Sha512(String),
+}
+
+impl ComputedHash {
+    /// Get the hex-encoded hash value.
+    pub fn hex_value(&self) -> &str {
+        match self {
+            ComputedHash::Sha256(h) | ComputedHash::Sha512(h) => h,
+        }
+    }
+
+    /// Get the hash algorithm.
+    pub fn algorithm(&self) -> HashAlgorithm {
+        match self {
+            ComputedHash::Sha256(_) => HashAlgorithm::Sha256,
+            ComputedHash::Sha512(_) => HashAlgorithm::Sha512,
+        }
+    }
+
+    /// Create from a `HashAlgorithm` and hex string.
+    /// Returns an error for unsupported algorithms (Sha1, Md5).
+    pub fn from_algorithm_and_hex(
+        algo: HashAlgorithm,
+        hex: impl Into<String>,
+    ) -> Result<Self, ClientLibError> {
+        match algo {
+            HashAlgorithm::Sha256 => Ok(ComputedHash::Sha256(hex.into())),
+            HashAlgorithm::Sha512 => Ok(ComputedHash::Sha512(hex.into())),
+            unsupported => Err(ClientLibError::UnsupportedHashAlgorithm(unsupported)),
+        }
+    }
+}
+
+impl PartialEq for ComputedHash {
+    fn eq(&self, other: &Self) -> bool {
+        self.algorithm() == other.algorithm()
+            && self.hex_value().eq_ignore_ascii_case(other.hex_value())
+    }
+}
+
+impl Eq for ComputedHash {}
+
+impl fmt::Display for ComputedHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ComputedHash::Sha256(h) => write!(f, "sha256:{}", h),
+            ComputedHash::Sha512(h) => write!(f, "sha512:{}", h),
+        }
+    }
+}
 
 pub enum DownloadEvent {
     Starting {
@@ -112,7 +174,7 @@ pub struct DownloadResult {
     pub bytes_downloaded: u64,
     pub signatures_verified: usize,
     pub signatures_invalid: usize,
-    pub hash_algorithm: HashAlgorithm,
+    pub computed_hash: ComputedHash,
 }
 
 #[allow(clippy::type_complexity)]
@@ -326,5 +388,87 @@ impl DownloadCallbacks {
             };
             f(&args);
         }
+    }
+}
+
+#[cfg(test)]
+mod computed_hash_tests {
+    use super::*;
+
+    #[test]
+    fn sha256_creation_and_accessors() {
+        let hash = ComputedHash::Sha256("abc123".to_string());
+        assert_eq!(hash.hex_value(), "abc123");
+        assert_eq!(hash.algorithm(), HashAlgorithm::Sha256);
+    }
+
+    #[test]
+    fn sha512_creation_and_accessors() {
+        let hash = ComputedHash::Sha512("def456".to_string());
+        assert_eq!(hash.hex_value(), "def456");
+        assert_eq!(hash.algorithm(), HashAlgorithm::Sha512);
+    }
+
+    #[test]
+    fn equality_same_algorithm_same_value() {
+        let a = ComputedHash::Sha256("abc".to_string());
+        let b = ComputedHash::Sha256("abc".to_string());
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn inequality_different_values() {
+        let a = ComputedHash::Sha256("abc".to_string());
+        let b = ComputedHash::Sha256("def".to_string());
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn inequality_different_algorithms() {
+        let a = ComputedHash::Sha256("abc".to_string());
+        let b = ComputedHash::Sha512("abc".to_string());
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn case_insensitive_comparison() {
+        let a = ComputedHash::Sha256("ABC123".to_string());
+        let b = ComputedHash::Sha256("abc123".to_string());
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn from_algorithm_and_hex_sha256() {
+        let hash = ComputedHash::from_algorithm_and_hex(HashAlgorithm::Sha256, "abc123").unwrap();
+        assert_eq!(hash.algorithm(), HashAlgorithm::Sha256);
+        assert_eq!(hash.hex_value(), "abc123");
+    }
+
+    #[test]
+    fn from_algorithm_and_hex_sha512() {
+        let hash = ComputedHash::from_algorithm_and_hex(HashAlgorithm::Sha512, "def456").unwrap();
+        assert_eq!(hash.algorithm(), HashAlgorithm::Sha512);
+        assert_eq!(hash.hex_value(), "def456");
+    }
+
+    #[test]
+    fn from_algorithm_and_hex_unsupported() {
+        match ComputedHash::from_algorithm_and_hex(HashAlgorithm::Sha1, "abc") {
+            Err(ClientLibError::UnsupportedHashAlgorithm(HashAlgorithm::Sha1)) => {}
+            Err(e) => panic!("Expected UnsupportedHashAlgorithm(Sha1), got: {e:?}"),
+            Ok(_) => panic!("Expected error for unsupported algorithm, got Ok"),
+        }
+    }
+
+    #[test]
+    fn display_sha256() {
+        let hash = ComputedHash::Sha256("abc123".to_string());
+        assert_eq!(hash.to_string(), "sha256:abc123");
+    }
+
+    #[test]
+    fn display_sha512() {
+        let hash = ComputedHash::Sha512("def456".to_string());
+        assert_eq!(hash.to_string(), "sha512:def456");
     }
 }

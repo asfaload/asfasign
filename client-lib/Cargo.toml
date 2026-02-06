@@ -17,3 +17,6 @@ tempfile = "3"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+chrono = "0.4.43"
