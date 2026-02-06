@@ -37,6 +37,9 @@ pub enum DownloadEvent {
         path: PathBuf,
     },
     Completed(DownloadResult),
+    ChunkReceived {
+        chunk: Vec<u8>,
+    },
 }
 
 #[derive(Clone)]

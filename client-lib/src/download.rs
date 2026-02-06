@@ -58,7 +58,7 @@ where
     let index_file_path = construct_index_file_path(&url)?;
 
     let signers_url = format!("{}/get-signers/{}", backend_url, index_file_path);
-    let signers_content = download_file(&signers_url, |_| {}, |_| {}).await?;
+    let signers_content = download_file(&signers_url, |_| {}).await?;
     on_event(DownloadEvent::SignersDownloaded {
         bytes: signers_content.len(),
     });
@@ -66,7 +66,7 @@ where
         .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
 
     let index_url = format!("{}/files/{}", backend_url, index_file_path);
-    let index_content = download_file(&index_url, |_| {}, |_| {}).await?;
+    let index_content = download_file(&index_url, |_| {}).await?;
     on_event(DownloadEvent::IndexDownloaded {
         bytes: index_content.len(),
     });
@@ -75,7 +75,7 @@ where
     let signatures_file_path =
         construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
     let signatures_url = format!("{}/files/{}", backend_url, signatures_file_path);
-    let signatures_content = download_file(&signatures_url, |_| {}, |_| {}).await?;
+    let signatures_content = download_file(&signatures_url, |_| {}).await?;
     on_event(DownloadEvent::SignaturesDownloaded {
         bytes: signatures_content.len(),
     });
@@ -108,8 +108,11 @@ where
     });
 
     // Download file to temp location with incremental hash computation
-    let (temp_file, bytes_downloaded) = download_file_to_temp(file_url, &mut on_event, |chunk| {
-        hasher.update(chunk);
+    let (temp_file, bytes_downloaded) = download_file_to_temp(file_url, |event| {
+        if let DownloadEvent::ChunkReceived { chunk } = &event {
+            hasher.update(chunk);
+        }
+        on_event(event);
     })
     .await?;
 

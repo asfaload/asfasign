@@ -49,6 +49,9 @@ pub async fn handle_download_command(
                 println!("  Size: {:.2} MB", size as f64 / ONE_MEGABYTE as f64);
             }
         }
+        DownloadEvent::ChunkReceived { .. } => {
+            // Chunk events are handled internally, progress shown via FileDownloadProgress
+        }
         DownloadEvent::FileDownloadProgress {
             bytes_downloaded,
             total_bytes,

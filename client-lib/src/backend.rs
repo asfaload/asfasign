@@ -4,40 +4,35 @@ use reqwest::Client;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
-pub async fn download_file<F, H>(url: &str, on_event: F, on_chunk: H) -> AsfaloadLibResult<Vec<u8>>
+pub async fn download_file<F>(url: &str, on_event: F) -> AsfaloadLibResult<Vec<u8>>
 where
     F: FnMut(DownloadEvent) + Send,
-    H: FnMut(&[u8]) + Send,
 {
     let mut buffer = Vec::new();
-    download_file_to_writer(url, &mut buffer, on_event, on_chunk).await?;
+    download_file_to_writer(url, &mut buffer, on_event).await?;
     Ok(buffer)
 }
 
-pub async fn download_file_to_temp<F, H>(
+pub async fn download_file_to_temp<F>(
     url: &str,
     on_event: F,
-    on_chunk: H,
 ) -> AsfaloadLibResult<(NamedTempFile, u64)>
 where
     F: FnMut(DownloadEvent) + Send,
-    H: FnMut(&[u8]) + Send,
 {
     let mut temp_file = NamedTempFile::new()?;
-    let bytes_downloaded = download_file_to_writer(url, &mut temp_file, on_event, on_chunk).await?;
+    let bytes_downloaded = download_file_to_writer(url, &mut temp_file, on_event).await?;
     temp_file.flush()?;
     Ok((temp_file, bytes_downloaded))
 }
 /// Download file to temporary location with incremental hash computation
-async fn download_file_to_writer<F, H, W: std::io::Write + Send>(
+async fn download_file_to_writer<F, W: std::io::Write + Send>(
     url: &str,
     writer: &mut W,
     mut on_event: F,
-    mut on_chunk: H,
 ) -> AsfaloadLibResult<u64>
 where
     F: FnMut(DownloadEvent) + Send,
-    H: FnMut(&[u8]) + Send,
 {
     let client = Client::new();
     let response = client.get(url).send().await?;
@@ -63,7 +58,9 @@ where
 
         // Write chunk to temp file and update hasher
         writer.write_all(&chunk)?;
-        on_chunk(&chunk);
+        on_event(DownloadEvent::ChunkReceived {
+            chunk: chunk.to_vec(),
+        });
 
         if let Some(total) = total_bytes {
             let byte_milestone = bytes_downloaded >= last_progress_emitted + ONE_MEGABYTE;
