@@ -7,7 +7,7 @@ use features_lib::{
     constants::{INDEX_FILE, SIGNATURES_SUFFIX},
     parse_signers_config, sha512_for_content,
 };
-use reqwest::Url;
+use reqwest::{Client, Url};
 use std::path::PathBuf;
 
 /// Handle the download command
@@ -18,6 +18,8 @@ pub async fn download_file_with_verification(
     callbacks: &DownloadCallbacks,
 ) -> AsfaloadLibResult<DownloadResult> {
     callbacks.emit_starting(file_url);
+
+    let client = Client::new();
 
     let url = Url::parse(file_url).map_err(|e| ClientLibError::InvalidUrl(e.to_string()))?;
 
@@ -31,20 +33,20 @@ pub async fn download_file_with_verification(
     let index_file_path = construct_index_file_path(&url)?;
 
     let signers_url = format!("{}/get-signers/{}", backend_url, index_file_path);
-    let signers_content = download_file(&signers_url, &DownloadCallbacks::default()).await?;
+    let signers_content = download_file(&client, &signers_url, &DownloadCallbacks::default()).await?;
     callbacks.emit_signers_downloaded(signers_content.len());
     let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)
         .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
 
     let index_url = format!("{}/files/{}", backend_url, index_file_path);
-    let index_content = download_file(&index_url, &DownloadCallbacks::default()).await?;
+    let index_content = download_file(&client, &index_url, &DownloadCallbacks::default()).await?;
     callbacks.emit_index_downloaded(index_content.len());
     let index: AsfaloadIndex = serde_json::from_slice(&index_content)?;
 
     let signatures_file_path =
         construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
     let signatures_url = format!("{}/files/{}", backend_url, signatures_file_path);
-    let signatures_content = download_file(&signatures_url, &DownloadCallbacks::default()).await?;
+    let signatures_content = download_file(&client, &signatures_url, &DownloadCallbacks::default()).await?;
     callbacks.emit_signatures_downloaded(signatures_content.len());
 
     let file_hash = sha512_for_content(index_content)?;
@@ -62,7 +64,7 @@ pub async fn download_file_with_verification(
     // Download file to temp location
     let callbacks_for_download = callbacks;
     let (temp_file, bytes_downloaded, computed_hash) =
-        download_file_to_temp(file_url, &hash_algorithm, callbacks_for_download).await?;
+        download_file_to_temp(&client, file_url, &hash_algorithm, callbacks_for_download).await?;
 
     callbacks.emit_file_download_completed(bytes_downloaded);
 

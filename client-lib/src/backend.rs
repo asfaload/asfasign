@@ -29,14 +29,19 @@ impl IncrementalHasher {
     }
 }
 
-pub async fn download_file(url: &str, callbacks: &DownloadCallbacks) -> AsfaloadLibResult<Vec<u8>> {
+pub async fn download_file(
+    client: &Client,
+    url: &str,
+    callbacks: &DownloadCallbacks,
+) -> AsfaloadLibResult<Vec<u8>> {
     let hasher = &mut IncrementalHasher::Sha512(Sha512::new());
     let mut buffer = Vec::new();
-    download_file_to_writer(url, &mut buffer, hasher, callbacks).await?;
+    download_file_to_writer(client, url, &mut buffer, hasher, callbacks).await?;
     Ok(buffer)
 }
 
 pub async fn download_file_to_temp(
+    client: &Client,
     url: &str,
     hash_algorithm: &HashAlgorithm,
     callbacks: &DownloadCallbacks,
@@ -53,7 +58,7 @@ pub async fn download_file_to_temp(
 
     let mut temp_file = NamedTempFile::new()?;
     let bytes_downloaded =
-        download_file_to_writer(url, &mut temp_file, &mut hasher, callbacks).await?;
+        download_file_to_writer(client, url, &mut temp_file, &mut hasher, callbacks).await?;
     temp_file.flush()?;
 
     let hash_bytes = hasher.finalize();
@@ -63,12 +68,12 @@ pub async fn download_file_to_temp(
 }
 /// Download file to temporary location with incremental hash computation
 async fn download_file_to_writer<W: std::io::Write + Send>(
+    client: &Client,
     url: &str,
     writer: &mut W,
     hasher: &mut IncrementalHasher,
     callbacks: &DownloadCallbacks,
 ) -> AsfaloadLibResult<u64> {
-    let client = Client::new();
     let response = client.get(url).send().await?;
 
     if !response.status().is_success() {
