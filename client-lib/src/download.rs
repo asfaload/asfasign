@@ -33,7 +33,8 @@ pub async fn download_file_with_verification(
     let index_file_path = construct_index_file_path(&url)?;
 
     let signers_url = format!("{}/get-signers/{}", backend_url, index_file_path);
-    let signers_content = download_file(&client, &signers_url, &DownloadCallbacks::default()).await?;
+    let signers_content =
+        download_file(&client, &signers_url, &DownloadCallbacks::default()).await?;
     callbacks.emit_signers_downloaded(signers_content.len());
     let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)
         .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
@@ -46,7 +47,8 @@ pub async fn download_file_with_verification(
     let signatures_file_path =
         construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
     let signatures_url = format!("{}/files/{}", backend_url, signatures_file_path);
-    let signatures_content = download_file(&client, &signatures_url, &DownloadCallbacks::default()).await?;
+    let signatures_content =
+        download_file(&client, &signatures_url, &DownloadCallbacks::default()).await?;
     callbacks.emit_signatures_downloaded(signatures_content.len());
 
     let file_hash = sha512_for_content(index_content)?;
@@ -138,4 +140,95 @@ fn translate_download_to_release_path(host: &str, path: &str) -> AsfaloadLibResu
 
 fn translate_github_release_path(path: &str) -> String {
     path.replace("/releases/download/", "/releases/tag/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::Url;
+
+    // --- translate_github_release_path ---
+
+    #[test]
+    fn translate_github_release_path_standard() {
+        let result = translate_github_release_path("owner/repo/releases/download/v1.0");
+        assert_eq!(result, "owner/repo/releases/tag/v1.0");
+    }
+
+    #[test]
+    fn translate_github_release_path_no_match() {
+        let result = translate_github_release_path("owner/repo/some/path");
+        assert_eq!(result, "owner/repo/some/path");
+    }
+
+    #[test]
+    fn translate_github_release_path_empty() {
+        let result = translate_github_release_path("");
+        assert_eq!(result, "");
+    }
+
+    // --- Forges::from_host ---
+
+    #[test]
+    fn forges_from_host_github() {
+        assert!(matches!(
+            Forges::from_host("github.com"),
+            Ok(Forges::Github)
+        ));
+    }
+
+    #[test]
+    fn forges_from_host_api_github() {
+        assert!(matches!(
+            Forges::from_host("api.github.com"),
+            Ok(Forges::Github)
+        ));
+    }
+
+    #[test]
+    fn forges_from_host_gitlab_unsupported() {
+        assert!(matches!(
+            Forges::from_host("gitlab.com"),
+            Err(ClientLibError::UnsupportedForge(_))
+        ));
+    }
+
+    #[test]
+    fn forges_from_host_unknown_unsupported() {
+        assert!(matches!(
+            Forges::from_host("example.com"),
+            Err(ClientLibError::UnsupportedForge(_))
+        ));
+    }
+
+    // --- construct_file_repo_path ---
+
+    #[test]
+    fn construct_file_repo_path_standard_github_url() {
+        let url =
+            Url::parse("https://github.com/owner/repo/releases/download/v1.0/file.tar.gz").unwrap();
+        let result = construct_file_repo_path(&url, "index.json").unwrap();
+        assert_eq!(result, "github.com/owner/repo/releases/tag/v1.0/index.json");
+    }
+
+    #[test]
+    fn construct_file_repo_path_no_host() {
+        // A URL like "file:///path" has no host
+        let url = Url::parse("file:///some/path/file.txt").unwrap();
+        assert!(matches!(
+            construct_file_repo_path(&url, "index.json"),
+            Err(ClientLibError::InvalidUrl(_))
+        ));
+    }
+
+    // --- construct_index_file_path ---
+
+    #[test]
+    fn construct_index_file_path_happy_path() {
+        let url = Url::parse("https://github.com/owner/repo/releases/download/v2.0/artifact.zip")
+            .unwrap();
+        let result = construct_index_file_path(&url).unwrap();
+        assert!(result.ends_with(INDEX_FILE));
+        assert!(result.starts_with("github.com/owner/repo/releases/tag/v2.0/"));
+    }
 }
