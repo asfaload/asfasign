@@ -1,36 +1,13 @@
 use crate::backend::{download_file, download_file_to_temp};
+use crate::types::DownloadCallbacks;
 use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
 use crate::{AsfaloadLibResult, ClientLibError, DownloadResult};
-use crate::types::DownloadCallbacks;
 use features_lib::{
-    AsfaloadIndex, HashAlgorithm,
+    AsfaloadIndex,
     constants::{INDEX_FILE, SIGNATURES_SUFFIX},
     parse_signers_config, sha512_for_content,
 };
 use reqwest::Url;
-use sha2::{Digest, Sha256, Sha512};
-
-/// Enum wrapping different hash algorithms for incremental hashing
-enum IncrementalHasher {
-    Sha256(Sha256),
-    Sha512(Sha512),
-}
-
-impl IncrementalHasher {
-    fn update(&mut self, data: &[u8]) {
-        match self {
-            IncrementalHasher::Sha256(h) => h.update(data),
-            IncrementalHasher::Sha512(h) => h.update(data),
-        }
-    }
-
-    fn finalize(self) -> Vec<u8> {
-        match self {
-            IncrementalHasher::Sha256(h) => h.finalize().to_vec(),
-            IncrementalHasher::Sha512(h) => h.finalize().to_vec(),
-        }
-    }
-}
 use std::path::PathBuf;
 
 /// Handle the download command
@@ -39,8 +16,7 @@ pub async fn download_file_with_verification(
     output: Option<&PathBuf>,
     backend_url: &str,
     callbacks: &DownloadCallbacks,
-) -> AsfaloadLibResult<DownloadResult>
-{
+) -> AsfaloadLibResult<DownloadResult> {
     callbacks.emit_starting(file_url);
 
     let url = Url::parse(file_url).map_err(|e| ClientLibError::InvalidUrl(e.to_string()))?;
@@ -81,29 +57,16 @@ pub async fn download_file_with_verification(
     // Get hash algorithm before downloading so we can compute hash incrementally
     let (hash_algorithm, _expected_hash) = get_file_hash_info(&index, filename)?;
 
-    // Create hasher based on algorithm
-    let mut hasher = match hash_algorithm {
-        HashAlgorithm::Sha256 => IncrementalHasher::Sha256(Sha256::new()),
-        HashAlgorithm::Sha512 => IncrementalHasher::Sha512(Sha512::new()),
-        HashAlgorithm::Sha1 | HashAlgorithm::Md5 => {
-            return Err(ClientLibError::UnsupportedHashAlgorithm(hash_algorithm));
-        }
-    };
-
     callbacks.emit_file_download_started(filename, None);
 
     // Download file to temp location
     let callbacks_for_download = callbacks;
-    let (temp_file, bytes_downloaded) = download_file_to_temp(file_url, callbacks_for_download).await?;
-
-    // Re-read file to compute hash (since callbacks are immutable)
-    let file_data = std::fs::read(temp_file.path())?;
-    hasher.update(&file_data);
+    let (temp_file, bytes_downloaded, computed_hash) =
+        download_file_to_temp(file_url, &hash_algorithm, callbacks_for_download).await?;
 
     callbacks.emit_file_download_completed(bytes_downloaded);
 
-    // Finalize hash and verify
-    let computed_hash = hex::encode(hasher.finalize());
+    // Verify hash
     verify_file_hash(&index, filename, &computed_hash)?;
 
     callbacks.emit_file_hash_verified(hash_algorithm.clone());
