@@ -1,6 +1,6 @@
 use crate::error::Result;
 use client_lib::{DownloadEvent, constants::ONE_MEGABYTE, download_file_with_verification};
-use std::path::PathBuf;
+use std::{io::Write, path::PathBuf};
 
 pub async fn handle_download_command(
     file_url: &str,
@@ -46,7 +46,7 @@ pub async fn handle_download_command(
         } => {
             println!("Downloading {}", filename);
             if let Some(size) = total_bytes {
-                println!("  Size: {:.2} MB", size as f64 / ONE_MEGABYTE);
+                println!("  Size: {:.2} MB", size as f64 / ONE_MEGABYTE as f64);
             }
         }
         DownloadEvent::FileDownloadProgress {
@@ -59,8 +59,8 @@ pub async fn handle_download_command(
                 print!(
                     "\rProgress: {:.1}% ({:.2} MB / {:.2} MB)",
                     percent,
-                    bytes_downloaded as f64 / ONE_MEGABYTE,
-                    total as f64 / ONE_MEGABYTE
+                    bytes_downloaded as f64 / ONE_MEGABYTE as f64,
+                    total as f64 / ONE_MEGABYTE as f64
                 );
                 let _ = std::io::stdout().flush();
             }
@@ -69,7 +69,7 @@ pub async fn handle_download_command(
             println!(); // New line after progress
             println!(
                 "✓ Download complete ({:.2} MB)",
-                bytes_downloaded as f64 / ONE_MEGABYTE
+                bytes_downloaded as f64 / ONE_MEGABYTE as f64
             );
         }
         DownloadEvent::FileSaved { path } => {
