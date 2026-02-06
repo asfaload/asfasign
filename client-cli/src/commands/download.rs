@@ -1,5 +1,5 @@
 use crate::error::Result;
-use client_lib::{DownloadEvent, constants::ONE_MEGABYTE, download_file_with_verification};
+use client_lib::{DownloadCallbacks, constants::ONE_MEGABYTE, download_file_with_verification};
 use std::{io::Write, path::PathBuf};
 
 pub async fn handle_download_command(
@@ -7,29 +7,26 @@ pub async fn handle_download_command(
     output: Option<&PathBuf>,
     backend_url: &str,
 ) -> Result<()> {
-    let on_event = |event| match event {
-        DownloadEvent::Starting { file_url } => {
+    let callbacks = DownloadCallbacks::default()
+        .with_starting(|file_url| {
             println!("Starting download: {}", file_url);
-        }
-        DownloadEvent::SignersDownloaded { bytes } => {
+        })
+        .with_signers_downloaded(|bytes| {
             println!("✓ Downloaded signers file ({} bytes)", bytes);
-        }
-        DownloadEvent::IndexDownloaded { bytes } => {
+        })
+        .with_index_downloaded(|bytes| {
             println!("✓ Downloaded index file ({} bytes)", bytes);
-        }
-        DownloadEvent::SignaturesDownloaded { bytes } => {
+        })
+        .with_signatures_downloaded(|bytes| {
             println!("✓ Downloaded signatures file ({} bytes)", bytes);
-        }
-        DownloadEvent::SignaturesVerified {
-            valid_count,
-            invalid_count,
-        } => {
+        })
+        .with_signatures_verified(|valid_count, invalid_count| {
             if invalid_count > 0 {
                 println!("⚠ Warning: {} invalid signature(s)", invalid_count);
             }
             println!("✓ Signatures verified successfully ({} valid)", valid_count);
-        }
-        DownloadEvent::FileHashVerified { algorithm } => {
+        })
+        .with_file_hash_verified(|algorithm| {
             println!(
                 "✓ File hash verified ({})",
                 match algorithm {
@@ -39,24 +36,14 @@ pub async fn handle_download_command(
                     features_lib::HashAlgorithm::Md5 => "MD5",
                 }
             );
-        }
-        DownloadEvent::FileDownloadStarted {
-            filename,
-            total_bytes,
-        } => {
+        })
+        .with_file_download_started(|filename, total_bytes| {
             println!("Downloading {}", filename);
             if let Some(size) = total_bytes {
                 println!("  Size: {:.2} MB", size as f64 / ONE_MEGABYTE as f64);
             }
-        }
-        DownloadEvent::ChunkReceived { .. } => {
-            // Chunk events are handled internally, progress shown via FileDownloadProgress
-        }
-        DownloadEvent::FileDownloadProgress {
-            bytes_downloaded,
-            total_bytes,
-            ..
-        } => {
+        })
+        .with_file_download_progress(|bytes_downloaded, total_bytes, _chunk_size| {
             if let Some(total) = total_bytes {
                 let percent = (bytes_downloaded as f64 / total as f64) * 100.0;
                 print!(
@@ -67,26 +54,25 @@ pub async fn handle_download_command(
                 );
                 let _ = std::io::stdout().flush();
             }
-        }
-        DownloadEvent::FileDownloadCompleted { bytes_downloaded } => {
+        })
+        .with_file_download_completed(|bytes_downloaded| {
             println!(); // New line after progress
             println!(
                 "✓ Download complete ({:.2} MB)",
                 bytes_downloaded as f64 / ONE_MEGABYTE as f64
             );
-        }
-        DownloadEvent::FileSaved { path } => {
+        })
+        .with_file_saved(|path| {
             println!("✓ File saved to: {}", path.display());
-        }
-        DownloadEvent::Completed(result) => {
+        })
+        .with_completed(|result| {
             println!(
                 "✓ All done! Verified {} signature(s)",
                 result.signatures_verified
             );
-        }
-    };
+        });
 
-    download_file_with_verification(file_url, output, backend_url, on_event).await?;
+    download_file_with_verification(file_url, output, backend_url, &callbacks).await?;
 
     Ok(())
 }

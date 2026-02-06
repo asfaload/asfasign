@@ -7,4 +7,4 @@ mod verification;
 
 pub use download::download_file_with_verification;
 pub use error::{AsfaloadLibResult, ClientLibError};
-pub use types::{DownloadEvent, DownloadResult};
+pub use types::{DownloadCallbacks, DownloadEvent, DownloadResult};

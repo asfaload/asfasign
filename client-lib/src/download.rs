@@ -1,6 +1,7 @@
 use crate::backend::{download_file, download_file_to_temp};
 use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
-use crate::{AsfaloadLibResult, ClientLibError, DownloadEvent, DownloadResult};
+use crate::{AsfaloadLibResult, ClientLibError, DownloadResult};
+use crate::types::DownloadCallbacks;
 use features_lib::{
     AsfaloadIndex, HashAlgorithm,
     constants::{INDEX_FILE, SIGNATURES_SUFFIX},
@@ -33,18 +34,14 @@ impl IncrementalHasher {
 use std::path::PathBuf;
 
 /// Handle the download command
-pub async fn download_file_with_verification<F>(
+pub async fn download_file_with_verification(
     file_url: &str,
     output: Option<&PathBuf>,
     backend_url: &str,
-    mut on_event: F,
+    callbacks: &DownloadCallbacks,
 ) -> AsfaloadLibResult<DownloadResult>
-where
-    F: FnMut(DownloadEvent) + Send,
 {
-    on_event(DownloadEvent::Starting {
-        file_url: file_url.to_string(),
-    });
+    callbacks.emit_starting(file_url);
 
     let url = Url::parse(file_url).map_err(|e| ClientLibError::InvalidUrl(e.to_string()))?;
 
@@ -58,37 +55,28 @@ where
     let index_file_path = construct_index_file_path(&url)?;
 
     let signers_url = format!("{}/get-signers/{}", backend_url, index_file_path);
-    let signers_content = download_file(&signers_url, |_| {}).await?;
-    on_event(DownloadEvent::SignersDownloaded {
-        bytes: signers_content.len(),
-    });
+    let signers_content = download_file(&signers_url, &DownloadCallbacks::default()).await?;
+    callbacks.emit_signers_downloaded(signers_content.len());
     let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)
         .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
 
     let index_url = format!("{}/files/{}", backend_url, index_file_path);
-    let index_content = download_file(&index_url, |_| {}).await?;
-    on_event(DownloadEvent::IndexDownloaded {
-        bytes: index_content.len(),
-    });
+    let index_content = download_file(&index_url, &DownloadCallbacks::default()).await?;
+    callbacks.emit_index_downloaded(index_content.len());
     let index: AsfaloadIndex = serde_json::from_slice(&index_content)?;
 
     let signatures_file_path =
         construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
     let signatures_url = format!("{}/files/{}", backend_url, signatures_file_path);
-    let signatures_content = download_file(&signatures_url, |_| {}).await?;
-    on_event(DownloadEvent::SignaturesDownloaded {
-        bytes: signatures_content.len(),
-    });
+    let signatures_content = download_file(&signatures_url, &DownloadCallbacks::default()).await?;
+    callbacks.emit_signatures_downloaded(signatures_content.len());
 
     let file_hash = sha512_for_content(index_content)?;
 
     let (valid_count, invalid_count) =
         verify_signatures(signatures_content, &signers_config, &file_hash)?;
 
-    on_event(DownloadEvent::SignaturesVerified {
-        valid_count,
-        invalid_count,
-    });
+    callbacks.emit_signatures_verified(valid_count, invalid_count);
 
     // Get hash algorithm before downloading so we can compute hash incrementally
     let (hash_algorithm, _expected_hash) = get_file_hash_info(&index, filename)?;
@@ -102,29 +90,23 @@ where
         }
     };
 
-    on_event(DownloadEvent::FileDownloadStarted {
-        filename: filename.to_string(),
-        total_bytes: None,
-    });
+    callbacks.emit_file_download_started(filename, None);
 
-    // Download file to temp location with incremental hash computation
-    let (temp_file, bytes_downloaded) = download_file_to_temp(file_url, |event| {
-        if let DownloadEvent::ChunkReceived { chunk } = &event {
-            hasher.update(chunk);
-        }
-        on_event(event);
-    })
-    .await?;
+    // Download file to temp location
+    let callbacks_for_download = callbacks;
+    let (temp_file, bytes_downloaded) = download_file_to_temp(file_url, callbacks_for_download).await?;
 
-    on_event(DownloadEvent::FileDownloadCompleted { bytes_downloaded });
+    // Re-read file to compute hash (since callbacks are immutable)
+    let file_data = std::fs::read(temp_file.path())?;
+    hasher.update(&file_data);
+
+    callbacks.emit_file_download_completed(bytes_downloaded);
 
     // Finalize hash and verify
     let computed_hash = hex::encode(hasher.finalize());
     verify_file_hash(&index, filename, &computed_hash)?;
 
-    on_event(DownloadEvent::FileHashVerified {
-        algorithm: hash_algorithm.clone(),
-    });
+    callbacks.emit_file_hash_verified(hash_algorithm.clone());
 
     // Move temp file to final destination (only happens if hash verification succeeded)
     let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
@@ -135,9 +117,7 @@ where
         ))
     })?;
 
-    on_event(DownloadEvent::FileSaved {
-        path: output_path.clone(),
-    });
+    callbacks.emit_file_saved(&output_path);
 
     let result = DownloadResult {
         file_path: output_path,
@@ -147,7 +127,7 @@ where
         hash_algorithm,
     };
 
-    on_event(DownloadEvent::Completed(result.clone()));
+    callbacks.emit_completed(&result);
 
     Ok(result)
 }
