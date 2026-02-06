@@ -102,7 +102,7 @@ async fn download_file_to_writer<W: std::io::Write + Send>(
         if let Some(total) = total_bytes {
             let byte_milestone = bytes_downloaded >= last_progress_emitted + ONE_MEGABYTE;
             let percent_milestone =
-                (bytes_downloaded * 10 / total) > (last_progress_emitted * 10 / total);
+                total > 0 && (bytes_downloaded * 10 / total) > (last_progress_emitted * 10 / total);
 
             if byte_milestone || percent_milestone {
                 callbacks.emit_file_download_progress(
