@@ -34,9 +34,8 @@ pub async fn download_file(
     url: &str,
     callbacks: &DownloadCallbacks,
 ) -> AsfaloadLibResult<Vec<u8>> {
-    let hasher = &mut IncrementalHasher::Sha512(Sha512::new());
     let mut buffer = Vec::new();
-    download_file_to_writer(client, url, &mut buffer, hasher, callbacks).await?;
+    download_file_to_writer(client, url, &mut buffer, None, callbacks).await?;
     Ok(buffer)
 }
 
@@ -58,19 +57,19 @@ pub async fn download_file_to_temp(
 
     let mut temp_file = NamedTempFile::new()?;
     let bytes_downloaded =
-        download_file_to_writer(client, url, &mut temp_file, &mut hasher, callbacks).await?;
+        download_file_to_writer(client, url, &mut temp_file, Some(&mut hasher), callbacks).await?;
     temp_file.flush()?;
 
     let computed_hash = hasher.finalize();
 
     Ok((temp_file, bytes_downloaded, computed_hash))
 }
-/// Download file to temporary location with incremental hash computation
+/// Download file to a writer, optionally computing a hash incrementally
 async fn download_file_to_writer<W: std::io::Write + Send>(
     client: &Client,
     url: &str,
     writer: &mut W,
-    hasher: &mut IncrementalHasher,
+    mut hasher: Option<&mut IncrementalHasher>,
     callbacks: &DownloadCallbacks,
 ) -> AsfaloadLibResult<u64> {
     let response = client.get(url).send().await?;
@@ -96,7 +95,9 @@ async fn download_file_to_writer<W: std::io::Write + Send>(
 
         // Write chunk to writer and emit callback
         writer.write_all(&chunk)?;
-        hasher.update(&chunk);
+        if let Some(hasher) = &mut hasher {
+            hasher.update(&chunk);
+        }
         callbacks.emit_chunk_received(&chunk);
 
         if let Some(total) = total_bytes {
