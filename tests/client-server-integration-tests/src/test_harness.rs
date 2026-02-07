@@ -4,9 +4,7 @@ use tempfile::TempDir;
 use tokio::sync::{Mutex, OnceCell};
 
 use anyhow::Result;
-use features_lib::{
-    AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-};
+use features_lib::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
 use reqwest::Client;
 use rest_api::server::run_server;
 use rest_api_auth::HEADER_NONCE;
@@ -16,7 +14,7 @@ use rest_api_auth::HEADER_TIMESTAMP;
 use rest_api_test_helpers::{build_test_config, get_random_port, wait_for_server, TestAuthHeaders};
 use serde_json::json;
 
-pub const TEST_PASSWORD: &str = "test_password_1234";
+pub const TEST_PASSWORD: &str = "password";
 
 static TEST_STATE: OnceCell<Mutex<TestState>> = OnceCell::const_new();
 
@@ -28,8 +26,8 @@ pub struct TestState {
     pub server: TestServer,
     pub client: reqwest::Client,
     pub keys_dir: PathBuf,
-    pub secret_key_path: PathBuf,
-    pub public_key_path: PathBuf,
+    pub test_keys: test_helpers::TestKeys,
+    pub secret_key_paths: Vec<PathBuf>,
 }
 
 pub struct TestServer {
@@ -102,17 +100,15 @@ async fn setup_server_and_keys() -> Result<TestState> {
     let keys_dir = temp_dir.path().join("keys");
     std::fs::create_dir_all(&keys_dir)?;
 
-    let key_pair = AsfaloadKeyPairs::new(TEST_PASSWORD)?;
-    let secret_key_path = keys_dir.join("test_key.json");
-    let public_key_path = keys_dir.join("test_key.pub.json");
+    let test_keys = test_helpers::TestKeys::new(5);
+    let mut secret_key_paths = Vec::with_capacity(5);
 
-    key_pair.save(&secret_key_path)?;
-
-    let public_key = key_pair.public_key();
-    std::fs::write(
-        &public_key_path,
-        serde_json::to_string_pretty(&public_key.to_base64())?,
-    )?;
+    for i in 0..5 {
+        let key_pair = test_keys.key_pair(i).expect("key_pair should exist");
+        let secret_key_path = keys_dir.join(format!("test_key_{}.json", i));
+        key_pair.save(&secret_key_path)?;
+        secret_key_paths.push(secret_key_path);
+    }
 
     let server = TestServer {
         port,
@@ -128,8 +124,8 @@ async fn setup_server_and_keys() -> Result<TestState> {
             .timeout(std::time::Duration::from_secs(30))
             .build()?,
         keys_dir,
-        secret_key_path,
-        public_key_path,
+        test_keys,
+        secret_key_paths,
     })
 }
 
