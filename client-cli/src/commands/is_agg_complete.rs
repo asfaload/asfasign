@@ -1,4 +1,5 @@
 use crate::error::Result;
+use crate::output::IsAggCompleteOutput;
 
 use features_lib::{
     SignedFileLoader,
@@ -11,6 +12,7 @@ pub fn handle_is_agg_complete_command<P: AsRef<Path>>(
     signed_file: &P,
     signatures_file: &P,
     signers_file: &P,
+    json: bool,
 ) -> Result<()> {
     // Load the signed file
     let signed_file_with_kind = SignedFileLoader::load(signed_file);
@@ -34,7 +36,13 @@ pub fn handle_is_agg_complete_command<P: AsRef<Path>>(
     // Check if the aggregate is complete
     let is_complete = check_groups(signers_config.artifact_signers(), &signatures, &file_hash);
 
-    if is_complete {
+    if json {
+        // In JSON mode, always return Ok with the status in the output.
+        // Callers check the is_complete field rather than the exit code.
+        let output = IsAggCompleteOutput { is_complete };
+        println!("{}", serde_json::to_string(&output)?);
+        Ok(())
+    } else if is_complete {
         println!("Aggregate signature is complete");
         Ok(())
     } else {

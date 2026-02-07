@@ -35,6 +35,10 @@ pub enum Commands {
         /// Accept week passwords, bypassing password strength validations (INSECURE!)
         #[arg(long)]
         accept_weak_password: bool,
+
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Sign a file with your private key
@@ -101,6 +105,10 @@ pub enum Commands {
         /// Path to the signers file to be created
         #[arg(long, short)]
         output_file: PathBuf,
+
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Verify a signature for a file
     VerifySig {
@@ -115,6 +123,10 @@ pub enum Commands {
         /// Path to the public key file
         #[arg(long, short = 'k')]
         public_key: PathBuf,
+
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Add a signature to the aggregate signature for a file.
     /// If you add your signature to an existing aggregate signature,
@@ -150,6 +162,10 @@ pub enum Commands {
         /// Path to the signers file
         #[arg(long, short = 's')]
         signers_file: PathBuf,
+
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// List files requiring your signature from the backend
@@ -169,6 +185,10 @@ pub enum Commands {
         /// Backend API URL (optional, defaults to {DEFAULT_BACKEND})
         #[arg(short = 'u', long)]
         backend_url: Option<String>,
+
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Sign a pending file (fetch, sign, submit)
@@ -191,6 +211,10 @@ pub enum Commands {
         /// Backend API URL (optional, defaults to DEFAULT_BACKEND)
         #[arg(short = 'u', long)]
         backend_url: Option<String>,
+
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Register a GitHub release with the backend
@@ -213,6 +237,10 @@ pub enum Commands {
         /// Backend API URL (optional, defaults to DEFAULT_BACKEND)
         #[arg(short = 'u', long)]
         backend_url: Option<String>,
+
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Download a file with signature verification
@@ -275,5 +303,18 @@ impl Commands {
 
     pub fn password_file_env_var(&self) -> String {
         Self::build_env_var(self, EnvVarKind::PasswordFile)
+    }
+
+    pub fn json_output(&self) -> bool {
+        match self {
+            Self::NewKeys { json, .. }
+            | Self::NewSignersFile { json, .. }
+            | Self::VerifySig { json, .. }
+            | Self::IsAggComplete { json, .. }
+            | Self::ListPending { json, .. }
+            | Self::SignPending { json, .. }
+            | Self::RegisterRelease { json, .. } => *json,
+            Self::SignFile { .. } | Self::AddToAggregate { .. } | Self::Download { .. } => false,
+        }
     }
 }

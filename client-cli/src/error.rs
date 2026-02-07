@@ -57,6 +57,9 @@ pub enum ClientCliError {
 
     #[error("Failed to parse server response: {0}")]
     ResponseParseError(String),
+
+    #[error("JSON serialization error: {0}")]
+    JsonSerializationError(#[from] serde_json::Error),
 }
 
 // FIXME: remove this, creates more confusion than necessary

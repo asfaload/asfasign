@@ -21,6 +21,7 @@ pub async fn handle_list_pending_command(
     backend_url: &str,
     secret_key_path: &std::path::PathBuf,
     password: &str,
+    json: bool,
 ) -> Result<()> {
     // 1. Load secret key
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
@@ -29,11 +30,13 @@ pub async fn handle_list_pending_command(
     let response = crate::rest_client::get_pending_signatures(backend_url, secret_key).await?;
 
     // 3. Display results
-    if response.file_paths.is_empty() {
+    if json {
+        println!("{}", serde_json::to_string(&response)?);
+    } else if response.file_paths.is_empty() {
         println!("No pending signatures found.");
     } else {
         println!("Files requiring your signature:");
-        for path in response.file_paths {
+        for path in &response.file_paths {
             println!("  - {}", path);
         }
     }
