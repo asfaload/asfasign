@@ -4,6 +4,38 @@ use std::path::PathBuf;
 /// Default backend API URL
 pub const DEFAULT_BACKEND: &str = "http://127.0.0.1:3000";
 
+#[derive(clap::Args, Debug)]
+pub struct PasswordArgs {
+    /// Password for the key (conflicts with password_file)
+    #[arg(long, short, conflicts_with = "password_file")]
+    pub password: Option<String>,
+
+    /// Path to a file containing the password (conflicts with password)
+    #[arg(long, short = 'P', conflicts_with = "password")]
+    pub password_file: Option<PathBuf>,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct SecretKeyArgs {
+    /// Path to your secret key file
+    #[arg(short = 'K', long)]
+    pub secret_key: PathBuf,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct BackendUrlArgs {
+    /// Backend API URL (optional, defaults to DEFAULT_BACKEND)
+    #[arg(short = 'u', long)]
+    pub backend_url: Option<String>,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct JsonArgs {
+    /// Output results as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "client-cli")]
 #[command(about = "A CLI client for Asfaload operations")]
@@ -24,21 +56,15 @@ pub enum Commands {
         #[arg(long, short)]
         output_dir: PathBuf,
 
-        /// Password for the key (conflicts with password_file)
-        #[arg(long, short, conflicts_with = "password_file")]
-        password: Option<String>,
-
-        /// Path to a file containing the password (conflicts with password)
-        #[arg(long, short = 'P', conflicts_with = "password")]
-        password_file: Option<PathBuf>,
+        #[command(flatten)]
+        password_args: PasswordArgs,
         ///
         /// Accept week passwords, bypassing password strength validations (INSECURE!)
         #[arg(long)]
         accept_weak_password: bool,
 
-        /// Output results as JSON
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        json_args: JsonArgs,
     },
 
     /// Sign a file with your private key
@@ -47,21 +73,15 @@ pub enum Commands {
         #[arg(long, short)]
         file_to_sign: PathBuf,
 
-        /// Path to the secret key file
-        #[arg(long, short = 'K')]
-        secret_key: PathBuf,
+        #[command(flatten)]
+        secret_key_args: SecretKeyArgs,
 
         /// Path where the signature file has to be written
         #[arg(long, short)]
         output_file: PathBuf,
 
-        /// Password for the key (conflicts with password_file)
-        #[arg(long, conflicts_with = "password_file")]
-        password: Option<String>,
-
-        /// Path to a file containing the password (conflicts with password)
-        #[arg(long, short = 'P', conflicts_with = "password")]
-        password_file: Option<PathBuf>,
+        #[command(flatten)]
+        password_args: PasswordArgs,
     },
 
     /// Operations related to signers files
@@ -106,9 +126,8 @@ pub enum Commands {
         #[arg(long, short)]
         output_file: PathBuf,
 
-        /// Output results as JSON
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        json_args: JsonArgs,
     },
     /// Verify a signature for a file
     VerifySig {
@@ -124,9 +143,8 @@ pub enum Commands {
         #[arg(long, short = 'k')]
         public_key: PathBuf,
 
-        /// Output results as JSON
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        json_args: JsonArgs,
     },
     /// Add a signature to the aggregate signature for a file.
     /// If you add your signature to an existing aggregate signature,
@@ -137,17 +155,11 @@ pub enum Commands {
         #[arg(long, short = 'f')]
         signed_file: PathBuf,
 
-        /// Path to the secret key file
-        #[arg(long, short = 'K')]
-        secret_key: PathBuf,
+        #[command(flatten)]
+        secret_key_args: SecretKeyArgs,
 
-        /// Password for the key (conflicts with password_file)
-        #[arg(long, short, conflicts_with = "password_file")]
-        password: Option<String>,
-
-        /// Path to a file containing the password (conflicts with password)
-        #[arg(long, short = 'P', conflicts_with = "password")]
-        password_file: Option<PathBuf>,
+        #[command(flatten)]
+        password_args: PasswordArgs,
     },
     /// Check if the aggregate signature for a file is complete
     IsAggComplete {
@@ -163,32 +175,23 @@ pub enum Commands {
         #[arg(long, short = 's')]
         signers_file: PathBuf,
 
-        /// Output results as JSON
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        json_args: JsonArgs,
     },
 
     /// List files requiring your signature from the backend
     ListPending {
-        /// Path to your secret key file
-        #[arg(short = 'K', long)]
-        secret_key: PathBuf,
+        #[command(flatten)]
+        secret_key_args: SecretKeyArgs,
 
-        /// Password for the key (conflicts with password_file)
-        #[arg(long, short, conflicts_with = "password_file")]
-        password: Option<String>,
+        #[command(flatten)]
+        password_args: PasswordArgs,
 
-        /// Path to a file containing the password (conflicts with password)
-        #[arg(long, short = 'P', conflicts_with = "password")]
-        password_file: Option<PathBuf>,
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
 
-        /// Backend API URL (optional, defaults to {DEFAULT_BACKEND})
-        #[arg(short = 'u', long)]
-        backend_url: Option<String>,
-
-        /// Output results as JSON
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        json_args: JsonArgs,
     },
 
     /// Sign a pending file (fetch, sign, submit)
@@ -196,25 +199,17 @@ pub enum Commands {
         /// Path to the pending file (relative path in mirror)
         file_path: String,
 
-        /// Path to your secret key file
-        #[arg(short = 'K', long)]
-        secret_key: PathBuf,
+        #[command(flatten)]
+        secret_key_args: SecretKeyArgs,
 
-        /// Password for the key (conflicts with password_file)
-        #[arg(long, short, conflicts_with = "password_file")]
-        password: Option<String>,
+        #[command(flatten)]
+        password_args: PasswordArgs,
 
-        /// Path to a file containing the password (conflicts with password)
-        #[arg(long, short = 'P', conflicts_with = "password")]
-        password_file: Option<PathBuf>,
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
 
-        /// Backend API URL (optional, defaults to DEFAULT_BACKEND)
-        #[arg(short = 'u', long)]
-        backend_url: Option<String>,
-
-        /// Output results as JSON
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        json_args: JsonArgs,
     },
 
     /// Register a GitHub release with the backend
@@ -222,25 +217,17 @@ pub enum Commands {
         /// URL of the GitHub release to register
         release_url: String,
 
-        /// Path to your secret key file
-        #[arg(short = 'K', long)]
-        secret_key: PathBuf,
+        #[command(flatten)]
+        secret_key_args: SecretKeyArgs,
 
-        /// Password for the key (conflicts with password_file)
-        #[arg(long, short, conflicts_with = "password_file")]
-        password: Option<String>,
+        #[command(flatten)]
+        password_args: PasswordArgs,
 
-        /// Path to a file containing the password (conflicts with password)
-        #[arg(long, short = 'P', conflicts_with = "password")]
-        password_file: Option<PathBuf>,
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
 
-        /// Backend API URL (optional, defaults to DEFAULT_BACKEND)
-        #[arg(short = 'u', long)]
-        backend_url: Option<String>,
-
-        /// Output results as JSON
-        #[arg(long)]
-        json: bool,
+        #[command(flatten)]
+        json_args: JsonArgs,
     },
 
     /// Download a file with signature verification
@@ -252,9 +239,8 @@ pub enum Commands {
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
 
-        /// Backend/mirror URL (optional, defaults to DEFAULT_BACKEND)
-        #[arg(short = 'u', long)]
-        backend_url: Option<String>,
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
     },
 }
 
@@ -307,13 +293,13 @@ impl Commands {
 
     pub fn json_output(&self) -> bool {
         match self {
-            Self::NewKeys { json, .. }
-            | Self::NewSignersFile { json, .. }
-            | Self::VerifySig { json, .. }
-            | Self::IsAggComplete { json, .. }
-            | Self::ListPending { json, .. }
-            | Self::SignPending { json, .. }
-            | Self::RegisterRelease { json, .. } => *json,
+            Self::NewKeys { json_args, .. }
+            | Self::NewSignersFile { json_args, .. }
+            | Self::VerifySig { json_args, .. }
+            | Self::IsAggComplete { json_args, .. }
+            | Self::ListPending { json_args, .. }
+            | Self::SignPending { json_args, .. }
+            | Self::RegisterRelease { json_args, .. } => json_args.json,
             Self::SignFile { .. } | Self::AddToAggregate { .. } | Self::Download { .. } => false,
         }
     }

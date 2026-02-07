@@ -25,32 +25,30 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         Commands::NewKeys {
             name,
             output_dir,
-            password,
-            password_file,
+            password_args,
             accept_weak_password,
-            json,
+            json_args,
         } => {
             let password = get_password(
-                password.clone(),
-                password_file.as_deref(),
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
                 RequireConfirmation,
                 *accept_weak_password,
             )?;
-            keys::handle_new_keys_command(name, output_dir, password, *json)?;
+            keys::handle_new_keys_command(name, output_dir, password, json_args.json)?;
         }
         Commands::SignFile {
             file_to_sign,
-            secret_key,
+            secret_key_args,
             output_file,
-            password,
-            password_file,
+            password_args,
         } => {
             let password = get_password(
-                password.clone(),
-                password_file.as_deref(),
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
@@ -63,7 +61,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             )?;
             sign_file::handle_sign_file_command(
                 file_to_sign,
-                secret_key,
+                &secret_key_args.secret_key,
                 password.as_str(),
                 output_file,
             )?
@@ -79,7 +77,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             master_key_file,
             master_threshold,
             output_file,
-            json,
+            json_args,
         } => {
             signers_file::handle_new_signers_file_command(
                 artifact_signer,
@@ -92,26 +90,25 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 master_key_file,
                 master_threshold.as_ref().copied(),
                 output_file,
-                *json,
+                json_args.json,
             )?;
         }
         Commands::VerifySig {
             signed_file,
             signature,
             public_key,
-            json,
+            json_args,
         } => {
-            verify_sig::handle_verify_sig_command(signed_file, signature, public_key, *json)?;
+            verify_sig::handle_verify_sig_command(signed_file, signature, public_key, json_args.json)?;
         }
         Commands::AddToAggregate {
             signed_file,
-            secret_key,
-            password,
-            password_file,
+            secret_key_args,
+            password_args,
         } => {
             let password = get_password(
-                password.clone(),
-                password_file.as_deref(),
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
@@ -120,7 +117,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             )?;
             add_to_aggregate::handle_add_to_aggregate_command(
                 signed_file,
-                secret_key,
+                &secret_key_args.secret_key,
                 password.as_str(),
             )?;
         }
@@ -128,106 +125,107 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             signed_file,
             signatures_file,
             signers_file,
-            json,
+            json_args,
         } => {
             is_agg_complete::handle_is_agg_complete_command(
                 signed_file,
                 signatures_file,
                 signers_file,
-                *json,
+                json_args.json,
             )?;
         }
         Commands::ListPending {
-            secret_key,
-            password,
-            password_file,
-            backend_url,
-            json,
+            secret_key_args,
+            password_args,
+            backend_url_args,
+            json_args,
         } => {
             let password = get_password(
-                password.clone(),
-                password_file.as_deref(),
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
                 WithoutConfirmation,
                 true,
             )?;
-            let url = backend_url
+            let url = backend_url_args
+                .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(list_pending::handle_list_pending_command(
                 &url,
-                secret_key,
+                &secret_key_args.secret_key,
                 password.as_str(),
-                *json,
+                json_args.json,
             ))?;
         }
         Commands::SignPending {
             file_path,
-            secret_key,
-            password,
-            password_file,
-            backend_url,
-            json,
+            secret_key_args,
+            password_args,
+            backend_url_args,
+            json_args,
         } => {
             let password = get_password(
-                password.clone(),
-                password_file.as_deref(),
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
                 WithoutConfirmation,
                 true,
             )?;
-            let url = backend_url
+            let url = backend_url_args
+                .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(sign_pending::handle_sign_pending_command(
                 file_path,
                 &url,
-                secret_key,
+                &secret_key_args.secret_key,
                 password.as_str(),
-                *json,
+                json_args.json,
             ))?;
         }
         Commands::RegisterRelease {
             release_url,
-            secret_key,
-            password,
-            password_file,
-            backend_url,
-            json,
+            secret_key_args,
+            password_args,
+            backend_url_args,
+            json_args,
         } => {
             let password = get_password(
-                password.clone(),
-                password_file.as_deref(),
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
                 WithoutConfirmation,
                 true,
             )?;
-            let url = backend_url
+            let url = backend_url_args
+                .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(register_release::handle_register_release_command(
                 &url,
                 release_url,
-                secret_key,
+                &secret_key_args.secret_key,
                 password.as_str(),
-                *json,
+                json_args.json,
             ))?
         }
         Commands::Download {
             file_url,
             output,
-            backend_url,
+            backend_url_args,
         } => {
-            let url = backend_url
+            let url = backend_url_args
+                .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let runtime = tokio::runtime::Runtime::new()?;
