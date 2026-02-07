@@ -1,0 +1,234 @@
+use crate::backend::{download_file, download_file_to_temp};
+use crate::types::DownloadCallbacks;
+use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
+use crate::{AsfaloadLibResult, ClientLibError, DownloadResult};
+use features_lib::{
+    AsfaloadIndex,
+    constants::{INDEX_FILE, SIGNATURES_SUFFIX},
+    parse_signers_config, sha512_for_content,
+};
+use reqwest::{Client, Url};
+use std::path::PathBuf;
+
+/// Handle the download command
+pub async fn download_file_with_verification(
+    file_url: &str,
+    output: Option<&PathBuf>,
+    backend_url: &str,
+    callbacks: &DownloadCallbacks,
+) -> AsfaloadLibResult<DownloadResult> {
+    callbacks.emit_starting(file_url);
+
+    let client = Client::new();
+
+    let url = Url::parse(file_url).map_err(|e| ClientLibError::InvalidUrl(e.to_string()))?;
+
+    let filename = url
+        .path_segments()
+        .and_then(|mut segments| segments.next_back())
+        .ok_or_else(|| {
+            ClientLibError::InvalidUrl("Could not extract filename from URL".to_string())
+        })?;
+
+    let index_file_path = construct_index_file_path(&url)?;
+
+    let signers_url = format!("{}/get-signers/{}", backend_url, index_file_path);
+    let signers_content =
+        download_file(&client, &signers_url, &DownloadCallbacks::default()).await?;
+    callbacks.emit_signers_downloaded(signers_content.len());
+    let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)
+        .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
+
+    let index_url = format!("{}/files/{}", backend_url, index_file_path);
+    let index_content = download_file(&client, &index_url, &DownloadCallbacks::default()).await?;
+    callbacks.emit_index_downloaded(index_content.len());
+    let index: AsfaloadIndex = serde_json::from_slice(&index_content)?;
+
+    let signatures_file_path =
+        construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
+    let signatures_url = format!("{}/files/{}", backend_url, signatures_file_path);
+    let signatures_content =
+        download_file(&client, &signatures_url, &DownloadCallbacks::default()).await?;
+    callbacks.emit_signatures_downloaded(signatures_content.len());
+
+    let file_hash = sha512_for_content(index_content)?;
+
+    let (valid_count, invalid_count) =
+        verify_signatures(signatures_content, &signers_config, &file_hash)?;
+
+    callbacks.emit_signatures_verified(valid_count, invalid_count);
+
+    // Get expected hash from index (validates algorithm is supported)
+    let expected_hash = get_file_hash_info(&index, filename)?;
+
+    callbacks.emit_file_download_started(filename, None);
+
+    // Download file to temp location with incremental hash computation
+    let (temp_file, bytes_downloaded, computed_hash) =
+        download_file_to_temp(&client, file_url, &expected_hash.algorithm(), callbacks).await?;
+
+    callbacks.emit_file_download_completed(bytes_downloaded);
+
+    // Verify hash (algorithm + value)
+    verify_file_hash(&expected_hash, &computed_hash)?;
+
+    callbacks.emit_file_hash_verified(computed_hash.algorithm());
+
+    // Move temp file to final destination (only happens if hash verification succeeded)
+    let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
+    temp_file.persist(&output_path).map_err(|e| {
+        ClientLibError::PersistError(format!(
+            "Failed to move temp file to {:?}: {}",
+            output_path, e
+        ))
+    })?;
+
+    callbacks.emit_file_saved(&output_path);
+
+    let result = DownloadResult {
+        file_path: output_path,
+        bytes_downloaded,
+        signatures_verified: valid_count,
+        signatures_invalid: invalid_count,
+        computed_hash,
+    };
+
+    callbacks.emit_completed(&result);
+
+    Ok(result)
+}
+
+fn construct_index_file_path(file_url: &Url) -> AsfaloadLibResult<String> {
+    construct_file_repo_path(file_url, INDEX_FILE)
+}
+
+fn construct_file_repo_path(file_url: &Url, filename: &str) -> AsfaloadLibResult<String> {
+    let host = file_url
+        .host_str()
+        .ok_or_else(|| ClientLibError::InvalidUrl("URL has no host".to_string()))?;
+    let path = file_url.path();
+
+    let path = path.strip_prefix('/').unwrap_or(path);
+
+    let dir_path = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+
+    let translated_path = translate_download_to_release_path(host, dir_path)?;
+
+    Ok(format!("{}/{}/{}", host, translated_path, filename))
+}
+
+enum Forges {
+    Github,
+}
+
+impl Forges {
+    pub fn from_host(host: &str) -> AsfaloadLibResult<Self> {
+        if host.contains("github.com") {
+            Ok(Self::Github)
+        } else {
+            Err(ClientLibError::UnsupportedForge(host.to_string()))
+        }
+    }
+}
+
+fn translate_download_to_release_path(host: &str, path: &str) -> AsfaloadLibResult<String> {
+    let forge = Forges::from_host(host)?;
+    match forge {
+        Forges::Github => Ok(translate_github_release_path(path)),
+    }
+}
+
+fn translate_github_release_path(path: &str) -> String {
+    path.replace("/releases/download/", "/releases/tag/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::Url;
+
+    // --- translate_github_release_path ---
+
+    #[test]
+    fn translate_github_release_path_standard() {
+        let result = translate_github_release_path("owner/repo/releases/download/v1.0");
+        assert_eq!(result, "owner/repo/releases/tag/v1.0");
+    }
+
+    #[test]
+    fn translate_github_release_path_no_match() {
+        let result = translate_github_release_path("owner/repo/some/path");
+        assert_eq!(result, "owner/repo/some/path");
+    }
+
+    #[test]
+    fn translate_github_release_path_empty() {
+        let result = translate_github_release_path("");
+        assert_eq!(result, "");
+    }
+
+    // --- Forges::from_host ---
+
+    #[test]
+    fn forges_from_host_github() {
+        assert!(matches!(
+            Forges::from_host("github.com"),
+            Ok(Forges::Github)
+        ));
+    }
+
+    #[test]
+    fn forges_from_host_api_github() {
+        assert!(matches!(
+            Forges::from_host("api.github.com"),
+            Ok(Forges::Github)
+        ));
+    }
+
+    #[test]
+    fn forges_from_host_gitlab_unsupported() {
+        assert!(matches!(
+            Forges::from_host("gitlab.com"),
+            Err(ClientLibError::UnsupportedForge(_))
+        ));
+    }
+
+    #[test]
+    fn forges_from_host_unknown_unsupported() {
+        assert!(matches!(
+            Forges::from_host("example.com"),
+            Err(ClientLibError::UnsupportedForge(_))
+        ));
+    }
+
+    // --- construct_file_repo_path ---
+
+    #[test]
+    fn construct_file_repo_path_standard_github_url() {
+        let url =
+            Url::parse("https://github.com/owner/repo/releases/download/v1.0/file.tar.gz").unwrap();
+        let result = construct_file_repo_path(&url, "index.json").unwrap();
+        assert_eq!(result, "github.com/owner/repo/releases/tag/v1.0/index.json");
+    }
+
+    #[test]
+    fn construct_file_repo_path_no_host() {
+        // A URL like "file:///path" has no host
+        let url = Url::parse("file:///some/path/file.txt").unwrap();
+        assert!(matches!(
+            construct_file_repo_path(&url, "index.json"),
+            Err(ClientLibError::InvalidUrl(_))
+        ));
+    }
+
+    // --- construct_index_file_path ---
+
+    #[test]
+    fn construct_index_file_path_happy_path() {
+        let url = Url::parse("https://github.com/owner/repo/releases/download/v2.0/artifact.zip")
+            .unwrap();
+        let result = construct_index_file_path(&url).unwrap();
+        assert!(result.ends_with(INDEX_FILE));
+        assert!(result.starts_with("github.com/owner/repo/releases/tag/v2.0/"));
+    }
+}

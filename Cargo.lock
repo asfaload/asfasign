@@ -781,13 +781,16 @@ dependencies = [
 name = "client-lib"
 version = "0.1.0"
 dependencies = [
- "anyhow",
+ "chrono",
+ "digest",
  "features_lib",
+ "futures-util",
  "hex",
  "reqwest 0.11.27",
  "serde_json",
  "sha2",
- "signatures",
+ "tempfile",
+ "thiserror 2.0.17",
  "tokio",
 ]
 
@@ -3654,10 +3657,12 @@ dependencies = [
  "system-configuration 0.5.1",
  "tokio",
  "tokio-native-tls",
+ "tokio-util",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams",
  "web-sys",
  "winreg",
 ]

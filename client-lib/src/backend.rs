@@ -1,0 +1,162 @@
+use crate::constants::ONE_MEGABYTE;
+use crate::types::{ComputedHash, DownloadCallbacks};
+use crate::{AsfaloadLibResult, ClientLibError};
+use features_lib::HashAlgorithm;
+use futures_util::stream::StreamExt;
+use reqwest::Client;
+use sha2::{Digest, Sha256, Sha512};
+use std::io::Write;
+use tempfile::NamedTempFile;
+
+enum IncrementalHasher {
+    Sha256(Sha256),
+    Sha512(Sha512),
+}
+
+impl IncrementalHasher {
+    fn update(&mut self, data: &[u8]) {
+        match self {
+            IncrementalHasher::Sha256(h) => h.update(data),
+            IncrementalHasher::Sha512(h) => h.update(data),
+        }
+    }
+
+    fn finalize(self) -> ComputedHash {
+        match self {
+            IncrementalHasher::Sha256(h) => ComputedHash::Sha256(hex::encode(h.finalize())),
+            IncrementalHasher::Sha512(h) => ComputedHash::Sha512(hex::encode(h.finalize())),
+        }
+    }
+}
+
+pub async fn download_file(
+    client: &Client,
+    url: &str,
+    callbacks: &DownloadCallbacks,
+) -> AsfaloadLibResult<Vec<u8>> {
+    let mut buffer = Vec::new();
+    download_file_to_writer(client, url, &mut buffer, None, callbacks).await?;
+    Ok(buffer)
+}
+
+pub async fn download_file_to_temp(
+    client: &Client,
+    url: &str,
+    hash_algorithm: &HashAlgorithm,
+    callbacks: &DownloadCallbacks,
+) -> AsfaloadLibResult<(NamedTempFile, u64, ComputedHash)> {
+    let mut hasher = match hash_algorithm {
+        HashAlgorithm::Sha256 => IncrementalHasher::Sha256(Sha256::new()),
+        HashAlgorithm::Sha512 => IncrementalHasher::Sha512(Sha512::new()),
+        HashAlgorithm::Sha1 | HashAlgorithm::Md5 => {
+            return Err(ClientLibError::UnsupportedHashAlgorithm(
+                hash_algorithm.clone(),
+            ));
+        }
+    };
+
+    let mut temp_file = NamedTempFile::new()?;
+    let bytes_downloaded =
+        download_file_to_writer(client, url, &mut temp_file, Some(&mut hasher), callbacks).await?;
+    temp_file.flush()?;
+
+    let computed_hash = hasher.finalize();
+
+    Ok((temp_file, bytes_downloaded, computed_hash))
+}
+/// Download file to a writer, optionally computing a hash incrementally
+async fn download_file_to_writer<W: std::io::Write + Send>(
+    client: &Client,
+    url: &str,
+    writer: &mut W,
+    mut hasher: Option<&mut IncrementalHasher>,
+    callbacks: &DownloadCallbacks,
+) -> AsfaloadLibResult<u64> {
+    let response = client.get(url).send().await?;
+
+    if !response.status().is_success() {
+        return Err(ClientLibError::HttpError {
+            status: response.status().as_u16(),
+            url: url.to_string(),
+        });
+    }
+
+    let total_bytes = response.content_length();
+
+    let mut bytes_downloaded = 0u64;
+    let mut last_progress_emitted = 0u64;
+
+    let mut stream = response.bytes_stream();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        let chunk_size = chunk.len() as u64;
+        bytes_downloaded += chunk_size;
+
+        // Write chunk to writer and emit callback
+        writer.write_all(&chunk)?;
+        if let Some(hasher) = &mut hasher {
+            hasher.update(&chunk);
+        }
+        callbacks.emit_chunk_received(&chunk);
+
+        if let Some(total) = total_bytes {
+            let byte_milestone = bytes_downloaded >= last_progress_emitted + ONE_MEGABYTE;
+            let percent_milestone =
+                total > 0 && (bytes_downloaded * 10 / total) > (last_progress_emitted * 10 / total);
+
+            if byte_milestone || percent_milestone {
+                callbacks.emit_file_download_progress(
+                    bytes_downloaded,
+                    Some(total),
+                    chunk_size as usize,
+                );
+                last_progress_emitted = bytes_downloaded;
+            }
+        }
+    }
+
+    // Ensure all data is flushed
+    writer.flush()?;
+
+    Ok(bytes_downloaded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::ComputedHash;
+
+    #[test]
+    fn incremental_hasher_sha256_returns_computed_hash() {
+        let mut hasher = IncrementalHasher::Sha256(Sha256::new());
+        hasher.update(b"hello world");
+        let result = hasher.finalize();
+
+        match &result {
+            ComputedHash::Sha256(hex) => {
+                assert_eq!(hex.len(), 64);
+                // Known SHA256 of "hello world"
+                assert_eq!(
+                    hex,
+                    "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+                );
+            }
+            _ => panic!("Expected Sha256 variant"),
+        }
+    }
+
+    #[test]
+    fn incremental_hasher_sha512_returns_computed_hash() {
+        let mut hasher = IncrementalHasher::Sha512(Sha512::new());
+        hasher.update(b"hello world");
+        let result = hasher.finalize();
+
+        match &result {
+            ComputedHash::Sha512(hex) => {
+                assert_eq!(hex.len(), 128);
+            }
+            _ => panic!("Expected Sha512 variant"),
+        }
+    }
+}
