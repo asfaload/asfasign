@@ -17,7 +17,9 @@ mod tests {
     async fn test_list_pending_empty() {
         let state = test_harness::initialize().await;
         let guard = state.lock().await;
-        let secret_key_path = guard.secret_key_paths[0].clone();
+        // Use key 3 which is not included in any other test's signers config,
+        // so list-pending returns empty regardless of test execution order.
+        let secret_key_path = guard.secret_key_paths[3].clone();
         let backend_url = guard.server.base_url();
         drop(guard);
 
