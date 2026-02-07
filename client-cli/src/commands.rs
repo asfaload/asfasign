@@ -162,7 +162,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 secret_key,
                 password.as_str(),
                 *json,
-            ))?
+            ))?;
         }
         Commands::SignPending {
             file_path,
@@ -191,7 +191,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 secret_key,
                 password.as_str(),
                 *json,
-            ))?
+            ))?;
         }
         Commands::RegisterRelease {
             release_url,

@@ -204,6 +204,22 @@ pub async fn add_file_via_api(
     Ok(())
 }
 
+/// Create an empty pending signatures file for an artifact.
+///
+/// The server's `list-pending` endpoint discovers artifacts by looking for
+/// `.signatures.json.pending` files. This helper creates that file so the
+/// artifact appears in the pending list.
+///
+/// # Arguments
+/// * `file_path` - Relative path to the artifact (e.g., "test_project_foo/artifact.txt")
+pub async fn create_pending_signatures_for(file_path: &str) -> Result<()> {
+    let git_repo = git_repo_path().await;
+    let absolute_path = git_repo.join(file_path);
+    let pending_sig_path = common::fs::names::pending_signatures_path_for(&absolute_path)?;
+    tokio::fs::write(&pending_sig_path, "{}").await?;
+    Ok(())
+}
+
 /// Wait for a commit with the given message to appear in the git repo
 pub async fn wait_for_commit(commit_message: &str) -> Result<()> {
     let git_repo_path = git_repo_path().await;

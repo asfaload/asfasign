@@ -22,7 +22,7 @@ pub async fn handle_list_pending_command(
     secret_key_path: &std::path::PathBuf,
     password: &str,
     json: bool,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     // 1. Load secret key
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
 
@@ -41,5 +41,5 @@ pub async fn handle_list_pending_command(
         }
     }
 
-    Ok(())
+    Ok(response.file_paths)
 }
