@@ -1,0 +1,21 @@
+[package]
+name = "client-server-integration-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+tempfile = "3.8"
+tokio = { version = "1.34", features = ["rt-multi-thread", "macros", "process"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+rest-api = { path = "../../rest-api" }
+rest_api_test_helpers = { path = "../../rest_api_test_helpers" }
+rest_api_types = { path = "../../rest_api_types" }
+rest_api_auth = { path = "../../rest_api_auth" }
+features_lib = { path = "../../core/features_lib" }
+signers_file_types = { path = "../../core/signers_file_types" }
+signers_file = { path = "../../core/signers_file" }
+client-cli = { path = "../../client-cli" }
+common = { path = "../../core/common" }

@@ -795,6 +795,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "client-server-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "client-cli",
+ "common",
+ "features_lib",
+ "reqwest 0.11.27",
+ "rest-api",
+ "rest_api_auth",
+ "rest_api_test_helpers",
+ "rest_api_types",
+ "serde_json",
+ "signers_file",
+ "signers_file_types",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.57"
 source = "registry+https://github.com/rust-lang/crates.io-index"
