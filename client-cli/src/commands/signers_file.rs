@@ -49,6 +49,7 @@ pub fn handle_new_signers_file_command(
     master_key_file: &[PathBuf],
     master_threshold: Option<u32>,
     output_file: &Path,
+    json: bool,
 ) -> Result<()> {
     // We do not geve a default name to the file, so we cannot work
     // with the path to a dir.
@@ -123,21 +124,42 @@ pub fn handle_new_signers_file_command(
         crate::error::ClientCliError::SignersFile(format!("Failed to write signers file: {}", e))
     })?;
 
-    println!("Signers file created successfully at: {:?}", output_file);
-    println!(
-        "Artifact signers: {} (threshold: {})",
-        all_artifact_signers_count, artifact_threshold
-    );
-    println!(
-        "Admin keys: {} (threshold: {})",
-        all_admin_keys_count,
-        admin_threshold.map_or("none".to_string(), |t| t.to_string())
-    );
-    println!(
-        "Master keys: {} (threshold: {})",
-        all_master_keys_count,
-        master_threshold.map_or("none".to_string(), |t| t.to_string())
-    );
+    if json {
+        let output = crate::output::NewSignersFileOutput {
+            output_file: output_file.to_string_lossy().to_string(),
+            artifact_signers_count: all_artifact_signers_count,
+            artifact_threshold,
+            admin_keys_count: all_admin_keys_count,
+            admin_threshold,
+            master_keys_count: all_master_keys_count,
+            master_threshold,
+        };
+        println!(
+            "{}",
+            serde_json::to_string(&output).map_err(|e| {
+                crate::error::ClientCliError::SignersFile(format!(
+                    "Failed to serialize output: {}",
+                    e
+                ))
+            })?
+        );
+    } else {
+        println!("Signers file created successfully at: {:?}", output_file);
+        println!(
+            "Artifact signers: {} (threshold: {})",
+            all_artifact_signers_count, artifact_threshold
+        );
+        println!(
+            "Admin keys: {} (threshold: {})",
+            all_admin_keys_count,
+            admin_threshold.map_or("none".to_string(), |t| t.to_string())
+        );
+        println!(
+            "Master keys: {} (threshold: {})",
+            all_master_keys_count,
+            master_threshold.map_or("none".to_string(), |t| t.to_string())
+        );
+    }
 
     Ok(())
 }

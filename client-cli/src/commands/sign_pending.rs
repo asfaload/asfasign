@@ -30,6 +30,7 @@ pub async fn handle_sign_pending_command(
     backend_url: &str,
     secret_key_path: &std::path::PathBuf,
     password: &str,
+    json: bool,
 ) -> Result<()> {
     // Load secret key and derive public key
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
@@ -54,8 +55,10 @@ pub async fn handle_sign_pending_command(
     )
     .await?;
 
-    // 7. Display result
-    if response.is_complete {
+    // Display result
+    if json {
+        println!("{}", serde_json::to_string(&response)?);
+    } else if response.is_complete {
         println!("Success! Signature submitted (complete)");
     } else {
         println!("Success! Signature submitted");

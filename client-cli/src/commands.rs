@@ -28,6 +28,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password,
             password_file,
             accept_weak_password,
+            json,
         } => {
             let password = get_password(
                 password.clone(),
@@ -38,7 +39,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 RequireConfirmation,
                 *accept_weak_password,
             )?;
-            keys::handle_new_keys_command(name, output_dir, password)?;
+            keys::handle_new_keys_command(name, output_dir, password, *json)?;
         }
         Commands::SignFile {
             file_to_sign,
@@ -78,6 +79,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             master_key_file,
             master_threshold,
             output_file,
+            json,
         } => {
             signers_file::handle_new_signers_file_command(
                 artifact_signer,
@@ -90,14 +92,16 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 master_key_file,
                 master_threshold.as_ref().copied(),
                 output_file,
+                *json,
             )?;
         }
         Commands::VerifySig {
             signed_file,
             signature,
             public_key,
+            json,
         } => {
-            verify_sig::handle_verify_sig_command(signed_file, signature, public_key)?;
+            verify_sig::handle_verify_sig_command(signed_file, signature, public_key, *json)?;
         }
         Commands::AddToAggregate {
             signed_file,
@@ -124,11 +128,13 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             signed_file,
             signatures_file,
             signers_file,
+            json,
         } => {
             is_agg_complete::handle_is_agg_complete_command(
                 signed_file,
                 signatures_file,
                 signers_file,
+                *json,
             )?;
         }
         Commands::ListPending {
@@ -136,6 +142,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password,
             password_file,
             backend_url,
+            json,
         } => {
             let password = get_password(
                 password.clone(),
@@ -154,6 +161,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &url,
                 secret_key,
                 password.as_str(),
+                *json,
             ))?
         }
         Commands::SignPending {
@@ -162,6 +170,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password,
             password_file,
             backend_url,
+            json,
         } => {
             let password = get_password(
                 password.clone(),
@@ -181,6 +190,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &url,
                 secret_key,
                 password.as_str(),
+                *json,
             ))?
         }
         Commands::RegisterRelease {
@@ -189,6 +199,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password,
             password_file,
             backend_url,
+            json,
         } => {
             let password = get_password(
                 password.clone(),
@@ -208,6 +219,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 release_url,
                 secret_key,
                 password.as_str(),
+                *json,
             ))?
         }
         Commands::Download {
