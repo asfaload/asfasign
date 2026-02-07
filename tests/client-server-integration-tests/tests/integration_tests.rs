@@ -16,7 +16,7 @@ mod tests {
     async fn test_list_pending_empty() {
         let state = test_harness::initialize().await;
         let guard = state.lock().await;
-        let secret_key_path = guard.secret_key_path.clone();
+        let secret_key_path = guard.secret_key_paths[0].clone();
         let backend_url = guard.server.base_url();
         drop(guard);
 
@@ -39,7 +39,7 @@ mod tests {
         let state = test_harness::initialize().await;
         let guard = state.lock().await;
         let git_repo_path = guard.server.git_repo_path();
-        let secret_key_path = guard.secret_key_path.clone();
+        let secret_key_path = guard.secret_key_paths[0].clone();
         let backend_url = guard.server.base_url();
         drop(guard);
 
@@ -98,7 +98,7 @@ mod tests {
         let state = test_harness::initialize().await;
         let guard = state.lock().await;
         let git_repo_path = guard.server.git_repo_path();
-        let secret_key_path = guard.secret_key_path.clone();
+        let secret_key_path = guard.secret_key_paths[0].clone();
         let backend_url = guard.server.base_url();
         drop(guard);
 
