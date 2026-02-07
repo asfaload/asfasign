@@ -77,14 +77,9 @@ mod tests {
         initialize_signers_file(&project_dir, &signers_content, &signature, &public_key)
             .expect("Failed to initialize signers file");
 
-        test_harness::add_file_via_api(
-            &file_path,
-            "This is a test file.",
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
-        )
-        .await
-        .expect("Failed to add file");
+        test_harness::create_file_in_repo(&file_path, "This is a test file.")
+            .await
+            .expect("Failed to create file");
 
         test_harness::create_pending_signatures_for(&file_path)
             .await
@@ -148,15 +143,10 @@ mod tests {
         initialize_signers_file(&project_dir, &signers_content, &signature, &public_key)
             .expect("Failed to initialize signers file");
 
-        // Add file via API
-        test_harness::add_file_via_api(
-            &file_path,
-            "This is an artifact to be signed.",
-            &secret_key_path,
-            test_harness::TEST_PASSWORD,
-        )
-        .await
-        .expect("Failed to add file");
+        // Create artifact file
+        test_harness::create_file_in_repo(&file_path, "This is an artifact to be signed.")
+            .await
+            .expect("Failed to create file");
 
         test_harness::create_pending_signatures_for(&file_path)
             .await
@@ -281,17 +271,12 @@ mod tests {
         .expect("sign-pending key[2] should succeed");
         assert!(r2.is_complete, "Should be complete after all 3 signatures");
 
-        // --- Phase 3: Add artifact via API ---
+        // --- Phase 3: Create artifact file ---
         let (_, artifact_path) = test_harness::unique_test_paths("multi_signer", "artifact.txt");
 
-        test_harness::add_file_via_api(
-            &artifact_path,
-            "artifact content",
-            &key_paths[0],
-            test_harness::TEST_PASSWORD,
-        )
-        .await
-        .expect("add_file_via_api should succeed");
+        test_harness::create_file_in_repo(&artifact_path, "artifact content")
+            .await
+            .expect("Failed to create artifact file");
 
         test_harness::create_pending_signatures_for(&artifact_path)
             .await
