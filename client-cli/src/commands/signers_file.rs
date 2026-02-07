@@ -134,15 +134,7 @@ pub fn handle_new_signers_file_command(
             master_keys_count: all_master_keys_count,
             master_threshold,
         };
-        println!(
-            "{}",
-            serde_json::to_string(&output).map_err(|e| {
-                crate::error::ClientCliError::SignersFile(format!(
-                    "Failed to serialize output: {}",
-                    e
-                ))
-            })?
-        );
+        println!("{}", serde_json::to_string(&output)?);
     } else {
         println!("Signers file created successfully at: {:?}", output_file);
         println!(
