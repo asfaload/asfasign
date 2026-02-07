@@ -4,15 +4,9 @@ use tempfile::TempDir;
 use tokio::sync::{Mutex, OnceCell};
 
 use anyhow::Result;
-use features_lib::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
-use reqwest::Client;
+use features_lib::AsfaloadKeyPairTrait;
 use rest_api::server::run_server;
-use rest_api_auth::HEADER_NONCE;
-use rest_api_auth::HEADER_PUBLIC_KEY;
-use rest_api_auth::HEADER_SIGNATURE;
-use rest_api_auth::HEADER_TIMESTAMP;
-use rest_api_test_helpers::{build_test_config, get_random_port, wait_for_server, TestAuthHeaders};
-use serde_json::json;
+use rest_api_test_helpers::{build_test_config, get_random_port, wait_for_server};
 
 pub const TEST_PASSWORD: &str = "password";
 
@@ -24,7 +18,6 @@ static TEST_STATE: OnceCell<Mutex<TestState>> = OnceCell::const_new();
 /// sharing the same git repo as the test harness.
 pub struct TestState {
     pub server: TestServer,
-    pub client: reqwest::Client,
     pub keys_dir: PathBuf,
     pub test_keys: test_helpers::TestKeys,
     pub secret_key_paths: Vec<PathBuf>,
@@ -119,10 +112,6 @@ async fn setup_server_and_keys() -> Result<TestState> {
 
     Ok(TestState {
         server,
-        client: Client::builder()
-            .pool_max_idle_per_host(0)
-            .timeout(std::time::Duration::from_secs(30))
-            .build()?,
         keys_dir,
         test_keys,
         secret_key_paths,
@@ -158,49 +147,21 @@ pub fn unique_test_paths(test_name: &str, file_name: &str) -> (PathBuf, String) 
     (project_dir, file_path)
 }
 
-/// Add a file to the git repo via the REST API
-pub async fn add_file_via_api(
-    file_path: &str,
-    content: &str,
-    secret_key_path: &PathBuf,
-    password: &str,
-) -> Result<()> {
-    let secret_key = features_lib::AsfaloadSecretKeys::from_file(secret_key_path, password)?;
-
-    let payload = json!({
-        "file_path": file_path,
-        "content": content
-    });
-
-    let payload_string = payload.to_string();
-    let TestAuthHeaders {
-        timestamp,
-        nonce,
-        signature,
-        public_key,
-    } = rest_api_test_helpers::create_auth_headers_with_key(&secret_key, &payload_string).await;
-
-    let url = base_url().await;
-    let state = TEST_STATE.get().expect("Test state not initialized");
-    let guard = state.lock().await;
-    let client = guard.client.clone();
-    drop(guard);
-
-    let response = client
-        .post(format!("{}/add-file", url))
-        .header(HEADER_TIMESTAMP, timestamp)
-        .header(HEADER_NONCE, nonce)
-        .header(HEADER_SIGNATURE, signature)
-        .header(HEADER_PUBLIC_KEY, public_key)
-        .json(&payload)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        let error_text = response.text().await?;
-        anyhow::bail!("Failed to add file: {}", error_text);
+/// Create a file in the git repo at the given relative path.
+///
+/// Creates parent directories as needed. The server reads files directly
+/// from the filesystem, so no API call or git commit is required.
+///
+/// # Arguments
+/// * `file_path` - Relative path within the git repo (e.g., "test_project_foo/artifact.txt")
+/// * `content` - File content to write
+pub async fn create_file_in_repo(file_path: &str, content: &str) -> Result<()> {
+    let git_repo = git_repo_path().await;
+    let absolute_path = git_repo.join(file_path);
+    if let Some(parent) = absolute_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
     }
-
+    tokio::fs::write(&absolute_path, content).await?;
     Ok(())
 }
 
