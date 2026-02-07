@@ -66,3 +66,7 @@ help:
 		printf "\n"; \
 	}' \
 	| more $(shell test $(shell uname) == Darwin && echo '--no-init --raw-control-chars')
+
+## Run client-server integration tests
+client-server-tests:
+	cargo test --package client-server-integration-tests

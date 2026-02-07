@@ -29,6 +29,10 @@ check-format:
 clippy:
 	cargo clippy
 
+## Run client-server integration tests
+client-server-tests:
+	cargo test --package client-server-integration-tests
+
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"
 	@echo
