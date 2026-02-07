@@ -3,6 +3,7 @@ use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
     sha512_for_content,
 };
+use rest_api_types::SubmitSignatureResponse;
 
 /// Handle the sign-pending command.
 ///
@@ -31,7 +32,7 @@ pub async fn handle_sign_pending_command(
     secret_key_path: &std::path::PathBuf,
     password: &str,
     json: bool,
-) -> Result<()> {
+) -> Result<SubmitSignatureResponse> {
     // Load secret key and derive public key
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
     let public_key = AsfaloadPublicKeys::from_secret_key(&secret_key)?;
@@ -64,5 +65,5 @@ pub async fn handle_sign_pending_command(
         println!("Success! Signature submitted");
     }
 
-    Ok(())
+    Ok(response)
 }
