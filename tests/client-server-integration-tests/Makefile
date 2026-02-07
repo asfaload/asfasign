@@ -1,37 +1,9 @@
 .DEFAULT_GOAL := help
 SHELL:=/bin/bash
 
-## Run tests of all components
+## Run all client-server integration tests
 test:
-	$(MAKE) clippy
-	$(MAKE) check-format
-
 	cargo test
-	# Some integration tests require the rest-api to accept registrations of
-	# signers files served on localhost, which should not happen in production.
-	# This behaviour is enabled with the test-utils features, and tests requiring
-	# this localhost acceptance only run with this feature.
-	$(MAKE) test-with-test-utils
-
-## Run tests with test-utils feature enabled (for integration tests)
-test-with-test-utils:
-	cargo test --features test-utils
-
-## Fix rust code formatting
-format:
-	cargo fmt --verbose
-
-## Check rust code formatting without fixing
-check-format:
-	cargo fmt --check
-
-## run clippy
-clippy:
-	cargo clippy
-
-## Run client-server integration tests
-client-server-tests:
-	cargo test --package client-server-integration-tests
 
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"
@@ -49,7 +21,7 @@ help:
 		s/\\n## /---/; \
 		s/\\n/ /g; \
 		p; \
-	}" ${MAKEFILE_LIST} \
+		}" ${MAKEFILE_LIST} \
 	| LC_ALL='C' sort --ignore-case \
 	| awk -F '---' \
 		-v ncol=$$(tput cols) \

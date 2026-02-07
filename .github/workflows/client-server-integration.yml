@@ -1,0 +1,20 @@
+name: Client-Server Integration Tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  integration-tests:
+    name: Run client-server integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Run client-server integration tests
+        run: cargo test --package client-server-integration-tests
