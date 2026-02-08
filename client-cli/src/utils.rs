@@ -4,11 +4,6 @@ use std::path::Path;
 use zxcvbn::{Score, zxcvbn};
 
 use crate::error::{ClientCliError, Result};
-use features_lib::{AsfaloadSecretKeys, AsfaloadSignatureTrait};
-use reqwest::header::{HeaderMap, HeaderValue};
-use rest_api_auth::{
-    AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP,
-};
 
 /// Ensures a directory exists, creating it if necessary
 pub fn ensure_dir_exists(path: &Path) -> Result<()> {
@@ -155,58 +150,4 @@ pub fn get_password(
         let validated_password = validate_password(unvalidated_password.as_str())?;
         Ok(validated_password)
     }
-}
-
-/// Creates authentication headers for REST API requests
-///
-/// # Arguments
-///
-/// * `payload` - The JSON payload as a string that will be sent in the request
-/// * `secret_key` - The secret key used to sign the authentication data
-///
-/// # Returns
-///
-/// A HeaderMap containing the authentication headers:
-/// - HEADER_TIMESTAMP: RFC3339 timestamp
-/// - HEADER_NONCE: UUID v4
-/// - HEADER_SIGNATURE: Signature of the auth info
-/// - HEADER_PUBLIC_KEY: Public key in base64
-pub fn create_auth_headers(payload: &str, secret_key: AsfaloadSecretKeys) -> Result<HeaderMap> {
-    use rest_api_auth::AuthInfo;
-
-    // Create authentication info
-    let auth_info = AuthInfo::new(payload.to_string());
-
-    // Create authentication signature
-    // Now SecretKey implements SecretKeyTrait, so it should work directly
-    let auth_signature = AuthSignature::new(&auth_info, &secret_key)?;
-
-    // Create headers
-    let mut headers = HeaderMap::new();
-
-    // Add timestamp header
-    headers.insert(
-        HEADER_TIMESTAMP,
-        HeaderValue::from_str(&auth_signature.auth_info().timestamp().to_rfc3339())?,
-    );
-
-    // Add nonce header
-    headers.insert(
-        HEADER_NONCE,
-        HeaderValue::from_str(&auth_signature.auth_info().nonce())?,
-    );
-
-    // Add signature header
-    headers.insert(
-        HEADER_SIGNATURE,
-        HeaderValue::from_str(&auth_signature.signature().to_base64())?,
-    );
-
-    // Add public key header
-    headers.insert(
-        HEADER_PUBLIC_KEY,
-        HeaderValue::from_str(&auth_signature.public_key())?,
-    );
-
-    Ok(headers)
 }

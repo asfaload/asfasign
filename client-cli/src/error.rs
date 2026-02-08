@@ -40,23 +40,11 @@ pub enum ClientCliError {
     #[error("Signers file error: {0}")]
     SignersFile(String),
 
-    #[error("Authentication error: {0}")]
-    AuthError(#[from] rest_api_auth::AuthError),
-
-    #[error("Reqwest header error: {0}")]
-    ReqwestHeaderError(#[from] reqwest::header::InvalidHeaderValue),
-
     #[error("Client library error: {0}")]
     ClientLib(#[from] client_lib::ClientLibError),
 
-    #[error("Network error: {0}")]
-    NetworkError(String),
-
-    #[error("Error response from server: {0}")]
-    RequestFailed(String),
-
-    #[error("Failed to parse server response: {0}")]
-    ResponseParseError(String),
+    #[error("Admin library error: {0}")]
+    AdminLib(#[from] admin_lib::AdminLibError),
 
     #[error("JSON serialization error: {0}")]
     JsonSerializationError(#[from] serde_json::Error),
