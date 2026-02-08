@@ -25,6 +25,7 @@ hex = "0.4"
 client-lib = { path = "../client-lib" }
 
 [dev-dependencies]
+http = "0.2"
 mockito = "1.2"
 assert_cmd = "2.0"
 predicates = "3.1"

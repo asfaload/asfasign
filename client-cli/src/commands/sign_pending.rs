@@ -37,8 +37,11 @@ pub async fn handle_sign_pending_command(
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
     let public_key = AsfaloadPublicKeys::from_secret_key(&secret_key)?;
 
+    // Create REST client (shared across fetch + submit)
+    let client = crate::rest_client::v1::Client::new(backend_url);
+
     // Fetch file from backend
-    let file_content = crate::rest_client::fetch_file(backend_url, file_path).await?;
+    let file_content = client.fetch_file(file_path).await?;
 
     // Compute hash
     let hash = sha512_for_content(file_content)?;
@@ -47,14 +50,9 @@ pub async fn handle_sign_pending_command(
     let signature = secret_key.sign(&hash)?;
 
     // Submit to backend
-    let response = crate::rest_client::submit_signature(
-        backend_url,
-        file_path,
-        &public_key,
-        &signature,
-        &secret_key,
-    )
-    .await?;
+    let response = client
+        .submit_signature(file_path, &public_key, &signature, &secret_key)
+        .await?;
 
     // Display result
     if json {

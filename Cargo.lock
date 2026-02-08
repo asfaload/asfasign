@@ -759,6 +759,7 @@ dependencies = [
  "client-lib",
  "features_lib",
  "hex",
+ "http 0.2.12",
  "minisign",
  "mockito",
  "predicates",
