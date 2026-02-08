@@ -2,298 +2,306 @@ use crate::error::{ClientCliError, Result};
 use crate::utils::create_auth_headers;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
+    AsfaloadSignatures,
 };
-use reqwest::Client;
+use reqwest::header::CONTENT_TYPE;
 use rest_api_types::{
     ListPendingResponse, RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse,
     SubmitSignatureRequest, SubmitSignatureResponse,
 };
+use serde::de::DeserializeOwned;
 
-/// List pending signature files from the backend.
+/// A client for interacting with the v1 REST API.
 ///
-/// Makes an authenticated GET request to /v1/pending_signatures endpoint.
-///
-/// # Arguments
-///
-/// * `backend_url` - Base URL of the backend API
-/// * `secret_key` - Your secret key for signing the request
-///
-/// # Returns
-///
-/// List of file paths that need your signature
-///
-/// # Errors
-///
-/// Returns error if:
-/// - Authentication fails
-/// - Backend returns non-200 status
-/// - Response is malformed
-pub async fn get_pending_signatures(
-    backend_url: &str,
-    secret_key: AsfaloadSecretKeys,
-) -> Result<ListPendingResponse> {
-    let url = format!("{}/v1/pending_signatures", backend_url);
-
-    // Create auth headers (using empty payload for GET request)
-    let headers = create_auth_headers("", secret_key)?;
-
-    let client = Client::new();
-    let response = client
-        .get(&url)
-        .headers(headers)
-        .send()
-        .await
-        .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
-
-    if !response.status().is_success() {
-        return Err(ClientCliError::RequestFailed(format!(
-            "{}: {}",
-            response.status(),
-            response.text().await.unwrap_or("".to_string())
-        )));
-    }
-
-    let response_body: ListPendingResponse = response.json().await.map_err(|e| {
-        ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
-    })?;
-
-    Ok(response_body)
+/// Holds a single `reqwest::Client` for connection pooling and reuse
+/// across multiple endpoint calls.
+pub struct Client {
+    client: reqwest::Client,
+    base_url: String,
 }
 
-/// Fetch file content from the backend.
-///
-/// This is a helper for the sign-pending workflow. The client needs to
-/// fetch the actual file content to compute its hash and sign it.
-///
-/// # Arguments
-///
-/// * `backend_url` - Base URL of the backend API
-/// * `file_path` - Relative path to the file (as returned by list-pending)
-///
-/// # Returns
-///
-/// The file content as bytes
-///
-/// # Errors
-///
-/// Returns error if:
-/// - Backend returns non-200 status
-/// - Network error occurs
-pub async fn fetch_file(backend_url: &str, file_path: &str) -> Result<Vec<u8>> {
-    let url = format!("{}/v1/files/{}", backend_url, file_path);
+/// Typed payload for register-release requests.
+#[derive(serde::Serialize)]
+struct RegisterReleasePayload {
+    release_url: String,
+}
 
-    let client = Client::new();
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+impl Client {
+    /// Create a new REST client.
+    pub fn new(base_url: impl Into<String>) -> Self {
+        Client {
+            client: reqwest::Client::new(),
+            base_url: base_url.into(),
+        }
+    }
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
+    /// Check response status. On failure, read error body and return `RequestFailed`.
+    async fn check_response_status(response: reqwest::Response) -> Result<reqwest::Response> {
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "(failed to read response body)".to_string());
+            return Err(ClientCliError::RequestFailed(format!(
+                "{}: {}",
+                status, error_text
+            )));
+        }
+        Ok(response)
+    }
+
+    /// Parse JSON response body into a typed value.
+    async fn parse_json_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
+        response.json::<T>().await.map_err(|e| {
+            ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
+        })
+    }
+
+    /// List pending signature files from the backend.
+    ///
+    /// Makes an authenticated GET request to `/v1/pending_signatures`.
+    pub async fn get_pending_signatures(
+        &self,
+        secret_key: AsfaloadSecretKeys,
+    ) -> Result<ListPendingResponse> {
+        let url = format!("{}/v1/pending_signatures", self.base_url);
+        let headers = create_auth_headers("", secret_key)?;
+
+        let response = self
+            .client
+            .get(&url)
+            .headers(headers)
+            .send()
             .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(ClientCliError::RequestFailed(format!(
-            "GET {}: {} - {}",
-            url, status, error_text
-        )));
+            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+
+        let response = Self::check_response_status(response).await?;
+        Self::parse_json_response(response).await
     }
 
-    let content = response.bytes().await.map_err(|e| {
-        ClientCliError::ResponseParseError(format!("Failed to read response: {}", e))
-    })?;
+    /// Fetch file content from the backend.
+    ///
+    /// Makes an unauthenticated GET request to `/v1/files/{file_path}`.
+    pub async fn fetch_file(&self, file_path: &str) -> Result<Vec<u8>> {
+        let url = format!("{}/v1/files/{}", self.base_url, file_path);
 
-    Ok(content.to_vec())
-}
-
-/// Submit a signature for a file to the backend.
-///
-/// Makes an authenticated POST request to /v1/signatures endpoint with the signature data.
-///
-/// # Arguments
-///
-/// * `backend_url` - Base URL of the backend API
-/// * `file_path` - Relative path to the file being signed
-/// * `public_key` - The signer's public key
-/// * `signature` - The signature data
-/// * `secret_key` - The secret key for authentication
-///
-/// # Returns
-///
-/// Submission response indicating whether the aggregate signature is now complete
-///
-/// # Errors
-///
-/// Returns error if:
-/// - Authentication fails
-/// - Backend returns non-200 status
-/// - Response is malformed
-pub async fn submit_signature(
-    backend_url: &str,
-    file_path: &str,
-    public_key: &AsfaloadPublicKeys,
-    signature: &features_lib::AsfaloadSignatures,
-    secret_key: &AsfaloadSecretKeys,
-) -> Result<SubmitSignatureResponse> {
-    let url = format!("{}/v1/signatures", backend_url);
-
-    // Build the request
-    let request = SubmitSignatureRequest {
-        file_path: file_path.to_string(),
-        public_key: public_key.to_base64(),
-        signature: signature.to_base64(),
-    };
-
-    // Create auth headers
-    let request_json = serde_json::to_string(&request)
-        .map_err(|e| ClientCliError::InvalidInput(format!("Failed to serialize request: {}", e)))?;
-    let headers = create_auth_headers(&request_json, secret_key.clone())?;
-
-    let client = Client::new();
-    let response = client
-        .post(&url)
-        .headers(headers)
-        .json(&request)
-        .send()
-        .await
-        .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response
-            .text()
+        let response = self
+            .client
+            .get(&url)
+            .send()
             .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(ClientCliError::RequestFailed(format!(
-            "{}: {}",
-            status, error_text
-        )));
+            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+
+        let response = Self::check_response_status(response).await?;
+
+        let content = response.bytes().await.map_err(|e| {
+            ClientCliError::ResponseParseError(format!("Failed to read response: {}", e))
+        })?;
+
+        Ok(content.to_vec())
     }
 
-    let response_body: SubmitSignatureResponse = response.json().await.map_err(|e| {
-        ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
-    })?;
+    /// Submit a signature for a file to the backend.
+    ///
+    /// Makes an authenticated POST request to `/v1/signatures`.
+    /// Serializes the payload once and uses the same string for both
+    /// auth headers and the request body (avoids signature mismatch).
+    pub async fn submit_signature(
+        &self,
+        file_path: &str,
+        public_key: &AsfaloadPublicKeys,
+        signature: &AsfaloadSignatures,
+        secret_key: &AsfaloadSecretKeys,
+    ) -> Result<SubmitSignatureResponse> {
+        let url = format!("{}/v1/signatures", self.base_url);
 
-    Ok(response_body)
+        let request = SubmitSignatureRequest {
+            file_path: file_path.to_string(),
+            public_key: public_key.to_base64(),
+            signature: signature.to_base64(),
+        };
+
+        // Serialize once: same bytes for auth and body
+        let payload_string = serde_json::to_string(&request).map_err(|e| {
+            ClientCliError::InvalidInput(format!("Failed to serialize request: {}", e))
+        })?;
+        let headers = create_auth_headers(&payload_string, secret_key.clone())?;
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .header(CONTENT_TYPE, "application/json")
+            .body(payload_string)
+            .send()
+            .await
+            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+
+        let response = Self::check_response_status(response).await?;
+        Self::parse_json_response(response).await
+    }
+
+    /// Register a GitHub release with the backend.
+    ///
+    /// Makes an authenticated POST request to `/v1/release`.
+    /// Serializes the payload once and uses the same string for both
+    /// auth headers and the request body (avoids signature mismatch).
+    pub async fn register_release(
+        &self,
+        release_url: &str,
+        secret_key: AsfaloadSecretKeys,
+    ) -> Result<RegisterReleaseResponse> {
+        let url = format!("{}/v1/release", self.base_url);
+
+        let payload = RegisterReleasePayload {
+            release_url: release_url.to_string(),
+        };
+
+        // Serialize once: same bytes for auth and body
+        let payload_string = serde_json::to_string(&payload).map_err(|e| {
+            ClientCliError::InvalidInput(format!("Failed to serialize request: {}", e))
+        })?;
+        let headers = create_auth_headers(&payload_string, secret_key)?;
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .header(CONTENT_TYPE, "application/json")
+            .body(payload_string)
+            .send()
+            .await
+            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+
+        let response = Self::check_response_status(response).await?;
+        Self::parse_json_response(response).await
+    }
+
+    /// Register a repository with the backend.
+    ///
+    /// Makes an unauthenticated POST request to `/v1/register_repo`.
+    pub async fn register_repo(&self, signers_file_url: &str) -> Result<RegisterRepoResponse> {
+        let url = format!("{}/v1/register_repo", self.base_url);
+
+        let payload = RegisterRepoRequest {
+            signers_file_url: signers_file_url.to_string(),
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+
+        let response = Self::check_response_status(response).await?;
+        Self::parse_json_response(response).await
+    }
 }
 
-/// Register a GitHub release with the backend.
-///
-/// Makes an authenticated POST request to /v1/release endpoint.
-///
-/// # Arguments
-///
-/// * `backend_url` - Base URL of the backend API
-/// * `release_url` - URL of the GitHub release to register
-/// * `secret_key` - The secret key for signing the request
-///
-/// # Returns
-///
-/// Registration response with success status and index file path
-///
-/// # Errors
-///
-/// Returns error if:
-/// - Authentication fails
-/// - Backend returns non-200 status
-/// - Response is malformed
-pub async fn register_release(
-    backend_url: &str,
-    release_url: &str,
-    secret_key: AsfaloadSecretKeys,
-) -> Result<RegisterReleaseResponse> {
-    let url = format!("{}/v1/release", backend_url);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let payload = serde_json::json!({
-        "release_url": release_url
-    });
+    #[tokio::test]
+    async fn check_response_status_passes_through_on_success() {
+        let response = http::Response::builder().status(200).body("ok").unwrap();
+        let reqwest_response = reqwest::Response::from(response);
 
-    let payload_string = payload.to_string();
-    let headers = create_auth_headers(&payload_string, secret_key)?;
-
-    let client = Client::new();
-    let response = client
-        .post(&url)
-        .headers(headers)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = match response.text().await {
-            Ok(text) => text,
-            Err(e) => format!("(could not read response body: {})", e),
-        };
-        return Err(ClientCliError::RequestFailed(format!(
-            "{}: {}",
-            status, error_text
-        )));
+        let result = Client::check_response_status(reqwest_response).await;
+        assert!(result.is_ok());
     }
 
-    let response_body: RegisterReleaseResponse = response.json().await.map_err(|e| {
-        ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
-    })?;
+    #[tokio::test]
+    async fn check_response_status_returns_error_on_4xx() {
+        let response = http::Response::builder()
+            .status(404)
+            .body("Not Found")
+            .unwrap();
+        let reqwest_response = reqwest::Response::from(response);
 
-    Ok(response_body)
-}
+        let result = Client::check_response_status(reqwest_response).await;
+        assert!(result.is_err());
 
-/// Register a repository with the backend.
-///
-/// Makes a POST request to /v1/register_repo endpoint.
-/// This endpoint does not require authentication.
-///
-/// # Arguments
-///
-/// * `backend_url` - Base URL of the backend API
-/// * `signers_file_url` - URL to the signers file for the repository
-///
-/// # Returns
-///
-/// Registration response with project ID and required signers
-///
-/// # Errors
-///
-/// Returns error if:
-/// - Backend returns non-success status
-/// - Network error occurs
-/// - Response is malformed
-pub async fn register_repo(
-    backend_url: &str,
-    signers_file_url: &str,
-) -> Result<RegisterRepoResponse> {
-    let url = format!("{}/v1/register_repo", backend_url);
-
-    let payload = RegisterRepoRequest {
-        signers_file_url: signers_file_url.to_string(),
-    };
-
-    let client = Client::new();
-    let response = client
-        .post(&url)
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = match response.text().await {
-            Ok(text) => text,
-            Err(e) => format!("(could not read response body: {})", e),
-        };
-        return Err(ClientCliError::RequestFailed(format!(
-            "{}: {}",
-            status, error_text
-        )));
+        let err = result.unwrap_err();
+        match err {
+            ClientCliError::RequestFailed(msg) => {
+                assert!(msg.contains("404"), "Error should contain status code");
+                assert!(msg.contains("Not Found"), "Error should contain body text");
+            }
+            other => panic!("Expected RequestFailed, got: {:?}", other),
+        }
     }
 
-    let response_body: RegisterRepoResponse = response.json().await.map_err(|e| {
-        ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
-    })?;
+    #[tokio::test]
+    async fn check_response_status_returns_error_on_5xx() {
+        let response = http::Response::builder()
+            .status(500)
+            .body("Internal Server Error")
+            .unwrap();
+        let reqwest_response = reqwest::Response::from(response);
 
-    Ok(response_body)
+        let result = Client::check_response_status(reqwest_response).await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        match err {
+            ClientCliError::RequestFailed(msg) => {
+                assert!(msg.contains("500"));
+                assert!(msg.contains("Internal Server Error"));
+            }
+            other => panic!("Expected RequestFailed, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_json_response_deserializes_valid_json() {
+        let response = http::Response::builder()
+            .status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"value": 42}"#)
+            .unwrap();
+        let reqwest_response = reqwest::Response::from(response);
+
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        struct TestPayload {
+            value: u32,
+        }
+
+        let result: Result<TestPayload> = Client::parse_json_response(reqwest_response).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), TestPayload { value: 42 });
+    }
+
+    #[tokio::test]
+    async fn parse_json_response_returns_error_on_invalid_json() {
+        let response = http::Response::builder()
+            .status(200)
+            .header("content-type", "application/json")
+            .body("not valid json")
+            .unwrap();
+        let reqwest_response = reqwest::Response::from(response);
+
+        #[derive(serde::Deserialize, Debug)]
+        struct TestPayload {
+            #[allow(dead_code)]
+            value: u32,
+        }
+
+        let result: Result<TestPayload> = Client::parse_json_response(reqwest_response).await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        match err {
+            ClientCliError::ResponseParseError(msg) => {
+                assert!(
+                    msg.contains("Failed to parse response"),
+                    "Error message should describe parse failure"
+                );
+            }
+            other => panic!("Expected ResponseParseError, got: {:?}", other),
+        }
+    }
 }
