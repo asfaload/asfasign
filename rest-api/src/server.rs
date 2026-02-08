@@ -1,16 +1,5 @@
-use crate::{
-    auth_middleware::auth_middleware,
-    handlers::{
-        add_file_handler, get_file_handler, get_pending_signatures_handler,
-        get_signature_status_handler, get_signers_handler, register_release_handler,
-        register_repo_handler, submit_signature_handler,
-    },
-    state::init_state,
-};
-use axum::{
-    Router,
-    routing::{get, post},
-};
+use crate::{state::init_state, v1::routes::v1_router};
+use axum::Router;
 use rest_api_types::{errors::ApiError, rustls::setup_crypto_provider};
 use std::net::SocketAddr;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
@@ -40,35 +29,8 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
             ))
         })?;
 
-    let register_router = Router::new().route("/register_repo", post(register_repo_handler));
-    let release_router = Router::new()
-        .route("/release", post(register_release_handler))
-        .layer(axum::middleware::from_fn_with_state(
-            app_state.clone(),
-            auth_middleware,
-        ));
-    let add_file_router = Router::new()
-        .route("/add-file", post(add_file_handler))
-        .route("/pending_signatures", get(get_pending_signatures_handler))
-        .layer(axum::middleware::from_fn_with_state(
-            app_state.clone(),
-            auth_middleware,
-        ));
-    // Generic signature collection routes
-    let signature_router = Router::new()
-        .route("/signatures", post(submit_signature_handler))
-        .route(
-            "/signatures/{*file_path}",
-            get(get_signature_status_handler),
-        );
-    let files_router = Router::new().route("/files/{*file_path}", get(get_file_handler));
-    let signers_router = Router::new().route("/get-signers/{*file_path}", get(get_signers_handler));
-    let app = register_router
-        .merge(release_router)
-        .merge(add_file_router)
-        .merge(signature_router)
-        .merge(files_router)
-        .merge(signers_router)
+    let app = Router::new()
+        .nest("/v1", v1_router(app_state.clone()))
         .layer(GovernorLayer::new(governor_conf))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))

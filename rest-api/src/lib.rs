@@ -10,3 +10,4 @@ pub mod pending_discovery;
 pub mod server;
 pub mod state;
 pub mod traces;
+pub mod v1;

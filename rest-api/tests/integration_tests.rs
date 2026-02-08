@@ -600,7 +600,7 @@ pub mod tests {
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://localhost:{}/register_repo", port))
+            .post(format!("http://localhost:{}/v1/register_repo", port))
             .json(&RegisterRepoRequest {
                 signers_file_url: signers_url,
             })
@@ -618,7 +618,7 @@ pub mod tests {
         );
         assert_eq!(response_body.required_signers.len(), 1);
         assert_eq!(response_body.required_signers[0], public_key.to_base64());
-        assert_eq!(response_body.signature_submission_url, "/signatures");
+        assert_eq!(response_body.signature_submission_url, "/v1/signatures");
 
         mock.assert();
         server_handle.abort();
@@ -672,7 +672,7 @@ pub mod tests {
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://localhost:{}/register_repo", port))
+            .post(format!("http://localhost:{}/v1/register_repo", port))
             .json(&RegisterRepoRequest {
                 signers_file_url: signers_url,
             })
@@ -815,7 +815,7 @@ pub mod tests {
         let client = reqwest::Client::new();
 
         let response = client
-            .post(format!("http://localhost:{}/register_repo", port))
+            .post(format!("http://localhost:{}/v1/register_repo", port))
             .json(&RegisterRepoRequest {
                 signers_file_url: "https://github.com/owner/repo/blob/main/nonexistent.json"
                     .to_string(),
@@ -895,17 +895,16 @@ pub mod tests {
         let config = build_test_config(&git_repo_path, port);
         let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
 
-        let app = axum::Router::new()
-            .route(
-                "/signatures",
-                axum::routing::post(rest_api::handlers::submit_signature_handler),
-            )
-            .with_state(app_state);
+        let inner = axum::Router::new().route(
+            "/signatures",
+            axum::routing::post(rest_api::handlers::submit_signature_handler),
+        );
+        let app = axum::Router::new().nest("/v1", inner).with_state(app_state);
 
         let server = axum_test::TestServer::new(app)?;
 
         let response = server
-            .post("/signatures")
+            .post("/v1/signatures")
             .json(&SubmitSignatureRequest {
                 file_path: "releases/release.txt".to_string(),
                 public_key: public_key.to_base64(),
@@ -1099,16 +1098,15 @@ pub mod tests {
         let config = build_test_config(&git_repo_path, port);
         let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
 
-        let app = axum::Router::new()
-            .route(
-                "/signatures/{*file_path}",
-                axum::routing::get(rest_api::handlers::get_signature_status_handler),
-            )
-            .with_state(app_state);
+        let inner = axum::Router::new().route(
+            "/signatures/{*file_path}",
+            axum::routing::get(rest_api::handlers::get_signature_status_handler),
+        );
+        let app = axum::Router::new().nest("/v1", inner).with_state(app_state);
 
         let server = axum_test::TestServer::new(app)?;
 
-        let response = server.get("/signatures/data.txt").await;
+        let response = server.get("/v1/signatures/data.txt").await;
 
         response.assert_status_ok();
 
@@ -1177,18 +1175,17 @@ pub mod tests {
         let config = build_test_config(&git_repo_path, port);
         let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
 
-        let app = axum::Router::new()
-            .route(
-                "/signatures",
-                axum::routing::post(rest_api::handlers::submit_signature_handler),
-            )
-            .with_state(app_state);
+        let inner = axum::Router::new().route(
+            "/signatures",
+            axum::routing::post(rest_api::handlers::submit_signature_handler),
+        );
+        let app = axum::Router::new().nest("/v1", inner).with_state(app_state);
 
         let server = axum_test::TestServer::new(app)?;
 
         // Submit first signature (should be partial)
         let response = server
-            .post("/signatures")
+            .post("/v1/signatures")
             .json(&SubmitSignatureRequest {
                 file_path: "releases/release.txt".to_string(),
                 public_key: key_pair1.public_key().to_base64(),
@@ -1216,7 +1213,7 @@ pub mod tests {
 
         // Submit second signature (should complete)
         let response2 = server
-            .post("/signatures")
+            .post("/v1/signatures")
             .json(&SubmitSignatureRequest {
                 file_path: "releases/release.txt".to_string(),
                 public_key: key_pair2.public_key().to_base64(),
@@ -1275,17 +1272,16 @@ pub mod tests {
         let config = build_test_config(&git_repo_path, port);
         let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
 
-        let app = axum::Router::new()
-            .route(
-                "/signatures",
-                axum::routing::post(rest_api::handlers::submit_signature_handler),
-            )
-            .with_state(app_state);
+        let inner = axum::Router::new().route(
+            "/signatures",
+            axum::routing::post(rest_api::handlers::submit_signature_handler),
+        );
+        let app = axum::Router::new().nest("/v1", inner).with_state(app_state);
 
         let server = axum_test::TestServer::new(app)?;
 
         let response = server
-            .post("/signatures")
+            .post("/v1/signatures")
             .json(&SubmitSignatureRequest {
                 file_path: "nonexistent.txt".to_string(),
                 public_key: public_key.to_base64(),

@@ -81,7 +81,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     let auth_signature1 = AuthSignature::new(&auth_info1, &secret_key1)?;
 
     let response1 = client
-        .get(format!("http://127.0.0.1:{}/pending_signatures", port))
+        .get(format!("http://127.0.0.1:{}/v1/pending_signatures", port))
         .header(
             HEADER_TIMESTAMP,
             auth_signature1.auth_info().timestamp().to_rfc3339(),
@@ -116,7 +116,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     let auth_signature2 = AuthSignature::new(&auth_info2, &secret_key1)?;
 
     let response2 = client
-        .post(format!("http://127.0.0.1:{}/signatures", port))
+        .post(format!("http://127.0.0.1:{}/v1/signatures", port))
         .header(
             HEADER_TIMESTAMP,
             auth_signature2.auth_info().timestamp().to_rfc3339(),
@@ -141,7 +141,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     let auth_signature3 = AuthSignature::new(&auth_info3, &secret_key1)?;
 
     let response3 = client
-        .get(format!("http://127.0.0.1:{}/pending_signatures", port))
+        .get(format!("http://127.0.0.1:{}/v1/pending_signatures", port))
         .header(
             HEADER_TIMESTAMP,
             auth_signature3.auth_info().timestamp().to_rfc3339(),
@@ -167,7 +167,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     let auth_signature4 = AuthSignature::new(&auth_info4, &secret_key2)?;
 
     let response4 = client
-        .get(format!("http://127.0.0.1:{}/pending_signatures", port))
+        .get(format!("http://127.0.0.1:{}/v1/pending_signatures", port))
         .header(
             HEADER_TIMESTAMP,
             auth_signature4.auth_info().timestamp().to_rfc3339(),

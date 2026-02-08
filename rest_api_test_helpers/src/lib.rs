@@ -101,7 +101,7 @@ pub async fn get_random_port() -> Result<u16, ApiError> {
 }
 
 pub fn url_for(action: &str, port: u16) -> String {
-    format!("http://localhost:{port}/{action}")
+    format!("http://localhost:{port}/v1/{action}")
 }
 
 /// Helper function to build a test config

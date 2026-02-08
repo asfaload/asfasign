@@ -261,7 +261,7 @@ pub async fn register_repo_handler(
         project_id: signers_proposal.project_id,
         message: "Project registered successfully. Collect signatures to activate.".to_string(),
         required_signers: init_result.required_signers.into_iter().collect(),
-        signature_submission_url: "/signatures".to_string(),
+        signature_submission_url: "/v1/signatures".to_string(),
     }))
 }
 
