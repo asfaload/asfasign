@@ -18,6 +18,7 @@ use anyhow::Result;
 
 pub mod download;
 pub mod register_release;
+pub mod register_repo;
 
 /// Dispatches the command to the appropriate handler
 pub fn handle_command(cli: &Cli) -> Result<()> {
@@ -99,7 +100,12 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             public_key,
             json_args,
         } => {
-            verify_sig::handle_verify_sig_command(signed_file, signature, public_key, json_args.json)?;
+            verify_sig::handle_verify_sig_command(
+                signed_file,
+                signature,
+                public_key,
+                json_args.json,
+            )?;
         }
         Commands::AddToAggregate {
             signed_file,
@@ -218,6 +224,22 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 password.as_str(),
                 json_args.json,
             ))?
+        }
+        Commands::RegisterRepo {
+            signers_file_url,
+            backend_url_args,
+            json_args,
+        } => {
+            let url = backend_url_args
+                .backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(register_repo::handle_register_repo_command(
+                &url,
+                signers_file_url,
+                json_args.json,
+            ))?;
         }
         Commands::Download {
             file_url,

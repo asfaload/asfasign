@@ -7,7 +7,9 @@ use reqwest::Client;
 use serde_json::Value;
 
 // Re-export v1 endpoint functions as the current API surface
-pub use v1::{fetch_file, get_pending_signatures, register_release, submit_signature};
+pub use v1::{
+    fetch_file, get_pending_signatures, register_release, register_repo, submit_signature,
+};
 
 /// A client for interacting with the REST API with authentication
 pub struct RestClient {

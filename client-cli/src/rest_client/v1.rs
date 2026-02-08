@@ -5,7 +5,8 @@ use features_lib::{
 };
 use reqwest::Client;
 use rest_api_types::{
-    ListPendingResponse, RegisterReleaseResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    ListPendingResponse, RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse,
+    SubmitSignatureRequest, SubmitSignatureResponse,
 };
 
 /// List pending signature files from the backend.
@@ -234,6 +235,63 @@ pub async fn register_release(
     }
 
     let response_body: RegisterReleaseResponse = response.json().await.map_err(|e| {
+        ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
+    })?;
+
+    Ok(response_body)
+}
+
+/// Register a repository with the backend.
+///
+/// Makes a POST request to /v1/register_repo endpoint.
+/// This endpoint does not require authentication.
+///
+/// # Arguments
+///
+/// * `backend_url` - Base URL of the backend API
+/// * `signers_file_url` - URL to the signers file for the repository
+///
+/// # Returns
+///
+/// Registration response with project ID and required signers
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Backend returns non-success status
+/// - Network error occurs
+/// - Response is malformed
+pub async fn register_repo(
+    backend_url: &str,
+    signers_file_url: &str,
+) -> Result<RegisterRepoResponse> {
+    let url = format!("{}/v1/register_repo", backend_url);
+
+    let payload = RegisterRepoRequest {
+        signers_file_url: signers_file_url.to_string(),
+    };
+
+    let client = Client::new();
+    let response = client
+        .post(&url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = match response.text().await {
+            Ok(text) => text,
+            Err(e) => format!("(could not read response body: {})", e),
+        };
+        return Err(ClientCliError::RequestFailed(format!(
+            "{}: {}",
+            status, error_text
+        )));
+    }
+
+    let response_body: RegisterRepoResponse = response.json().await.map_err(|e| {
         ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
     })?;
 
