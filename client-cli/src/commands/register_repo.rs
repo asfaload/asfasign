@@ -5,7 +5,7 @@ pub async fn handle_register_repo_command(
     signers_file_url: &str,
     json: bool,
 ) -> Result<()> {
-    let client = crate::rest_client::v1::Client::new(backend_url);
+    let client = admin_lib::v1::Client::new(backend_url);
     let response = client.register_repo(signers_file_url).await?;
 
     if json {

@@ -1,0 +1,20 @@
+[package]
+name = "admin-lib"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thiserror = "2.0"
+reqwest = { version = "0.11", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+features_lib = { path = "../core/features_lib/" }
+rest_api_types = { path = "../rest_api_types" }
+rest_api_auth = { path = "../rest_api_auth/" }
+
+[dev-dependencies]
+http = "0.2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[lints]
+workspace = true

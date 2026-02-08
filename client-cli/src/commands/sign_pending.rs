@@ -38,7 +38,7 @@ pub async fn handle_sign_pending_command(
     let public_key = AsfaloadPublicKeys::from_secret_key(&secret_key)?;
 
     // Create REST client (shared across fetch + submit)
-    let client = crate::rest_client::v1::Client::new(backend_url);
+    let client = admin_lib::v1::Client::new(backend_url);
 
     // Fetch file from backend
     let file_content = client.fetch_file(file_path).await?;

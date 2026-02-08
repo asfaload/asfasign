@@ -13,9 +13,7 @@ zxcvbn = "3.1.0"
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
-rest_api_auth = { path = "../rest_api_auth/" }
-reqwest = { version = "0.11", features = ["json"] }
-uuid = { version = "1.0", features = ["v4"] }
+admin-lib = { path = "../admin-lib" }
 signatures = { version = "0.1.0", path = "../core/signatures" }
 minisign = "0.8.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs"] }
@@ -25,7 +23,6 @@ hex = "0.4"
 client-lib = { path = "../client-lib" }
 
 [dev-dependencies]
-http = "0.2"
 mockito = "1.2"
 assert_cmd = "2.0"
 predicates = "3.1"

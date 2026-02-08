@@ -10,6 +10,7 @@ members = [
   "core/integration_tests",
   "core/features_lib",
   "client-cli",
+  "admin-lib",
   "rest-api",
   "rest_api_test_helpers",
   "rest_api_types",
