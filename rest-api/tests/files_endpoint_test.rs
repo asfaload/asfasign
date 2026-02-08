@@ -30,7 +30,7 @@ async fn test_get_file_success() -> Result<()> {
     let client = Client::new();
     let response = client
         .get(format!(
-            "http://127.0.0.1:{}/files/{}",
+            "http://127.0.0.1:{}/v1/files/{}",
             port, test_file_path
         ))
         .send()
@@ -101,7 +101,7 @@ async fn test_get_file_path_traversal_blocked() -> Result<()> {
     // Attempt path traversal
     let client = Client::new();
     let response = client
-        .get(format!("http://127.0.0.1:{}/files/../secret.txt", port))
+        .get(format!("http://127.0.0.1:{}/v1/files/../secret.txt", port))
         .send()
         .await?;
 
@@ -110,8 +110,9 @@ async fn test_get_file_path_traversal_blocked() -> Result<()> {
     assert_eq!(response.status(), 404, "Path traversal should be blocked");
     // We test the url returned to detect any change of behaviour in Axum
     // As you see, axum sanitises the input, removing the ..
+    // With /v1/files/../secret.txt, the .. resolves to /v1/secret.txt
     use regex::Regex;
-    let re = Regex::new(r"http://127.0.0.1:\d+/secret.txt").unwrap();
+    let re = Regex::new(r"http://127.0.0.1:\d+/v1/secret.txt").unwrap();
     assert!(re.is_match(response.url().as_str()));
     // Cleanup
     server_handle.abort();
