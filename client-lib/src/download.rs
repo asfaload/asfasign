@@ -1,3 +1,4 @@
+mod github;
 mod v1;
 
 use crate::{AsfaloadLibResult, ClientLibError};
@@ -43,12 +44,7 @@ impl Forges {
     }
 }
 
-struct GithubForge;
-impl ForgeTrait for GithubForge {
-    fn translate_download_to_release_path(path: &str) -> String {
-        path.replace("/releases/download/", "/releases/tag/")
-    }
-}
+use github::GithubForge;
 
 fn construct_index_file_path(file_url: &Url) -> AsfaloadLibResult<String> {
     let host = file_url
