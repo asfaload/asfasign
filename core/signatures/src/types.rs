@@ -72,6 +72,18 @@ impl serde::Serialize for AsfaloadPublicKeys {
     }
 }
 
+impl<'de> serde::Deserialize<'de> for AsfaloadPublicKeys {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = <String as serde::Deserialize>::deserialize(deserializer)?;
+        AsfaloadPublicKeys::from_base64(&s).map_err(|_e| {
+            serde::de::Error::custom(format!("Problem parsing public key base64: {}", s))
+        })
+    }
+}
+
 impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
     type Signature = AsfaloadSignatures;
     type KeyType = AsfaloadPublicKeys;
