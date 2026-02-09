@@ -63,6 +63,15 @@ pub enum AsfaloadPublicKeys {
     Minisign(AsfaloadPublicKey<minisign::PublicKey>),
 }
 
+impl serde::Serialize for AsfaloadPublicKeys {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_base64())
+    }
+}
+
 impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
     type Signature = AsfaloadSignatures;
     type KeyType = AsfaloadPublicKeys;
