@@ -8,7 +8,7 @@ use rest_api_auth::{
 /// Creates authentication headers for REST API requests.
 pub(crate) fn create_auth_headers(
     payload: &str,
-    secret_key: AsfaloadSecretKeys,
+    secret_key: &AsfaloadSecretKeys,
 ) -> AdminLibResult<HeaderMap> {
     let auth_info = AuthInfo::new(payload.to_string());
     let auth_signature = AuthSignature::new(&auth_info, &secret_key)?;

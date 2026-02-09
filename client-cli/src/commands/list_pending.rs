@@ -28,7 +28,7 @@ pub async fn handle_list_pending_command(
 
     // 2. Make authenticated request to backend (derives public key from auth headers)
     let client = admin_lib::v1::Client::new(backend_url);
-    let response = client.get_pending_signatures(secret_key).await?;
+    let response = client.get_pending_signatures(&secret_key).await?;
 
     // 3. Display results
     if json {

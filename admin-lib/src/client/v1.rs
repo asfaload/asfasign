@@ -67,7 +67,7 @@ impl Client {
     /// Makes an authenticated GET request to `/v1/pending_signatures`.
     pub async fn get_pending_signatures(
         &self,
-        secret_key: AsfaloadSecretKeys,
+        secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<ListPendingResponse> {
         let url = format!("{}/v1/pending_signatures", self.base_url);
         let headers = create_auth_headers("", secret_key)?;
@@ -130,7 +130,7 @@ impl Client {
         let payload_string = serde_json::to_string(&request).map_err(|e| {
             AdminLibError::InvalidInput(format!("Failed to serialize request: {}", e))
         })?;
-        let headers = create_auth_headers(&payload_string, secret_key.clone())?;
+        let headers = create_auth_headers(&payload_string, secret_key)?;
 
         let response = self
             .client
@@ -154,7 +154,7 @@ impl Client {
     pub async fn register_release(
         &self,
         release_url: &str,
-        secret_key: AsfaloadSecretKeys,
+        secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<RegisterReleaseResponse> {
         let url = format!("{}/v1/release", self.base_url);
 
@@ -166,7 +166,7 @@ impl Client {
         let payload_string = serde_json::to_string(&payload).map_err(|e| {
             AdminLibError::InvalidInput(format!("Failed to serialize request: {}", e))
         })?;
-        let headers = create_auth_headers(&payload_string, secret_key)?;
+        let headers = create_auth_headers(&payload_string, &secret_key)?;
 
         let response = self
             .client
