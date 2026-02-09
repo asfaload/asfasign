@@ -1,5 +1,5 @@
-use crate::error::{ClientCliError, Result};
-use crate::utils::create_auth_headers;
+use crate::auth::create_auth_headers;
+use crate::error::{AdminLibError, AdminLibResult};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeys, AsfaloadSignatureTrait,
     AsfaloadSignatures,
@@ -36,14 +36,16 @@ impl Client {
     }
 
     /// Check response status. On failure, read error body and return `RequestFailed`.
-    async fn check_response_status(response: reqwest::Response) -> Result<reqwest::Response> {
+    async fn check_response_status(
+        response: reqwest::Response,
+    ) -> AdminLibResult<reqwest::Response> {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "(failed to read response body)".to_string());
-            return Err(ClientCliError::RequestFailed(format!(
+            return Err(AdminLibError::RequestFailed(format!(
                 "{}: {}",
                 status, error_text
             )));
@@ -52,10 +54,16 @@ impl Client {
     }
 
     /// Parse JSON response body into a typed value.
-    async fn parse_json_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
-        response.json::<T>().await.map_err(|e| {
-            ClientCliError::ResponseParseError(format!("Failed to parse response: {}", e))
-        })
+    async fn parse_json_response<T: DeserializeOwned>(
+        response: reqwest::Response,
+    ) -> AdminLibResult<T> {
+        // Do it in two steps so we can return both a reqwest error
+        // and a serde_json error. It is possible to do it in one step
+        // (let r = response.json::<T>().await?;) but in that case
+        // we always return a reqwest error.
+        let text = response.text().await?;
+        let r = serde_json::from_str::<T>(&text)?;
+        Ok(r)
     }
 
     /// List pending signature files from the backend.
@@ -63,18 +71,12 @@ impl Client {
     /// Makes an authenticated GET request to `/v1/pending_signatures`.
     pub async fn get_pending_signatures(
         &self,
-        secret_key: AsfaloadSecretKeys,
-    ) -> Result<ListPendingResponse> {
+        secret_key: &AsfaloadSecretKeys,
+    ) -> AdminLibResult<ListPendingResponse> {
         let url = format!("{}/v1/pending_signatures", self.base_url);
         let headers = create_auth_headers("", secret_key)?;
 
-        let response = self
-            .client
-            .get(&url)
-            .headers(headers)
-            .send()
-            .await
-            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+        let response = self.client.get(&url).headers(headers).send().await?;
 
         let response = Self::check_response_status(response).await?;
         Self::parse_json_response(response).await
@@ -83,21 +85,14 @@ impl Client {
     /// Fetch file content from the backend.
     ///
     /// Makes an unauthenticated GET request to `/v1/files/{file_path}`.
-    pub async fn fetch_file(&self, file_path: &str) -> Result<Vec<u8>> {
+    pub async fn fetch_file(&self, file_path: &str) -> AdminLibResult<Vec<u8>> {
         let url = format!("{}/v1/files/{}", self.base_url, file_path);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+        let response = self.client.get(&url).send().await?;
 
         let response = Self::check_response_status(response).await?;
 
-        let content = response.bytes().await.map_err(|e| {
-            ClientCliError::ResponseParseError(format!("Failed to read response: {}", e))
-        })?;
+        let content = response.bytes().await?;
 
         Ok(content.to_vec())
     }
@@ -113,7 +108,7 @@ impl Client {
         public_key: &AsfaloadPublicKeys,
         signature: &AsfaloadSignatures,
         secret_key: &AsfaloadSecretKeys,
-    ) -> Result<SubmitSignatureResponse> {
+    ) -> AdminLibResult<SubmitSignatureResponse> {
         let url = format!("{}/v1/signatures", self.base_url);
 
         let request = SubmitSignatureRequest {
@@ -123,10 +118,8 @@ impl Client {
         };
 
         // Serialize once: same bytes for auth and body
-        let payload_string = serde_json::to_string(&request).map_err(|e| {
-            ClientCliError::InvalidInput(format!("Failed to serialize request: {}", e))
-        })?;
-        let headers = create_auth_headers(&payload_string, secret_key.clone())?;
+        let payload_string = serde_json::to_string(&request)?;
+        let headers = create_auth_headers(&payload_string, secret_key)?;
 
         let response = self
             .client
@@ -135,8 +128,7 @@ impl Client {
             .header(CONTENT_TYPE, "application/json")
             .body(payload_string)
             .send()
-            .await
-            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+            .await?;
 
         let response = Self::check_response_status(response).await?;
         Self::parse_json_response(response).await
@@ -150,8 +142,8 @@ impl Client {
     pub async fn register_release(
         &self,
         release_url: &str,
-        secret_key: AsfaloadSecretKeys,
-    ) -> Result<RegisterReleaseResponse> {
+        secret_key: &AsfaloadSecretKeys,
+    ) -> AdminLibResult<RegisterReleaseResponse> {
         let url = format!("{}/v1/release", self.base_url);
 
         let payload = RegisterReleasePayload {
@@ -159,9 +151,7 @@ impl Client {
         };
 
         // Serialize once: same bytes for auth and body
-        let payload_string = serde_json::to_string(&payload).map_err(|e| {
-            ClientCliError::InvalidInput(format!("Failed to serialize request: {}", e))
-        })?;
+        let payload_string = serde_json::to_string(&payload)?;
         let headers = create_auth_headers(&payload_string, secret_key)?;
 
         let response = self
@@ -171,8 +161,7 @@ impl Client {
             .header(CONTENT_TYPE, "application/json")
             .body(payload_string)
             .send()
-            .await
-            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+            .await?;
 
         let response = Self::check_response_status(response).await?;
         Self::parse_json_response(response).await
@@ -181,20 +170,17 @@ impl Client {
     /// Register a repository with the backend.
     ///
     /// Makes an unauthenticated POST request to `/v1/register_repo`.
-    pub async fn register_repo(&self, signers_file_url: &str) -> Result<RegisterRepoResponse> {
+    pub async fn register_repo(
+        &self,
+        signers_file_url: &str,
+    ) -> AdminLibResult<RegisterRepoResponse> {
         let url = format!("{}/v1/register_repo", self.base_url);
 
         let payload = RegisterRepoRequest {
             signers_file_url: signers_file_url.to_string(),
         };
 
-        let response = self
-            .client
-            .post(&url)
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| ClientCliError::NetworkError(e.to_string()))?;
+        let response = self.client.post(&url).json(&payload).send().await?;
 
         let response = Self::check_response_status(response).await?;
         Self::parse_json_response(response).await
@@ -227,7 +213,7 @@ mod tests {
 
         let err = result.unwrap_err();
         match err {
-            ClientCliError::RequestFailed(msg) => {
+            AdminLibError::RequestFailed(msg) => {
                 assert!(msg.contains("404"), "Error should contain status code");
                 assert!(msg.contains("Not Found"), "Error should contain body text");
             }
@@ -248,7 +234,7 @@ mod tests {
 
         let err = result.unwrap_err();
         match err {
-            ClientCliError::RequestFailed(msg) => {
+            AdminLibError::RequestFailed(msg) => {
                 assert!(msg.contains("500"));
                 assert!(msg.contains("Internal Server Error"));
             }
@@ -270,7 +256,8 @@ mod tests {
             value: u32,
         }
 
-        let result: Result<TestPayload> = Client::parse_json_response(reqwest_response).await;
+        let result: AdminLibResult<TestPayload> =
+            Client::parse_json_response(reqwest_response).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), TestPayload { value: 42 });
     }
@@ -290,18 +277,14 @@ mod tests {
             value: u32,
         }
 
-        let result: Result<TestPayload> = Client::parse_json_response(reqwest_response).await;
+        let result: AdminLibResult<TestPayload> =
+            Client::parse_json_response(reqwest_response).await;
         assert!(result.is_err());
 
         let err = result.unwrap_err();
         match err {
-            ClientCliError::ResponseParseError(msg) => {
-                assert!(
-                    msg.contains("Failed to parse response"),
-                    "Error message should describe parse failure"
-                );
-            }
-            other => panic!("Expected ResponseParseError, got: {:?}", other),
+            AdminLibError::JsonError(_) => {}
+            other => panic!("Expected JsonError, got: {:?}", other),
         }
     }
 }

@@ -11,8 +11,8 @@ pub async fn handle_register_release_command(
 ) -> Result<()> {
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
 
-    let client = crate::rest_client::v1::Client::new(backend_url);
-    let response = client.register_release(release_url, secret_key).await?;
+    let client = admin_lib::v1::Client::new(backend_url);
+    let response = client.register_release(release_url, &secret_key).await?;
 
     if json {
         println!("{}", serde_json::to_string(&response)?);

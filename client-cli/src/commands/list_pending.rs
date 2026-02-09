@@ -27,8 +27,8 @@ pub async fn handle_list_pending_command(
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
 
     // 2. Make authenticated request to backend (derives public key from auth headers)
-    let client = crate::rest_client::v1::Client::new(backend_url);
-    let response = client.get_pending_signatures(secret_key).await?;
+    let client = admin_lib::v1::Client::new(backend_url);
+    let response = client.get_pending_signatures(&secret_key).await?;
 
     // 3. Display results
     if json {
