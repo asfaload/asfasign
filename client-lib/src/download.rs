@@ -160,6 +160,27 @@ mod tests {
         assert!(result.ends_with(INDEX_FILE));
         assert!(result.starts_with("github.com/owner/repo/releases/tag/v2.0/"));
     }
+
+    #[test]
+    fn construct_index_file_path_no_host() {
+        let url = Url::parse("file:///some/path/file.txt").unwrap();
+        assert!(matches!(
+            construct_index_file_path(&url),
+            Err(ClientLibError::InvalidUrl(_))
+        ));
+    }
+
+    #[test]
+    fn construct_index_file_path_unsupported_forge() {
+        let url =
+            Url::parse("https://gitlab.com/owner/repo/-/releases/file.tar.gz").unwrap();
+        assert!(matches!(
+            construct_index_file_path(&url),
+            Err(ClientLibError::UnsupportedForge(_))
+        ));
+    }
+
+
     #[test]
     fn get_forge_test_cases() {
         struct TestCase {
