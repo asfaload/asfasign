@@ -8,14 +8,14 @@ pub enum AdminLibError {
     #[error("Invalid header value: {0}")]
     InvalidHeaderValue(#[from] reqwest::header::InvalidHeaderValue),
 
-    #[error("Network error: {0}")]
-    NetworkError(String),
+    #[error("Request error: {0}")]
+    RequestError(#[from] reqwest::Error),
 
     #[error("Error response from server: {0}")]
     RequestFailed(String),
 
-    #[error("Failed to parse server response: {0}")]
-    ResponseParseError(String),
+    #[error("Json serialisation error: {0}")]
+    JsonError(#[from] serde_json::Error),
 
     #[error("Invalid input: {0}")]
     InvalidInput(String),

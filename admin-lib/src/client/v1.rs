@@ -57,9 +57,13 @@ impl Client {
     async fn parse_json_response<T: DeserializeOwned>(
         response: reqwest::Response,
     ) -> AdminLibResult<T> {
-        response.json::<T>().await.map_err(|e| {
-            AdminLibError::ResponseParseError(format!("Failed to parse response: {}", e))
-        })
+        // Do it in two steps so we can return both a reqwest error
+        // and a serde_json error. It is possible to do it in one step
+        // (let r = response.json::<T>().await?;) but in that case
+        // we always return a reqwest error.
+        let text = response.text().await?;
+        let r = serde_json::from_str::<T>(&text)?;
+        Ok(r)
     }
 
     /// List pending signature files from the backend.
@@ -72,13 +76,7 @@ impl Client {
         let url = format!("{}/v1/pending_signatures", self.base_url);
         let headers = create_auth_headers("", secret_key)?;
 
-        let response = self
-            .client
-            .get(&url)
-            .headers(headers)
-            .send()
-            .await
-            .map_err(|e| AdminLibError::NetworkError(e.to_string()))?;
+        let response = self.client.get(&url).headers(headers).send().await?;
 
         let response = Self::check_response_status(response).await?;
         Self::parse_json_response(response).await
@@ -90,18 +88,11 @@ impl Client {
     pub async fn fetch_file(&self, file_path: &str) -> AdminLibResult<Vec<u8>> {
         let url = format!("{}/v1/files/{}", self.base_url, file_path);
 
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| AdminLibError::NetworkError(e.to_string()))?;
+        let response = self.client.get(&url).send().await?;
 
         let response = Self::check_response_status(response).await?;
 
-        let content = response.bytes().await.map_err(|e| {
-            AdminLibError::ResponseParseError(format!("Failed to read response: {}", e))
-        })?;
+        let content = response.bytes().await?;
 
         Ok(content.to_vec())
     }
@@ -127,9 +118,7 @@ impl Client {
         };
 
         // Serialize once: same bytes for auth and body
-        let payload_string = serde_json::to_string(&request).map_err(|e| {
-            AdminLibError::InvalidInput(format!("Failed to serialize request: {}", e))
-        })?;
+        let payload_string = serde_json::to_string(&request)?;
         let headers = create_auth_headers(&payload_string, secret_key)?;
 
         let response = self
@@ -139,8 +128,7 @@ impl Client {
             .header(CONTENT_TYPE, "application/json")
             .body(payload_string)
             .send()
-            .await
-            .map_err(|e| AdminLibError::NetworkError(e.to_string()))?;
+            .await?;
 
         let response = Self::check_response_status(response).await?;
         Self::parse_json_response(response).await
@@ -163,10 +151,8 @@ impl Client {
         };
 
         // Serialize once: same bytes for auth and body
-        let payload_string = serde_json::to_string(&payload).map_err(|e| {
-            AdminLibError::InvalidInput(format!("Failed to serialize request: {}", e))
-        })?;
         let headers = create_auth_headers(&payload_string, &secret_key)?;
+        let payload_string = serde_json::to_string(&payload)?;
 
         let response = self
             .client
@@ -175,8 +161,7 @@ impl Client {
             .header(CONTENT_TYPE, "application/json")
             .body(payload_string)
             .send()
-            .await
-            .map_err(|e| AdminLibError::NetworkError(e.to_string()))?;
+            .await?;
 
         let response = Self::check_response_status(response).await?;
         Self::parse_json_response(response).await
@@ -195,13 +180,7 @@ impl Client {
             signers_file_url: signers_file_url.to_string(),
         };
 
-        let response = self
-            .client
-            .post(&url)
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|e| AdminLibError::NetworkError(e.to_string()))?;
+        let response = self.client.post(&url).json(&payload).send().await?;
 
         let response = Self::check_response_status(response).await?;
         Self::parse_json_response(response).await
@@ -304,13 +283,8 @@ mod tests {
 
         let err = result.unwrap_err();
         match err {
-            AdminLibError::ResponseParseError(msg) => {
-                assert!(
-                    msg.contains("Failed to parse response"),
-                    "Error message should describe parse failure"
-                );
-            }
-            other => panic!("Expected ResponseParseError, got: {:?}", other),
+            AdminLibError::JsonError(_) => {}
+            other => panic!("Expected JsonError, got: {:?}", other),
         }
     }
 }
