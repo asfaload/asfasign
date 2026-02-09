@@ -5,13 +5,16 @@ use common::{
     errors::{AggregateSignatureError, SignersFileError},
     fs::names::{find_global_signers_for, pending_signatures_path_for, signatures_path_for},
 };
-use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use constants::{
+    METADATA_FILE, PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
+};
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
 use signers_file_types::{
-    SignersConfig, SignersConfigProposal, parse_signers_config, parse_signers_config_proposal,
+    SignersConfig, SignersConfigMetadata, SignersConfigProposal, parse_signers_config,
+    parse_signers_config_proposal,
 };
 use std::{borrow::Borrow, collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
 //
@@ -136,6 +139,7 @@ where
 pub fn write_valid_signers_file<P: AsRef<Path>>(
     dir_path_in: P,
     json_content: &str,
+    metadata: SignersConfigMetadata,
     signature: &AsfaloadSignatures,
     pubkey: &AsfaloadPublicKeys,
     validator: impl FnOnce() -> Result<(), SignersFileError>,
@@ -156,6 +160,15 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
         return Err(SignersFileError::InitialisationError(format!(
             "Signers file exists: {}",
             signers_file_path.to_string_lossy()
+        )));
+    }
+
+    // If a metadata file exists, we refuse to overwrite it
+    let metadata_file_path = dir_path.join(METADATA_FILE);
+    if metadata_file_path.exists() {
+        return Err(SignersFileError::InitialisationError(format!(
+            "Metadata file exists: {}",
+            metadata_file_path.to_string_lossy()
         )));
     }
     // If a pending signatures file already exists, we refuse to create a pending signers file.
@@ -198,18 +211,29 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
     // and create it if not.
     std::fs::create_dir_all(&dir_path)?;
 
-    // Write the JSON content to the pending signers file
-    let mut file = fs::File::create(&signers_file_path)?;
-    file.write_all(json_content.as_bytes())?;
+    let result = (|| -> Result<(), SignersFileError> {
+        // Write the metadata file
+        let file = fs::File::create(&metadata_file_path)?;
+        serde_json::to_writer_pretty(&file, &metadata)?;
+        // Write the JSON content to the pending signers file
+        let mut file = fs::File::create(&signers_file_path)?;
+        file.write_all(json_content.as_bytes())?;
 
-    sign_signers_file(signers_file_path, signature, pubkey)?;
+        sign_signers_file(signers_file_path, signature, pubkey)?;
+        Ok(())
+    })();
 
-    Ok(())
+    if result.is_err() {
+        let _ = std::fs::remove_dir_all(&dir_path);
+    }
+
+    result
 }
 
 pub fn initialize_signers_file<P: AsRef<Path>>(
     dir_path_in: P,
     json_content_in: impl AsRef<str>,
+    metadata: SignersConfigMetadata,
     signature: &AsfaloadSignatures,
     pubkey: &AsfaloadPublicKeys,
 ) -> Result<(), SignersFileError> {
@@ -227,6 +251,7 @@ pub fn initialize_signers_file<P: AsRef<Path>>(
     write_valid_signers_file(
         dir_path_in.as_ref(),
         json_content,
+        metadata,
         signature,
         pubkey,
         validator,
@@ -251,6 +276,7 @@ pub fn initialize_signers_file<P: AsRef<Path>>(
 pub fn propose_signers_file<P: AsRef<Path>>(
     dir_path: P,
     json_content: &str,
+    metadata: SignersConfigMetadata,
     signature: &AsfaloadSignatures,
     pubkey: &AsfaloadPublicKeys,
 ) -> Result<(), SignersFileError>
@@ -289,7 +315,14 @@ where
     let validator = || is_valid_signer_for_update_of(pubkey, &active_config);
 
     // If the check passes, call initialize_signers_file
-    write_valid_signers_file(dir_path, json_content, signature, pubkey, validator)
+    write_valid_signers_file(
+        dir_path,
+        json_content,
+        metadata,
+        signature,
+        pubkey,
+        validator,
+    )
 }
 
 fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), SignersFileError> {
@@ -471,9 +504,18 @@ mod tests {
     use signatures::keys::AsfaloadSignatureTrait;
     use signers_file_types::KeyFormat;
     use signers_file_types::SignerKind;
+    use signers_file_types::{Forge, ForgeOrigin};
     use std::path::PathBuf;
     use tempfile::TempDir;
     use test_helpers::TestKeys;
+
+    fn test_metadata() -> SignersConfigMetadata {
+        SignersConfigMetadata::from_forge(ForgeOrigin::new(
+            Forge::Github,
+            "https://example.com/test".to_string(),
+            chrono::Utc::now(),
+        ))
+    }
 
     #[test]
     fn test_parsing() {
@@ -830,6 +872,7 @@ mod tests {
         initialize_signers_file(
             dir_path,
             json_content,
+            test_metadata(),
             &signature,
             test_keys.pub_key(0).unwrap(),
         )
@@ -895,7 +938,14 @@ mod tests {
         let signature = sec_key0.sign(&hash_value).unwrap();
 
         // Call the function
-        initialize_signers_file(dir_path, json_content, &signature, &pub_key0).unwrap();
+        initialize_signers_file(
+            dir_path,
+            json_content,
+            test_metadata(),
+            &signature,
+            &pub_key0,
+        )
+        .unwrap();
 
         // Even though we have a threshold 1, for a signers file initialisation we need
         // to collect signatures from all signers preseng in the file. That's why we
@@ -958,6 +1008,7 @@ mod tests {
         initialize_signers_file(
             dir_path,
             json_content,
+            test_metadata(),
             &signature,
             test_keys.pub_key(0).unwrap(),
         )
@@ -1032,7 +1083,8 @@ mod tests {
         let signature = seckey.sign(&hash_value).unwrap();
 
         // Call the function - should fail due to invalid signer
-        let result = initialize_signers_file(dir_path, json_content, &signature, pubkey);
+        let result =
+            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pubkey);
         assert!(result.is_err());
         match result {
             Err(SignersFileError::InvalidSigner(_)) => (), //expected
@@ -1063,7 +1115,8 @@ mod tests {
             .unwrap();
 
         // Call the function - should fail due to invalid signature
-        let result = initialize_signers_file(dir_path, json_content, &signature, pubkey);
+        let result =
+            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pubkey);
         assert!(result.is_err());
         assert!(matches!(
             result,
@@ -1112,6 +1165,7 @@ mod tests {
         let result = initialize_signers_file(
             dir_path,
             &json_content,
+            test_metadata(),
             &non_admin_signature,
             &non_admin_pubkey,
         );
@@ -1131,7 +1185,13 @@ mod tests {
         // Now sign proposal with admin key which should be ok
         // --------------------------------------------------
         let admin_signature = admin_seckey.sign(&hash_value).unwrap();
-        initialize_signers_file(dir_path, json_content, &admin_signature, &admin_pubkey)?;
+        initialize_signers_file(
+            dir_path,
+            json_content,
+            test_metadata(),
+            &admin_signature,
+            &admin_pubkey,
+        )?;
         // Check that the pending file exists
         assert!(pending_file_path.exists());
 
@@ -1165,7 +1225,8 @@ mod tests {
         // Now sign proposal with unique artifact key which should be complete
         // ---------------------------------------------------------------
         let signature = seckey.sign(&hash_value).unwrap();
-        let result = initialize_signers_file(dir_path, json_content, &signature, pubkey);
+        let result =
+            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pubkey);
         result.expect("initialize_signers_file should have succeeded");
 
         // Check that the signature file exists as all
@@ -1198,7 +1259,13 @@ mod tests {
         fs::set_permissions(dir_path, perms).unwrap();
 
         // Try to initialize the signers file, which should fail with an IO error
-        let result = initialize_signers_file(dir_path, &json_content, &signature, pub_key);
+        let result = initialize_signers_file(
+            dir_path,
+            &json_content,
+            test_metadata(),
+            &signature,
+            pub_key,
+        );
 
         // Check that we got an IO error
         assert!(result.is_err());
@@ -1213,14 +1280,22 @@ mod tests {
         // first create a signers file in an empty directory
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
-        initialize_signers_file(dir_path, &json_content, &signature, pub_key).unwrap();
+        initialize_signers_file(
+            dir_path,
+            &json_content,
+            test_metadata(),
+            &signature,
+            pub_key,
+        )
+        .unwrap();
         // Threshold was one, so it is activated
         let pending_signers_file_path =
             dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(!pending_signers_file_path.exists());
         let active_signers_file_path = dir_path.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
         assert!(active_signers_file_path.exists());
-        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+        let result =
+            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pub_key);
         assert!(result.is_err());
         match result.as_ref().unwrap_err() {
             SignersFileError::InitialisationError(_) => {} // Expected
@@ -1256,7 +1331,8 @@ mod tests {
         std::fs::File::create(&aggregate_signature_path)?;
 
         // Try to initialize the signers file, which should fail with an Initialisation error
-        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+        let result =
+            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pub_key);
 
         // Check that we got an IO error
         assert!(result.is_err());
@@ -1293,7 +1369,8 @@ mod tests {
         std::fs::File::create(existing_signers_path)?;
 
         // Try to initialize the signers file, which should fail with an Initialisation error
-        let result = initialize_signers_file(dir_path, json_content, &signature, pub_key);
+        let result =
+            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pub_key);
 
         // Check that we got an IO error
         assert!(result.is_err());
@@ -2832,7 +2909,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
 
         // Propose the new signers file
-        propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
+        propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        )?;
 
         // Verify the active file was created as we have a threshold of 1
         let pending_file_path = root_dir.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
@@ -2874,7 +2957,13 @@ mod tests {
         create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
         // Propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        );
 
         match result {
             Err(SignersFileError::InvalidData(s)) => {
@@ -2903,7 +2992,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
 
         // Propose the new signers file
-        propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
+        propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        )?;
 
         // Verify the pending file was created
         let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -2943,7 +3038,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
 
         // Propose the new signers file
-        propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
+        propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        )?;
 
         // Verify the pending file was created
         let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -2983,7 +3084,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
 
         // Propose the new signers file
-        propose_signers_file(root_dir, &proposal_content, &signature, pubkey)?;
+        propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        )?;
 
         // Verify the pending file is created. Threshold is 1, but need signature from previous
         // signers file.
@@ -3035,7 +3142,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        );
 
         // Verify it fails because when there is an admin group, the artifact signers cannot
         // propose a new signers file
@@ -3066,7 +3179,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        );
 
         assert!(result.is_ok());
 
@@ -3088,7 +3207,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        );
 
         // Verify it fails
         assert!(result.is_err());
@@ -3122,7 +3247,13 @@ mod tests {
         let invalid_signature = seckey.sign(&wrong_hash).unwrap();
 
         // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, &invalid_signature, pubkey);
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &invalid_signature,
+            pubkey,
+        );
 
         // Verify it fails
         assert!(result.is_err());
@@ -3157,7 +3288,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        );
 
         // Verify it fails
         assert!(result.is_err());
@@ -3193,7 +3330,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        );
 
         // Verify it fails
         assert!(result.is_err());
@@ -3229,7 +3372,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, &signature, pubkey);
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        );
 
         // Verify it fails
         assert!(result.is_err());
@@ -3259,7 +3408,13 @@ mod tests {
         let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
 
         // Propose the new signers file
-        propose_signers_file(&nested_dir, &proposal_content, &signature, pubkey)?;
+        propose_signers_file(
+            &nested_dir,
+            &proposal_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+        )?;
 
         // Verify the pending file was created in the nested directory
         // File is pending as old signers did not sign the update
@@ -3543,6 +3698,7 @@ mod tests {
         write_valid_signers_file(
             dir_path,
             &json_content,
+            test_metadata(),
             &signature,
             pubkey,
             signer_validator,
@@ -3622,6 +3778,7 @@ mod tests {
         write_valid_signers_file(
             dir_path,
             &json_content,
+            test_metadata(),
             &signature,
             pubkey,
             signer_validator,
@@ -3685,6 +3842,7 @@ mod tests {
         let result = write_valid_signers_file(
             dir_path,
             json_content.as_str(),
+            test_metadata(),
             &signature,
             pubkey,
             validator,
@@ -3745,6 +3903,7 @@ mod tests {
         let result = write_valid_signers_file(
             dir_path,
             json_content.as_str(),
+            test_metadata(),
             &signature,
             pubkey,
             validator,
@@ -3804,6 +3963,7 @@ mod tests {
         let result = write_valid_signers_file(
             dir_path,
             json_content.as_str(),
+            test_metadata(),
             &signature,
             pubkey,
             signer_validator,
@@ -3857,6 +4017,7 @@ mod tests {
         let result = write_valid_signers_file(
             dir_path,
             &invalid_json,
+            test_metadata(),
             &signature,
             pubkey,
             signer_validator,
@@ -3909,6 +4070,7 @@ mod tests {
         let result = write_valid_signers_file(
             dir_path,
             &json_content,
+            test_metadata(),
             &signature,
             pubkey,
             signer_validator,
@@ -3963,6 +4125,7 @@ mod tests {
         let result = write_valid_signers_file(
             dir_path,
             &json_content,
+            test_metadata(),
             &invalid_signature,
             pubkey,
             signer_validator,
@@ -4015,6 +4178,7 @@ mod tests {
         write_valid_signers_file(
             &nested_dir,
             &json_content,
+            test_metadata(),
             &signature,
             pubkey,
             signer_validator,
@@ -4072,6 +4236,7 @@ mod tests {
         let result = write_valid_signers_file(
             dir_path,
             &json_content,
+            test_metadata(),
             &signature,
             pubkey,
             signer_validator,
@@ -4082,11 +4247,12 @@ mod tests {
             e => panic!("Expected IoError, got {}", e),
         }
 
-        // Restore permissions for cleanup to ensure TempDir is cleaned up on all platforms.
-        let mut perms = fs::metadata(&pending_dir)?.permissions();
-        #[allow(clippy::permissions_set_readonly_false)]
-        perms.set_readonly(false);
-        fs::set_permissions(&pending_dir, perms)?;
+        // The rollback in write_valid_signers_file removes the pending directory
+        // (remove_dir_all succeeds because the parent directory is writable).
+        assert!(
+            !pending_dir.exists(),
+            "Pending directory should have been cleaned up by rollback"
+        );
         Ok(())
     }
 
@@ -4125,7 +4291,14 @@ mod tests {
         let validator = || Ok(());
 
         // Should succeed
-        write_valid_signers_file(dir_path, &json_content, &signature, pubkey, validator)?;
+        write_valid_signers_file(
+            dir_path,
+            &json_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+            validator,
+        )?;
 
         // Verify files were created
         let pending_file = pending_dir.join(SIGNERS_FILE);
@@ -4169,6 +4342,7 @@ mod tests {
         write_valid_signers_file(
             &pending_dir,
             &json_content,
+            test_metadata(),
             &signature,
             pubkey,
             signer_validator,
@@ -4782,6 +4956,146 @@ mod tests {
         assert_eq!(
             sig_map.get(&pubkey1.to_base64()).unwrap(),
             &signature1.to_base64()
+        );
+
+        Ok(())
+    }
+
+    // Tests for metadata behavior
+    // ---------------------------
+
+    #[test]
+    fn test_metadata_file_is_created() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let seckey = test_keys.sec_key(0).unwrap();
+
+        let json_content = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![pubkey.clone(), test_keys.pub_key(1).unwrap().clone()],
+                2,
+            ),
+        )?
+        .to_json()?;
+
+        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
+        let signature = seckey.sign(&hash)?;
+
+        let signer_validator = || Ok(());
+        write_valid_signers_file(
+            dir_path,
+            &json_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+            signer_validator,
+        )?;
+
+        // Verify metadata.json exists in the pending directory
+        let metadata_path = dir_path.join(PENDING_SIGNERS_DIR).join(METADATA_FILE);
+        assert!(metadata_path.exists(), "metadata.json should exist");
+
+        // Verify it deserializes to a valid SignersConfigMetadata
+        let metadata_content = fs::read_to_string(&metadata_path)?;
+        let _metadata: SignersConfigMetadata = serde_json::from_str(&metadata_content)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_metadata_file_overwrite_guard() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(1);
+
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let seckey = test_keys.sec_key(0).unwrap();
+
+        let json_content =
+            SignersConfig::with_artifact_signers_only(1, (vec![pubkey.clone()], 1))?.to_json()?;
+        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
+        let signature = seckey.sign(&hash)?;
+
+        // Pre-create the metadata.json file
+        let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir)?;
+        let metadata_path = pending_dir.join(METADATA_FILE);
+        fs::write(&metadata_path, "{}")?;
+
+        let signer_validator = || Ok(());
+        let result = write_valid_signers_file(
+            dir_path,
+            &json_content,
+            test_metadata(),
+            &signature,
+            pubkey,
+            signer_validator,
+        );
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SignersFileError::InitialisationError(msg) => {
+                assert!(
+                    msg.contains("Metadata file exists"),
+                    "Expected 'Metadata file exists' in error, got: {}",
+                    msg
+                );
+            }
+            e => panic!("Expected InitialisationError, got {}", e),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_metadata_content_matches_input() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let seckey = test_keys.sec_key(0).unwrap();
+
+        let json_content = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![pubkey.clone(), test_keys.pub_key(1).unwrap().clone()],
+                2,
+            ),
+        )?
+        .to_json()?;
+
+        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
+        let signature = seckey.sign(&hash)?;
+
+        let metadata = test_metadata();
+        // Serialize to compare later
+        let expected_json = serde_json::to_string_pretty(&metadata)?;
+
+        let signer_validator = || Ok(());
+        write_valid_signers_file(
+            dir_path,
+            &json_content,
+            metadata,
+            &signature,
+            pubkey,
+            signer_validator,
+        )?;
+
+        // Read back the metadata file and compare
+        let metadata_path = dir_path.join(PENDING_SIGNERS_DIR).join(METADATA_FILE);
+        let actual_json = fs::read_to_string(&metadata_path)?;
+        // Both should deserialize to valid metadata
+        let actual: SignersConfigMetadata = serde_json::from_str(&actual_json)?;
+        let expected: SignersConfigMetadata = serde_json::from_str(&expected_json)?;
+        // Verify round-trip: re-serialize and compare
+        assert_eq!(
+            serde_json::to_string_pretty(&actual)?,
+            serde_json::to_string_pretty(&expected)?
         );
 
         Ok(())

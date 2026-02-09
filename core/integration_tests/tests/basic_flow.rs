@@ -8,10 +8,18 @@ use features_lib::SignersFile;
 use features_lib::SignersFileTrait;
 use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
 use signers_file::initialize_signers_file;
-use signers_file_types::SignersConfig;
+use signers_file_types::{Forge, ForgeOrigin, SignersConfig, SignersConfigMetadata};
 use std::fs;
 use tempfile::TempDir;
 use test_helpers::TestKeys;
+
+fn test_metadata() -> SignersConfigMetadata {
+    SignersConfigMetadata::from_forge(ForgeOrigin::new(
+        Forge::Github,
+        "https://example.com/test".to_string(),
+        chrono::Utc::now(),
+    ))
+}
 
 #[test]
 fn basic_flow() -> Result<()> {
@@ -52,6 +60,7 @@ fn basic_flow() -> Result<()> {
         initialize_signers_file(
             root_dir,
             &signers_content,
+            test_metadata(),
             &signature1,
             &user1_keypair.public_key(),
         )?;

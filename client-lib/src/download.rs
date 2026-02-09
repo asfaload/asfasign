@@ -144,10 +144,7 @@ mod tests {
         // A URL like "file:///path" has no host — get_forge fails
         let url = Url::parse("file:///some/path/file.txt").unwrap();
         let result = get_forge(&url);
-        assert!(matches!(
-            result,
-            Err(ClientLibError::InvalidUrl(_))
-        ));
+        assert!(matches!(result, Err(ClientLibError::InvalidUrl(_))));
     }
 
     // --- construct_index_file_path ---
@@ -166,20 +163,14 @@ mod tests {
     fn construct_index_file_path_no_host() {
         let url = Url::parse("file:///some/path/file.txt").unwrap();
         let result = get_forge(&url);
-        assert!(matches!(
-            result,
-            Err(ClientLibError::InvalidUrl(_))
-        ));
+        assert!(matches!(result, Err(ClientLibError::InvalidUrl(_))));
     }
 
     #[test]
     fn construct_index_file_path_unsupported_forge() {
         let url = Url::parse("https://gitlab.com/owner/repo/-/releases/file.tar.gz").unwrap();
         let result = get_forge(&url);
-        assert!(matches!(
-            result,
-            Err(ClientLibError::UnsupportedForge(_))
-        ));
+        assert!(matches!(result, Err(ClientLibError::UnsupportedForge(_))));
     }
 
     #[test]
