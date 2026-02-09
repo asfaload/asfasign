@@ -9,11 +9,15 @@ use reqwest::Url;
 pub use v1::download_file_with_verification;
 
 trait ForgeTrait {
-    fn construct_index_file_path(file_url: &Url) -> AsfaloadLibResult<String> {
-        Self::construct_file_repo_path(file_url, INDEX_FILE)
+    fn construct_index_file_path(&self, file_url: &Url) -> AsfaloadLibResult<String> {
+        self.construct_file_repo_path(file_url, INDEX_FILE)
     }
 
-    fn construct_file_repo_path(file_url: &Url, filename: &str) -> AsfaloadLibResult<String> {
+    fn construct_file_repo_path(
+        &self,
+        file_url: &Url,
+        filename: &str,
+    ) -> AsfaloadLibResult<String> {
         let host = file_url
             .host_str()
             .ok_or_else(|| ClientLibError::InvalidUrl("URL has no host".to_string()))?;
@@ -23,11 +27,11 @@ trait ForgeTrait {
 
         let dir_path = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
 
-        let translated_path = Self::translate_download_to_release_path(dir_path);
+        let translated_path = self.translate_download_to_release_path(dir_path);
 
         Ok(format!("{}/{}/{}", host, translated_path, filename))
     }
-    fn translate_download_to_release_path(path: &str) -> String;
+    fn translate_download_to_release_path(&self, path: &str) -> String;
 }
 
 enum Forges {
@@ -44,6 +48,14 @@ impl Forges {
     }
 }
 
+impl ForgeTrait for Forges {
+    fn translate_download_to_release_path(&self, path: &str) -> String {
+        match self {
+            Self::Github(github_forge) => github_forge.translate_download_to_release_path(path),
+        }
+    }
+}
+
 use github::GithubForge;
 
 fn get_forge(file_url: &Url) -> AsfaloadLibResult<Forges> {
@@ -53,27 +65,13 @@ fn get_forge(file_url: &Url) -> AsfaloadLibResult<Forges> {
     Forges::from_host(host)
 }
 
-fn construct_index_file_path(file_url: &Url) -> AsfaloadLibResult<String> {
-    let forge = get_forge(file_url)?;
-    match forge {
-        Forges::Github(_) => GithubForge::construct_index_file_path(file_url),
-    }
-}
-
-fn construct_file_repo_path(file_url: &Url, filename: &str) -> AsfaloadLibResult<String> {
-    let forge = get_forge(file_url)?;
-    match forge {
-        Forges::Github(_) => GithubForge::construct_file_repo_path(file_url, filename),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use reqwest::Url;
 
     fn translate_github_release_path(path: &str) -> String {
-        GithubForge::translate_download_to_release_path(path)
+        GithubForge.translate_download_to_release_path(path)
     }
 
     // --- translate_github_release_path ---
@@ -136,16 +134,18 @@ mod tests {
     fn construct_file_repo_path_standard_github_url() {
         let url =
             Url::parse("https://github.com/owner/repo/releases/download/v1.0/file.tar.gz").unwrap();
-        let result = construct_file_repo_path(&url, "index.json").unwrap();
+        let forge = get_forge(&url).unwrap();
+        let result = forge.construct_file_repo_path(&url, "index.json").unwrap();
         assert_eq!(result, "github.com/owner/repo/releases/tag/v1.0/index.json");
     }
 
     #[test]
     fn construct_file_repo_path_no_host() {
-        // A URL like "file:///path" has no host
+        // A URL like "file:///path" has no host — get_forge fails
         let url = Url::parse("file:///some/path/file.txt").unwrap();
+        let result = get_forge(&url);
         assert!(matches!(
-            construct_file_repo_path(&url, "index.json"),
+            result,
             Err(ClientLibError::InvalidUrl(_))
         ));
     }
@@ -156,7 +156,8 @@ mod tests {
     fn construct_index_file_path_happy_path() {
         let url = Url::parse("https://github.com/owner/repo/releases/download/v2.0/artifact.zip")
             .unwrap();
-        let result = construct_index_file_path(&url).unwrap();
+        let forge = get_forge(&url).unwrap();
+        let result = forge.construct_index_file_path(&url).unwrap();
         assert!(result.ends_with(INDEX_FILE));
         assert!(result.starts_with("github.com/owner/repo/releases/tag/v2.0/"));
     }
@@ -164,22 +165,22 @@ mod tests {
     #[test]
     fn construct_index_file_path_no_host() {
         let url = Url::parse("file:///some/path/file.txt").unwrap();
+        let result = get_forge(&url);
         assert!(matches!(
-            construct_index_file_path(&url),
+            result,
             Err(ClientLibError::InvalidUrl(_))
         ));
     }
 
     #[test]
     fn construct_index_file_path_unsupported_forge() {
-        let url =
-            Url::parse("https://gitlab.com/owner/repo/-/releases/file.tar.gz").unwrap();
+        let url = Url::parse("https://gitlab.com/owner/repo/-/releases/file.tar.gz").unwrap();
+        let result = get_forge(&url);
         assert!(matches!(
-            construct_index_file_path(&url),
+            result,
             Err(ClientLibError::UnsupportedForge(_))
         ));
     }
-
 
     #[test]
     fn get_forge_test_cases() {

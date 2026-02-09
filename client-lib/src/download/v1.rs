@@ -10,7 +10,7 @@ use features_lib::{
 use reqwest::{Client, Url};
 use std::path::PathBuf;
 
-use super::{construct_file_repo_path, construct_index_file_path};
+use super::{ForgeTrait, get_forge};
 
 /// Handle the download command
 pub async fn download_file_with_verification(
@@ -32,7 +32,8 @@ pub async fn download_file_with_verification(
             ClientLibError::InvalidUrl("Could not extract filename from URL".to_string())
         })?;
 
-    let index_file_path = construct_index_file_path(&url)?;
+    let forge = get_forge(&url)?;
+    let index_file_path = forge.construct_index_file_path(&url)?;
 
     let signers_url = format!("{}/v1/get-signers/{}", backend_url, index_file_path);
     let signers_content =
@@ -47,7 +48,7 @@ pub async fn download_file_with_verification(
     let index: AsfaloadIndex = serde_json::from_slice(&index_content)?;
 
     let signatures_file_path =
-        construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
+        forge.construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
     let signatures_url = format!("{}/v1/files/{}", backend_url, signatures_file_path);
     let signatures_content =
         download_file(&client, &signatures_url, &DownloadCallbacks::default()).await?;
