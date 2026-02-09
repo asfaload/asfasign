@@ -151,8 +151,8 @@ impl Client {
         };
 
         // Serialize once: same bytes for auth and body
-        let headers = create_auth_headers(&payload_string, &secret_key)?;
         let payload_string = serde_json::to_string(&payload)?;
+        let headers = create_auth_headers(&payload_string, secret_key)?;
 
         let response = self
             .client
