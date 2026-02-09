@@ -517,6 +517,24 @@ mod tests {
         ))
     }
 
+    fn assert_metadata_file_valid(root_dir: &Path, is_active: bool) {
+        let dir_name = if is_active {
+            SIGNERS_DIR
+        } else {
+            PENDING_SIGNERS_DIR
+        };
+        let metadata_path = root_dir.join(dir_name).join(METADATA_FILE);
+        assert!(
+            metadata_path.exists(),
+            "metadata.json should exist in {}",
+            dir_name
+        );
+        let content = fs::read_to_string(&metadata_path)
+            .unwrap_or_else(|e| panic!("Failed to read metadata.json: {}", e));
+        let _: SignersConfigMetadata = serde_json::from_str(&content)
+            .unwrap_or_else(|e| panic!("Failed to deserialize metadata.json: {}", e));
+    }
+
     #[test]
     fn test_parsing() {
         let json_str = r#"
@@ -910,6 +928,7 @@ mod tests {
             sig_map.get(&pub_key.to_base64()).unwrap(),
             &signature.to_base64()
         );
+        assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
 
@@ -982,6 +1001,7 @@ mod tests {
             sig_map.get(&pub_key0.to_base64()).unwrap(),
             &signature.to_base64()
         );
+        assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
 
@@ -1045,6 +1065,7 @@ mod tests {
         let pending_sig_dir = dir_path.join(PENDING_SIGNERS_DIR);
         assert!(!pending_sig_dir.exists());
 
+        assert_metadata_file_valid(dir_path, true);
         Ok(())
     }
 
@@ -1198,6 +1219,7 @@ mod tests {
         // Check that the signature file does not exist as not all
         // required admin signatures where collected.
         assert!(!sig_file_path.exists());
+        assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
     #[test]
@@ -1235,6 +1257,7 @@ mod tests {
         assert!(active_signers_dir.exists());
         assert!(active_signers_file.exists());
         assert!(active_signers_file_signatures.exists());
+        assert_metadata_file_valid(dir_path, true);
         Ok(())
     }
 
@@ -2939,6 +2962,7 @@ mod tests {
         ));
         assert!(complete_sig_file_path.exists());
 
+        assert_metadata_file_valid(root_dir, false);
         Ok(())
     }
 
@@ -3022,6 +3046,7 @@ mod tests {
         ));
         assert!(!complete_sig_file_path.exists());
 
+        assert_metadata_file_valid(root_dir, false);
         Ok(())
     }
 
@@ -3068,6 +3093,7 @@ mod tests {
         ));
         assert!(!complete_sig_file_path.exists());
 
+        assert_metadata_file_valid(root_dir, false);
         Ok(())
     }
 
@@ -3125,6 +3151,7 @@ mod tests {
         ));
         assert!(!local_signers_path.exists());
 
+        assert_metadata_file_valid(root_dir, false);
         Ok(())
     }
 
@@ -3193,6 +3220,7 @@ mod tests {
         let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(pending_file_path.exists());
 
+        assert_metadata_file_valid(root_dir, false);
         Ok(())
     }
     #[test]
@@ -3433,6 +3461,7 @@ mod tests {
         ));
         assert!(pending_signature_path.exists());
 
+        assert_metadata_file_valid(&nested_dir, false);
         Ok(())
     }
 
@@ -3736,6 +3765,7 @@ mod tests {
             &signature.to_base64()
         );
 
+        assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
 
@@ -3799,6 +3829,7 @@ mod tests {
         let pending_sig_dir = dir_path.join(PENDING_SIGNERS_DIR);
         assert!(!pending_sig_dir.exists());
 
+        assert_metadata_file_valid(dir_path, true);
         Ok(())
     }
 
@@ -4243,7 +4274,7 @@ mod tests {
         );
         assert!(result.is_err());
         match result.unwrap_err() {
-            SignersFileError::IoError(_) => {} // Expected
+            SignersFileError::IoError(e) => {} // Expected
             e => panic!("Expected IoError, got {}", e),
         }
 

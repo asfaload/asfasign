@@ -2398,6 +2398,7 @@ dependencies = [
  "common",
  "features_lib",
  "minisign",
+ "serde_json",
  "signatures",
  "signers_file",
  "signers_file_types",
