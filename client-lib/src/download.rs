@@ -7,54 +7,77 @@ use reqwest::Url;
 // Re-export v1's download function as the current API surface
 pub use v1::download_file_with_verification;
 
-fn construct_index_file_path(file_url: &Url) -> AsfaloadLibResult<String> {
-    construct_file_repo_path(file_url, INDEX_FILE)
-}
+trait ForgeTrait {
+    fn construct_index_file_path(file_url: &Url) -> AsfaloadLibResult<String> {
+        Self::construct_file_repo_path(file_url, INDEX_FILE)
+    }
 
-fn construct_file_repo_path(file_url: &Url, filename: &str) -> AsfaloadLibResult<String> {
-    let host = file_url
-        .host_str()
-        .ok_or_else(|| ClientLibError::InvalidUrl("URL has no host".to_string()))?;
-    let path = file_url.path();
+    fn construct_file_repo_path(file_url: &Url, filename: &str) -> AsfaloadLibResult<String> {
+        let host = file_url
+            .host_str()
+            .ok_or_else(|| ClientLibError::InvalidUrl("URL has no host".to_string()))?;
+        let path = file_url.path();
 
-    let path = path.strip_prefix('/').unwrap_or(path);
+        let path = path.strip_prefix('/').unwrap_or(path);
 
-    let dir_path = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+        let dir_path = path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
 
-    let translated_path = translate_download_to_release_path(host, dir_path)?;
+        let translated_path = Self::translate_download_to_release_path(dir_path);
 
-    Ok(format!("{}/{}/{}", host, translated_path, filename))
+        Ok(format!("{}/{}/{}", host, translated_path, filename))
+    }
+    fn translate_download_to_release_path(path: &str) -> String;
 }
 
 enum Forges {
-    Github,
+    Github(GithubForge),
 }
 
 impl Forges {
     pub fn from_host(host: &str) -> AsfaloadLibResult<Self> {
         if host.contains("github.com") {
-            Ok(Self::Github)
+            Ok(Self::Github(GithubForge))
         } else {
             Err(ClientLibError::UnsupportedForge(host.to_string()))
         }
     }
 }
 
-fn translate_download_to_release_path(host: &str, path: &str) -> AsfaloadLibResult<String> {
-    let forge = Forges::from_host(host)?;
-    match forge {
-        Forges::Github => Ok(translate_github_release_path(path)),
+struct GithubForge;
+impl ForgeTrait for GithubForge {
+    fn translate_download_to_release_path(path: &str) -> String {
+        path.replace("/releases/download/", "/releases/tag/")
     }
 }
 
-fn translate_github_release_path(path: &str) -> String {
-    path.replace("/releases/download/", "/releases/tag/")
+fn construct_index_file_path(file_url: &Url) -> AsfaloadLibResult<String> {
+    let host = file_url
+        .host_str()
+        .ok_or_else(|| ClientLibError::InvalidUrl("URL has no host".to_string()))?;
+    let forge = Forges::from_host(host)?;
+    match forge {
+        Forges::Github(_) => GithubForge::construct_index_file_path(file_url),
+    }
+}
+
+fn construct_file_repo_path(file_url: &Url, filename: &str) -> AsfaloadLibResult<String> {
+    let host = file_url
+        .host_str()
+        .ok_or_else(|| ClientLibError::InvalidUrl("URL has no host".to_string()))?;
+    let forge = Forges::from_host(host)?;
+    match forge {
+        Forges::Github(_) => GithubForge::construct_file_repo_path(file_url, filename),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use reqwest::Url;
+
+    fn translate_github_release_path(path: &str) -> String {
+        GithubForge::translate_download_to_release_path(path)
+    }
 
     // --- translate_github_release_path ---
 
@@ -82,7 +105,7 @@ mod tests {
     fn forges_from_host_github() {
         assert!(matches!(
             Forges::from_host("github.com"),
-            Ok(Forges::Github)
+            Ok(Forges::Github(_))
         ));
     }
 
@@ -90,7 +113,7 @@ mod tests {
     fn forges_from_host_api_github() {
         assert!(matches!(
             Forges::from_host("api.github.com"),
-            Ok(Forges::Github)
+            Ok(Forges::Github(_))
         ));
     }
 
