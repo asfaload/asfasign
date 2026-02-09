@@ -198,21 +198,6 @@ impl SignersConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct InitialVersion {
-    pub permalink: String,
-    #[serde(default)]
-    pub mirrors: Vec<String>,
-}
-impl Default for InitialVersion {
-    fn default() -> Self {
-        InitialVersion {
-            permalink: "".to_string(),
-            mirrors: vec![],
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize)]
 //#[serde(bound(
 //    serialize = "APK: AsfaloadPublicKeyTrait",
