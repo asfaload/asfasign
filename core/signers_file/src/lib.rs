@@ -1603,6 +1603,9 @@ mod tests {
         let old_config_in_history = &history.entries[0].signers_file;
         assert_eq!(old_config_in_history.timestamp(), config_timestamp);
 
+        // Verify the metadata is preserved in the history
+        assert_eq!(history.entries[0].metadata, metadata);
+
         // Verify the new configuration is active
         let new_active_content = fs::read_to_string(active_dir.join(SIGNERS_FILE))?;
         assert_eq!(new_active_content, new_content.to_json()?);
