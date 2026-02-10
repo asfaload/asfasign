@@ -4,16 +4,16 @@ use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
-use signers_file_types::{SignersConfig, SignersConfigMetadata};
+use signers_file_types::SignersConfigMetadata;
 use std::path::PathBuf;
 
+use crate::file_auth::actors::forge_signers_validator::SignersInfo;
 use crate::path_validation::NormalisedPaths;
 
 #[derive(Debug)]
 pub struct InitialiseSignersRequest {
     pub project_path: NormalisedPaths,
-    pub signers_json: String,
-    pub signers_config: SignersConfig,
+    pub signers_info: SignersInfo,
     pub metadata: SignersConfigMetadata,
     pub signature: AsfaloadSignatures,
     pub pubkey: AsfaloadPublicKeys,
@@ -126,7 +126,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         // pending signers directory, write the signers file, metadata, and
         // record the first signature.
         let dir = project_dir.clone();
-        let json = msg.signers_json;
+        let json = msg.signers_info.json();
         let meta = msg.metadata;
         let sig = msg.signature;
         let pk = msg.pubkey;
@@ -167,7 +167,8 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         );
 
         let required_signers: Vec<String> = msg
-            .signers_config
+            .signers_info
+            .config()
             .all_signer_keys()
             .into_iter()
             .map(|key: AsfaloadPublicKeys| key.to_base64())
@@ -249,7 +250,7 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use common::fs::names::pending_signatures_path_for;
-    use features_lib::{AsfaloadSecretKeyTrait, sha512_for_content};
+    use features_lib::{AsfaloadSecretKeyTrait, SignersConfig, sha512_for_content};
     use kameo::actor::Spawn;
     use signers_file_types::{Forge, ForgeOrigin};
 
@@ -263,6 +264,7 @@ mod tests {
         request_id: &str,
     ) -> InitialiseSignersRequest {
         let signers_json = serde_json::to_string_pretty(config).unwrap();
+        let signers_info = SignersInfo::from_string(&signers_json).unwrap();
         let hash = sha512_for_content(signers_json.as_bytes().to_vec()).unwrap();
         let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&hash).unwrap();
@@ -274,8 +276,7 @@ mod tests {
         ));
         InitialiseSignersRequest {
             project_path,
-            signers_json,
-            signers_config: config.clone(),
+            signers_info,
             metadata,
             signature,
             pubkey,

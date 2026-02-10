@@ -3,6 +3,7 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
+    use rest_api::file_auth::actors::forge_signers_validator::SignersInfo;
     use rest_api::file_auth::github::get_project_normalised_paths;
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
@@ -775,8 +776,11 @@ pub mod tests {
                 2,
             ),
         )?;
-
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
+        // SignersInfo only initialises from string to ensure we keep the string
+        // that is signed intact.
+        let signers_info = SignersInfo::from_string(&signers_json)?;
+
         let hash = sha512_for_content(signers_json.as_bytes().to_vec())?;
         let signature = secret_key.sign(&hash)?;
         let pubkey = key_pair1.public_key();
@@ -796,8 +800,7 @@ pub mod tests {
         let signers_initialiser = SignersInitialiser::spawn(());
         let init_request = InitialiseSignersRequest {
             project_path,
-            signers_json,
-            signers_config: signers_config.clone(),
+            signers_info,
             metadata,
             signature,
             pubkey,

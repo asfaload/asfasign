@@ -14,10 +14,31 @@ pub struct ValidateProjectRequest {
 }
 
 #[derive(Debug, Clone)]
+pub struct SignersInfo {
+    signers_config: SignersConfig,
+    signers_json: String,
+}
+
+impl SignersInfo {
+    pub fn from_string(signers_json: &str) -> Result<Self, serde_json::Error> {
+        let signers_config = signers_file_types::parse_signers_config(signers_json)?;
+        Ok(Self {
+            signers_config,
+            signers_json: signers_json.to_string(),
+        })
+    }
+    pub fn json(&self) -> String {
+        self.signers_json.clone()
+    }
+    pub fn config(&self) -> &SignersConfig {
+        &self.signers_config
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ProjectSignersProposal {
     pub project_id: String,
-    pub signers_config: SignersConfig,
-    pub signers_json: String,
+    pub signers_info: SignersInfo,
     pub request_id: String,
 }
 
@@ -171,16 +192,15 @@ impl ForgeProjectValidator {
             ApiError::InvalidRequestBody(e)
         })?;
 
-        let signers_config: SignersConfig = signers_file_types::parse_signers_config(&content)
-            .map_err(|e| {
-                tracing::error!(
-                    request_id = %request_id,
-                    raw_url = %repo_info.raw_url(),
-                    error = %e,
-                    "Failed to parse signers config JSON"
-                );
-                ApiError::InvalidRequestBody(format!("Invalid signers config JSON: {}", e))
-            })?;
+        let signers_info: SignersInfo = SignersInfo::from_string(&content).map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                raw_url = %repo_info.raw_url(),
+                error = %e,
+                "Failed to parse signers config JSON"
+            );
+            ApiError::InvalidRequestBody(format!("Invalid signers config JSON: {}", e))
+        })?;
 
         tracing::info!(
         actor_name = ACTOR_NAME,    request_id = %request_id,
@@ -199,8 +219,7 @@ impl ForgeProjectValidator {
 
         Ok(ProjectSignersProposal {
             project_id,
-            signers_config,
-            signers_json: content,
+            signers_info,
             request_id: request_id.to_string(),
         })
     }
