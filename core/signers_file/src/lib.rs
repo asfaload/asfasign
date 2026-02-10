@@ -342,6 +342,11 @@ fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), Signe
     let signatures_content = fs::read_to_string(&signatures_file_path)?;
     let signatures: HashMap<String, String> = serde_json::from_str(&signatures_content)?;
 
+    // Read the metadata file for the active signers
+    let metadata_file_path = active_signers_dir.join(METADATA_FILE);
+    let metadata_content = fs::read_to_string(&metadata_file_path)?;
+    let metadata: SignersConfigMetadata = serde_json::from_str(&metadata_content)?;
+
     // Get current UTC time as ISO8601 string
     let obsoleted_at = chrono::Utc::now();
 
@@ -350,6 +355,7 @@ fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), Signe
         obsoleted_at,
         signers_file: existing_config,
         signatures,
+        metadata,
     };
 
     // Read or create history file
@@ -427,6 +433,8 @@ pub struct HistoryEntry {
     pub signers_file: SignersConfig,
     /// Content of the signatures file (map from public key string to signature string)
     pub signatures: HashMap<String, String>,
+    /// Metadata about the origin of the signers file
+    pub metadata: SignersConfigMetadata,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1527,6 +1535,14 @@ mod tests {
             .replace("TIMESTAMP", config_timestamp.to_string().as_str());
         fs::write(&existing_signers_file, existing_content)?;
 
+        // Write metadata file for the existing active signers
+        let metadata = test_metadata();
+        let metadata_path = active_dir.join(METADATA_FILE);
+        fs::write(
+            &metadata_path,
+            serde_json::to_string_pretty(&metadata).unwrap(),
+        )?;
+
         // Create the signatures file for the existing signers file
         let hash = common::sha512_for_file(&existing_signers_file)?;
         let pubkey0 = existing_keys.pub_key(0).unwrap();
@@ -1586,6 +1602,9 @@ mod tests {
         // Verify the old configuration is in the history
         let old_config_in_history = &history.entries[0].signers_file;
         assert_eq!(old_config_in_history.timestamp(), config_timestamp);
+
+        // Verify the metadata is preserved in the history
+        assert_eq!(history.entries[0].metadata, metadata);
 
         // Verify the new configuration is active
         let new_active_content = fs::read_to_string(active_dir.join(SIGNERS_FILE))?;
@@ -1766,6 +1785,14 @@ mod tests {
         let signers_content = signers_config.to_json()?;
         fs::write(&signers_file_path, signers_content)?;
 
+        // Write metadata file
+        let metadata = test_metadata();
+        let metadata_path = active_signers_dir.join(METADATA_FILE);
+        fs::write(
+            &metadata_path,
+            serde_json::to_string_pretty(&metadata).unwrap(),
+        )?;
+
         let hash = common::sha512_for_file(&signers_file_path)?;
 
         // Sign with both keys
@@ -1869,7 +1896,16 @@ mod tests {
                 "master_keys": [],
                 "threshold": 1
             },
-            "signatures": {}
+            "signatures": {},
+            "metadata": {
+                "data": {
+                    "Forge": {
+                        "kind": "Github",
+                        "url": "https://example.com/test",
+                        "retrieved_at": "2023-01-01T00:00:00Z"
+                    }
+                }
+            }
         }"#,
         )?;
 
@@ -1948,7 +1984,16 @@ mod tests {
                 "artifact_signers": [],
                 "master_keys": []
             },
-            "signatures": {"key1": "sig1"}
+            "signatures": {"key1": "sig1"},
+            "metadata": {
+                "data": {
+                    "Forge": {
+                        "kind": "Github",
+                        "url": "https://example.com/test",
+                        "retrieved_at": "2023-01-01T00:00:00Z"
+                    }
+                }
+            }
         }"#
             .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
             .as_str(),
@@ -1963,7 +2008,16 @@ mod tests {
                 "artifact_signers": [],
                 "master_keys": []
             },
-            "signatures": {"key2": "sig2"}
+            "signatures": {"key2": "sig2"},
+            "metadata": {
+                "data": {
+                    "Forge": {
+                        "kind": "Github",
+                        "url": "https://example.com/test",
+                        "retrieved_at": "2023-01-01T00:00:00Z"
+                    }
+                }
+            }
         }"#
             .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
             .as_str(),
@@ -2272,6 +2326,7 @@ mod tests {
             obsoleted_at: timestamp,
             signers_file: create_test_signers_config(test_keys),
             signatures: create_test_signatures(test_keys),
+            metadata: test_metadata(),
         }
     }
 
@@ -2381,6 +2436,7 @@ mod tests {
         assert!(entry.get("obsoleted_at").is_some());
         assert!(entry.get("signers_file").is_some());
         assert!(entry.get("signatures").is_some());
+        assert!(entry.get("metadata").is_some());
     }
 
     #[test]
@@ -2423,6 +2479,15 @@ mod tests {
       "signatures": {
         "PUBKEY0_PLACEHOLDER": "SIGNATURE0_PLACEHOLDER",
         "PUBKEY1_PLACEHOLDER": "SIGNATURE1_PLACEHOLDER"
+      },
+      "metadata": {
+        "data": {
+          "Forge": {
+            "kind": "Github",
+            "url": "https://example.com/test",
+            "retrieved_at": "2023-01-01T00:00:00Z"
+          }
+        }
       }
     }
   ]
@@ -2537,7 +2602,16 @@ mod tests {
       "master_keys": [],
       "admin_keys": null
     },
-    "signatures": {}
+    "signatures": {},
+    "metadata": {
+      "data": {
+        "Forge": {
+          "kind": "Github",
+          "url": "https://example.com/test",
+          "retrieved_at": "2023-01-01T00:00:00Z"
+        }
+      }
+    }
   }
 ]
 }
@@ -2684,6 +2758,7 @@ mod tests {
             assert_eq!(original_entry.obsoleted_at, deserialized_entry.obsoleted_at);
             assert_eq!(original_entry.signers_file, deserialized_entry.signers_file);
             assert_eq!(original_entry.signatures, deserialized_entry.signatures);
+            assert_eq!(original_entry.metadata, deserialized_entry.metadata);
         }
     }
 
@@ -2697,6 +2772,7 @@ mod tests {
             obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
             signers_file: create_test_signers_config(&test_keys),
             signatures: HashMap::new(),
+            metadata: test_metadata(),
         };
 
         history_file.add_entry(entry);
@@ -2718,6 +2794,14 @@ mod tests {
     ) -> Result<PathBuf, SignersFileError> {
         let active_signers_dir = root_dir.join(SIGNERS_DIR);
         fs::create_dir_all(&active_signers_dir)?;
+
+        // Write metadata file
+        let metadata = test_metadata();
+        let metadata_path = active_signers_dir.join(METADATA_FILE);
+        fs::write(
+            &metadata_path,
+            serde_json::to_string_pretty(&metadata).unwrap(),
+        )?;
 
         let signers_file_path = active_signers_dir.join(SIGNERS_FILE);
 
