@@ -3,7 +3,10 @@ use chrono::{DateTime, Utc};
 use common::{
     SignedFileLoader,
     errors::{AggregateSignatureError, SignersFileError},
-    fs::names::{find_global_signers_for, pending_signatures_path_for, signatures_path_for},
+    fs::{
+        names::{find_global_signers_for, pending_signatures_path_for, signatures_path_for},
+        open_new_file,
+    },
 };
 use constants::{
     METADATA_FILE, PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
@@ -213,11 +216,11 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
 
     let result = (|| -> Result<(), SignersFileError> {
         // Write the metadata file
-        let file = fs::File::create(&metadata_file_path)?;
-        serde_json::to_writer_pretty(&file, &metadata)?;
+        let metadata_file = open_new_file(&metadata_file_path)?;
+        serde_json::to_writer_pretty(&metadata_file, &metadata)?;
         // Write the JSON content to the pending signers file
-        let mut file = fs::File::create(&signers_file_path)?;
-        file.write_all(json_content.as_bytes())?;
+        let mut signers_file = open_new_file(&signers_file_path)?;
+        signers_file.write_all(json_content.as_bytes())?;
 
         sign_signers_file(signers_file_path, signature, pubkey)?;
         Ok(())
@@ -229,7 +232,6 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
 
     result
 }
-
 pub fn initialize_signers_file<P: AsRef<Path>>(
     dir_path_in: P,
     json_content_in: impl AsRef<str>,
