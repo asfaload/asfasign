@@ -294,6 +294,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fetch_external_url_returns_body_bytes() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/test-file.json")
+            .with_status(200)
+            .with_body(b"hello world")
+            .create_async()
+            .await;
+
+        let client = Client::new(&server.url());
+        let result = client
+            .fetch_external_url(&format!("{}/test-file.json", server.url()))
+            .await;
+
+        mock.assert_async().await;
+        let bytes = result.unwrap();
+        assert_eq!(bytes, b"hello world");
+    }
+
+    #[tokio::test]
+    async fn fetch_external_url_returns_error_on_404() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/missing")
+            .with_status(404)
+            .with_body("Not Found")
+            .create_async()
+            .await;
+
+        let client = Client::new(&server.url());
+        let result = client
+            .fetch_external_url(&format!("{}/missing", server.url()))
+            .await;
+
+        mock.assert_async().await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AdminLibError::RequestFailed(msg) => {
+                assert!(msg.contains("404"));
+            }
+            other => panic!("Expected RequestFailed, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
     async fn parse_json_response_returns_error_on_invalid_json() {
         let response = http::Response::builder()
             .status(200)
