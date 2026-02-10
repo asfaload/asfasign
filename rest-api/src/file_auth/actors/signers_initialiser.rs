@@ -183,13 +183,22 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             "Wrote history file to disk"
         );
 
-        let required_signers: Vec<String> = msg
-            .signers_info
-            .config()
-            .all_signer_keys()
-            .into_iter()
-            .map(|key: AsfaloadPublicKeys| key.to_base64())
-            .collect();
+        let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+        let required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
+            features_lib::aggregate_signature_helpers::get_missing_signers(&pending_signers_path)
+        })
+        .await?
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %msg.request_id,
+                error = %e,
+                "Failed to compute missing signers"
+            );
+            ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
+        })?
+        .into_iter()
+        .map(|key: AsfaloadPublicKeys| key.to_base64())
+        .collect();
 
         tracing::info!(
             request_id = %msg.request_id,
@@ -476,11 +485,13 @@ mod tests {
         assert!(result.is_ok());
         let init_result = result.unwrap();
 
-        assert_eq!(init_result.required_signers.len(), 2);
+        // Key 0 signed during initialization, so only key 1 is still missing
+        assert_eq!(init_result.required_signers.len(), 1);
         assert!(
-            init_result
+            !init_result
                 .required_signers
-                .contains(&test_keys.pub_key(0).unwrap().to_base64())
+                .contains(&test_keys.pub_key(0).unwrap().to_base64()),
+            "Key 0 already signed during init, should not be in required_signers"
         );
         assert!(
             init_result

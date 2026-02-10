@@ -42,6 +42,8 @@ pub enum AggregateSignatureError {
     MissingSignaturesInCompleteSignature,
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
+    #[error("Signature is already complete, cannot compute missing signers")]
+    SignatureAlreadyComplete,
     // Use when an agg signature does not have the status is should logically have.
     // Should not happen, but is used to avoid an unwrap() when we are sure that
     // we would get a Some with SignatureWithState::get_pending because we tested it before.

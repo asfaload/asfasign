@@ -169,7 +169,7 @@ pub mod aggregate_signature_helpers {
     use std::{collections::HashMap, path::Path};
 
     pub use aggregate_signature::{
-        check_groups, get_authorized_signers_for_file, load_signers_config,
+        check_groups, get_authorized_signers_for_file, get_missing_signers, load_signers_config,
     };
     use aggregate_signature::{
         get_individual_signatures_from_bytes as get_individual_signatures_from_bytes_ori,
