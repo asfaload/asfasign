@@ -5124,10 +5124,7 @@ mod tests {
         let actual: SignersConfigMetadata = serde_json::from_str(&actual_json)?;
         let expected: SignersConfigMetadata = serde_json::from_str(&expected_json)?;
         // Verify round-trip: re-serialize and compare
-        assert_eq!(
-            serde_json::to_string_pretty(&actual)?,
-            serde_json::to_string_pretty(&expected)?
-        );
+        assert_eq!(actual, expected);
 
         Ok(())
     }
