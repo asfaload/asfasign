@@ -236,6 +236,12 @@ pub enum Commands {
         signers_file_url: String,
 
         #[command(flatten)]
+        secret_key_args: SecretKeyArgs,
+
+        #[command(flatten)]
+        password_args: PasswordArgs,
+
+        #[command(flatten)]
         backend_url_args: BackendUrlArgs,
 
         #[command(flatten)]

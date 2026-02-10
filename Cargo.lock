@@ -3829,6 +3829,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "signatures",
+ "signers_file",
  "signers_file_types",
  "sled",
  "tempfile",

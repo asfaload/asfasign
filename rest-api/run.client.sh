@@ -31,11 +31,13 @@ cd ../client-cli/
 
 ### Register asfald
 echo "## Registering repo"
-cargo run --quiet -- register-repo -u $backend $signers_file
+cargo run --quiet -- register-repo --secret-key ../rest-api/private/key1 -u $backend --password secret $signers_file
 
 ### list pending signatures
-echo "## Listing pending sigs for key1"
+echo "## Listing pending sigs for key1, should be none as submitted"
 cargo run --quiet -- list-pending --secret-key ../rest-api/private/key1 -u http://localhost:3000 --password secret
+echo "## Listing pending sigs for key2"
+cargo run --quiet -- list-pending --secret-key ../rest-api/private/key2 -u http://localhost:3000 --password secret
 ### sign
 echo "## Signing signers file"
 cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key1 --password secret $pending_signers_file

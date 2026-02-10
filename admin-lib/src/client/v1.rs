@@ -169,21 +169,52 @@ impl Client {
 
     /// Register a repository with the backend.
     ///
-    /// Makes an unauthenticated POST request to `/v1/register_repo`.
+    /// Makes an authenticated POST request to `/v1/register_repo`.
+    /// Serializes the payload once and uses the same string for both
+    /// auth headers and the request body (avoids signature mismatch).
     pub async fn register_repo(
         &self,
         signers_file_url: &str,
+        signature: &AsfaloadSignatures,
+        public_key: &AsfaloadPublicKeys,
+        secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<RegisterRepoResponse> {
         let url = format!("{}/v1/register_repo", self.base_url);
 
-        let payload = RegisterRepoRequest {
+        let request = RegisterRepoRequest {
             signers_file_url: signers_file_url.to_string(),
+            signature: signature.to_base64(),
+            public_key: public_key.to_base64(),
         };
 
-        let response = self.client.post(&url).json(&payload).send().await?;
+        // Serialize once: same bytes for auth and body
+        let payload_string = serde_json::to_string(&request)?;
+        let headers = create_auth_headers(&payload_string, secret_key)?;
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .header(CONTENT_TYPE, "application/json")
+            .body(payload_string)
+            .send()
+            .await?;
 
         let response = Self::check_response_status(response).await?;
         Self::parse_json_response(response).await
+    }
+
+    /// Fetch content from an external URL.
+    ///
+    /// Makes a GET request to an arbitrary URL, reusing the internal HTTP client.
+    pub async fn fetch_external_url(&self, url: &str) -> AdminLibResult<Vec<u8>> {
+        let response = self.client.get(url).send().await?;
+
+        let response = Self::check_response_status(response).await?;
+
+        let content = response.bytes().await?;
+
+        Ok(content.to_vec())
     }
 }
 

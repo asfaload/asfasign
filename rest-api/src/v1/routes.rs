@@ -15,7 +15,12 @@ use crate::{
 
 /// Build the v1 API router with all route definitions.
 pub fn v1_router(app_state: AppState) -> Router<AppState> {
-    let register_router = Router::new().route("/register_repo", post(register_repo_handler));
+    let register_router = Router::new()
+        .route("/register_repo", post(register_repo_handler))
+        .layer(axum::middleware::from_fn_with_state(
+            app_state.clone(),
+            auth_middleware,
+        ));
     let release_router = Router::new()
         .route("/release", post(register_release_handler))
         .layer(axum::middleware::from_fn_with_state(

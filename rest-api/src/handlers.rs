@@ -167,6 +167,12 @@ pub async fn register_repo_handler(
             project_id
         )));
     }
+    // Parse public key and signature from the request
+    let public_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
+        .map_err(|_| ApiError::InvalidRequestBody("Invalid public key format".to_string()))?;
+    let signature = features_lib::AsfaloadSignatures::from_base64(&request.signature)
+        .map_err(|_| ApiError::InvalidRequestBody("Invalid signature format".to_string()))?;
+
     let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
         signers_file_url: parsed_url,
         request_id: request_id.to_string(),
@@ -178,10 +184,27 @@ pub async fn register_repo_handler(
         .await
         .map_err(|e| map_to_user_error(e, "Project authentication failed"))?;
 
+    // Construct metadata from forge information
+    let forge_kind = match &repo_info {
+        ForgeInfo::Github(_) => signers_file_types::Forge::Github,
+        ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
+    };
+    let metadata = signers_file_types::SignersConfigMetadata::from_forge(
+        signers_file_types::ForgeOrigin::new(
+            forge_kind,
+            request.signers_file_url.clone(),
+            chrono::Utc::now(),
+        ),
+    );
+
     // Step 2: Initialise signers - create directory structure and files
     let init_request = crate::file_auth::actors::signers_initialiser::InitialiseSignersRequest {
         project_path: project_normalised_paths,
+        signers_json: signers_proposal.signers_json.clone(),
         signers_config: signers_proposal.signers_config.clone(),
+        metadata,
+        signature,
+        pubkey: public_key,
         git_repo_path: state.git_repo_path.clone(),
         request_id: request_id.to_string(),
     };

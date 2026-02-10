@@ -17,6 +17,7 @@ pub struct ValidateProjectRequest {
 pub struct ProjectSignersProposal {
     pub project_id: String,
     pub signers_config: SignersConfig,
+    pub signers_json: String,
     pub request_id: String,
 }
 
@@ -199,6 +200,7 @@ impl ForgeProjectValidator {
         Ok(ProjectSignersProposal {
             project_id,
             signers_config,
+            signers_json: content,
             request_id: request_id.to_string(),
         })
     }
