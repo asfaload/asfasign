@@ -467,21 +467,21 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
 /// pending signature for the given file. Works for all signed file types
 /// (artifacts, signers file updates, initial signers files).
 ///
-/// Returns an error if the file already has a complete signatures file.
+/// Returns an empty set if the signatures are already complete.
 pub fn get_missing_signers<P: AsRef<Path>>(
     file_path: P,
 ) -> Result<HashSet<AsfaloadPublicKeys>, AggregateSignatureError> {
     let file_path = file_path.as_ref();
 
-    // Guard: error if signatures are already complete
+    // Guard: return empty set if signatures are already complete
     let complete_sig_path = signatures_path_for(file_path)?;
     if complete_sig_path.exists() {
-        return Err(AggregateSignatureError::SignatureAlreadyComplete);
+        return Ok(HashSet::new());
     }
 
-    // Guard: error if pending signatures already meet completeness criteria
+    // Guard: return empty set if pending signatures already meet completeness criteria
     if is_aggregate_signature_complete(file_path, true).unwrap_or(false) {
-        return Err(AggregateSignatureError::SignatureAlreadyComplete);
+        return Ok(HashSet::new());
     }
 
     // Load current pending signatures (empty HashMap if no file yet)
@@ -3967,7 +3967,7 @@ mod tests {
     // ---------------------------------
 
     #[test]
-    fn test_get_missing_signers_errors_when_complete() {
+    fn test_get_missing_signers_returns_empty_when_complete() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(2);
 
@@ -3987,12 +3987,8 @@ mod tests {
         let complete_sig_path = signatures_path_for(&artifact_path).unwrap();
         fs::write(&complete_sig_path, "{}").unwrap();
 
-        let result = get_missing_signers(&artifact_path);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            AggregateSignatureError::SignatureAlreadyComplete => {}
-            other => panic!("Expected SignatureAlreadyComplete, got {:?}", other),
-        }
+        let missing = get_missing_signers(&artifact_path).expect("Should succeed");
+        assert!(missing.is_empty());
     }
 
     #[test]
@@ -4088,12 +4084,8 @@ mod tests {
             ],
         );
 
-        let result = get_missing_signers(&artifact_path);
-        assert!(
-            matches!(result, Err(AggregateSignatureError::SignatureAlreadyComplete)),
-            "Expected SignatureAlreadyComplete when all signers have signed, got {:?}",
-            result
-        );
+        let missing = get_missing_signers(&artifact_path).expect("Should succeed");
+        assert!(missing.is_empty());
     }
 
     #[test]
@@ -4225,9 +4217,8 @@ mod tests {
             ],
         );
 
-        let missing_result = get_missing_signers(&pending_signers_file);
-
-        assert!(missing_result.is_err());
+        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
+        assert!(missing.is_empty());
     }
 
     #[test]
@@ -4278,12 +4269,8 @@ mod tests {
             ],
         );
 
-        let result = get_missing_signers(&pending_signers_file);
-        assert!(
-            matches!(result, Err(AggregateSignatureError::SignatureAlreadyComplete)),
-            "Expected SignatureAlreadyComplete when all signers have signed, got {:?}",
-            result
-        );
+        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
+        assert!(missing.is_empty());
     }
 
     #[test]
@@ -4377,12 +4364,8 @@ mod tests {
             ],
         );
 
-        let result = get_missing_signers(&pending_signers_file);
-        assert!(
-            matches!(result, Err(AggregateSignatureError::SignatureAlreadyComplete)),
-            "Expected SignatureAlreadyComplete when all signers have signed, got {:?}",
-            result
-        );
+        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
+        assert!(missing.is_empty());
     }
 
     #[test]
