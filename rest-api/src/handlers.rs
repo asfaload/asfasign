@@ -1,4 +1,5 @@
 use common::fs::names::subject_path_from_pending_signatures;
+use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use rest_api_types::{
     GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
@@ -238,7 +239,7 @@ pub async fn register_repo_handler(
                 let cleanup_request =
                     crate::file_auth::actors::signers_initialiser::CleanupSignersRequest {
                         signers_file_path: init_result.signers_file_path.clone(),
-                        history_file_path: init_result.history_file_path.clone(),
+                        history_file_path: Some(init_result.history_file_path.clone()),
                         pending_dir,
                         request_id: request_id.to_string(),
                     };
@@ -283,6 +284,180 @@ pub async fn register_repo_handler(
         project_id: signers_proposal.project_id,
         message: "Project registered successfully. Collect signatures to activate.".to_string(),
         required_signers: init_result.required_signers.into_iter().collect(),
+        signature_submission_url: "/v1/signatures".to_string(),
+    }))
+}
+
+pub async fn update_signers_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RegisterRepoRequest>,
+) -> Result<Json<RegisterRepoResponse>, ApiError> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        signers_file_url = %request.signers_file_url,
+        "Received update_signers request"
+    );
+
+    let parsed_url = url::Url::parse(&request.signers_file_url)
+        .map_err(|e| ApiError::InvalidRequestBody(e.to_string()))?;
+    let repo_info = ForgeInfo::new(&parsed_url).map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            url = %request.signers_file_url,
+            error = %e,
+            "Failed to parse forge URL"
+        );
+        ApiError::InvalidRequestBody(format!("Invalid forge URL: {}", e))
+    })?;
+
+    let project_id = repo_info.project_id();
+    let project_normalised_paths = get_project_normalised_paths(&state.git_repo_path, &project_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                project_id = %project_id,
+                error = %e,
+                "Failed to get normalised paths"
+            );
+            e
+        })?;
+
+    // For updates, the project directory must already exist
+    let project_dir = project_normalised_paths.absolute_path();
+    if !tokio::fs::try_exists(&project_dir).await? {
+        return Err(ApiError::InvalidRequestBody(format!(
+            "Project '{}' is not registered. Register the repo first.",
+            project_id
+        )));
+    }
+
+    // The signers directory must also exist (project fully initialized)
+    let signers_dir = project_dir.join(SIGNERS_DIR);
+    if !tokio::fs::try_exists(&signers_dir).await? {
+        return Err(ApiError::InvalidRequestBody(format!(
+            "Project '{}' has no active signers file. Complete initial registration first.",
+            project_id
+        )));
+    }
+
+    // Parse public key and signature from the request
+    let public_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
+        .map_err(|_| ApiError::InvalidRequestBody("Invalid public key format".to_string()))?;
+    let signature = features_lib::AsfaloadSignatures::from_base64(&request.signature)
+        .map_err(|_| ApiError::InvalidRequestBody("Invalid signature format".to_string()))?;
+
+    // Validate the signers file from the forge
+    let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
+        signers_file_url: parsed_url,
+        request_id: request_id.to_string(),
+    };
+
+    let signers_proposal = state
+        .forge_project_validator
+        .ask(auth_request)
+        .await
+        .map_err(|e| map_to_user_error(e, "Project validation failed"))?;
+
+    // Construct metadata from forge information
+    let forge_kind = match &repo_info {
+        ForgeInfo::Github(_) => signers_file_types::Forge::Github,
+        ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
+    };
+    let metadata = signers_file_types::SignersConfigMetadata::from_forge(
+        signers_file_types::ForgeOrigin::new(
+            forge_kind,
+            request.signers_file_url.clone(),
+            chrono::Utc::now(),
+        ),
+    );
+
+    // Propose signers file update
+    let propose_request = crate::file_auth::actors::signers_initialiser::ProposeSignersRequest {
+        project_path: project_normalised_paths.clone(),
+        signers_info: signers_proposal.signers_info,
+        metadata,
+        signature,
+        pubkey: public_key,
+        request_id: request_id.to_string(),
+    };
+
+    let propose_result = state
+        .signers_initialiser
+        .ask(propose_request)
+        .await
+        .map_err(|e| map_to_user_error(e, "Signers proposal failed"))?;
+
+    // Commit the changes via Git actor
+    let write_commit_request = crate::file_auth::actors::git_actor::CommitFile {
+        file_paths: vec![propose_result.project_path.clone()],
+        commit_message: format!(
+            "Proposed signers update for {}",
+            propose_result.project_path.relative_path().display()
+        ),
+        request_id: request_id.to_string(),
+    };
+
+    let git_actor_result = state.git_actor.ask(write_commit_request).await;
+
+    if let Err(e) = git_actor_result {
+        tracing::error!(
+            request_id = %request_id,
+            error = %e,
+            "Git actor commit failed, initiating cleanup"
+        );
+
+        match propose_result.project_path.join(PENDING_SIGNERS_DIR).await {
+            Ok(pending_dir) => {
+                let cleanup_request =
+                    crate::file_auth::actors::signers_initialiser::CleanupSignersRequest {
+                        signers_file_path: propose_result.project_path.clone(),
+                        history_file_path: None,
+                        pending_dir,
+                        request_id: request_id.to_string(),
+                    };
+
+                if let Err(cleanup_err) = state.signers_initialiser.ask(cleanup_request).await {
+                    tracing::error!(
+                        request_id = %request_id,
+                        error = %cleanup_err,
+                        "Cleanup also failed"
+                    );
+                }
+            }
+            Err(join_err) => {
+                tracing::error!(
+                    request_id = %request_id,
+                    error = %join_err,
+                    "Failed to construct pending_dir path for cleanup"
+                );
+            }
+        }
+
+        return Err(map_to_user_error(
+            e,
+            "Git write and commit operation failed",
+        ));
+    }
+
+    tracing::info!(
+        request_id = %request_id,
+        project_id = %signers_proposal.project_id,
+        "Signers update proposal completed successfully"
+    );
+
+    Ok(Json(RegisterRepoResponse {
+        success: true,
+        project_id: signers_proposal.project_id,
+        message: "Signers update proposed successfully. Collect signatures to activate."
+            .to_string(),
+        required_signers: propose_result.required_signers,
         signature_submission_url: "/v1/signatures".to_string(),
     }))
 }

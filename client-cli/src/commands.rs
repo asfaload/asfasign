@@ -19,6 +19,43 @@ use anyhow::Result;
 pub mod download;
 pub mod register_release;
 pub mod register_repo;
+pub mod update_signers;
+
+/// Shared state produced by the common key-load → fetch → hash → sign
+/// flow used by both `register-repo` and `update-signers`.
+pub(crate) struct PreparedSignersSubmission {
+    pub client: admin_lib::v1::Client,
+    pub signature: features_lib::AsfaloadSignatures,
+    pub public_key: features_lib::AsfaloadPublicKeys,
+    pub secret_key: features_lib::AsfaloadSecretKeys,
+}
+
+/// Load secret key, derive public key, fetch the signers file from the
+/// forge URL, hash it, and produce a signature.  The caller then decides
+/// which API endpoint to call with the result.
+pub(crate) async fn prepare_signers_submission(
+    backend_url: &str,
+    signers_file_url: &str,
+    secret_key_path: &std::path::PathBuf,
+    password: &str,
+) -> crate::error::Result<PreparedSignersSubmission> {
+    use features_lib::{
+        AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSecretKeys, sha512_for_content,
+    };
+
+    let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
+    let public_key = features_lib::AsfaloadPublicKeys::from_secret_key(&secret_key)?;
+    let client = admin_lib::v1::Client::new(backend_url);
+    let content = client.fetch_external_url(signers_file_url).await?;
+    let hash = sha512_for_content(content)?;
+    let signature = secret_key.sign(&hash)?;
+    Ok(PreparedSignersSubmission {
+        client,
+        signature,
+        public_key,
+        secret_key,
+    })
+}
 
 /// Dispatches the command to the appropriate handler
 pub fn handle_command(cli: &Cli) -> Result<()> {
@@ -247,6 +284,35 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(register_repo::handle_register_repo_command(
+                &url,
+                signers_file_url,
+                &secret_key_args.secret_key,
+                password.as_str(),
+                json_args.json,
+            ))?;
+        }
+        Commands::UpdateSigners {
+            signers_file_url,
+            secret_key_args,
+            password_args,
+            backend_url_args,
+            json_args,
+        } => {
+            let password = get_password(
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
+                WithoutConfirmation,
+                true,
+            )?;
+            let url = backend_url_args
+                .backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(update_signers::handle_update_signers_command(
                 &url,
                 signers_file_url,
                 &secret_key_args.secret_key,

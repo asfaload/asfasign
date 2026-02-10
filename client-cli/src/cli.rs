@@ -248,6 +248,24 @@ pub enum Commands {
         json_args: JsonArgs,
     },
 
+    /// Propose an update to an existing signers file
+    UpdateSigners {
+        /// URL to the new signers file on the forge
+        signers_file_url: String,
+
+        #[command(flatten)]
+        secret_key_args: SecretKeyArgs,
+
+        #[command(flatten)]
+        password_args: PasswordArgs,
+
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
+
     /// Download a file with signature verification
     Download {
         /// URL of the file to download (e.g., https://github.com/user/repo/releases/download/v1.0.0/file.tar.gz)
@@ -291,6 +309,7 @@ impl Commands {
             Self::SignPending { .. } => "SIGN_PENDING",
             Self::RegisterRelease { .. } => "REGISTER_RELEASE",
             Self::RegisterRepo { .. } => "REGISTER_REPO",
+            Self::UpdateSigners { .. } => "UPDATE_SIGNERS",
             Self::Download { .. } => "DOWNLOAD",
         }
     }
@@ -319,7 +338,8 @@ impl Commands {
             | Self::ListPending { json_args, .. }
             | Self::SignPending { json_args, .. }
             | Self::RegisterRelease { json_args, .. }
-            | Self::RegisterRepo { json_args, .. } => json_args.json,
+            | Self::RegisterRepo { json_args, .. }
+            | Self::UpdateSigners { json_args, .. } => json_args.json,
             Self::SignFile { .. } | Self::AddToAggregate { .. } | Self::Download { .. } => false,
         }
     }

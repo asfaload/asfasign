@@ -845,7 +845,7 @@ pub mod tests {
 
         let cleanup_request = CleanupSignersRequest {
             signers_file_path: init_result.signers_file_path.clone(),
-            history_file_path: init_result.history_file_path.clone(),
+            history_file_path: Some(init_result.history_file_path.clone()),
             pending_dir,
             request_id: "test-123".to_string(),
         };

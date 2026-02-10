@@ -2,7 +2,7 @@ use crate::error::Result;
 
 use super::prepare_signers_submission;
 
-pub async fn handle_register_repo_command(
+pub async fn handle_update_signers_command(
     backend_url: &str,
     signers_file_url: &str,
     secret_key_path: &std::path::PathBuf,
@@ -14,7 +14,7 @@ pub async fn handle_register_repo_command(
 
     let response = sub
         .client
-        .register_repo(
+        .update_signers(
             signers_file_url,
             &sub.signature,
             &sub.public_key,
@@ -25,16 +25,16 @@ pub async fn handle_register_repo_command(
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else if response.success {
-        println!("Repository registered successfully!");
+        println!("Signers update proposed successfully!");
         println!("Project ID: {}", response.project_id);
         println!(
             "Required signers ({}): {}",
             response.required_signers.len(),
             response.required_signers.join(", ")
         );
-        println!("Next step: signers must submit signatures to activate the project.");
+        println!("Next step: signers must submit signatures to activate the update.");
     } else {
-        println!("Repository registration failed: {}", response.message);
+        println!("Signers update failed: {}", response.message);
     }
 
     Ok(())

@@ -33,8 +33,27 @@ pub struct InitialiseSignersResult {
 #[derive(Debug, Clone)]
 pub struct CleanupSignersRequest {
     pub signers_file_path: NormalisedPaths,
-    pub history_file_path: NormalisedPaths,
+    /// `None` when cleaning up after a failed update (the history file
+    /// already existed and must not be removed).
+    pub history_file_path: Option<NormalisedPaths>,
     pub pending_dir: NormalisedPaths,
+    pub request_id: String,
+}
+
+#[derive(Debug)]
+pub struct ProposeSignersRequest {
+    pub project_path: NormalisedPaths,
+    pub signers_info: SignersInfo,
+    pub metadata: SignersConfigMetadata,
+    pub signature: AsfaloadSignatures,
+    pub pubkey: AsfaloadPublicKeys,
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProposeSignersResult {
+    pub project_path: NormalisedPaths,
+    pub required_signers: Vec<String>,
     pub request_id: String,
 }
 
@@ -189,6 +208,70 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
     }
 }
 
+impl Message<ProposeSignersRequest> for SignersInitialiser {
+    type Reply = Result<ProposeSignersResult, ApiError>;
+
+    #[tracing::instrument(skip(self, msg, _ctx))]
+    async fn handle(
+        &mut self,
+        msg: ProposeSignersRequest,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        let project_id = msg
+            .project_path
+            .relative_path()
+            .to_string_lossy()
+            .to_string();
+        tracing::info!(
+            request_id = %msg.request_id,
+            project_id = %project_id,
+            "SignersInitialiser received propose signers request"
+        );
+
+        let project_dir = msg.project_path.absolute_path();
+
+        // For updates, the project directory must already exist
+        if !tokio::fs::try_exists(&project_dir).await? {
+            return Err(ApiError::InvalidRequestBody(format!(
+                "Project '{}' is not registered. Register the repo first.",
+                project_id
+            )));
+        }
+
+        let json = msg.signers_info.json();
+        let meta = msg.metadata;
+        let sig = msg.signature;
+        let pk = msg.pubkey;
+        let dir = project_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            signers_file::propose_signers_file(&dir, &json, meta, &sig, &pk)
+        })
+        .await??;
+
+        tracing::info!(
+            request_id = %msg.request_id,
+            project_id = %project_id,
+            "Successfully proposed signers file update"
+        );
+
+        // Collect required signers from the *proposed* config
+        // (these are the admin/master keys that need to sign to activate)
+        let required_signers: Vec<String> = msg
+            .signers_info
+            .config()
+            .all_signer_keys()
+            .into_iter()
+            .map(|key: AsfaloadPublicKeys| key.to_base64())
+            .collect();
+
+        Ok(ProposeSignersResult {
+            project_path: msg.project_path,
+            required_signers,
+            request_id: msg.request_id,
+        })
+    }
+}
+
 impl Message<CleanupSignersRequest> for SignersInitialiser {
     type Reply = Result<(), ApiError>;
 
@@ -201,18 +284,20 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
         tracing::info!(
             request_id = %msg.request_id,
             signers_file_path = %msg.signers_file_path,
-            history_file_path = %msg.history_file_path,
+            history_file_path = ?msg.history_file_path,
             pending_dir = %msg.pending_dir,
             "Cleaning up signers files"
         );
 
         let mut had_error = false;
 
-        if let Err(e) = tokio::fs::remove_file(&msg.history_file_path).await {
+        if let Some(ref history_file_path) = msg.history_file_path
+            && let Err(e) = tokio::fs::remove_file(history_file_path).await
+        {
             had_error = true;
             tracing::warn!(
                 request_id = %msg.request_id,
-                path = %msg.history_file_path,
+                path = %history_file_path,
                 error = %e,
                 "Failed to remove history file during cleanup"
             );
