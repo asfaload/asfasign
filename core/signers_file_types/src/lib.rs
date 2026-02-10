@@ -197,18 +197,68 @@ impl SignersConfig {
             .collect()
     }
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct InitialVersion {
-    pub permalink: String,
-    #[serde(default)]
-    pub mirrors: Vec<String>,
+// Supported forges
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum Forge {
+    Github,
+    Gitlab,
 }
-impl Default for InitialVersion {
-    fn default() -> Self {
-        InitialVersion {
-            permalink: "".to_string(),
-            mirrors: vec![],
+// Metadata about the signers file retrieved from a forge
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ForgeOrigin {
+    kind: Forge,
+    url: String,
+    retrieved_at: DateTime<Utc>,
+}
+
+impl ForgeOrigin {
+    pub fn new(kind: Forge, url: String, retrieved_at: DateTime<Utc>) -> Self {
+        Self {
+            kind,
+            url,
+            retrieved_at,
+        }
+    }
+}
+
+// Metadata about the signers file submitted with the CLI
+// (only updates are possible with the CLI so the anchor trust exists for creation)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CliOrigin {
+    submitter: AsfaloadPublicKeys,
+    submitted_at: DateTime<Utc>,
+}
+
+impl CliOrigin {
+    pub fn new(submitter: AsfaloadPublicKeys, submitted_at: DateTime<Utc>) -> Self {
+        Self {
+            submitter,
+            submitted_at,
+        }
+    }
+}
+
+// Enum listing possible origins of a signers file
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SignersConfigOrigin {
+    Forge(ForgeOrigin),
+    Cli(CliOrigin),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SignersConfigMetadata {
+    data: SignersConfigOrigin,
+}
+
+impl SignersConfigMetadata {
+    pub fn from_forge(origin: ForgeOrigin) -> Self {
+        Self {
+            data: SignersConfigOrigin::Forge(origin),
+        }
+    }
+    pub fn from_cli(origin: CliOrigin) -> Self {
+        Self {
+            data: SignersConfigOrigin::Cli(origin),
         }
     }
 }

@@ -4,6 +4,9 @@ use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::AsfaloadKeyPairs;
 use signatures::types::AsfaloadPublicKeys;
 use signatures::types::AsfaloadSecretKeys;
+use signers_file_types::Forge;
+use signers_file_types::ForgeOrigin;
+use signers_file_types::SignersConfigMetadata;
 pub struct TestKeys {
     key_pairs: Vec<AsfaloadKeyPairs>,
     pub_keys: Vec<AsfaloadPublicKeys>,
@@ -53,4 +56,12 @@ pub fn pause() {
     let mut s = "".to_string();
     println!("Pausing test, press enter when done");
     let _ = std::io::stdin().read_line(&mut s);
+}
+
+pub fn test_metadata() -> SignersConfigMetadata {
+    SignersConfigMetadata::from_forge(ForgeOrigin::new(
+        Forge::Github,
+        "https://example.com/test".to_string(),
+        chrono::Utc::now(),
+    ))
 }

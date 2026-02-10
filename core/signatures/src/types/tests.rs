@@ -322,3 +322,26 @@ fn test_public_key_from_secret_key() -> Result<()> {
     assert_eq!(derived_pubkey.to_base64(), pubkey.to_base64());
     Ok(())
 }
+
+#[test]
+fn test_public_key_serde_round_trip() -> Result<()> {
+    let (pubkey, _) = get_key_pair()?;
+
+    // Serialize to JSON (should produce a base64 string)
+    let json = serde_json::to_string(&pubkey)?;
+    // The JSON value should be a quoted string matching to_base64()
+    let expected_json = format!("\"{}\"", pubkey.to_base64());
+    assert_eq!(json, expected_json);
+
+    // Deserialize back from JSON
+    let deserialized: AsfaloadPublicKeys = serde_json::from_str(&json)?;
+    assert_eq!(deserialized.to_base64(), pubkey.to_base64());
+    assert_eq!(deserialized, pubkey);
+
+    // Deserializing invalid base64 should produce an error
+    let bad_json = "\"not-a-valid-key\"";
+    let result: std::result::Result<AsfaloadPublicKeys, _> = serde_json::from_str(bad_json);
+    assert!(result.is_err());
+
+    Ok(())
+}

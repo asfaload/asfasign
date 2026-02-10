@@ -812,6 +812,7 @@ name = "client-server-integration-tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "client-cli",
  "common",
  "features_lib",
@@ -2393,9 +2394,11 @@ version = "0.1.0"
 dependencies = [
  "aggregate_signature",
  "anyhow",
+ "chrono",
  "common",
  "features_lib",
  "minisign",
+ "serde_json",
  "signatures",
  "signers_file",
  "signers_file_types",
@@ -4712,10 +4715,12 @@ name = "test_helpers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "common",
  "constants",
  "minisign",
  "signatures",
+ "signers_file_types",
 ]
 
 [[package]]

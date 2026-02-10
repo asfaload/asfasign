@@ -6,12 +6,14 @@ use features_lib::SignatureWithState;
 use features_lib::SignedFileWithKindTrait;
 use features_lib::SignersFile;
 use features_lib::SignersFileTrait;
+use features_lib::constants::{METADATA_FILE, PENDING_SIGNERS_DIR, SIGNERS_DIR};
 use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
 use signers_file::initialize_signers_file;
-use signers_file_types::SignersConfig;
+use signers_file_types::{Forge, ForgeOrigin, SignersConfig, SignersConfigMetadata};
 use std::fs;
 use tempfile::TempDir;
 use test_helpers::TestKeys;
+use test_helpers::test_metadata;
 
 #[test]
 fn basic_flow() -> Result<()> {
@@ -52,10 +54,19 @@ fn basic_flow() -> Result<()> {
         initialize_signers_file(
             root_dir,
             &signers_content,
+            test_metadata(),
             &signature1,
             &user1_keypair.public_key(),
         )?;
     }
+
+    // Verify metadata.json exists in pending signers dir
+    let pending_metadata = root_dir.join(PENDING_SIGNERS_DIR).join(METADATA_FILE);
+    assert!(
+        pending_metadata.exists(),
+        "metadata.json should exist after init"
+    );
+    let _: SignersConfigMetadata = serde_json::from_str(&fs::read_to_string(&pending_metadata)?)?;
 
     // Second user signs the signers file
     // It reads the content of the signers file proposed by user1
@@ -72,6 +83,19 @@ fn basic_flow() -> Result<()> {
         // And adds it to the signers_file signatures.
         signed_file.add_signature(signature2, user2_keypair.public_key())?;
     }
+
+    // Verify metadata.json moved to active signers dir
+    let pending_metadata = root_dir.join(PENDING_SIGNERS_DIR).join(METADATA_FILE);
+    assert!(
+        !pending_metadata.exists(),
+        "pending metadata should not exist after activation"
+    );
+    let active_metadata = root_dir.join(SIGNERS_DIR).join(METADATA_FILE);
+    assert!(
+        active_metadata.exists(),
+        "metadata.json should exist in active dir"
+    );
+    let _: SignersConfigMetadata = serde_json::from_str(&fs::read_to_string(&active_metadata)?)?;
 
     // The signers file is now active and can be used.
 

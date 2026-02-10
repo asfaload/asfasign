@@ -8,6 +8,7 @@ mod tests {
     use signers_file::initialize_signers_file;
     use signers_file_types::SignersConfig;
     use std::fs;
+    use test_helpers::test_metadata;
 
     // ========================================
     // LIST-PENDING COMMAND TESTS
@@ -76,8 +77,14 @@ mod tests {
             .expect("Failed to hash signers content");
         let signature = secret_key.sign(&signers_hash).expect("Failed to sign");
 
-        initialize_signers_file(&project_dir, &signers_content, &signature, &public_key)
-            .expect("Failed to initialize signers file");
+        initialize_signers_file(
+            &project_dir,
+            &signers_content,
+            test_metadata(),
+            &signature,
+            &public_key,
+        )
+        .expect("Failed to initialize signers file");
 
         test_harness::create_file_in_repo(&file_path, "This is a test file.")
             .await
@@ -142,8 +149,14 @@ mod tests {
             .expect("Failed to hash signers content");
         let signature = secret_key.sign(&signers_hash).expect("Failed to sign");
 
-        initialize_signers_file(&project_dir, &signers_content, &signature, &public_key)
-            .expect("Failed to initialize signers file");
+        initialize_signers_file(
+            &project_dir,
+            &signers_content,
+            test_metadata(),
+            &signature,
+            &public_key,
+        )
+        .expect("Failed to initialize signers file");
 
         // Create artifact file
         test_harness::create_file_in_repo(&file_path, "This is an artifact to be signed.")
@@ -223,8 +236,14 @@ mod tests {
         let pub_key_0 = features_lib::AsfaloadPublicKeys::from_secret_key(&secret_key_0)
             .expect("Failed to derive public key");
 
-        initialize_signers_file(&project_dir, &signers_json, &signature_0, &pub_key_0)
-            .expect("Failed to initialize signers file");
+        initialize_signers_file(
+            &project_dir,
+            &signers_json,
+            test_metadata(),
+            &signature_0,
+            &pub_key_0,
+        )
+        .expect("Failed to initialize signers file");
 
         drop(guard);
 
