@@ -4715,10 +4715,12 @@ name = "test_helpers"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "common",
  "constants",
  "minisign",
  "signatures",
+ "signers_file_types",
 ]
 
 [[package]]

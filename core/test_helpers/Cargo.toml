@@ -8,7 +8,9 @@ signatures = { path = "../signatures" }
 minisign = "0.8.0"
 constants = { path = "../constants/" }
 common = { path = "../common/" }
+signers_file_types = { path = "../signers_file_types/" }
 anyhow = "1.0.100"
+chrono = "0.4.43"
 
 [lints]
 workspace = true

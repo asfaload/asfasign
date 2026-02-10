@@ -506,18 +506,10 @@ mod tests {
     use signatures::keys::AsfaloadSignatureTrait;
     use signers_file_types::KeyFormat;
     use signers_file_types::SignerKind;
-    use signers_file_types::{Forge, ForgeOrigin};
     use std::path::PathBuf;
     use tempfile::TempDir;
     use test_helpers::TestKeys;
-
-    fn test_metadata() -> SignersConfigMetadata {
-        SignersConfigMetadata::from_forge(ForgeOrigin::new(
-            Forge::Github,
-            "https://example.com/test".to_string(),
-            chrono::Utc::now(),
-        ))
-    }
+    use test_helpers::test_metadata;
 
     fn assert_metadata_file_valid(root_dir: &Path, is_active: bool) {
         let dir_name = if is_active {
