@@ -12,6 +12,7 @@ thiserror = "2.0.17"
 tokio = "1.48.0"
 hyper = "1.0"
 rest_api_auth = { path = "../rest_api_auth/" }
+common = { path = "../core/common/" }
 sled = "0.34.7"
 config = "0.15.19"
 url = { version = "2.5.8", features = ["serde"] }

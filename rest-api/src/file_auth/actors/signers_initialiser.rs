@@ -133,9 +133,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         tokio::task::spawn_blocking(move || {
             signers_file::initialize_signers_file(&dir, &json, meta, &sig, &pk)
         })
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?
-        .map_err(|e| ApiError::ActorOperationFailed(e.to_string()))?;
+        .await??;
 
         tracing::debug!(
             request_id = %msg.request_id,

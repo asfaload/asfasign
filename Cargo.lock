@@ -3886,6 +3886,7 @@ name = "rest_api_types"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "common",
  "config",
  "git2",
  "hyper 1.8.1",
