@@ -3404,6 +3404,37 @@ mod tests {
         SignerGroup { signers, threshold }
     }
 
+    /// Create a signers config on disk at `root/SIGNERS_DIR/SIGNERS_FILE`.
+    /// Returns the path to the signers file.
+    fn write_signers_config(root: &Path, config: &SignersConfig) -> PathBuf {
+        let sig_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&sig_dir).unwrap();
+        let signers_file = sig_dir.join(SIGNERS_FILE);
+        let json = serde_json::to_string_pretty(config).unwrap();
+        fs::write(&signers_file, json).unwrap();
+        signers_file
+    }
+
+    /// Create a pending signers config on disk at `root/PENDING_SIGNERS_DIR/SIGNERS_FILE`.
+    /// Returns the path to the pending signers file.
+    fn write_pending_signers_config(root: &Path, config: &SignersConfig) -> PathBuf {
+        let pending_dir = root.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir).unwrap();
+        let signers_file = pending_dir.join(SIGNERS_FILE);
+        let json = serde_json::to_string_pretty(config).unwrap();
+        fs::write(&signers_file, json).unwrap();
+        signers_file
+    }
+
+    /// Create an artifact file at `root/nested/artifact.txt` with dummy content.
+    /// Returns the path to the artifact file.
+    fn write_artifact_file(root: &Path) -> PathBuf {
+        let artifact_path = root.join("nested/artifact.txt");
+        fs::create_dir_all(artifact_path.parent().unwrap()).unwrap();
+        fs::write(&artifact_path, "content").unwrap();
+        artifact_path
+    }
+
     #[test]
     fn test_no_new_signers_identical_configs() {
         let test_keys = TestKeys::new(3);
@@ -3622,14 +3653,12 @@ mod tests {
     fn test_get_authorized_signers_for_file_artifact_only_artifact_signers() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(4);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
 
         // Create signers config with artifact, admin, and master signers
         let artifact_group = create_group(&test_keys, vec![0, 1], 2);
         let admin_group = create_group(&test_keys, vec![2], 1);
         let master_group = create_group(&test_keys, vec![3], 1);
-
-        let signers_config = SignersConfigProposal {
+        let config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![artifact_group.clone()],
@@ -3638,15 +3667,8 @@ mod tests {
         }
         .build();
 
-        // Write signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let signers_json = serde_json::to_string_pretty(&signers_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), signers_json).unwrap();
-
-        // Create an artifact file
-        let artifact_path = temp_dir.path().join("nested/artifact.txt");
-        fs::create_dir_all(artifact_path.parent().unwrap()).unwrap();
-        fs::write(&artifact_path, "content").unwrap();
+        write_signers_config(temp_dir.path(), &config);
+        let artifact_path = write_artifact_file(temp_dir.path());
 
         // Get authorized signers
         let authorized = get_authorized_signers_for_file(&artifact_path).expect("Should succeed");
@@ -3664,12 +3686,10 @@ mod tests {
     fn test_get_authorized_signers_for_file_artifact_no_admin_or_master() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(2);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
 
         // Create signers config with only artifact signers
         let artifact_group = create_group(&test_keys, vec![0, 1], 2);
-
-        let signers_config = SignersConfigProposal {
+        let config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![artifact_group],
@@ -3678,14 +3698,8 @@ mod tests {
         }
         .build();
 
-        // Write signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let signers_json = serde_json::to_string_pretty(&signers_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), signers_json).unwrap();
-
-        // Create an artifact file
-        let artifact_path = temp_dir.path().join("artifact.txt");
-        fs::write(&artifact_path, "content").unwrap();
+        write_signers_config(temp_dir.path(), &config);
+        let artifact_path = write_artifact_file(temp_dir.path());
 
         // Get authorized signers
         let authorized = get_authorized_signers_for_file(&artifact_path).expect("Should succeed");
@@ -3700,13 +3714,11 @@ mod tests {
     fn test_get_authorized_signers_for_file_artifact_multiple_groups() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(5);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
-
         // Create signers config with multiple artifact groups
         let artifact_group1 = create_group(&test_keys, vec![0, 1], 1);
         let artifact_group2 = create_group(&test_keys, vec![2, 3], 1);
 
-        let signers_config = SignersConfigProposal {
+        let config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![artifact_group1, artifact_group2],
@@ -3715,16 +3727,9 @@ mod tests {
         }
         .build();
 
-        // Write signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let signers_json = serde_json::to_string_pretty(&signers_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), signers_json).unwrap();
+        write_signers_config(temp_dir.path(), &config);
+        let artifact_path = write_artifact_file(temp_dir.path());
 
-        // Create an artifact file
-        let artifact_path = temp_dir.path().join("artifact.txt");
-        fs::write(&artifact_path, "content").unwrap();
-
-        // Get authorized signers
         let authorized = get_authorized_signers_for_file(&artifact_path).expect("Should succeed");
 
         // Verify: All artifact signers from all groups are authorized
@@ -3740,8 +3745,6 @@ mod tests {
     fn test_get_authorized_signers_for_file_signers_update_old_new_all() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(6);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
-        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
 
         // Old config: admins (key 0), masters (key 1), artifact (key 2)
         let old_config = SignersConfigProposal {
@@ -3752,11 +3755,7 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
         }
         .build();
-
-        // Write old signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let old_json = serde_json::to_string_pretty(&old_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), old_json).unwrap();
+        write_signers_config(temp_dir.path(), &old_config);
 
         // New config: adds artifact signer (key 3), replaces admin (key 0 by key 4)
         let new_config = SignersConfigProposal {
@@ -3767,22 +3766,12 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),   // Same master
         }
         .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
-        // Write new signers file (pending)
-        fs::create_dir_all(&pending_dir).unwrap();
-        let new_json = serde_json::to_string_pretty(&new_config).unwrap();
-        fs::write(pending_dir.join(SIGNERS_FILE), new_json).unwrap();
+        let authorized =
+            get_authorized_signers_for_file(&pending_signers_file).expect("Should succeed");
 
-        // Get authorized signers for the pending signers file
-        let authorized = get_authorized_signers_for_file(pending_dir.join(SIGNERS_FILE))
-            .expect("Should succeed");
-
-        // Authorized should include:
-        // - Old admin (key 0) - can still sign from old config
-        // - Old master (key 1) - can still sign from old config
-        // - New artifact (key 3) - newly added
-        // - New admin (key 4) - can sign from new config
-        // Old artifact (key 2) is NOT authorized (not newly added)
+        // Old admin (0), old master (1), newly added artifact (3), new admin (4)
         assert_eq!(authorized.len(), 4);
         assert!(authorized.contains(test_keys.pub_key(0).unwrap()));
         assert!(authorized.contains(test_keys.pub_key(1).unwrap()));
@@ -3796,10 +3785,7 @@ mod tests {
     fn test_get_authorized_signers_for_file_signers_update_no_master_in_configs() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(4);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
-        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
 
-        // Old config: only admins (key 0), no masters
         let old_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
@@ -3808,13 +3794,8 @@ mod tests {
             master_keys: None,
         }
         .build();
+        write_signers_config(temp_dir.path(), &old_config);
 
-        // Write old signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let old_json = serde_json::to_string_pretty(&old_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), old_json).unwrap();
-
-        // New config: adds artifact signer (key 2) and admin (key 3)
         let new_config = SignersConfigProposal {
             timestamp: chrono::Utc::now() + chrono::Duration::seconds(1),
             version: 2,
@@ -3823,15 +3804,10 @@ mod tests {
             master_keys: None,
         }
         .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
-        // Write new signers file (pending)
-        fs::create_dir_all(&pending_dir).unwrap();
-        let new_json = serde_json::to_string_pretty(&new_config).unwrap();
-        fs::write(pending_dir.join(SIGNERS_FILE), new_json).unwrap();
-
-        // Get authorized signers
-        let authorized = get_authorized_signers_for_file(pending_dir.join(SIGNERS_FILE))
-            .expect("Should succeed");
+        let authorized =
+            get_authorized_signers_for_file(&pending_signers_file).expect("Should succeed");
 
         // Authorized: old admin (0), new admin (3), newly added artifact (2)
         // Old artifact (1) is NOT authorized (not newly added)
@@ -3845,10 +3821,7 @@ mod tests {
     fn test_get_authorized_signers_for_file_signers_update_only_new_signers_added() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(4);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
-        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
 
-        // Old config: admins (key 0), masters (key 1), artifact (key 2)
         let old_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
@@ -3857,11 +3830,7 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
         }
         .build();
-
-        // Write old signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let old_json = serde_json::to_string_pretty(&old_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), old_json).unwrap();
+        write_signers_config(temp_dir.path(), &old_config);
 
         // New config: identical except adds admin (key 3)
         let new_config = SignersConfigProposal {
@@ -3872,15 +3841,10 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
         }
         .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
-        // Write new signers file (pending)
-        fs::create_dir_all(&pending_dir).unwrap();
-        let new_json = serde_json::to_string_pretty(&new_config).unwrap();
-        fs::write(pending_dir.join(SIGNERS_FILE), new_json).unwrap();
-
-        // Get authorized signers
-        let authorized = get_authorized_signers_for_file(pending_dir.join(SIGNERS_FILE))
-            .expect("Should succeed");
+        let authorized =
+            get_authorized_signers_for_file(&pending_signers_file).expect("Should succeed");
 
         // All admins and masters from both configs should be authorized
         // Old artifact (2) is NOT authorized (not newly added)
@@ -3896,9 +3860,7 @@ mod tests {
     fn test_get_authorized_signers_for_file_initial_signers() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(4);
-        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
 
-        // Create initial signers config with all types of signers
         let config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
@@ -3907,15 +3869,10 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
         }
         .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
 
-        // Write initial signers file (in pending dir)
-        fs::create_dir_all(&pending_dir).unwrap();
-        let config_json = serde_json::to_string_pretty(&config).unwrap();
-        fs::write(pending_dir.join(SIGNERS_FILE), config_json).unwrap();
-
-        // Get authorized signers
-        let authorized = get_authorized_signers_for_file(pending_dir.join(SIGNERS_FILE))
-            .expect("Should succeed");
+        let authorized =
+            get_authorized_signers_for_file(&pending_signers_file).expect("Should succeed");
 
         // All signers in the config should be authorized
         assert_eq!(authorized.len(), 4);
