@@ -479,6 +479,11 @@ pub fn get_missing_signers<P: AsRef<Path>>(
         return Err(AggregateSignatureError::SignatureAlreadyComplete);
     }
 
+    // Guard: error if pending signatures already meet completeness criteria
+    if is_aggregate_signature_complete(file_path, true).unwrap_or(false) {
+        return Err(AggregateSignatureError::SignatureAlreadyComplete);
+    }
+
     // Load current pending signatures (empty HashMap if no file yet)
     let sig_file_path = pending_signatures_path_for(file_path)?;
     let signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures> =
@@ -4083,9 +4088,12 @@ mod tests {
             ],
         );
 
-        let missing = get_missing_signers(&artifact_path).expect("Should succeed");
-
-        assert!(missing.is_empty());
+        let result = get_missing_signers(&artifact_path);
+        assert!(
+            matches!(result, Err(AggregateSignatureError::SignatureAlreadyComplete)),
+            "Expected SignatureAlreadyComplete when all signers have signed, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -4174,6 +4182,55 @@ mod tests {
     }
 
     #[test]
+    fn test_get_missing_signers_signers_update_partial_but_ready_to_transition_to_complete() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(5);
+
+        let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+        }
+        .build();
+        write_signers_config(temp_dir.path(), &old_config);
+
+        let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now() + chrono::Duration::seconds(1),
+            version: 2,
+            artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+        }
+        .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
+
+        // Keys 0,3 and 4 have signed, which makes it ready to transition to complete.
+        write_pending_signatures(
+            &pending_signers_file,
+            &[
+                (
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.sec_key(0).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(3).unwrap().clone(),
+                    test_keys.sec_key(3).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(4).unwrap().clone(),
+                    test_keys.sec_key(4).unwrap().clone(),
+                ),
+            ],
+        );
+
+        let missing_result = get_missing_signers(&pending_signers_file);
+
+        assert!(missing_result.is_err());
+    }
+
+    #[test]
     fn test_get_missing_signers_signers_update_all_signed() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(5);
@@ -4221,9 +4278,12 @@ mod tests {
             ],
         );
 
-        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
-
-        assert!(missing.is_empty());
+        let result = get_missing_signers(&pending_signers_file);
+        assert!(
+            matches!(result, Err(AggregateSignatureError::SignatureAlreadyComplete)),
+            "Expected SignatureAlreadyComplete when all signers have signed, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -4317,9 +4377,12 @@ mod tests {
             ],
         );
 
-        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
-
-        assert!(missing.is_empty());
+        let result = get_missing_signers(&pending_signers_file);
+        assert!(
+            matches!(result, Err(AggregateSignatureError::SignatureAlreadyComplete)),
+            "Expected SignatureAlreadyComplete when all signers have signed, got {:?}",
+            result
+        );
     }
 
     #[test]
