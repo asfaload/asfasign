@@ -198,13 +198,13 @@ impl SignersConfig {
     }
 }
 // Supported forges
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Forge {
     Github,
     Gitlab,
 }
 // Metadata about the signers file retrieved from a forge
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForgeOrigin {
     kind: Forge,
     url: String,
@@ -223,7 +223,7 @@ impl ForgeOrigin {
 
 // Metadata about the signers file submitted with the CLI
 // (only updates are possible with the CLI so the anchor trust exists for creation)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CliOrigin {
     submitter: AsfaloadPublicKeys,
     submitted_at: DateTime<Utc>,
@@ -239,13 +239,13 @@ impl CliOrigin {
 }
 
 // Enum listing possible origins of a signers file
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SignersConfigOrigin {
     Forge(ForgeOrigin),
     Cli(CliOrigin),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignersConfigMetadata {
     data: SignersConfigOrigin,
 }
