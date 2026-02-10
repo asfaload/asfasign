@@ -14,5 +14,6 @@ fn test_register_repo_help_shows_usage() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("SIGNERS_FILE_URL"))
-        .stdout(predicate::str::contains("backend-url"));
+        .stdout(predicate::str::contains("backend-url"))
+        .stdout(predicate::str::contains("secret-key"));
 }

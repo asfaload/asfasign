@@ -23,6 +23,7 @@ version = "0.1.0"
 dependencies = [
  "features_lib",
  "http 0.2.12",
+ "mockito",
  "reqwest 0.11.27",
  "rest_api_auth",
  "rest_api_types",
@@ -3829,6 +3830,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "signatures",
+ "signers_file",
  "signers_file_types",
  "sled",
  "tempfile",
@@ -3884,6 +3886,7 @@ name = "rest_api_types"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "common",
  "config",
  "git2",
  "hyper 1.8.1",

@@ -227,9 +227,20 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::RegisterRepo {
             signers_file_url,
+            secret_key_args,
+            password_args,
             backend_url_args,
             json_args,
         } => {
+            let password = get_password(
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
+                WithoutConfirmation,
+                true,
+            )?;
             let url = backend_url_args
                 .backend_url
                 .clone()
@@ -238,6 +249,8 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             runtime.block_on(register_repo::handle_register_repo_command(
                 &url,
                 signers_file_url,
+                &secret_key_args.secret_key,
+                password.as_str(),
                 json_args.json,
             ))?;
         }

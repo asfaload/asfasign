@@ -106,6 +106,9 @@ pub mod errors {
 
         #[error("Signature already complete: {0}")]
         SignatureAlreadyComplete(String),
+
+        #[error("Signers file error: {0}")]
+        SignersFileError(#[from] common::errors::SignersFileError),
     }
 
     #[derive(Error, Debug)]
@@ -196,6 +199,7 @@ pub mod errors {
                 ApiError::InvalidGitHubUrl(_) => StatusCode::BAD_REQUEST,
                 ApiError::FileNotFound(_) => StatusCode::NOT_FOUND,
                 ApiError::SignatureAlreadyComplete(_) => StatusCode::CONFLICT,
+                ApiError::SignersFileError(_) => StatusCode::BAD_REQUEST,
             }
         }
     }
@@ -253,6 +257,10 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RegisterRepoRequest {
         pub signers_file_url: String,
+        /// Base64-encoded signature of the SHA-512 hash of the signers file content
+        pub signature: String,
+        /// Base64-encoded public key of the submitter
+        pub public_key: String,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -3,17 +3,20 @@ use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use signatures::keys::AsfaloadPublicKeyTrait;
-use signatures::types::AsfaloadPublicKeys;
-use signers_file_types::SignersConfig;
+use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
+use signers_file_types::SignersConfigMetadata;
 use std::path::PathBuf;
 
-use crate::helpers::create_empty_aggregate_signature;
+use crate::file_auth::actors::forge_signers_validator::SignersInfo;
 use crate::path_validation::NormalisedPaths;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct InitialiseSignersRequest {
     pub project_path: NormalisedPaths,
-    pub signers_config: SignersConfig,
+    pub signers_info: SignersInfo,
+    pub metadata: SignersConfigMetadata,
+    pub signature: AsfaloadSignatures,
+    pub pubkey: AsfaloadPublicKeys,
     pub git_repo_path: PathBuf,
     pub request_id: String,
 }
@@ -104,79 +107,41 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             .await?;
         let history_normalised_paths = project_normalised_paths.join(SIGNERS_HISTORY_FILE).await?;
 
-        // Need to assign to avoid
-        //    rustc: temporary value dropped while borrowed
-        //    consider using a `let` binding to create a longer lived value [E0716]
-        let target = signers_normalised_paths.absolute_path();
-        let pending_dir_result = target.parent();
-        let pending_dir = pending_dir_result.ok_or_else(|| {
-            ApiError::InternalServerError(
-                "Could not determine parent dir of signers file path".to_string(),
-            )
-        })?;
-
-        tokio::fs::create_dir_all(&pending_dir).await.map_err(|e| {
+        // Create the project directory (initialize_signers_file will create PENDING_SIGNERS_DIR inside it)
+        tokio::fs::create_dir_all(&project_dir).await.map_err(|e| {
             tracing::error!(
                 request_id = %msg.request_id,
                 error = %e,
-                path = %pending_dir.display(),
-                "Failed to create signers directory"
+                path = %project_dir.display(),
+                "Failed to create project directory"
             );
             ApiError::DirectoryCreationFailed(format!(
                 "Failed to create directory {}: {}",
-                pending_dir.display(),
+                project_dir.display(),
                 e
             ))
         })?;
 
-        let signers_json = serde_json::to_string_pretty(&msg.signers_config).map_err(|e| {
-            tracing::error!(
-                request_id = %msg.request_id,
-                error = %e,
-                "Failed to serialize signers config"
-            );
-            ApiError::FileWriteFailed(format!("Failed to serialize signers config: {}", e))
-        })?;
-
-        tokio::fs::write(&signers_normalised_paths, signers_json)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    request_id = %msg.request_id,
-                    error = %e,
-                    path = %signers_normalised_paths,
-                    "Failed to write signers file"
-                );
-                ApiError::FileWriteFailed(format!(
-                    "Failed to write signers file {}: {}",
-                    signers_normalised_paths, e
-                ))
-            })?;
+        // Use initialize_signers_file from signers_file crate to create the
+        // pending signers directory, write the signers file, metadata, and
+        // record the first signature.
+        let dir = project_dir.clone();
+        let json = msg.signers_info.json();
+        let meta = msg.metadata;
+        let sig = msg.signature;
+        let pk = msg.pubkey;
+        tokio::task::spawn_blocking(move || {
+            signers_file::initialize_signers_file(&dir, &json, meta, &sig, &pk)
+        })
+        .await??;
 
         tracing::debug!(
             request_id = %msg.request_id,
             file_path = %signers_normalised_paths,
-            "Wrote signers file to disk"
+            "Initialized signers file via signers_file crate"
         );
 
-        // Write an empty signature file so missing signatures can be reported
-        let signature_file_path = create_empty_aggregate_signature(&signers_normalised_paths)
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    request_id = %msg.request_id,
-                    error = %e,
-                    "Failed to create empty aggregate signature for signers file"
-                );
-                e
-            })?;
-
-        tracing::debug!(
-            request_id = %msg.request_id,
-            file_path = %signature_file_path,
-            "Created empty aggregate signature file"
-        );
-
+        // Write the history file (initialize_signers_file does not create this)
         let history_json = "[]";
         tokio::fs::write(&history_normalised_paths, history_json)
             .await
@@ -195,12 +160,13 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
 
         tracing::debug!(
             request_id = %msg.request_id,
-            file_path = %signers_normalised_paths,
+            file_path = %history_normalised_paths,
             "Wrote history file to disk"
         );
 
         let required_signers: Vec<String> = msg
-            .signers_config
+            .signers_info
+            .config()
             .all_signer_keys()
             .into_iter()
             .map(|key: AsfaloadPublicKeys| key.to_base64())
@@ -282,28 +248,71 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use common::fs::names::pending_signatures_path_for;
+    use features_lib::{AsfaloadSecretKeyTrait, SignersConfig, sha512_for_content};
     use kameo::actor::Spawn;
+    use signers_file_types::{Forge, ForgeOrigin};
+
+    /// Helper to create test InitialiseSignersRequest with proper signing.
+    /// Uses the provided test_keys at index 0 for signing (the signer must be in the config).
+    fn build_test_init_request(
+        project_path: NormalisedPaths,
+        config: &SignersConfig,
+        test_keys: &test_helpers::TestKeys,
+        git_repo_path: std::path::PathBuf,
+        request_id: &str,
+    ) -> InitialiseSignersRequest {
+        let signers_json = serde_json::to_string_pretty(config).unwrap();
+        let signers_info = SignersInfo::from_string(&signers_json).unwrap();
+        let hash = sha512_for_content(signers_json.as_bytes().to_vec()).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+        let signature = secret_key.sign(&hash).unwrap();
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+        let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+            Forge::Github,
+            "https://github.com/test/repo/blob/main/signers.json".to_string(),
+            chrono::Utc::now(),
+        ));
+        InitialiseSignersRequest {
+            project_path,
+            signers_info,
+            metadata,
+            signature,
+            pubkey,
+            git_repo_path,
+            request_id: request_id.to_string(),
+        }
+    }
 
     #[tokio::test]
     async fn test_signers_initialiser_creates_directory_structure() -> Result<()> {
         let temp = tempfile::TempDir::new().unwrap();
         let git_path = temp.path().to_path_buf();
 
-        let test_keys = test_helpers::TestKeys::new(1);
+        // Use 2 signers so the signature stays pending after init (only key 0 signs).
+        // With 1 signer, initialize_signers_file completes the signature immediately
+        // and activates the signers file, renaming pending -> active.
+        let test_keys = test_helpers::TestKeys::new(2);
 
         let config = SignersConfig::with_artifact_signers_only(
             1,
-            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+            (
+                vec![
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
+                ],
+                2,
+            ),
         )
         .unwrap();
 
         let project_path = get_project_normalised_paths(&git_path, "github.com/test/repo").await?;
-        let request = InitialiseSignersRequest {
+        let request = build_test_init_request(
             project_path,
-            signers_config: config,
-            git_repo_path: git_path.clone(),
-            request_id: "test-123".to_string(),
-        };
+            &config,
+            &test_keys,
+            git_path.clone(),
+            "test-123",
+        );
 
         let actor_ref = SignersInitialiser::spawn(());
         let result = actor_ref.ask(request).await;
@@ -317,13 +326,21 @@ mod tests {
         assert!(init_result.signers_file_path.absolute_path().exists());
         assert!(init_result.history_file_path.absolute_path().exists());
 
+        // Verify metadata.json was created
+        let metadata_path = signers_pending_dir.join("metadata.json");
+        assert!(metadata_path.exists(), "metadata.json should exist");
+
         let pending_signers_sig_path =
-            pending_signatures_path_for(&init_result.signers_file_path.absolute_path())?;
+            pending_signatures_path_for(init_result.signers_file_path.absolute_path())?;
         assert!(pending_signers_sig_path.exists());
+        // With initialize_signers_file, the aggregate signature contains the first signature (not empty)
         let pending_sig_content = tokio::fs::read_to_string(&pending_signers_sig_path)
             .await
             .unwrap();
-        assert_eq!(pending_sig_content, "{}");
+        assert_ne!(
+            pending_sig_content, "{}",
+            "Aggregate signature should contain the first signature"
+        );
 
         let history_content =
             tokio::fs::read_to_string(&init_result.history_file_path.absolute_path())
@@ -360,12 +377,13 @@ mod tests {
         .unwrap();
         let project_path = get_project_normalised_paths(&git_path, "github.com/test/repo").await?;
 
-        let request = InitialiseSignersRequest {
+        let request = build_test_init_request(
             project_path,
-            signers_config: config,
-            git_repo_path: git_path.clone(),
-            request_id: "test-456".to_string(),
-        };
+            &config,
+            &test_keys,
+            git_path.clone(),
+            "test-456",
+        );
 
         let actor_ref = SignersInitialiser::spawn(());
         let result = actor_ref.ask(request).await;
@@ -404,12 +422,13 @@ mod tests {
         let project_path =
             get_project_normalised_paths(&git_path, "github.com/test/existing").await?;
 
-        let request = InitialiseSignersRequest {
+        let request = build_test_init_request(
             project_path,
-            signers_config: config,
-            git_repo_path: git_path.clone(),
-            request_id: "test-exists-001".to_string(),
-        };
+            &config,
+            &test_keys,
+            git_path.clone(),
+            "test-exists-001",
+        );
 
         let actor_ref = SignersInitialiser::spawn(());
         let result = actor_ref.ask(request).await;
