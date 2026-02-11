@@ -1,5 +1,4 @@
 use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
-use chrono::{DateTime, Utc};
 use common::{
     SignedFileLoader,
     errors::{AggregateSignatureError, SignersFileError},
@@ -16,8 +15,8 @@ use signatures::{
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
 use signers_file_types::{
-    SignersConfig, SignersConfigMetadata, SignersConfigProposal, parse_signers_config,
-    parse_signers_config_proposal,
+    HistoryEntry, HistoryFile, SignersConfig, SignersConfigMetadata, SignersConfigProposal,
+    parse_signers_config, parse_signers_config_proposal,
 };
 use std::{borrow::Borrow, collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
 //
@@ -424,84 +423,6 @@ where
     Ok(())
 }
 
-use serde::{Deserialize, Serialize};
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct HistoryEntry {
-    /// ISO8601 formatted UTC date and time
-    pub obsoleted_at: DateTime<Utc>,
-    /// Content of the signers file
-    pub signers_file: SignersConfig,
-    /// Content of the signatures file (map from public key string to signature string)
-    pub signatures: HashMap<String, String>,
-    /// Metadata about the origin of the signers file
-    pub metadata: SignersConfigMetadata,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct HistoryFile {
-    /// Array of history entries, sorted chronologically
-    pub entries: Vec<HistoryEntry>,
-}
-
-impl HistoryFile {
-    /// Create a new empty history file
-    pub fn new() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
-    }
-
-    /// Add a new entry to the history file
-    pub fn add_entry(&mut self, entry: HistoryEntry) {
-        self.entries.push(entry);
-    }
-
-    /// Get all entries in the history file
-    pub fn entries(&self) -> &Vec<HistoryEntry> {
-        &self.entries
-    }
-
-    /// Get the most recent entry in the history file
-    pub fn latest_entry(&self) -> Option<&HistoryEntry> {
-        self.entries.last()
-    }
-
-    /// Parse a history file from JSON string
-    pub fn from_json(json_str: &str) -> Result<Self, serde_json::Error> {
-        serde_json::from_str(json_str)
-    }
-
-    /// Convert the history file to a JSON string
-    pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(self)
-    }
-
-    /// Load a history file from the given path
-    pub fn load_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, SignersFileError> {
-        let content = std::fs::read_to_string(path)?;
-        let history_file = Self::from_json(&content)?;
-        Ok(history_file)
-    }
-
-    /// Save the history file to the given path
-    pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), SignersFileError> {
-        let json = self.to_json()?;
-        std::fs::write(path, json)?;
-        Ok(())
-    }
-}
-
-impl Default for HistoryFile {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Helper function to parse a history file from JSON string
-pub fn parse_history_file(json_str: &str) -> Result<HistoryFile, serde_json::Error> {
-    HistoryFile::from_json(json_str)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,6 +435,7 @@ mod tests {
     use signatures::keys::AsfaloadSignatureTrait;
     use signers_file_types::KeyFormat;
     use signers_file_types::SignerKind;
+    use signers_file_types::parse_history_file;
     use std::path::PathBuf;
     use tempfile::TempDir;
     use test_helpers::TestKeys;

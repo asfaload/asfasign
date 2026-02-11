@@ -4,7 +4,7 @@ use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
-use signers_file_types::SignersConfigMetadata;
+use signers_file_types::{HistoryFile, SignersConfigMetadata};
 use std::path::PathBuf;
 
 use crate::file_auth::actors::forge_signers_validator::SignersInfo;
@@ -162,7 +162,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         );
 
         // Write the history file (initialize_signers_file does not create this)
-        let history_json = signers_file::HistoryFile::new().to_json().map_err(|e| {
+        let history_json = HistoryFile::new().to_json().map_err(|e| {
             ApiError::FileWriteFailed(format!("Failed to serialize history file: {}", e))
         })?;
         tokio::fs::write(&history_normalised_paths, history_json)
@@ -470,8 +470,8 @@ mod tests {
             tokio::fs::read_to_string(&init_result.history_file_path.absolute_path())
                 .await
                 .unwrap();
-        let history: signers_file::HistoryFile =
-            serde_json::from_str(&history_content).expect("History file should be valid JSON");
+        let history =
+            HistoryFile::from_json(&history_content).expect("History file should be valid JSON");
         assert!(
             history.entries().is_empty(),
             "History file should have no entries"

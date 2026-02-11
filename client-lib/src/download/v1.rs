@@ -3,9 +3,8 @@ use crate::types::DownloadCallbacks;
 use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
 use crate::{AsfaloadLibResult, ClientLibError, DownloadResult};
 use features_lib::{
-    AsfaloadIndex,
-    constants::INDEX_FILE,
-    local_signers_path_for, parse_signers_config, sha512_for_content, signatures_path_for,
+    AsfaloadIndex, constants::INDEX_FILE, local_signers_path_for, parse_signers_config,
+    sha512_for_content, signatures_path_for,
 };
 use reqwest::{Client, Url};
 use std::path::PathBuf;

@@ -6,6 +6,7 @@ use std::{
 use anyhow::Result;
 use common::fs::names::pending_signatures_path_for;
 use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use signers_file_types::HistoryFile;
 pub fn setup_asfald_project_registered<P: AsRef<Path>>(
     repo_path: P,
     signers_config_json: impl Into<String>,
@@ -31,7 +32,8 @@ pub fn setup_asfald_project_registered<P: AsRef<Path>>(
 
     // Create the history file (this is NOT a signers directory)
     let history_file = asfald_dir.join(SIGNERS_HISTORY_FILE);
-    fs::write(&history_file, r#"{"entries":[]}"#)?;
+    let content = HistoryFile::new().to_json()?;
+    fs::write(&history_file, content)?;
 
     // Create the pending signers directory and file
     let pending_signers_dir = asfald_dir.join(PENDING_SIGNERS_DIR);
