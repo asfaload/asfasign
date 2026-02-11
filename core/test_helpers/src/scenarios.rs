@@ -31,7 +31,7 @@ pub fn setup_asfald_project_registered<P: AsRef<Path>>(
 
     // Create the history file (this is NOT a signers directory)
     let history_file = asfald_dir.join(SIGNERS_HISTORY_FILE);
-    fs::write(&history_file, "{}")?;
+    fs::write(&history_file, r#"{"entries":[]}"#)?;
 
     // Create the pending signers directory and file
     let pending_signers_dir = asfald_dir.join(PENDING_SIGNERS_DIR);
