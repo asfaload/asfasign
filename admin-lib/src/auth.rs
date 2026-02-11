@@ -11,7 +11,7 @@ pub(crate) fn create_auth_headers(
     secret_key: &AsfaloadSecretKeys,
 ) -> AdminLibResult<HeaderMap> {
     let auth_info = AuthInfo::new(payload.to_string());
-    let auth_signature = AuthSignature::new(&auth_info, &secret_key)?;
+    let auth_signature = AuthSignature::new(&auth_info, secret_key)?;
 
     let mut headers = HeaderMap::new();
 

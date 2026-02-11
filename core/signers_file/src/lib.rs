@@ -4274,7 +4274,7 @@ mod tests {
         );
         assert!(result.is_err());
         match result.unwrap_err() {
-            SignersFileError::IoError(e) => {} // Expected
+            SignersFileError::IoError(_e) => {} // Expected
             e => panic!("Expected IoError, got {}", e),
         }
 
