@@ -480,7 +480,7 @@ pub fn get_missing_signers<P: AsRef<Path>>(
     }
 
     // Guard: return empty set if pending signatures already meet completeness criteria
-    if is_aggregate_signature_complete(file_path, true).unwrap_or(false) {
+    if is_aggregate_signature_complete(file_path, true)? {
         return Ok(HashSet::new());
     }
 
