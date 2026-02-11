@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use crate::file_auth::actors::forge_signers_validator::SignersInfo;
 use crate::path_validation::NormalisedPaths;
 
+const ACTOR_NAME: &str = "signers_initialiser";
 #[derive(Debug)]
 pub struct InitialiseSignersRequest {
     pub project_path: NormalisedPaths,
@@ -232,6 +233,7 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
             .to_string_lossy()
             .to_string();
         tracing::info!(
+            actor = %ACTOR_NAME,
             request_id = %msg.request_id,
             project_id = %project_id,
             "SignersInitialiser received propose signers request"
@@ -241,6 +243,12 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
 
         // For updates, the project directory must already exist
         if !tokio::fs::try_exists(&project_dir).await? {
+            tracing::error!(
+                actor = %ACTOR_NAME,
+                request_id = %msg.request_id,
+                project_id = %project_id,
+                "Project is not registered yet, which is required for a signers update."
+            );
             return Err(ApiError::InvalidRequestBody(format!(
                 "Project '{}' is not registered. Register the repo first.",
                 project_id
@@ -255,7 +263,27 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
         tokio::task::spawn_blocking(move || {
             signers_file::propose_signers_file(&dir, &json, meta, &sig, &pk)
         })
-        .await??;
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                actor = %ACTOR_NAME,
+                request_id = %msg.request_id,
+                project_id = %project_id,
+                error = %e,
+                "Spawn error"
+            );
+            e
+        })?
+        .map_err(|e| {
+            tracing::error!(
+                actor = %ACTOR_NAME,
+                request_id = %msg.request_id,
+                project_id = %project_id,
+                error = %e,
+                "propose_signers_file error"
+            );
+            e
+        })?;
 
         tracing::info!(
             request_id = %msg.request_id,
