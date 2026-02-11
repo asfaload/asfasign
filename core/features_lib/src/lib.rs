@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 pub use common::errors;
 use common::fs::names::{find_global_signers_for, pending_signers_file_in_dir};
+pub use common::fs::names::{local_signers_path_for, signatures_path_for};
 pub use common::{
     ArtifactMarker, FileType, InitialSignersFileMarker, SignedFile, SignersFileMarker,
     errors::SignedFileError,
