@@ -226,4 +226,22 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn construct_signers_file_path_standard_github_url() {
+        use features_lib::constants::INDEX_FILE;
+        use features_lib::local_signers_path_for;
+        let url =
+            Url::parse("https://github.com/owner/repo/releases/download/v1.0/file.tar.gz")
+                .unwrap();
+        let forge = get_forge(&url).unwrap();
+        let signers_filename = local_signers_path_for(INDEX_FILE).unwrap();
+        let result = forge
+            .construct_file_repo_path(&url, &signers_filename.to_string_lossy())
+            .unwrap();
+        assert_eq!(
+            result,
+            "github.com/owner/repo/releases/tag/v1.0/asfaload.index.json.signers.json"
+        );
+    }
 }
