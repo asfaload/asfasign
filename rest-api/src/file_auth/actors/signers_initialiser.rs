@@ -162,9 +162,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         );
 
         // Write the history file (initialize_signers_file does not create this)
-        let history_json = HistoryFile::new().to_json().map_err(|e| {
-            ApiError::FileWriteFailed(format!("Failed to serialize history file: {}", e))
-        })?;
+        let history_json = HistoryFile::new().to_json()?;
         tokio::fs::write(&history_normalised_paths, history_json)
             .await
             .map_err(|e| {
