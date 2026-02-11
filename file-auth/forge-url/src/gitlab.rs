@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::file_auth::forges_types::{ForgeTrait, ForgeUrlError};
+use crate::{ForgeTrait, ForgeUrlError};
 
 #[derive(Debug, Clone)]
 pub struct GitLabRepoInfo {
@@ -150,16 +150,16 @@ mod tests {
         )
         .unwrap();
         let result = GitLabRepoInfo::new(&url).unwrap();
-        assert_eq!(result.namespace, "namespace");
-        assert_eq!(result.project, "project");
-        assert_eq!(result.branch, "main");
+        assert_eq!(result.owner(), "namespace");
+        assert_eq!(result.repo(), "project");
+        assert_eq!(result.branch(), "main");
         assert_eq!(
-            result.file_path,
+            result.file_path(),
             PathBuf::from("asfaload.initial_signers.json")
         );
         assert_eq!(
-            result.raw_url,
-            url::Url::parse(
+            result.raw_url(),
+            &url::Url::parse(
                 "https://gitlab.com/namespace/project/-/raw/main/asfaload.initial_signers.json"
             )
             .unwrap()
@@ -172,11 +172,11 @@ mod tests {
             url::Url::parse("https://gitlab.com/namespace/project/-/raw/develop/path/to/file.json")
                 .unwrap();
         let result = GitLabRepoInfo::new(&url).unwrap();
-        assert_eq!(result.namespace, "namespace");
-        assert_eq!(result.project, "project");
-        assert_eq!(result.branch, "develop");
-        assert_eq!(result.file_path, PathBuf::from("path/to/file.json"));
-        assert_eq!(result.raw_url, url);
+        assert_eq!(result.owner(), "namespace");
+        assert_eq!(result.repo(), "project");
+        assert_eq!(result.branch(), "develop");
+        assert_eq!(result.file_path(), PathBuf::from("path/to/file.json"));
+        assert_eq!(result.raw_url(), &url);
     }
 
     #[test]
@@ -185,13 +185,13 @@ mod tests {
             url::Url::parse("https://gitlab.com/group/subgroup/project/-/blob/main/file.json")
                 .unwrap();
         let result = GitLabRepoInfo::new(&url).unwrap();
-        assert_eq!(result.namespace, "group/subgroup");
-        assert_eq!(result.project, "project");
-        assert_eq!(result.branch, "main");
-        assert_eq!(result.file_path, PathBuf::from("file.json"));
+        assert_eq!(result.owner(), "group/subgroup");
+        assert_eq!(result.repo(), "project");
+        assert_eq!(result.branch(), "main");
+        assert_eq!(result.file_path(), PathBuf::from("file.json"));
         assert_eq!(
-            result.raw_url,
-            url::Url::parse("https://gitlab.com/group/subgroup/project/-/raw/main/file.json")
+            result.raw_url(),
+            &url::Url::parse("https://gitlab.com/group/subgroup/project/-/raw/main/file.json")
                 .unwrap()
         );
     }

@@ -244,14 +244,16 @@ impl Client {
     /// Fetch content from an external URL.
     ///
     /// Makes a GET request to an arbitrary URL, reusing the internal HTTP client.
+    /// Uses `text()` instead of `bytes()` to match the server's content handling,
+    /// ensuring consistent hash computation (avoids BOM/encoding mismatches).
     pub async fn fetch_external_url(&self, url: &str) -> AdminLibResult<Vec<u8>> {
         let response = self.client.get(url).send().await?;
 
         let response = Self::check_response_status(response).await?;
 
-        let content = response.bytes().await?;
+        let content = response.text().await?;
 
-        Ok(content.to_vec())
+        Ok(content.into_bytes())
     }
 }
 

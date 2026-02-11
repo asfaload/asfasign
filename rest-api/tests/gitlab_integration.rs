@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use rest_api::file_auth::forges::ForgeTrait;
-    use rest_api::file_auth::{github::GitHubRepoInfo, gitlab::GitLabRepoInfo};
+    use forge_url::{ForgeTrait, github::GitHubRepoInfo, gitlab::GitLabRepoInfo};
 
     #[test]
     fn test_forge_trait_polymorphism() {

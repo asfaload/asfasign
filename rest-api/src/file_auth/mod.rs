@@ -1,9 +1,7 @@
 pub mod actors;
 pub mod forges;
-pub mod forges_types;
 pub mod github;
 pub mod github_release;
-pub mod gitlab;
 pub mod gitlab_release;
 pub mod release_types;
 pub mod releasers;

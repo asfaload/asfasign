@@ -42,11 +42,20 @@ pub(crate) async fn prepare_signers_submission(
     use features_lib::{
         AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSecretKeys, sha512_for_content,
     };
+    use forge_url::ForgeTrait;
 
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
     let public_key = features_lib::AsfaloadPublicKeys::from_secret_key(&secret_key)?;
     let client = admin_lib::v1::Client::new(backend_url);
-    let content = client.fetch_external_url(signers_file_url).await?;
+
+    let parsed_url = url::Url::parse(signers_file_url)
+        .map_err(|e| crate::error::ClientCliError::InvalidInput(format!("Invalid URL: {}", e)))?;
+    let forge_info = forge_url::ForgeInfo::new(&parsed_url).map_err(|e| {
+        crate::error::ClientCliError::InvalidInput(format!("Unsupported forge URL: {}", e))
+    })?;
+    let content = client
+        .fetch_external_url(forge_info.raw_url().as_str())
+        .await?;
     let hash = sha512_for_content(content)?;
     let signature = secret_key.sign(&hash)?;
     Ok(PreparedSignersSubmission {

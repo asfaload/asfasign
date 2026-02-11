@@ -21,6 +21,8 @@ rest_api_types = { path = "../rest_api_types" }
 sha2 = "0.10"
 hex = "0.4"
 client-lib = { path = "../client-lib" }
+forge-url = { path = "../file-auth/forge-url" }
+url = "2.5"
 
 [dev-dependencies]
 mockito = "1.2"
