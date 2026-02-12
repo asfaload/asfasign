@@ -291,16 +291,32 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
             project_id = %project_id,
             "Successfully proposed signers file update"
         );
+        let project_normalised_paths = msg.project_path.clone();
+        let signers_normalised_paths = project_normalised_paths
+            .join(PENDING_SIGNERS_DIR)
+            .await?
+            .join(SIGNERS_FILE)
+            .await?;
 
         // Collect required signers from the *proposed* config
         // (these are the admin/master keys that need to sign to activate)
-        let required_signers: Vec<String> = msg
-            .signers_info
-            .config()
-            .all_signer_keys()
-            .into_iter()
-            .map(|key: AsfaloadPublicKeys| key.to_base64())
-            .collect();
+        let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+        let required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
+            features_lib::aggregate_signature_helpers::get_missing_signers(&pending_signers_path)
+        })
+        .await?
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %msg.request_id,
+                error = %e,
+                path = %signers_normalised_paths,
+                "Failed to compute missing signers"
+            );
+            ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
+        })?
+        .into_iter()
+        .map(|key: AsfaloadPublicKeys| key.to_base64())
+        .collect();
 
         Ok(ProposeSignersResult {
             project_path: msg.project_path,
