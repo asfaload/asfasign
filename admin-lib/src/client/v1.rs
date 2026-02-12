@@ -5,6 +5,7 @@ use features_lib::{
     AsfaloadSignatures,
 };
 use reqwest::header::CONTENT_TYPE;
+use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
     ListPendingResponse, RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse,
     SubmitSignatureRequest, SubmitSignatureResponse,
@@ -204,17 +205,54 @@ impl Client {
         Self::parse_json_response(response).await
     }
 
+    /// Propose a signers file update to the backend.
+    ///
+    /// Makes an authenticated POST request to `/v1/update_signers`.
+    pub async fn update_signers(
+        &self,
+        signers_file_url: &str,
+        signature: &AsfaloadSignatures,
+        public_key: &AsfaloadPublicKeys,
+        secret_key: &AsfaloadSecretKeys,
+    ) -> AdminLibResult<UpdateRepoSignersResponse> {
+        let url = format!("{}/v1/update_signers", self.base_url);
+
+        let request = UpdateRepoSignersRequest {
+            signers_file_url: signers_file_url.to_string(),
+            signature: signature.to_base64(),
+            public_key: public_key.to_base64(),
+        };
+
+        // Serialize once: same bytes for auth and body
+        let payload_string = serde_json::to_string(&request)?;
+        let headers = create_auth_headers(&payload_string, secret_key)?;
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .header(CONTENT_TYPE, "application/json")
+            .body(payload_string)
+            .send()
+            .await?;
+
+        let response = Self::check_response_status(response).await?;
+        Self::parse_json_response(response).await
+    }
+
     /// Fetch content from an external URL.
     ///
     /// Makes a GET request to an arbitrary URL, reusing the internal HTTP client.
+    /// Uses `text()` instead of `bytes()` to match the server's content handling,
+    /// ensuring consistent hash computation (avoids BOM/encoding mismatches).
     pub async fn fetch_external_url(&self, url: &str) -> AdminLibResult<Vec<u8>> {
         let response = self.client.get(url).send().await?;
 
         let response = Self::check_response_status(response).await?;
 
-        let content = response.bytes().await?;
+        let content = response.text().await?;
 
-        Ok(content.to_vec())
+        Ok(content.into_bytes())
     }
 }
 
@@ -303,7 +341,7 @@ mod tests {
             .create_async()
             .await;
 
-        let client = Client::new(&server.url());
+        let client = Client::new(server.url());
         let result = client
             .fetch_external_url(&format!("{}/test-file.json", server.url()))
             .await;
@@ -323,7 +361,7 @@ mod tests {
             .create_async()
             .await;
 
-        let client = Client::new(&server.url());
+        let client = Client::new(server.url());
         let result = client
             .fetch_external_url(&format!("{}/missing", server.url()))
             .await;

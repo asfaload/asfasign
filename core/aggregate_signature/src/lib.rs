@@ -463,6 +463,55 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
         Ok(is_complete)
     }
 }
+/// Returns the set of authorized signers who have not yet provided a valid
+/// pending signature for the given file. Works for all signed file types
+/// (artifacts, signers file updates, initial signers files).
+///
+/// Returns an empty set if the signatures are already complete.
+// FIXME: is_aggregate_signature_complete reads the signatures, and
+// get_individual_signatures_for_file does the same.
+pub fn get_missing_signers<P: AsRef<Path>>(
+    file_path: P,
+) -> Result<HashSet<AsfaloadPublicKeys>, AggregateSignatureError> {
+    let file_path = file_path.as_ref();
+
+    // Guard: return empty set if file in question does not exist
+    if !file_path.exists() {
+        return Ok(HashSet::new());
+    }
+    // Guard: return empty set if signatures are already complete
+    let complete_sig_path_in_pending_dir = signatures_path_for(file_path)?;
+    if complete_sig_path_in_pending_dir.exists() {
+        return Ok(HashSet::new());
+    }
+
+    // Guard: return empty set if pending signatures already meet completeness criteria
+    if is_aggregate_signature_complete(file_path, true)? {
+        return Ok(HashSet::new());
+    }
+
+    // Load current pending signatures (empty HashMap if no file yet)
+    let sig_file_path = pending_signatures_path_for(file_path)?;
+    let signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures> =
+        get_individual_signatures_from_file(&sig_file_path)?;
+
+    // Compute hash (this is what signers sign)
+    let file_hash = common::sha512_for_file(file_path)?;
+
+    // Get all authorized signers for this file type
+    let authorized = get_authorized_signers_for_file(file_path)?;
+
+    // Return those without a valid signature
+    Ok(authorized
+        .into_iter()
+        .filter(|pubkey| {
+            signatures
+                .get(pubkey)
+                .is_none_or(|sig| pubkey.verify(sig, &file_hash).is_err())
+        })
+        .collect())
+}
+
 /// Load signatures for a file from the corresponding signatures file
 // This function cannot be placed in the implementation of AggregateSignature<P,S,SS> because
 // in that case, it would have to be called like this: AggregateSignature<_,_,_>::load_for_file(...)
@@ -686,7 +735,7 @@ mod tests {
         SIGNERS_FILE, SIGNERS_SUFFIX,
     };
     use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
-    use signatures::types::AsfaloadKeyPairs;
+    use signatures::types::{AsfaloadKeyPairs, AsfaloadSecretKeys};
     use signers_file_types::{
         KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig,
         SignersConfigProposal,
@@ -3404,6 +3453,54 @@ mod tests {
         SignerGroup { signers, threshold }
     }
 
+    /// Create a signers config on disk at `root/SIGNERS_DIR/SIGNERS_FILE`.
+    /// Returns the path to the signers file.
+    fn write_signers_config(root: &Path, config: &SignersConfig) -> PathBuf {
+        let sig_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&sig_dir).unwrap();
+        let signers_file = sig_dir.join(SIGNERS_FILE);
+        let json = serde_json::to_string_pretty(config).unwrap();
+        fs::write(&signers_file, json).unwrap();
+        signers_file
+    }
+
+    /// Create a pending signers config on disk at `root/PENDING_SIGNERS_DIR/SIGNERS_FILE`.
+    /// Returns the path to the pending signers file.
+    fn write_pending_signers_config(root: &Path, config: &SignersConfig) -> PathBuf {
+        let pending_dir = root.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&pending_dir).unwrap();
+        let signers_file = pending_dir.join(SIGNERS_FILE);
+        let json = serde_json::to_string_pretty(config).unwrap();
+        fs::write(&signers_file, json).unwrap();
+        signers_file
+    }
+
+    /// Create an artifact file at `root/nested/artifact.txt` with dummy content.
+    /// Returns the path to the artifact file.
+    fn write_artifact_file(root: &Path) -> PathBuf {
+        let artifact_path = root.join("nested/artifact.txt");
+        fs::create_dir_all(artifact_path.parent().unwrap()).unwrap();
+        fs::write(&artifact_path, "content").unwrap();
+        artifact_path
+    }
+
+    /// Write a pending signatures file for the given file path.
+    /// `signed_keys` contains (pubkey, secret_key) pairs that should have valid signatures.
+    fn write_pending_signatures(
+        file_path: &Path,
+        signed_keys: &[(AsfaloadPublicKeys, AsfaloadSecretKeys)],
+    ) {
+        let file_hash = sha512_for_file(file_path).unwrap();
+        let mut sig_map: HashMap<String, String> = HashMap::new();
+        for (pubkey, seckey) in signed_keys {
+            let sig = seckey.sign(&file_hash).unwrap();
+            sig_map.insert(pubkey.to_base64(), sig.to_base64());
+        }
+        let sig_path = pending_signatures_path_for(file_path).unwrap();
+        let json = serde_json::to_string_pretty(&sig_map).unwrap();
+        fs::write(sig_path, json).unwrap();
+    }
+
     #[test]
     fn test_no_new_signers_identical_configs() {
         let test_keys = TestKeys::new(3);
@@ -3622,14 +3719,12 @@ mod tests {
     fn test_get_authorized_signers_for_file_artifact_only_artifact_signers() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(4);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
 
         // Create signers config with artifact, admin, and master signers
         let artifact_group = create_group(&test_keys, vec![0, 1], 2);
         let admin_group = create_group(&test_keys, vec![2], 1);
         let master_group = create_group(&test_keys, vec![3], 1);
-
-        let signers_config = SignersConfigProposal {
+        let config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![artifact_group.clone()],
@@ -3638,15 +3733,8 @@ mod tests {
         }
         .build();
 
-        // Write signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let signers_json = serde_json::to_string_pretty(&signers_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), signers_json).unwrap();
-
-        // Create an artifact file
-        let artifact_path = temp_dir.path().join("nested/artifact.txt");
-        fs::create_dir_all(artifact_path.parent().unwrap()).unwrap();
-        fs::write(&artifact_path, "content").unwrap();
+        write_signers_config(temp_dir.path(), &config);
+        let artifact_path = write_artifact_file(temp_dir.path());
 
         // Get authorized signers
         let authorized = get_authorized_signers_for_file(&artifact_path).expect("Should succeed");
@@ -3664,12 +3752,10 @@ mod tests {
     fn test_get_authorized_signers_for_file_artifact_no_admin_or_master() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(2);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
 
         // Create signers config with only artifact signers
         let artifact_group = create_group(&test_keys, vec![0, 1], 2);
-
-        let signers_config = SignersConfigProposal {
+        let config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![artifact_group],
@@ -3678,14 +3764,8 @@ mod tests {
         }
         .build();
 
-        // Write signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let signers_json = serde_json::to_string_pretty(&signers_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), signers_json).unwrap();
-
-        // Create an artifact file
-        let artifact_path = temp_dir.path().join("artifact.txt");
-        fs::write(&artifact_path, "content").unwrap();
+        write_signers_config(temp_dir.path(), &config);
+        let artifact_path = write_artifact_file(temp_dir.path());
 
         // Get authorized signers
         let authorized = get_authorized_signers_for_file(&artifact_path).expect("Should succeed");
@@ -3700,13 +3780,11 @@ mod tests {
     fn test_get_authorized_signers_for_file_artifact_multiple_groups() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(5);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
-
         // Create signers config with multiple artifact groups
         let artifact_group1 = create_group(&test_keys, vec![0, 1], 1);
         let artifact_group2 = create_group(&test_keys, vec![2, 3], 1);
 
-        let signers_config = SignersConfigProposal {
+        let config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
             artifact_signers: vec![artifact_group1, artifact_group2],
@@ -3715,16 +3793,9 @@ mod tests {
         }
         .build();
 
-        // Write signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let signers_json = serde_json::to_string_pretty(&signers_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), signers_json).unwrap();
+        write_signers_config(temp_dir.path(), &config);
+        let artifact_path = write_artifact_file(temp_dir.path());
 
-        // Create an artifact file
-        let artifact_path = temp_dir.path().join("artifact.txt");
-        fs::write(&artifact_path, "content").unwrap();
-
-        // Get authorized signers
         let authorized = get_authorized_signers_for_file(&artifact_path).expect("Should succeed");
 
         // Verify: All artifact signers from all groups are authorized
@@ -3740,8 +3811,6 @@ mod tests {
     fn test_get_authorized_signers_for_file_signers_update_old_new_all() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(6);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
-        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
 
         // Old config: admins (key 0), masters (key 1), artifact (key 2)
         let old_config = SignersConfigProposal {
@@ -3752,11 +3821,7 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
         }
         .build();
-
-        // Write old signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let old_json = serde_json::to_string_pretty(&old_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), old_json).unwrap();
+        write_signers_config(temp_dir.path(), &old_config);
 
         // New config: adds artifact signer (key 3), replaces admin (key 0 by key 4)
         let new_config = SignersConfigProposal {
@@ -3767,22 +3832,12 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),   // Same master
         }
         .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
-        // Write new signers file (pending)
-        fs::create_dir_all(&pending_dir).unwrap();
-        let new_json = serde_json::to_string_pretty(&new_config).unwrap();
-        fs::write(pending_dir.join(SIGNERS_FILE), new_json).unwrap();
+        let authorized =
+            get_authorized_signers_for_file(&pending_signers_file).expect("Should succeed");
 
-        // Get authorized signers for the pending signers file
-        let authorized = get_authorized_signers_for_file(pending_dir.join(SIGNERS_FILE))
-            .expect("Should succeed");
-
-        // Authorized should include:
-        // - Old admin (key 0) - can still sign from old config
-        // - Old master (key 1) - can still sign from old config
-        // - New artifact (key 3) - newly added
-        // - New admin (key 4) - can sign from new config
-        // Old artifact (key 2) is NOT authorized (not newly added)
+        // Old admin (0), old master (1), newly added artifact (3), new admin (4)
         assert_eq!(authorized.len(), 4);
         assert!(authorized.contains(test_keys.pub_key(0).unwrap()));
         assert!(authorized.contains(test_keys.pub_key(1).unwrap()));
@@ -3796,10 +3851,7 @@ mod tests {
     fn test_get_authorized_signers_for_file_signers_update_no_master_in_configs() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(4);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
-        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
 
-        // Old config: only admins (key 0), no masters
         let old_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
@@ -3808,13 +3860,8 @@ mod tests {
             master_keys: None,
         }
         .build();
+        write_signers_config(temp_dir.path(), &old_config);
 
-        // Write old signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let old_json = serde_json::to_string_pretty(&old_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), old_json).unwrap();
-
-        // New config: adds artifact signer (key 2) and admin (key 3)
         let new_config = SignersConfigProposal {
             timestamp: chrono::Utc::now() + chrono::Duration::seconds(1),
             version: 2,
@@ -3823,15 +3870,10 @@ mod tests {
             master_keys: None,
         }
         .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
-        // Write new signers file (pending)
-        fs::create_dir_all(&pending_dir).unwrap();
-        let new_json = serde_json::to_string_pretty(&new_config).unwrap();
-        fs::write(pending_dir.join(SIGNERS_FILE), new_json).unwrap();
-
-        // Get authorized signers
-        let authorized = get_authorized_signers_for_file(pending_dir.join(SIGNERS_FILE))
-            .expect("Should succeed");
+        let authorized =
+            get_authorized_signers_for_file(&pending_signers_file).expect("Should succeed");
 
         // Authorized: old admin (0), new admin (3), newly added artifact (2)
         // Old artifact (1) is NOT authorized (not newly added)
@@ -3845,10 +3887,7 @@ mod tests {
     fn test_get_authorized_signers_for_file_signers_update_only_new_signers_added() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(4);
-        let sig_dir = temp_dir.path().join(SIGNERS_DIR);
-        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
 
-        // Old config: admins (key 0), masters (key 1), artifact (key 2)
         let old_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
@@ -3857,11 +3896,7 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
         }
         .build();
-
-        // Write old signers file
-        fs::create_dir_all(&sig_dir).unwrap();
-        let old_json = serde_json::to_string_pretty(&old_config).unwrap();
-        fs::write(sig_dir.join(SIGNERS_FILE), old_json).unwrap();
+        write_signers_config(temp_dir.path(), &old_config);
 
         // New config: identical except adds admin (key 3)
         let new_config = SignersConfigProposal {
@@ -3872,15 +3907,10 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
         }
         .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
-        // Write new signers file (pending)
-        fs::create_dir_all(&pending_dir).unwrap();
-        let new_json = serde_json::to_string_pretty(&new_config).unwrap();
-        fs::write(pending_dir.join(SIGNERS_FILE), new_json).unwrap();
-
-        // Get authorized signers
-        let authorized = get_authorized_signers_for_file(pending_dir.join(SIGNERS_FILE))
-            .expect("Should succeed");
+        let authorized =
+            get_authorized_signers_for_file(&pending_signers_file).expect("Should succeed");
 
         // All admins and masters from both configs should be authorized
         // Old artifact (2) is NOT authorized (not newly added)
@@ -3896,9 +3926,7 @@ mod tests {
     fn test_get_authorized_signers_for_file_initial_signers() {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(4);
-        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
 
-        // Create initial signers config with all types of signers
         let config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version: 1,
@@ -3907,15 +3935,10 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
         }
         .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
 
-        // Write initial signers file (in pending dir)
-        fs::create_dir_all(&pending_dir).unwrap();
-        let config_json = serde_json::to_string_pretty(&config).unwrap();
-        fs::write(pending_dir.join(SIGNERS_FILE), config_json).unwrap();
-
-        // Get authorized signers
-        let authorized = get_authorized_signers_for_file(pending_dir.join(SIGNERS_FILE))
-            .expect("Should succeed");
+        let authorized =
+            get_authorized_signers_for_file(&pending_signers_file).expect("Should succeed");
 
         // All signers in the config should be authorized
         assert_eq!(authorized.len(), 4);
@@ -3945,6 +3968,419 @@ mod tests {
         }
     }
 
+    // ---------------------------------
+    // Test get_missing_signers
+    // ---------------------------------
+
+    #[test]
+    fn test_get_missing_signers_returns_empty_when_complete() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(2);
+
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 1)],
+            admin_keys: None,
+            master_keys: None,
+        }
+        .build();
+        write_signers_config(temp_dir.path(), &config);
+
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        // Write a complete signatures file (not pending)
+        let complete_sig_path = signatures_path_for(&artifact_path).unwrap();
+        fs::write(&complete_sig_path, "{}").unwrap();
+
+        let missing = get_missing_signers(&artifact_path).expect("Should succeed");
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn test_get_missing_signers_artifact_no_signatures() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(3);
+
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+            master_keys: None,
+        }
+        .build();
+        write_signers_config(temp_dir.path(), &config);
+
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        let missing = get_missing_signers(&artifact_path).expect("Should succeed");
+
+        // Only artifact signers (0, 1) are authorized, not admin (2)
+        assert_eq!(missing.len(), 2);
+        assert!(missing.contains(test_keys.pub_key(0).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(1).unwrap()));
+        assert!(!missing.contains(test_keys.pub_key(2).unwrap()));
+    }
+
+    #[test]
+    fn test_get_missing_signers_artifact_partial_signatures() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(3);
+
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1, 2], 2)],
+            admin_keys: None,
+            master_keys: None,
+        }
+        .build();
+        write_signers_config(temp_dir.path(), &config);
+
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        // Key 0 has signed
+        write_pending_signatures(
+            &artifact_path,
+            &[(
+                test_keys.pub_key(0).unwrap().clone(),
+                test_keys.sec_key(0).unwrap().clone(),
+            )],
+        );
+
+        let missing = get_missing_signers(&artifact_path).expect("Should succeed");
+
+        // Key 0 signed, so only keys 1 and 2 are missing
+        assert_eq!(missing.len(), 2);
+        assert!(!missing.contains(test_keys.pub_key(0).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(1).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(2).unwrap()));
+    }
+
+    #[test]
+    fn test_get_missing_signers_artifact_all_signed() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(2);
+
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            admin_keys: None,
+            master_keys: None,
+        }
+        .build();
+        write_signers_config(temp_dir.path(), &config);
+
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        // Both keys have signed
+        write_pending_signatures(
+            &artifact_path,
+            &[
+                (
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.sec_key(0).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(1).unwrap().clone(),
+                    test_keys.sec_key(1).unwrap().clone(),
+                ),
+            ],
+        );
+
+        let missing = get_missing_signers(&artifact_path).expect("Should succeed");
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn test_get_missing_signers_signers_update_no_signatures() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(5);
+
+        // Old config: admin (0), master (1), artifact (2)
+        let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+        }
+        .build();
+        write_signers_config(temp_dir.path(), &old_config);
+
+        // New config: adds artifact (3), new admin (4)
+        let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now() + chrono::Duration::seconds(1),
+            version: 2,
+            artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+        }
+        .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
+
+        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
+
+        // Authorized: old admin (0), old master (1), newly added artifact (3), new admin (4)
+        assert_eq!(missing.len(), 4);
+        assert!(missing.contains(test_keys.pub_key(0).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(1).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(3).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(4).unwrap()));
+    }
+
+    #[test]
+    fn test_get_missing_signers_signers_update_partial() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(5);
+
+        let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+        }
+        .build();
+        write_signers_config(temp_dir.path(), &old_config);
+
+        let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now() + chrono::Duration::seconds(1),
+            version: 2,
+            artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+        }
+        .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
+
+        // Keys 0 and 3 have signed
+        write_pending_signatures(
+            &pending_signers_file,
+            &[
+                (
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.sec_key(0).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(3).unwrap().clone(),
+                    test_keys.sec_key(3).unwrap().clone(),
+                ),
+            ],
+        );
+
+        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
+
+        // Keys 1 and 4 still need to sign
+        assert_eq!(missing.len(), 2);
+        assert!(missing.contains(test_keys.pub_key(1).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(4).unwrap()));
+    }
+
+    #[test]
+    fn test_get_missing_signers_signers_update_partial_but_ready_to_transition_to_complete() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(5);
+
+        let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+        }
+        .build();
+        write_signers_config(temp_dir.path(), &old_config);
+
+        let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now() + chrono::Duration::seconds(1),
+            version: 2,
+            artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+        }
+        .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
+
+        // Keys 0,3 and 4 have signed, which makes it ready to transition to complete.
+        write_pending_signatures(
+            &pending_signers_file,
+            &[
+                (
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.sec_key(0).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(3).unwrap().clone(),
+                    test_keys.sec_key(3).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(4).unwrap().clone(),
+                    test_keys.sec_key(4).unwrap().clone(),
+                ),
+            ],
+        );
+
+        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn test_get_missing_signers_signers_update_all_signed() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(5);
+
+        let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+        }
+        .build();
+        write_signers_config(temp_dir.path(), &old_config);
+
+        let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now() + chrono::Duration::seconds(1),
+            version: 2,
+            artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+        }
+        .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
+
+        // All authorized keys have signed
+        write_pending_signatures(
+            &pending_signers_file,
+            &[
+                (
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.sec_key(0).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(1).unwrap().clone(),
+                    test_keys.sec_key(1).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(3).unwrap().clone(),
+                    test_keys.sec_key(3).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(4).unwrap().clone(),
+                    test_keys.sec_key(4).unwrap().clone(),
+                ),
+            ],
+        );
+
+        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn test_get_missing_signers_initial_no_signatures() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(4);
+
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
+        }
+        .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
+
+        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
+
+        // All signers should be missing
+        assert_eq!(missing.len(), 4);
+        assert!(missing.contains(test_keys.pub_key(0).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(1).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(2).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(3).unwrap()));
+    }
+
+    #[test]
+    fn test_get_missing_signers_initial_one_signed() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(3);
+
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+            master_keys: None,
+        }
+        .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
+
+        // Key 0 has signed
+        write_pending_signatures(
+            &pending_signers_file,
+            &[(
+                test_keys.pub_key(0).unwrap().clone(),
+                test_keys.sec_key(0).unwrap().clone(),
+            )],
+        );
+
+        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
+
+        assert_eq!(missing.len(), 2);
+        assert!(!missing.contains(test_keys.pub_key(0).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(1).unwrap()));
+        assert!(missing.contains(test_keys.pub_key(2).unwrap()));
+    }
+
+    #[test]
+    fn test_get_missing_signers_initial_all_signed() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(3);
+
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+            master_keys: None,
+        }
+        .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
+
+        // All keys have signed
+        write_pending_signatures(
+            &pending_signers_file,
+            &[
+                (
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.sec_key(0).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(1).unwrap().clone(),
+                    test_keys.sec_key(1).unwrap().clone(),
+                ),
+                (
+                    test_keys.pub_key(2).unwrap().clone(),
+                    test_keys.sec_key(2).unwrap().clone(),
+                ),
+            ],
+        );
+
+        let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
+        assert!(missing.is_empty());
+    }
+
+    #[test]
+    fn test_get_missing_signers_inexisting_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let inexisting_file = temp_dir.path().join("my_inexisting_file");
+        let missing = get_missing_signers(&inexisting_file).expect("Should succeed");
+        assert!(missing.is_empty());
+    }
     #[test]
     fn test_check_signers_comprehensive() -> Result<()> {
         // Create test keys and data

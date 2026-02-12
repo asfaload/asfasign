@@ -20,7 +20,12 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
         .map_err(|e| ApiError::InvalidFilePath(format!("Invalid git repo path: {}", e)))?;
     let app_state = init_state(canonical_repo_path, config.clone());
     let governor_conf = GovernorConfigBuilder::default()
-        .per_second(10)
+        // Beware, `.per_second(10) is not 10 req/s. From the doc: "Set the interval after which one element of
+        // the quota is replenished in seconds."
+        // To allow 10 rqs/s, we do `.per_millisecond(100)` to replenish an element after 100ms, ie
+        // 10 request are allowed per second.
+        // https://docs.rs/tower_governor/latest/tower_governor/governor/struct.GovernorConfigBuilder.html#method.per_second
+        .per_millisecond(100)
         .burst_size(20)
         .finish()
         .ok_or_else(|| {

@@ -9,7 +9,7 @@ use features_lib::SignersFileTrait;
 use features_lib::constants::{METADATA_FILE, PENDING_SIGNERS_DIR, SIGNERS_DIR};
 use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
 use signers_file::initialize_signers_file;
-use signers_file_types::{Forge, ForgeOrigin, SignersConfig, SignersConfigMetadata};
+use signers_file_types::{SignersConfig, SignersConfigMetadata};
 use std::fs;
 use tempfile::TempDir;
 use test_helpers::TestKeys;

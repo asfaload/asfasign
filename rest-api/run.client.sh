@@ -40,29 +40,75 @@ echo "## Listing pending sigs for key2"
 cargo run --quiet -- list-pending --secret-key ../rest-api/private/key2 -u http://localhost:3000 --password secret
 ### sign
 echo "## Signing signers file"
-cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key1 --password secret $pending_signers_file
 cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key2 --password secret $pending_signers_file
+echo "This should complete the signature"
 cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key3 --password secret $pending_signers_file
+
+echo "error if key1 signs again as it transitioned to complete and was renamed"
+cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key1 --password secret $pending_signers_file || true
 
 #After signing, we can add a release.
 
 ### Add a release
 
-echo "## Registering release with key3"
+echo "## Registering release with key3. Note this does not sign it!"
 cargo run --quiet -- register-release  --secret-key ../rest-api/private/key3 --password secret $release_url
-
 ### list pending signatures
-echo "## Listing pending sigs for key1"
-cargo run --quiet -- list-pending --secret-key ../rest-api/private/key1 -u http://localhost:3000 --password secret
+echo "## Listing pending sigs for key3"
+cargo run --quiet -- list-pending --secret-key ../rest-api/private/key3 -u http://localhost:3000 --password secret
 
 ### Sign index file
 echo "## Signing index file"
 cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key1 --password secret $release_index
 cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key2 --password secret $release_index
+echo "threshold was 2, so previous signature completed the process"
+echo "key 3 can thus not sign it anymore"
+cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key3 --password secret $release_index || true
 
 ## Download a file
 echo "Downloading release artifact"
-cargo run --quiet -- download -o /tmp/downloader_${RANDOM} https://github.com/asfaload/asfald/releases/download/v0.9.0/asfald-x86_64-unknown-linux-musl
+cargo run --quiet -- download -o /tmp/downloader_${RANDOM} https://github.com/asfaload/asfald/releases/download/v0.6.0/asfald-x86_64-unknown-linux-musl.tar.gz
+
+################################################################################
+# Updating signers file
+################################################################################
+
+echo "Update signers file with key1"
+cargo run -- update-signers --secret-key ../rest-api/private/key1 -p secret https://github.com/asfaload/asfald/blob/signers_file/asfaload_signers_file_update_01.json
+
+echo "should be none as key1 submitted"
+cargo run --quiet -- list-pending --secret-key ../rest-api/private/key1 -u http://localhost:3000 --password secret
+echo "should show pending for key2"
+cargo run --quiet -- list-pending --secret-key ../rest-api/private/key2 -u http://localhost:3000 --password secret
+
+
+echo "signing with key2:"
+cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key2 --password secret $pending_signers_file
+echo "this should activate the new signers file"
+cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key4 --password secret $pending_signers_file
+
+echo "Downloading release artifact signed with signers file in history"
+cargo run --quiet -- download -o /tmp/downloader_${RANDOM} https://github.com/asfaload/asfald/releases/download/v0.6.0/asfald-x86_64-unknown-linux-musl.tar.gz
+
+################################################################################
+# Registering a release with new signers file
+################################################################################
+
+echo "## Registering other release with key3"
+cargo run --quiet -- register-release  --secret-key ../rest-api/private/key3 --password secret $release_url_2
+
+### list pending signatures
+echo "## Listing pending sigs for key1"
+cargo run --quiet -- list-pending --secret-key ../rest-api/private/key3 -u http://localhost:3000 --password secret
+
+### Sign index file
+echo "## Signing index file with keys 1,2,4. So key 3 does not sign"
+cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key1 --password secret $release_index_2
+cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key2 --password secret $release_index_2
+cargo run --quiet -- sign-pending  --secret-key ../rest-api/private/key4 --password secret $release_index_2
+
+echo "Downloading artifact"
+cargo run --quiet -- download -o /tmp/downloader_${RANDOM} https://github.com/asfaload/asfald/releases/download/v0.8.0/asfald-x86_64-unknown-linux-musl.tar.gz
 
 cat <<EOF
 ####################

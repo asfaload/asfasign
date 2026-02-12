@@ -3,9 +3,8 @@ use crate::types::DownloadCallbacks;
 use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
 use crate::{AsfaloadLibResult, ClientLibError, DownloadResult};
 use features_lib::{
-    AsfaloadIndex,
-    constants::{INDEX_FILE, SIGNATURES_SUFFIX},
-    parse_signers_config, sha512_for_content,
+    AsfaloadIndex, constants::INDEX_FILE, local_signers_path_for, parse_signers_config,
+    sha512_for_content, signatures_path_for,
 };
 use reqwest::{Client, Url};
 use std::path::PathBuf;
@@ -35,7 +34,10 @@ pub async fn download_file_with_verification(
     let forge = get_forge(&url)?;
     let index_file_path = forge.construct_index_file_path(&url)?;
 
-    let signers_url = format!("{}/v1/get-signers/{}", backend_url, index_file_path);
+    let signers_filename = local_signers_path_for(INDEX_FILE)?;
+    let signers_file_path =
+        forge.construct_file_repo_path(&url, &signers_filename.to_string_lossy())?;
+    let signers_url = format!("{}/v1/files/{}", backend_url, signers_file_path);
     let signers_content =
         download_file(&client, &signers_url, &DownloadCallbacks::default()).await?;
     callbacks.emit_signers_downloaded(signers_content.len());
@@ -47,8 +49,9 @@ pub async fn download_file_with_verification(
     callbacks.emit_index_downloaded(index_content.len());
     let index: AsfaloadIndex = serde_json::from_slice(&index_content)?;
 
+    let signatures_filename = signatures_path_for(INDEX_FILE)?;
     let signatures_file_path =
-        forge.construct_file_repo_path(&url, &format!("{}.{}", INDEX_FILE, SIGNATURES_SUFFIX))?;
+        forge.construct_file_repo_path(&url, &signatures_filename.to_string_lossy())?;
     let signatures_url = format!("{}/v1/files/{}", backend_url, signatures_file_path);
     let signatures_content =
         download_file(&client, &signatures_url, &DownloadCallbacks::default()).await?;

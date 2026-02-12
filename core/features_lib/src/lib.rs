@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 pub use common::errors;
 use common::fs::names::{find_global_signers_for, pending_signers_file_in_dir};
+pub use common::fs::names::{local_signers_path_for, signatures_path_for};
 pub use common::{
     ArtifactMarker, FileType, InitialSignersFileMarker, SignedFile, SignersFileMarker,
     errors::SignedFileError,
@@ -169,7 +170,7 @@ pub mod aggregate_signature_helpers {
     use std::{collections::HashMap, path::Path};
 
     pub use aggregate_signature::{
-        check_groups, get_authorized_signers_for_file, load_signers_config,
+        check_groups, get_authorized_signers_for_file, get_missing_signers, load_signers_config,
     };
     use aggregate_signature::{
         get_individual_signatures_from_bytes as get_individual_signatures_from_bytes_ori,

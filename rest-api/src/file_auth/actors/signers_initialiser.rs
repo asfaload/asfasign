@@ -4,12 +4,13 @@ use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
-use signers_file_types::SignersConfigMetadata;
+use signers_file_types::{HistoryFile, SignersConfigMetadata};
 use std::path::PathBuf;
 
 use crate::file_auth::actors::forge_signers_validator::SignersInfo;
 use crate::path_validation::NormalisedPaths;
 
+const ACTOR_NAME: &str = "signers_initialiser";
 #[derive(Debug)]
 pub struct InitialiseSignersRequest {
     pub project_path: NormalisedPaths,
@@ -33,8 +34,27 @@ pub struct InitialiseSignersResult {
 #[derive(Debug, Clone)]
 pub struct CleanupSignersRequest {
     pub signers_file_path: NormalisedPaths,
-    pub history_file_path: NormalisedPaths,
+    /// `None` when cleaning up after a failed update (the history file
+    /// already existed and must not be removed).
+    pub history_file_path: Option<NormalisedPaths>,
     pub pending_dir: NormalisedPaths,
+    pub request_id: String,
+}
+
+#[derive(Debug)]
+pub struct ProposeSignersRequest {
+    pub project_path: NormalisedPaths,
+    pub signers_info: SignersInfo,
+    pub metadata: SignersConfigMetadata,
+    pub signature: AsfaloadSignatures,
+    pub pubkey: AsfaloadPublicKeys,
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProposeSignersResult {
+    pub project_path: NormalisedPaths,
+    pub required_signers: Vec<String>,
     pub request_id: String,
 }
 
@@ -142,7 +162,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         );
 
         // Write the history file (initialize_signers_file does not create this)
-        let history_json = "[]";
+        let history_json = HistoryFile::new().to_json()?;
         tokio::fs::write(&history_normalised_paths, history_json)
             .await
             .map_err(|e| {
@@ -164,13 +184,23 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             "Wrote history file to disk"
         );
 
-        let required_signers: Vec<String> = msg
-            .signers_info
-            .config()
-            .all_signer_keys()
-            .into_iter()
-            .map(|key: AsfaloadPublicKeys| key.to_base64())
-            .collect();
+        let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+        let required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
+            features_lib::aggregate_signature_helpers::get_missing_signers(&pending_signers_path)
+        })
+        .await?
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %msg.request_id,
+                error = %e,
+                path = %signers_normalised_paths,
+                "Failed to compute missing signers"
+            );
+            ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
+        })?
+        .into_iter()
+        .map(|key: AsfaloadPublicKeys| key.to_base64())
+        .collect();
 
         tracing::info!(
             request_id = %msg.request_id,
@@ -189,6 +219,113 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
     }
 }
 
+impl Message<ProposeSignersRequest> for SignersInitialiser {
+    type Reply = Result<ProposeSignersResult, ApiError>;
+
+    #[tracing::instrument(skip(self, msg, _ctx))]
+    async fn handle(
+        &mut self,
+        msg: ProposeSignersRequest,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        let project_id = msg
+            .project_path
+            .relative_path()
+            .to_string_lossy()
+            .to_string();
+        tracing::info!(
+            actor = %ACTOR_NAME,
+            request_id = %msg.request_id,
+            project_id = %project_id,
+            "SignersInitialiser received propose signers request"
+        );
+
+        let project_dir = msg.project_path.absolute_path();
+
+        // For updates, the project directory must already exist
+        if !tokio::fs::try_exists(&project_dir).await? {
+            tracing::error!(
+                actor = %ACTOR_NAME,
+                request_id = %msg.request_id,
+                project_id = %project_id,
+                "Project is not registered yet, which is required for a signers update."
+            );
+            return Err(ApiError::InvalidRequestBody(format!(
+                "Project '{}' is not registered. Register the repo first.",
+                project_id
+            )));
+        }
+
+        let json = msg.signers_info.json();
+        let meta = msg.metadata;
+        let sig = msg.signature;
+        let pk = msg.pubkey;
+        let dir = project_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            signers_file::propose_signers_file(&dir, &json, meta, &sig, &pk)
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                actor = %ACTOR_NAME,
+                request_id = %msg.request_id,
+                project_id = %project_id,
+                error = %e,
+                "Spawn error"
+            );
+            e
+        })?
+        .map_err(|e| {
+            tracing::error!(
+                actor = %ACTOR_NAME,
+                request_id = %msg.request_id,
+                project_id = %project_id,
+                error = %e,
+                "propose_signers_file error"
+            );
+            e
+        })?;
+
+        tracing::info!(
+            request_id = %msg.request_id,
+            project_id = %project_id,
+            "Successfully proposed signers file update"
+        );
+        let project_normalised_paths = msg.project_path.clone();
+        let signers_normalised_paths = project_normalised_paths
+            .join(PENDING_SIGNERS_DIR)
+            .await?
+            .join(SIGNERS_FILE)
+            .await?;
+
+        // Collect required signers from the *proposed* config
+        // (these are the admin/master keys that need to sign to activate)
+        let pending_signers_path = signers_normalised_paths.absolute_path().to_path_buf();
+        let required_signers: Vec<String> = tokio::task::spawn_blocking(move || {
+            features_lib::aggregate_signature_helpers::get_missing_signers(&pending_signers_path)
+        })
+        .await?
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %msg.request_id,
+                error = %e,
+                path = %signers_normalised_paths,
+                "Failed to compute missing signers"
+            );
+            ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
+        })?
+        .into_iter()
+        .map(|key: AsfaloadPublicKeys| key.to_base64())
+        .collect();
+
+        Ok(ProposeSignersResult {
+            project_path: msg.project_path,
+            required_signers,
+            request_id: msg.request_id,
+        })
+    }
+}
+
 impl Message<CleanupSignersRequest> for SignersInitialiser {
     type Reply = Result<(), ApiError>;
 
@@ -201,18 +338,20 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
         tracing::info!(
             request_id = %msg.request_id,
             signers_file_path = %msg.signers_file_path,
-            history_file_path = %msg.history_file_path,
+            history_file_path = ?msg.history_file_path,
             pending_dir = %msg.pending_dir,
             "Cleaning up signers files"
         );
 
         let mut had_error = false;
 
-        if let Err(e) = tokio::fs::remove_file(&msg.history_file_path).await {
+        if let Some(ref history_file_path) = msg.history_file_path
+            && let Err(e) = tokio::fs::remove_file(history_file_path).await
+        {
             had_error = true;
             tracing::warn!(
                 request_id = %msg.request_id,
-                path = %msg.history_file_path,
+                path = %history_file_path,
                 error = %e,
                 "Failed to remove history file during cleanup"
             );
@@ -346,7 +485,12 @@ mod tests {
             tokio::fs::read_to_string(&init_result.history_file_path.absolute_path())
                 .await
                 .unwrap();
-        assert_eq!(history_content, "[]");
+        let history =
+            HistoryFile::from_json(&history_content).expect("History file should be valid JSON");
+        assert!(
+            history.entries().is_empty(),
+            "History file should have no entries"
+        );
 
         let signers_content =
             tokio::fs::read_to_string(&init_result.signers_file_path.absolute_path())
@@ -391,11 +535,13 @@ mod tests {
         assert!(result.is_ok());
         let init_result = result.unwrap();
 
-        assert_eq!(init_result.required_signers.len(), 2);
+        // Key 0 signed during initialization, so only key 1 is still missing
+        assert_eq!(init_result.required_signers.len(), 1);
         assert!(
-            init_result
+            !init_result
                 .required_signers
-                .contains(&test_keys.pub_key(0).unwrap().to_base64())
+                .contains(&test_keys.pub_key(0).unwrap().to_base64()),
+            "Key 0 already signed during init, should not be in required_signers"
         );
         assert!(
             init_result
@@ -445,6 +591,127 @@ mod tests {
                 _ => panic!("Expected HandlerError for existing directory"),
             },
         }
+        Ok(())
+    }
+
+    /// Helper to create test ProposeSignersRequest with proper signing.
+    fn build_test_propose_request(
+        project_path: NormalisedPaths,
+        config: &SignersConfig,
+        test_keys: &test_helpers::TestKeys,
+        signer_index: usize,
+        request_id: &str,
+    ) -> ProposeSignersRequest {
+        let signers_json = serde_json::to_string_pretty(config).unwrap();
+        let signers_info = SignersInfo::from_string(&signers_json).unwrap();
+        let hash = sha512_for_content(signers_json.as_bytes().to_vec()).unwrap();
+        let secret_key = test_keys.sec_key(signer_index).unwrap();
+        let signature = secret_key.sign(&hash).unwrap();
+        let pubkey = test_keys.pub_key(signer_index).unwrap().clone();
+        let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+            Forge::Github,
+            "https://github.com/test/repo/blob/main/signers.json".to_string(),
+            chrono::Utc::now(),
+        ));
+        ProposeSignersRequest {
+            project_path,
+            signers_info,
+            metadata,
+            signature,
+            pubkey,
+            request_id: request_id.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_propose_signers_returns_missing_signers() -> Result<()> {
+        let temp = tempfile::TempDir::new().unwrap();
+        let git_path = temp.path().to_path_buf();
+
+        let test_keys = test_helpers::TestKeys::new(3);
+
+        // Step 1: Initialize with a 1-signer config so it auto-activates.
+        // (With 1 signer and threshold 1, initialize_signers_file completes
+        // the aggregate signature and renames pending -> active.)
+        let init_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
+
+        let project_path = get_project_normalised_paths(&git_path, "github.com/test/repo").await?;
+        let init_request = build_test_init_request(
+            project_path,
+            &init_config,
+            &test_keys,
+            git_path.clone(),
+            "init-001",
+        );
+
+        let actor_ref = SignersInitialiser::spawn(());
+        let init_result = actor_ref.ask(init_request).await;
+        assert!(
+            init_result.is_ok(),
+            "Init should succeed: {:?}",
+            init_result
+        );
+
+        // Step 2: Propose an update with 3 signers, signed by key0.
+        // key0 is valid for updates because admin_keys() falls back to
+        // artifact_signers when no explicit admin keys are set.
+        let propose_config = SignersConfig::with_artifact_signers_only(
+            2,
+            (
+                vec![
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
+                    test_keys.pub_key(2).unwrap().clone(),
+                ],
+                2,
+            ),
+        )
+        .unwrap();
+
+        // Re-obtain project_path (the original was moved into init_request)
+        let project_path = get_project_normalised_paths(&git_path, "github.com/test/repo").await?;
+        let propose_request = build_test_propose_request(
+            project_path,
+            &propose_config,
+            &test_keys,
+            0, // key0 signs the proposal
+            "propose-001",
+        );
+
+        let result = actor_ref.ask(propose_request).await;
+        assert!(result.is_ok(), "Propose should succeed: {:?}", result);
+        let propose_result = result.unwrap();
+
+        // Step 3: Verify required_signers.
+        // key0 already signed during propose_signers_file, so only key1 and key2
+        // should be in the missing signers list.
+        let key0_b64 = test_keys.pub_key(0).unwrap().to_base64();
+        let key1_b64 = test_keys.pub_key(1).unwrap().to_base64();
+        let key2_b64 = test_keys.pub_key(2).unwrap().to_base64();
+
+        assert_eq!(
+            propose_result.required_signers.len(),
+            2,
+            "Should have 2 missing signers (key1 and key2), got: {:?}",
+            propose_result.required_signers
+        );
+        assert!(
+            !propose_result.required_signers.contains(&key0_b64),
+            "key0 already signed the proposal, should not be in required_signers"
+        );
+        assert!(
+            propose_result.required_signers.contains(&key1_b64),
+            "key1 has not signed yet, should be in required_signers"
+        );
+        assert!(
+            propose_result.required_signers.contains(&key2_b64),
+            "key2 has not signed yet, should be in required_signers"
+        );
+
         Ok(())
     }
 }

@@ -17,7 +17,7 @@ pub async fn handle_register_release_command(
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else if response.success {
-        println!("Release registered successfully!");
+        println!("Release registered successfully! Remember you still need to sign it yourself!");
         if let Some(index_path) = response.index_file_path {
             println!("Index file path: {}", index_path);
         }

@@ -109,6 +109,9 @@ pub mod errors {
 
         #[error("Signers file error: {0}")]
         SignersFileError(#[from] common::errors::SignersFileError),
+
+        #[error("Json Serialisation error: {0}")]
+        SerdeJsonError(#[from] serde_json::Error),
     }
 
     #[derive(Error, Debug)]
@@ -200,6 +203,7 @@ pub mod errors {
                 ApiError::FileNotFound(_) => StatusCode::NOT_FOUND,
                 ApiError::SignatureAlreadyComplete(_) => StatusCode::CONFLICT,
                 ApiError::SignersFileError(_) => StatusCode::BAD_REQUEST,
+                ApiError::SerdeJsonError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }
@@ -271,6 +275,9 @@ pub mod models {
         pub required_signers: Vec<String>,
         pub signature_submission_url: String,
     }
+
+    pub type UpdateRepoSignersRequest = RegisterRepoRequest;
+    pub type UpdateRepoSignersResponse = RegisterRepoResponse;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     /// Request to submit a signature for a specific file.
