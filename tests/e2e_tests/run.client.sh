@@ -52,11 +52,11 @@ section "Signers File Activation"
 
 run_step_json "List pending for key1 (none expected, key1 submitted)" \
     '.file_paths | length == 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key1" -u http://localhost:3000 --password secret
+    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key1" -u "$backend" --password secret
 
 run_step_json "List pending for key2" \
     '.file_paths | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key2" -u http://localhost:3000 --password secret
+    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key2" -u "$backend" --password secret
 
 run_step_json "Sign signers file with key2" \
     '.is_complete == false' \
@@ -80,7 +80,7 @@ run_step_json "Register release with key3 (does not sign it)" \
 
 run_step_json "List pending for key3" \
     '.file_paths | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key3" -u http://localhost:3000 --password secret
+    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key3" -u "$backend" --password secret
 
 run_step_json "Sign release index with key1" \
     '.is_complete == false' \
@@ -95,7 +95,7 @@ expect_fail_json "Sign release index with key3 (already completed)" \
     cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key3" --password secret $release_index
 
 run_step "Download release artifact (v0.6.0)" \
-    cargo run --quiet -- download -o /tmp/downloader_${RANDOM} https://github.com/asfaload/asfald/releases/download/v0.6.0/asfald-x86_64-unknown-linux-musl.tar.gz
+    cargo run --quiet -- download -o "$(mktemp)" https://github.com/asfaload/asfald/releases/download/v0.6.0/asfald-x86_64-unknown-linux-musl.tar.gz
 
 ################################################################################
 section "Updating Signers File"
@@ -107,11 +107,11 @@ run_step_json "Update signers file with key1" \
 
 run_step_json "List pending for key1 (none expected, key1 submitted)" \
     '.file_paths | length == 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key1" -u http://localhost:3000 --password secret
+    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key1" -u "$backend" --password secret
 
 run_step_json "List pending for key2 (should show pending)" \
     '.file_paths | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key2" -u http://localhost:3000 --password secret
+    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key2" -u "$backend" --password secret
 
 run_step_json "Sign pending signers with key2" \
     '.is_complete == false' \
@@ -122,7 +122,7 @@ run_step_json "Sign pending signers with key4 (activates new signers file)" \
     cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key4" --password secret $pending_signers_file
 
 run_step "Download artifact (v0.6.0, signed with historical signers)" \
-    cargo run --quiet -- download -o /tmp/downloader_${RANDOM} https://github.com/asfaload/asfald/releases/download/v0.6.0/asfald-x86_64-unknown-linux-musl.tar.gz
+    cargo run --quiet -- download -o "$(mktemp)" https://github.com/asfaload/asfald/releases/download/v0.6.0/asfald-x86_64-unknown-linux-musl.tar.gz
 
 ################################################################################
 section "Registering Release with New Signers File"
@@ -134,7 +134,7 @@ run_step_json "Register second release with key3" \
 
 run_step_json "List pending for key3" \
     '.file_paths | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key3" -u http://localhost:3000 --password secret
+    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key3" -u "$backend" --password secret
 
 run_step_json "Sign release index with key1" \
     '.is_complete == false' \
@@ -149,7 +149,7 @@ run_step_json "Sign release index with key4 (key3 does not sign)" \
     cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key4" --password secret $release_index_2
 
 run_step "Download artifact (v0.8.0)" \
-    cargo run --quiet -- download -o /tmp/downloader_${RANDOM} https://github.com/asfaload/asfald/releases/download/v0.8.0/asfald-x86_64-unknown-linux-musl.tar.gz
+    cargo run --quiet -- download -o "$(mktemp)" https://github.com/asfaload/asfald/releases/download/v0.8.0/asfald-x86_64-unknown-linux-musl.tar.gz
 
 ################################################################################
 print_summary

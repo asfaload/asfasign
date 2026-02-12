@@ -102,7 +102,7 @@ run_step_json() {
     local step_start output exit_code=0
     step_start=$(date +%s)
 
-    local stderr_file="/tmp/e2e_stderr_$$"
+    local stderr_file=$(mktemp)
     output=$("$@" --json 2>"$stderr_file") || exit_code=$?
     local stderr_output
     stderr_output=$(<"$stderr_file")
@@ -196,7 +196,7 @@ expect_fail_json() {
     local step_start stdout_output exit_code=0
     step_start=$(date +%s)
 
-    local stderr_file="/tmp/e2e_stderr_$$"
+    local stderr_file=$(mktemp)
     stdout_output=$("$@" --json 2>"$stderr_file") || exit_code=$?
     local stderr_output
     stderr_output=$(<"$stderr_file")
