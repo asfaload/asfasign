@@ -193,6 +193,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             tracing::error!(
                 request_id = %msg.request_id,
                 error = %e,
+                path = %signers_normalised_paths,
                 "Failed to compute missing signers"
             );
             ApiError::ActorOperationFailed(format!("Failed to compute missing signers: {}", e))
