@@ -342,7 +342,7 @@ mod tests {
             .create_async()
             .await;
 
-        let client = Client::new(&server.url());
+        let client = Client::new(server.url());
         let result = client
             .fetch_external_url(&format!("{}/test-file.json", server.url()))
             .await;
@@ -362,7 +362,7 @@ mod tests {
             .create_async()
             .await;
 
-        let client = Client::new(&server.url());
+        let client = Client::new(server.url());
         let result = client
             .fetch_external_url(&format!("{}/missing", server.url()))
             .await;
