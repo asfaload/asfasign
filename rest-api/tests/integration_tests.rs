@@ -640,9 +640,9 @@ pub mod tests {
             response_body.message,
             "Project registered successfully. Collect signatures to activate."
         );
-        assert_eq!(response_body.required_signers.len(), 1);
-        assert_eq!(response_body.required_signers[0], public_key.to_base64());
-        assert_eq!(response_body.signature_submission_url, "/v1/signatures");
+        // The signature provided at repo registration is sufficient only one signer is defined in
+        // signers file
+        assert_eq!(response_body.required_signers.len(), 0);
 
         mock.assert();
         server_handle.abort();
