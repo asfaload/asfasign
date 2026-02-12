@@ -11,6 +11,12 @@ else
     BOLD='' DIM='' RED='' GREEN='' YELLOW='' BLUE='' RESET=''
 fi
 
+# --- Dependency check ---
+if ! command -v jq &> /dev/null; then
+    printf '%sjq is required but not installed.%s\n' "$RED" "$RESET"
+    exit 1
+fi
+
 # --- Global state ---
 STEP_NUM=0
 PASS_COUNT=0
@@ -82,6 +88,60 @@ run_step() {
     fi
 }
 
+run_step_json() {
+    local desc="$1"; shift
+    local jq_filter="$1"; shift
+    STEP_NUM=$((STEP_NUM + 1))
+    printf '%s[%2d]%s %s... ' "$DIM" "$STEP_NUM" "$RESET" "$desc"
+
+    if [[ -n $debug ]]; then
+        echo
+        echo "$@" --json
+    fi
+
+    local step_start output exit_code=0
+    step_start=$(date +%s)
+
+    local stderr_file="/tmp/e2e_stderr_$$"
+    output=$("$@" --json 2>"$stderr_file") || exit_code=$?
+    local stderr_output
+    stderr_output=$(<"$stderr_file")
+    rm -f "$stderr_file"
+
+    local step_end elapsed
+    step_end=$(date +%s)
+    elapsed=$((step_end - step_start))
+
+    if [[ -n $debug ]]; then
+        echo
+        echo "stdout: $output"
+        [[ -n "$stderr_output" ]] && echo "stderr: $stderr_output"
+    fi
+
+    if [ "$exit_code" -ne 0 ]; then
+        printf '%s✗ FAILED%s %s(%ds)%s\n' "$RED" "$RESET" "$DIM" "$elapsed" "$RESET"
+        printf '  %sCommand:%s %s --json\n' "$RED" "$RESET" "$*"
+        printf '  %sExit code:%s %d\n' "$RED" "$RESET" "$exit_code"
+        printf '  %sSection:%s %s\n' "$RED" "$RESET" "$CURRENT_SECTION"
+        [[ -n "$output" ]] && printf '  %sStdout:%s\n%s\n' "$RED" "$RESET" "$output"
+        [[ -n "$stderr_output" ]] && printf '  %sStderr:%s\n%s\n' "$RED" "$RESET" "$stderr_output"
+        exit 1
+    fi
+
+    if ! echo "$output" | jq -e "$jq_filter" > /dev/null 2>&1; then
+        printf '%s✗ ASSERTION FAILED%s %s(%ds)%s\n' "$RED" "$RESET" "$DIM" "$elapsed" "$RESET"
+        printf '  %sCommand:%s %s --json\n' "$RED" "$RESET" "$*"
+        printf '  %sFilter:%s  %s\n' "$RED" "$RESET" "$jq_filter"
+        printf '  %sJSON:%s\n%s\n' "$RED" "$RESET" "$output"
+        [[ -n "$stderr_output" ]] && printf '  %sStderr:%s\n%s\n' "$RED" "$RESET" "$stderr_output"
+        printf '  %sSection:%s %s\n' "$RED" "$RESET" "$CURRENT_SECTION"
+        exit 1
+    fi
+
+    printf '%s✓%s %s(%ds)%s\n' "$GREEN" "$RESET" "$DIM" "$elapsed" "$RESET"
+    PASS_COUNT=$((PASS_COUNT + 1))
+}
+
 expect_fail() {
     local desc="$1"; shift
     STEP_NUM=$((STEP_NUM + 1))
@@ -119,6 +179,58 @@ expect_fail() {
         fi
         exit 1
     fi
+}
+
+expect_fail_json() {
+    local desc="$1"; shift
+    local jq_filter="$1"; shift
+    STEP_NUM=$((STEP_NUM + 1))
+    printf '%s[%2d]%s %s %s(expect fail)%s... ' \
+        "$DIM" "$STEP_NUM" "$RESET" "$desc" "$YELLOW" "$RESET"
+
+    if [[ -n $debug ]]; then
+        echo
+        echo "$@" --json
+    fi
+
+    local step_start stdout_output exit_code=0
+    step_start=$(date +%s)
+
+    local stderr_file="/tmp/e2e_stderr_$$"
+    stdout_output=$("$@" --json 2>"$stderr_file") || exit_code=$?
+    local stderr_output
+    stderr_output=$(<"$stderr_file")
+    rm -f "$stderr_file"
+
+    local step_end elapsed
+    step_end=$(date +%s)
+    elapsed=$((step_end - step_start))
+
+    if [[ -n $debug ]]; then
+        echo
+        [[ -n "$stdout_output" ]] && echo "stdout: $stdout_output"
+        echo "stderr: $stderr_output"
+    fi
+
+    if [ "$exit_code" -eq 0 ]; then
+        printf '%s✗ UNEXPECTED SUCCESS%s %s(%ds)%s\n' "$RED" "$RESET" "$DIM" "$elapsed" "$RESET"
+        printf '  %sCommand was expected to fail but succeeded:%s %s --json\n' "$RED" "$RESET" "$*"
+        printf '  %sSection:%s %s\n' "$RED" "$RESET" "$CURRENT_SECTION"
+        [[ -n "$stdout_output" ]] && printf '  %sStdout:%s\n%s\n' "$RED" "$RESET" "$stdout_output"
+        exit 1
+    fi
+
+    if ! echo "$stderr_output" | jq -e "$jq_filter" > /dev/null 2>&1; then
+        printf '%s✗ ASSERTION FAILED%s %s(%ds)%s\n' "$RED" "$RESET" "$DIM" "$elapsed" "$RESET"
+        printf '  %sCommand:%s %s --json\n' "$RED" "$RESET" "$*"
+        printf '  %sFilter:%s  %s\n' "$RED" "$RESET" "$jq_filter"
+        printf '  %sStderr JSON:%s\n%s\n' "$RED" "$RESET" "$stderr_output"
+        printf '  %sSection:%s %s\n' "$RED" "$RESET" "$CURRENT_SECTION"
+        exit 1
+    fi
+
+    printf '%s⚠ expected failure%s %s(%ds)%s\n' "$YELLOW" "$RESET" "$DIM" "$elapsed" "$RESET"
+    EXPECTED_FAIL_COUNT=$((EXPECTED_FAIL_COUNT + 1))
 }
 
 print_summary() {
