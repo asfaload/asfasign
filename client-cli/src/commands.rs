@@ -50,9 +50,8 @@ pub(crate) async fn prepare_signers_submission(
 
     let parsed_url = url::Url::parse(signers_file_url)
         .map_err(|e| crate::error::ClientCliError::InvalidInput(format!("Invalid URL: {}", e)))?;
-    let forge_info = forge_url::ForgeInfo::new(&parsed_url).map_err(|e| {
-        crate::error::ClientCliError::InvalidInput(format!("Unsupported forge URL: {}", e))
-    })?;
+    let forge_info = forge_url::ForgeInfo::new(&parsed_url)
+        .map_err(|e| crate::error::ClientCliError::InvalidInput(e.to_string()))?;
     let content = client
         .fetch_external_url(forge_info.raw_url().as_str())
         .await?;
