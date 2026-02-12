@@ -4,7 +4,7 @@ use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
     GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
-    SubmitSignatureRequest, SubmitSignatureResponse,
+    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 
 use std::{path::PathBuf, str::FromStr};
@@ -951,4 +951,94 @@ pub async fn get_signers_handler(
     );
 
     Ok((axum::http::StatusCode::OK, response_headers, content))
+}
+
+/// Handle a revocation request for a signed file.
+///
+/// Validates the HTTP request, then delegates to the SignatureCollector
+/// actor which serializes revocation alongside signature operations.
+///
+/// # Arguments
+/// * `state` - Application state containing actor references
+/// * `headers` - HTTP headers (must include x-request-id for tracing)
+/// * `request` - Revocation request with file_path, revocation_json, signature, public_key
+///
+/// # Returns
+/// Returns a response indicating whether revocation succeeded
+///
+/// # Errors
+/// Returns `ApiError` if:
+/// - File path is invalid or file doesn't exist
+/// - Public key or signature format is invalid
+/// - File has no complete aggregate signature
+/// - Digest mismatch between revocation JSON and actual file
+/// - Revocation authorization fails
+pub async fn revoke_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RevokeFileRequest>,
+) -> Result<Json<RevokeFileResponse>, ApiError> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        file_path = %request.file_path,
+        "Received revoke request"
+    );
+
+    // Validate the file path
+    if request.file_path.is_empty() {
+        return Err(ApiError::InvalidRequestBody(
+            "File path cannot be empty".to_string(),
+        ));
+    }
+
+    // Normalize and validate the file path
+    let file_path = NormalisedPaths::new(
+        state.git_repo_path.clone(),
+        PathBuf::from_str(request.file_path.as_ref()).unwrap(),
+    )
+    .await?;
+
+    // Check if the file exists
+    if !file_path.absolute_path().exists() {
+        return Err(ApiError::FileNotFound(format!(
+            "File not found: {}",
+            request.file_path
+        )));
+    }
+
+    // Parse public key and signature from base64 strings
+    let public_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
+        .map_err(|_| ApiError::InvalidRequestBody("Invalid public key format".to_string()))?;
+
+    let signature = features_lib::AsfaloadSignatures::from_base64(&request.signature)
+        .map_err(|_| ApiError::InvalidRequestBody("Invalid signature format".to_string()))?;
+
+    // Send revocation request to the SignatureCollector actor
+    let result = state
+        .signature_collector
+        .ask(crate::file_auth::actors::signature_collector::RevokeFileMessage {
+            file_path: file_path.clone(),
+            revocation_json: request.revocation_json,
+            signature,
+            public_key,
+            request_id: request_id.to_string(),
+        })
+        .await
+        .map_err(|e| map_to_user_error(e, "Revocation failed"))?;
+
+    tracing::info!(
+        request_id = %request_id,
+        file_path = %request.file_path,
+        "Revocation completed successfully"
+    );
+
+    Ok(Json(RevokeFileResponse {
+        success: result.success,
+        message: "File revoked successfully".to_string(),
+    }))
 }
