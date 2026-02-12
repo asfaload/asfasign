@@ -468,6 +468,8 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
 /// (artifacts, signers file updates, initial signers files).
 ///
 /// Returns an empty set if the signatures are already complete.
+// FIXME: is_aggregate_signature_complete reads the signatures, and
+// get_individual_signatures_for_file does the same.
 pub fn get_missing_signers<P: AsRef<Path>>(
     file_path: P,
 ) -> Result<HashSet<AsfaloadPublicKeys>, AggregateSignatureError> {
