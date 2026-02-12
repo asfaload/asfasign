@@ -276,6 +276,9 @@ pub mod models {
         pub signature_submission_url: String,
     }
 
+    pub type UpdateRepoSignersRequest = RegisterRepoRequest;
+    pub type UpdateRepoSignersResponse = RegisterRepoResponse;
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     /// Request to submit a signature for a specific file.
     ///

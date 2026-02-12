@@ -5,6 +5,7 @@ use features_lib::{
     AsfaloadSignatures,
 };
 use reqwest::header::CONTENT_TYPE;
+use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
     ListPendingResponse, RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse,
     SubmitSignatureRequest, SubmitSignatureResponse,
@@ -207,18 +208,16 @@ impl Client {
     /// Propose a signers file update to the backend.
     ///
     /// Makes an authenticated POST request to `/v1/update_signers`.
-    /// Reuses `RegisterRepoRequest` since the payload is identical
-    /// (signers_file_url, signature, public_key).
     pub async fn update_signers(
         &self,
         signers_file_url: &str,
         signature: &AsfaloadSignatures,
         public_key: &AsfaloadPublicKeys,
         secret_key: &AsfaloadSecretKeys,
-    ) -> AdminLibResult<RegisterRepoResponse> {
+    ) -> AdminLibResult<UpdateRepoSignersResponse> {
         let url = format!("{}/v1/update_signers", self.base_url);
 
-        let request = RegisterRepoRequest {
+        let request = UpdateRepoSignersRequest {
             signers_file_url: signers_file_url.to_string(),
             signature: signature.to_base64(),
             public_key: public_key.to_base64(),

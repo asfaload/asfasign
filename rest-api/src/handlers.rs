@@ -1,6 +1,7 @@
 use common::fs::names::subject_path_from_pending_signatures;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
     GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
     SubmitSignatureRequest, SubmitSignatureResponse,
@@ -291,8 +292,8 @@ pub async fn register_repo_handler(
 pub async fn update_signers_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<RegisterRepoRequest>,
-) -> Result<Json<RegisterRepoResponse>, ApiError> {
+    Json(request): Json<UpdateRepoSignersRequest>,
+) -> Result<Json<UpdateRepoSignersResponse>, ApiError> {
     let request_id = headers
         .get("x-request-id")
         .and_then(|h| h.to_str().ok())
@@ -452,7 +453,7 @@ pub async fn update_signers_handler(
         "Signers update proposal completed successfully"
     );
 
-    Ok(Json(RegisterRepoResponse {
+    Ok(Json(UpdateRepoSignersResponse {
         success: true,
         project_id: signers_proposal.project_id,
         message: "Signers update proposed successfully. Collect signatures to activate."
