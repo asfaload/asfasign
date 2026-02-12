@@ -8,7 +8,7 @@ use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
     ListPendingResponse, RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse,
-    SubmitSignatureRequest, SubmitSignatureResponse,
+    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use serde::de::DeserializeOwned;
 
@@ -219,6 +219,45 @@ impl Client {
 
         let request = UpdateRepoSignersRequest {
             signers_file_url: signers_file_url.to_string(),
+            signature: signature.to_base64(),
+            public_key: public_key.to_base64(),
+        };
+
+        // Serialize once: same bytes for auth and body
+        let payload_string = serde_json::to_string(&request)?;
+        let headers = create_auth_headers(&payload_string, secret_key)?;
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .header(CONTENT_TYPE, "application/json")
+            .body(payload_string)
+            .send()
+            .await?;
+
+        let response = Self::check_response_status(response).await?;
+        Self::parse_json_response(response).await
+    }
+
+    /// Revoke a signed file on the backend.
+    ///
+    /// Makes an authenticated POST request to `/v1/revoke`.
+    /// Serializes the payload once and uses the same string for both
+    /// auth headers and the request body (avoids signature mismatch).
+    pub async fn revoke_file(
+        &self,
+        file_path: &str,
+        revocation_json: &str,
+        signature: &AsfaloadSignatures,
+        public_key: &AsfaloadPublicKeys,
+        secret_key: &AsfaloadSecretKeys,
+    ) -> AdminLibResult<RevokeFileResponse> {
+        let url = format!("{}/v1/revoke", self.base_url);
+
+        let request = RevokeFileRequest {
+            file_path: file_path.to_string(),
+            revocation_json: revocation_json.to_string(),
             signature: signature.to_base64(),
             public_key: public_key.to_base64(),
         };
