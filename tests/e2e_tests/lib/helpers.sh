@@ -62,6 +62,11 @@ run_step() {
     step_end=$(date +%s)
     elapsed=$((step_end - step_start))
 
+    if [[ -n $debug ]]; then
+        echo
+        echo "$output"
+    fi
+
     if [ "$exit_code" -eq 0 ]; then
         printf '%s✓%s %s(%ds)%s\n' "$GREEN" "$RESET" "$DIM" "$elapsed" "$RESET"
         PASS_COUNT=$((PASS_COUNT + 1))
@@ -96,6 +101,11 @@ expect_fail() {
     local step_end elapsed
     step_end=$(date +%s)
     elapsed=$((step_end - step_start))
+
+    if [[ -n $debug ]]; then
+        echo
+        echo "$output"
+    fi
 
     if [ "$exit_code" -ne 0 ]; then
         printf '%s⚠ expected failure%s %s(%ds)%s\n' "$YELLOW" "$RESET" "$DIM" "$elapsed" "$RESET"
