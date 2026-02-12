@@ -19,6 +19,7 @@ use anyhow::Result;
 pub mod download;
 pub mod register_release;
 pub mod register_repo;
+pub mod revoke;
 pub mod update_signers;
 
 /// Shared state produced by the common key-load → fetch → hash → sign
@@ -323,6 +324,35 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             runtime.block_on(update_signers::handle_update_signers_command(
                 &url,
                 signers_file_url,
+                &secret_key_args.secret_key,
+                password.as_str(),
+                json_args.json,
+            ))?;
+        }
+        Commands::Revoke {
+            file_path,
+            secret_key_args,
+            password_args,
+            backend_url_args,
+            json_args,
+        } => {
+            let password = get_password(
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
+                WithoutConfirmation,
+                true,
+            )?;
+            let url = backend_url_args
+                .backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(revoke::handle_revoke_command(
+                &url,
+                file_path,
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
