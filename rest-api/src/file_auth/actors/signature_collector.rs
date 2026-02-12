@@ -2,15 +2,17 @@ use crate::file_auth::actors::git_actor::{CommitFile, GitActor};
 use crate::handlers::map_to_user_error;
 use crate::path_validation::NormalisedPaths;
 use common::errors::AggregateSignatureError;
+use common::fs::names::signatures_path_for;
 use constants::SIGNERS_DIR;
 use features_lib::{
     AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState, SignedFileLoader,
-    activate_signers_file,
+    activate_signers_file, sha512_for_file,
 };
 use kameo::actor::ActorRef;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
+use signers_file_types::revocation::RevocationFile;
 use std::path::Path;
 
 /// Request to collect a signature for a specific file.
@@ -55,6 +57,26 @@ pub struct GetSignatureStatusRequest {
 pub struct SignatureStatus {
     /// Whether the aggregate signature is complete
     pub is_complete: bool,
+}
+
+/// Request to revoke a signed file.
+///
+/// Routed through the SignatureCollector actor to serialize revocation
+/// alongside signature operations, preventing race conditions.
+#[derive(Debug, Clone)]
+pub struct RevokeFileMessage {
+    pub file_path: NormalisedPaths,
+    pub revocation_json: String,
+    pub signature: AsfaloadSignatures,
+    pub public_key: AsfaloadPublicKeys,
+    pub request_id: String,
+}
+
+/// Result of a revocation operation.
+#[derive(Debug, Clone)]
+pub struct RevokeFileResult {
+    pub success: bool,
+    pub request_id: String,
 }
 
 /// Actor responsible for collecting individual signatures for aggregate signatures.
@@ -298,6 +320,98 @@ impl Message<GetSignatureStatusRequest> for SignatureCollector {
         let is_complete = signature_with_state.is_complete();
 
         Ok(SignatureStatus { is_complete })
+    }
+}
+
+impl Message<RevokeFileMessage> for SignatureCollector {
+    type Reply = Result<RevokeFileResult, ApiError>;
+
+    #[tracing::instrument(skip(self, msg, _ctx))]
+    async fn handle(
+        &mut self,
+        msg: RevokeFileMessage,
+        _ctx: &mut Context<Self, Self::Reply>,
+    ) -> Self::Reply {
+        tracing::info!(
+            actor = ACTOR_NAME,
+            request_id = %msg.request_id,
+            file_path = %msg.file_path.absolute_path().display(),
+            "received revocation request"
+        );
+
+        let abs_path = msg.file_path.absolute_path();
+
+        // Validate file exists
+        if !abs_path.exists() {
+            return Err(ApiError::InvalidRequestBody(format!(
+                "File not found: {}",
+                abs_path.display()
+            )));
+        }
+
+        // Spec check #3: Check file has a complete aggregate signature
+        let sig_path = signatures_path_for(&abs_path).map_err(|e| {
+            ApiError::InternalServerError(format!("Failed to compute signatures path: {}", e))
+        })?;
+        if !sig_path.exists() {
+            return Err(ApiError::FileNotFullySigned(format!(
+                "No complete signature found for {}",
+                msg.file_path.relative_path().display()
+            )));
+        }
+
+        // Spec check #4: Parse revocation JSON, compute sha512 of the file,
+        // compare with subject_digest
+        let revocation_file = RevocationFile::from_json(&msg.revocation_json).map_err(|e| {
+            ApiError::InvalidRequestBody(format!("Invalid revocation JSON: {}", e))
+        })?;
+
+        let file_digest = sha512_for_file(&abs_path).map_err(|e| {
+            ApiError::InternalServerError(format!("Failed to compute file digest: {}", e))
+        })?;
+
+        if revocation_file.subject_digest != file_digest {
+            return Err(ApiError::DigestMismatch(format!(
+                "Revocation subject_digest does not match actual file digest for {}",
+                msg.file_path.relative_path().display()
+            )));
+        }
+
+        // Delegate to core revocation logic (validates signature, authorization, creates files)
+        aggregate_signature::revocation::revoke_signed_file(
+            &abs_path,
+            &msg.revocation_json,
+            &msg.signature,
+            &msg.public_key,
+        )
+        .map_err(|e| ApiError::RevocationError(e.to_string()))?;
+
+        // Commit changes via git actor
+        let commit_msg = CommitFile {
+            file_paths: vec![msg.file_path.parent()],
+            commit_message: format!("revoked {}", msg.file_path.relative_path().display()),
+            request_id: msg.request_id.clone(),
+        };
+        self.git_actor.ask(commit_msg).await.map_err(|e| {
+            tracing::error!(
+                actor = ACTOR_NAME,
+                error = %e,
+                "Request to git actor failed: Failed to commit revocation changes"
+            );
+            map_to_user_error(e, "Failed to commit revocation changes")
+        })?;
+
+        tracing::info!(
+            actor = ACTOR_NAME,
+            request_id = %msg.request_id,
+            file_path = %msg.file_path.absolute_path().display(),
+            "Successfully revoked signed file"
+        );
+
+        Ok(RevokeFileResult {
+            success: true,
+            request_id: msg.request_id.clone(),
+        })
     }
 }
 

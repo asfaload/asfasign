@@ -3812,6 +3812,7 @@ dependencies = [
 name = "rest-api"
 version = "0.1.0"
 dependencies = [
+ "aggregate_signature",
  "anyhow",
  "async-trait",
  "axum",

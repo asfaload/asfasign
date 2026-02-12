@@ -45,6 +45,7 @@ signers_file_types = { path = "../core/signers_file_types/" }
 signatures = { path = "../core/signatures/" }
 features_lib = { path = "../core/features_lib/" }
 common = { path = "../core/common/" }
+aggregate_signature = { path = "../core/aggregate_signature/" }
 constants = { path = "../core/constants/" }
 uuid = "1.19.0"
 futures = "0.3.31"
