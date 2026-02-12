@@ -473,9 +473,13 @@ pub fn get_missing_signers<P: AsRef<Path>>(
 ) -> Result<HashSet<AsfaloadPublicKeys>, AggregateSignatureError> {
     let file_path = file_path.as_ref();
 
+    // Guard: return empty set if file in question does not exist
+    if !file_path.exists() {
+        return Ok(HashSet::new());
+    }
     // Guard: return empty set if signatures are already complete
-    let complete_sig_path = signatures_path_for(file_path)?;
-    if complete_sig_path.exists() {
+    let complete_sig_path_in_pending_dir = signatures_path_for(file_path)?;
+    if complete_sig_path_in_pending_dir.exists() {
         return Ok(HashSet::new());
     }
 
@@ -4368,6 +4372,13 @@ mod tests {
         assert!(missing.is_empty());
     }
 
+    #[test]
+    fn test_get_missing_signers_inexisting_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let inexisting_file = temp_dir.path().join("my_inexisting_file");
+        let missing = get_missing_signers(&inexisting_file).expect("Should succeed");
+        assert!(missing.is_empty());
+    }
     #[test]
     fn test_check_signers_comprehensive() -> Result<()> {
         // Create test keys and data
