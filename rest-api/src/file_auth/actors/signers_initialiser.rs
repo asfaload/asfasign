@@ -593,4 +593,125 @@ mod tests {
         }
         Ok(())
     }
+
+    /// Helper to create test ProposeSignersRequest with proper signing.
+    fn build_test_propose_request(
+        project_path: NormalisedPaths,
+        config: &SignersConfig,
+        test_keys: &test_helpers::TestKeys,
+        signer_index: usize,
+        request_id: &str,
+    ) -> ProposeSignersRequest {
+        let signers_json = serde_json::to_string_pretty(config).unwrap();
+        let signers_info = SignersInfo::from_string(&signers_json).unwrap();
+        let hash = sha512_for_content(signers_json.as_bytes().to_vec()).unwrap();
+        let secret_key = test_keys.sec_key(signer_index).unwrap();
+        let signature = secret_key.sign(&hash).unwrap();
+        let pubkey = test_keys.pub_key(signer_index).unwrap().clone();
+        let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+            Forge::Github,
+            "https://github.com/test/repo/blob/main/signers.json".to_string(),
+            chrono::Utc::now(),
+        ));
+        ProposeSignersRequest {
+            project_path,
+            signers_info,
+            metadata,
+            signature,
+            pubkey,
+            request_id: request_id.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_propose_signers_returns_missing_signers() -> Result<()> {
+        let temp = tempfile::TempDir::new().unwrap();
+        let git_path = temp.path().to_path_buf();
+
+        let test_keys = test_helpers::TestKeys::new(3);
+
+        // Step 1: Initialize with a 1-signer config so it auto-activates.
+        // (With 1 signer and threshold 1, initialize_signers_file completes
+        // the aggregate signature and renames pending -> active.)
+        let init_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
+
+        let project_path = get_project_normalised_paths(&git_path, "github.com/test/repo").await?;
+        let init_request = build_test_init_request(
+            project_path,
+            &init_config,
+            &test_keys,
+            git_path.clone(),
+            "init-001",
+        );
+
+        let actor_ref = SignersInitialiser::spawn(());
+        let init_result = actor_ref.ask(init_request).await;
+        assert!(
+            init_result.is_ok(),
+            "Init should succeed: {:?}",
+            init_result
+        );
+
+        // Step 2: Propose an update with 3 signers, signed by key0.
+        // key0 is valid for updates because admin_keys() falls back to
+        // artifact_signers when no explicit admin keys are set.
+        let propose_config = SignersConfig::with_artifact_signers_only(
+            2,
+            (
+                vec![
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
+                    test_keys.pub_key(2).unwrap().clone(),
+                ],
+                2,
+            ),
+        )
+        .unwrap();
+
+        // Re-obtain project_path (the original was moved into init_request)
+        let project_path = get_project_normalised_paths(&git_path, "github.com/test/repo").await?;
+        let propose_request = build_test_propose_request(
+            project_path,
+            &propose_config,
+            &test_keys,
+            0, // key0 signs the proposal
+            "propose-001",
+        );
+
+        let result = actor_ref.ask(propose_request).await;
+        assert!(result.is_ok(), "Propose should succeed: {:?}", result);
+        let propose_result = result.unwrap();
+
+        // Step 3: Verify required_signers.
+        // key0 already signed during propose_signers_file, so only key1 and key2
+        // should be in the missing signers list.
+        let key0_b64 = test_keys.pub_key(0).unwrap().to_base64();
+        let key1_b64 = test_keys.pub_key(1).unwrap().to_base64();
+        let key2_b64 = test_keys.pub_key(2).unwrap().to_base64();
+
+        assert_eq!(
+            propose_result.required_signers.len(),
+            2,
+            "Should have 2 missing signers (key1 and key2), got: {:?}",
+            propose_result.required_signers
+        );
+        assert!(
+            !propose_result.required_signers.contains(&key0_b64),
+            "key0 already signed the proposal, should not be in required_signers"
+        );
+        assert!(
+            propose_result.required_signers.contains(&key1_b64),
+            "key1 has not signed yet, should be in required_signers"
+        );
+        assert!(
+            propose_result.required_signers.contains(&key2_b64),
+            "key2 has not signed yet, should be in required_signers"
+        );
+
+        Ok(())
+    }
 }
