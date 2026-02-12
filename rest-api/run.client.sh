@@ -68,6 +68,11 @@ run_step() {
     STEP_NUM=$((STEP_NUM + 1))
     printf '%s[%2d]%s %s... ' "$DIM" "$STEP_NUM" "$RESET" "$desc"
 
+    if [[ -n $debug ]]; then
+        echo
+        echo "$@";
+    fi
+
     local step_start output exit_code=0
     step_start=$(date +%s)
 
@@ -97,6 +102,11 @@ expect_fail() {
     STEP_NUM=$((STEP_NUM + 1))
     printf '%s[%2d]%s %s %s(expect fail)%s... ' \
         "$DIM" "$STEP_NUM" "$RESET" "$desc" "$YELLOW" "$RESET"
+
+    if [[ -n $debug ]]; then
+        echo
+        echo "$@";
+    fi
 
     local step_start output exit_code=0
     step_start=$(date +%s)
