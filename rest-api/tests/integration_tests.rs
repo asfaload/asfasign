@@ -652,6 +652,108 @@ pub mod tests {
 
     #[cfg(feature = "test-utils")]
     #[tokio::test]
+    async fn test_register_repo_success_without_immediate_activation() -> Result<(), anyhow::Error>
+    {
+        use features_lib::{
+            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
+            AsfaloadSignatureTrait, sha512_for_content,
+        };
+        use git2::Repository;
+        use httpmock::Method;
+        use rest_api_types::RegisterRepoRequest;
+        use rest_api_types::RegisterRepoResponse;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        Repository::init(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_password = "test_password";
+        let key_pair = features_lib::AsfaloadKeyPairs::new(test_password)?;
+        let public_key = key_pair.public_key();
+        let secret_key = key_pair.secret_key(test_password)?;
+
+        let key_pair_2 = features_lib::AsfaloadKeyPairs::new(test_password)?;
+        let public_key_2 = key_pair_2.public_key();
+        let secret_key_2 = key_pair_2.secret_key(test_password)?;
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone(), public_key_2.clone()], 1),
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        // Sign the signers file content
+        let hash = sha512_for_content(signers_json.as_bytes().to_vec())?;
+        let signature = secret_key.sign(&hash)?;
+
+        let signers_json_clone = signers_json.clone();
+        let mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(signers_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let client = reqwest::Client::new();
+
+        let request_body = RegisterRepoRequest {
+            signers_file_url: signers_url,
+            signature: signature.to_base64(),
+            public_key: public_key.to_base64(),
+        };
+        let payload_string = serde_json::to_string(&request_body)?;
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(&secret_key, &payload_string).await;
+
+        let response = client
+            .post(format!("http://localhost:{}/v1/register_repo", port))
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, auth_signature)
+            .header(HEADER_PUBLIC_KEY, auth_public_key)
+            .json(&request_body)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response_body = response.json::<RegisterRepoResponse>().await?;
+        assert!(response_body.success);
+        assert_eq!(response_body.project_id, "github.com/owner/repo");
+        assert_eq!(
+            response_body.message,
+            "Project registered successfully. Collect signatures to activate."
+        );
+        // The signature provided at repo registration is NOT sufficient as
+        // we need to signature of all signers
+        assert_eq!(response_body.required_signers.len(), 1);
+        assert_eq!(response_body.required_signers[0], public_key_2.to_base64());
+        assert_eq!(response_body.signature_submission_url, "/v1/signatures");
+
+        mock.assert();
+        server_handle.abort();
+
+        Ok(())
+    }
+
+    #[cfg(feature = "test-utils")]
+    #[tokio::test]
     async fn test_register_repo_already_exists() -> Result<(), anyhow::Error> {
         use features_lib::{
             AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
