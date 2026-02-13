@@ -32,6 +32,7 @@ pub use signers_file_types::{SignersConfig, parse_signers_config};
 // In this type argument we use AsfaloadPublicKeys and AsfaloadSignatures directly.
 // This allows the user of this type to not specify any type arguments.
 pub type SignatureWithState = aggregate_signature::SignatureWithState;
+pub use aggregate_signature::can_revoke;
 pub use aggregate_signature::can_signer_add_signature;
 
 // We define and implement this trait in the user_lib as it depends on traits defined in other crates,

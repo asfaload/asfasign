@@ -266,6 +266,24 @@ pub enum Commands {
         json_args: JsonArgs,
     },
 
+    /// Revoke a signed file on the mirror
+    Revoke {
+        /// Relative path to the signed file on the mirror
+        file_path: String,
+
+        #[command(flatten)]
+        secret_key_args: SecretKeyArgs,
+
+        #[command(flatten)]
+        password_args: PasswordArgs,
+
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
+
     /// Download a file with signature verification
     Download {
         /// URL of the file to download (e.g., https://github.com/user/repo/releases/download/v1.0.0/file.tar.gz)
@@ -310,6 +328,7 @@ impl Commands {
             Self::RegisterRelease { .. } => "REGISTER_RELEASE",
             Self::RegisterRepo { .. } => "REGISTER_REPO",
             Self::UpdateSigners { .. } => "UPDATE_SIGNERS",
+            Self::Revoke { .. } => "REVOKE",
             Self::Download { .. } => "DOWNLOAD",
         }
     }
@@ -339,7 +358,8 @@ impl Commands {
             | Self::SignPending { json_args, .. }
             | Self::RegisterRelease { json_args, .. }
             | Self::RegisterRepo { json_args, .. }
-            | Self::UpdateSigners { json_args, .. } => json_args.json,
+            | Self::UpdateSigners { json_args, .. }
+            | Self::Revoke { json_args, .. } => json_args.json,
             Self::SignFile { .. } | Self::AddToAggregate { .. } | Self::Download { .. } => false,
         }
     }

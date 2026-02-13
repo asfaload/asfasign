@@ -112,6 +112,15 @@ pub mod errors {
 
         #[error("Json Serialisation error: {0}")]
         SerdeJsonError(#[from] serde_json::Error),
+
+        #[error("Revocation error: {0}")]
+        RevocationError(String),
+
+        #[error("File has not been fully signed: {0}")]
+        FileNotFullySigned(String),
+
+        #[error("Digest mismatch: {0}")]
+        DigestMismatch(String),
     }
 
     #[derive(Error, Debug)]
@@ -204,6 +213,9 @@ pub mod errors {
                 ApiError::SignatureAlreadyComplete(_) => StatusCode::CONFLICT,
                 ApiError::SignersFileError(_) => StatusCode::BAD_REQUEST,
                 ApiError::SerdeJsonError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::RevocationError(_) => StatusCode::BAD_REQUEST,
+                ApiError::FileNotFullySigned(_) => StatusCode::CONFLICT,
+                ApiError::DigestMismatch(_) => StatusCode::BAD_REQUEST,
             }
         }
     }
@@ -437,6 +449,24 @@ pub mod models {
         pub message: String,
         pub index_file_path: Option<String>,
     }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RevokeFileRequest {
+        /// Relative path to the signed file being revoked
+        pub file_path: String,
+        /// JSON string of the revocation document (RevocationFile)
+        pub revocation_json: String,
+        /// Base64-encoded signature of the sha512 of revocation_json
+        pub signature: String,
+        /// Base64-encoded public key of the revoker
+        pub public_key: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RevokeFileResponse {
+        pub success: bool,
+        pub message: String,
+    }
 }
 
 pub mod github_helpers {
@@ -500,6 +530,6 @@ pub mod rustls {
 // Re-export commonly used types at the module level
 pub use models::{
     GetSignatureStatusResponse, ListPendingResponse, RegisterReleaseRequest,
-    RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse, SubmitSignatureRequest,
-    SubmitSignatureResponse,
+    RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest,
+    RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };

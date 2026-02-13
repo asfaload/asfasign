@@ -15,6 +15,7 @@ chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 admin-lib = { path = "../admin-lib" }
 signatures = { version = "0.1.0", path = "../core/signatures" }
+signers_file_types = { path = "../core/signers_file_types" }
 minisign = "0.8.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs"] }
 rest_api_types = { path = "../rest_api_types" }

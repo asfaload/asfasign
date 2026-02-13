@@ -8,7 +8,7 @@ use crate::{
     handlers::{
         add_file_handler, get_file_handler, get_pending_signatures_handler,
         get_signature_status_handler, get_signers_handler, register_release_handler,
-        register_repo_handler, submit_signature_handler, update_signers_handler,
+        register_repo_handler, revoke_handler, submit_signature_handler, update_signers_handler,
     },
     state::AppState,
 };
@@ -48,6 +48,9 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
         );
     let files_router = Router::new().route("/files/{*file_path}", get(get_file_handler));
     let signers_router = Router::new().route("/get-signers/{*file_path}", get(get_signers_handler));
+    let revoke_router = Router::new().route("/revoke", post(revoke_handler)).layer(
+        axum::middleware::from_fn_with_state(app_state.clone(), auth_middleware),
+    );
 
     register_router
         .merge(release_router)
@@ -56,4 +59,5 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
         .merge(signature_router)
         .merge(files_router)
         .merge(signers_router)
+        .merge(revoke_router)
 }

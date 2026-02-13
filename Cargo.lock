@@ -786,6 +786,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "signatures",
+ "signers_file_types",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
@@ -803,6 +804,7 @@ dependencies = [
  "futures-util",
  "hex",
  "reqwest 0.11.27",
+ "serde",
  "serde_json",
  "sha2",
  "tempfile",
@@ -3812,6 +3814,7 @@ dependencies = [
 name = "rest-api"
 version = "0.1.0"
 dependencies = [
+ "aggregate_signature",
  "anyhow",
  "async-trait",
  "axum",
