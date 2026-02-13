@@ -1019,15 +1019,17 @@ pub async fn revoke_handler(
         .map_err(|_| ApiError::InvalidRequestBody("Invalid signature format".to_string()))?;
 
     // Send revocation request to the SignatureCollector actor
-    let result = state
+    let _result = state
         .signature_collector
-        .ask(crate::file_auth::actors::signature_collector::RevokeFileMessage {
-            file_path: file_path.clone(),
-            revocation_json: request.revocation_json,
-            signature,
-            public_key,
-            request_id: request_id.to_string(),
-        })
+        .ask(
+            crate::file_auth::actors::signature_collector::RevokeFileMessage {
+                file_path: file_path.clone(),
+                revocation_json: request.revocation_json,
+                signature,
+                public_key,
+                request_id: request_id.to_string(),
+            },
+        )
         .await
         .map_err(|e| map_to_user_error(e, "Revocation failed"))?;
 
@@ -1038,7 +1040,8 @@ pub async fn revoke_handler(
     );
 
     Ok(Json(RevokeFileResponse {
-        success: result.success,
+        // If we get here we are successful
+        success: true,
         message: "File revoked successfully".to_string(),
     }))
 }

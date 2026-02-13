@@ -74,10 +74,7 @@ pub struct RevokeFileMessage {
 
 /// Result of a revocation operation.
 #[derive(Debug, Clone)]
-pub struct RevokeFileResult {
-    pub success: bool,
-    pub request_id: String,
-}
+pub struct RevokeFileResult();
 
 /// Actor responsible for collecting individual signatures for aggregate signatures.
 ///
@@ -362,9 +359,8 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 
         // Spec check #4: Parse revocation JSON, compute sha512 of the file,
         // compare with subject_digest
-        let revocation_file = RevocationFile::from_json(&msg.revocation_json).map_err(|e| {
-            ApiError::InvalidRequestBody(format!("Invalid revocation JSON: {}", e))
-        })?;
+        let revocation_file = RevocationFile::from_json(&msg.revocation_json)
+            .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid revocation JSON: {}", e)))?;
 
         let file_digest = sha512_for_file(&abs_path).map_err(|e| {
             ApiError::InternalServerError(format!("Failed to compute file digest: {}", e))
@@ -408,10 +404,7 @@ impl Message<RevokeFileMessage> for SignatureCollector {
             "Successfully revoked signed file"
         );
 
-        Ok(RevokeFileResult {
-            success: true,
-            request_id: msg.request_id.clone(),
-        })
+        Ok(RevokeFileResult())
     }
 }
 
