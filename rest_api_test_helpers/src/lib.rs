@@ -6,9 +6,7 @@ use std::{
 };
 
 use anyhow::Result;
-use features_lib::{
-    AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadSecretKeys, AsfaloadSignatureTrait,
-};
+use features_lib::{AsfaloadSecretKeys, AsfaloadSignatureTrait};
 use git2::Repository;
 use rest_api_auth::{
     AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP,
@@ -273,10 +271,9 @@ pub async fn create_auth_headers_with_key(
 
 /// Helper function to create authentication headers for a given payload
 pub async fn create_auth_headers(payload: &str) -> TestAuthHeaders {
-    let test_password = "test_password";
-    let key_pair = AsfaloadKeyPairs::new(test_password).unwrap();
-    let secret_key = key_pair.secret_key(test_password).unwrap();
-    create_auth_headers_with_key(&secret_key, payload).await
+    let test_keys = test_helpers::TestKeys::new(1);
+    let secret_key = test_keys.sec_key(0).unwrap();
+    create_auth_headers_with_key(secret_key, payload).await
 }
 pub async fn send_add_file_request_with_key_and_overwrite(
     client: &reqwest::Client,
@@ -329,10 +326,9 @@ pub async fn send_add_file_request(
     port: u16,
     payload: &serde_json::Value,
 ) -> reqwest::Response {
-    let test_password = "test_password";
-    let key_pair = AsfaloadKeyPairs::new(test_password).unwrap();
-    let secret_key = key_pair.secret_key(test_password).unwrap();
-    send_add_file_request_with_key(client, port, &secret_key, payload).await
+    let test_keys = test_helpers::TestKeys::new(1);
+    let secret_key = test_keys.sec_key(0).unwrap();
+    send_add_file_request_with_key(client, port, secret_key, payload).await
 }
 
 pub async fn send_repeated_add_file_request(

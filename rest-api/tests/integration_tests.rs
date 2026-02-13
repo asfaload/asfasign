@@ -561,8 +561,8 @@ pub mod tests {
     #[tokio::test]
     async fn test_register_repo_success() -> Result<(), anyhow::Error> {
         use features_lib::{
-            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-            AsfaloadSignatureTrait, sha512_for_content,
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+            sha512_for_content,
         };
         use git2::Repository;
         use httpmock::Method;
@@ -576,10 +576,9 @@ pub mod tests {
 
         let mock_server = httpmock::MockServer::start();
 
-        let test_password = "test_password";
-        let key_pair = features_lib::AsfaloadKeyPairs::new(test_password)?;
-        let public_key = key_pair.public_key();
-        let secret_key = key_pair.secret_key(test_password)?;
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
 
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             1,
@@ -622,7 +621,7 @@ pub mod tests {
             nonce,
             signature: auth_signature,
             public_key: auth_public_key,
-        } = create_auth_headers_with_key(&secret_key, &payload_string).await;
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
 
         let response = client
             .post(format!("http://localhost:{}/v1/register_repo", port))
@@ -658,8 +657,8 @@ pub mod tests {
     async fn test_register_repo_success_without_immediate_activation() -> Result<(), anyhow::Error>
     {
         use features_lib::{
-            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-            AsfaloadSignatureTrait, sha512_for_content,
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+            sha512_for_content,
         };
         use git2::Repository;
         use httpmock::Method;
@@ -673,14 +672,11 @@ pub mod tests {
 
         let mock_server = httpmock::MockServer::start();
 
-        let test_password = "test_password";
-        let key_pair = features_lib::AsfaloadKeyPairs::new(test_password)?;
-        let public_key = key_pair.public_key();
-        let secret_key = key_pair.secret_key(test_password)?;
+        let test_keys = test_helpers::TestKeys::new(2);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
 
-        let key_pair_2 = features_lib::AsfaloadKeyPairs::new(test_password)?;
-        let public_key_2 = key_pair_2.public_key();
-        let secret_key_2 = key_pair_2.secret_key(test_password)?;
+        let public_key_2 = test_keys.pub_key(1).unwrap();
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             1,
             (vec![public_key.clone(), public_key_2.clone()], 1),
@@ -722,7 +718,7 @@ pub mod tests {
             nonce,
             signature: auth_signature,
             public_key: auth_public_key,
-        } = create_auth_headers_with_key(&secret_key, &payload_string).await;
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
 
         let response = client
             .post(format!("http://localhost:{}/v1/register_repo", port))
@@ -759,8 +755,8 @@ pub mod tests {
     #[tokio::test]
     async fn test_register_repo_already_exists() -> Result<(), anyhow::Error> {
         use features_lib::{
-            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-            AsfaloadSignatureTrait, sha512_for_content,
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+            sha512_for_content,
         };
         use git2::Repository;
         use httpmock::Method;
@@ -776,10 +772,9 @@ pub mod tests {
 
         let mock_server = httpmock::MockServer::start();
 
-        let test_password = "test_password";
-        let key_pair = features_lib::AsfaloadKeyPairs::new(test_password)?;
-        let public_key = key_pair.public_key();
-        let secret_key = key_pair.secret_key(test_password)?;
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
 
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             1,
@@ -820,7 +815,7 @@ pub mod tests {
             nonce,
             signature: auth_signature,
             public_key: auth_public_key,
-        } = create_auth_headers_with_key(&secret_key, &payload_string).await;
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
 
         let response = client
             .post(format!("http://localhost:{}/v1/register_repo", port))
@@ -848,7 +843,7 @@ pub mod tests {
     #[tokio::test]
     async fn test_register_repo_cleans_up_on_repo_handler_failure() -> Result<(), anyhow::Error> {
         use constants::PENDING_SIGNERS_DIR;
-        use features_lib::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait, sha512_for_content};
+        use features_lib::{AsfaloadSecretKeyTrait, sha512_for_content};
         use git2::Repository;
         use kameo::actor::Spawn;
         use rest_api::file_auth::actors::git_actor::GitActor;
@@ -866,17 +861,15 @@ pub mod tests {
 
         // Use 2 signers so the signature stays pending after init (only key_pair1 signs).
         // With 1 signer, initialize_signers_file completes immediately and renames pending -> active.
-        let test_password = "test_password";
-        let key_pair1 = features_lib::AsfaloadKeyPairs::new(test_password)?;
-        let key_pair2 = features_lib::AsfaloadKeyPairs::new(test_password)?;
-        let secret_key = key_pair1.secret_key(test_password)?;
+        let test_keys = test_helpers::TestKeys::new(2);
+        let secret_key = test_keys.sec_key(0).unwrap();
 
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             1,
             (
                 vec![
-                    key_pair1.public_key().clone(),
-                    key_pair2.public_key().clone(),
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
                 ],
                 2,
             ),
@@ -888,7 +881,7 @@ pub mod tests {
 
         let hash = sha512_for_content(signers_json.as_bytes().to_vec())?;
         let signature = secret_key.sign(&hash)?;
-        let pubkey = key_pair1.public_key();
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
         let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
@@ -980,8 +973,8 @@ pub mod tests {
     #[tokio::test]
     async fn test_register_repo_errors_dont_leak_internal_details() -> Result<(), anyhow::Error> {
         use features_lib::{
-            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-            AsfaloadSignatureTrait, sha512_for_content,
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+            sha512_for_content,
         };
         use git2::Repository;
         use rest_api_types::RegisterRepoRequest;
@@ -999,10 +992,9 @@ pub mod tests {
         let client = reqwest::Client::new();
 
         // Create a dummy signature (the URL is fake so it doesn't matter)
-        let test_password = "test_password";
-        let key_pair = features_lib::AsfaloadKeyPairs::new(test_password)?;
-        let public_key = key_pair.public_key();
-        let secret_key = key_pair.secret_key(test_password)?;
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
         let dummy_hash = sha512_for_content(b"dummy content".to_vec())?;
         let dummy_signature = secret_key.sign(&dummy_hash)?;
 
@@ -1018,7 +1010,7 @@ pub mod tests {
             nonce,
             signature: auth_signature,
             public_key: auth_public_key,
-        } = create_auth_headers_with_key(&secret_key, &payload_string).await;
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
 
         let response = client
             .post(format!("http://localhost:{}/v1/register_repo", port))
@@ -1061,8 +1053,7 @@ pub mod tests {
     #[tokio::test]
     async fn test_submit_signature_for_artifact_file() -> Result<(), anyhow::Error> {
         use features_lib::{
-            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-            AsfaloadSignatureTrait, sha512_for_file,
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file,
         };
         use rest_api_types::SubmitSignatureRequest;
         use rest_api_types::SubmitSignatureResponse;
@@ -1073,8 +1064,8 @@ pub mod tests {
         git2::Repository::init(&git_repo_path)?;
 
         // Create signers config
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
-        let public_key = key_pair.public_key();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
 
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             1,
@@ -1095,7 +1086,7 @@ pub mod tests {
 
         // Create the signature
         let digest = sha512_for_file(&artifact_file)?;
-        let secret_key = key_pair.secret_key("test_password")?;
+        let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&digest)?;
 
         let port = get_random_port().await?;
@@ -1168,8 +1159,7 @@ pub mod tests {
         use constants::SIGNERS_DIR;
         use constants::SIGNERS_FILE;
         use features_lib::{
-            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-            AsfaloadSignatureTrait, sha512_for_file,
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file,
         };
         use rest_api_types::SubmitSignatureRequest;
         use rest_api_types::SubmitSignatureResponse;
@@ -1177,8 +1167,8 @@ pub mod tests {
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
 
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
-        let public_key = key_pair.public_key();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
 
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             1,
@@ -1196,7 +1186,7 @@ pub mod tests {
         tokio::fs::write(pending_signers_path.clone(), &signers_json).await?;
 
         let digest = sha512_for_file(&pending_signers_path)?;
-        let secret_key = key_pair.secret_key("test_password")?;
+        let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&digest)?;
 
         let port = get_random_port().await?;
@@ -1280,7 +1270,6 @@ pub mod tests {
     //#[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_get_signature_status() -> Result<(), anyhow::Error> {
-        use features_lib::AsfaloadKeyPairTrait;
         use rest_api_types::GetSignatureStatusResponse;
 
         let temp_dir = TempDir::new()?;
@@ -1289,10 +1278,10 @@ pub mod tests {
         git2::Repository::init(&git_repo_path)?;
 
         // Create signers config
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
+        let test_keys = test_helpers::TestKeys::new(1);
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             1,
-            (vec![key_pair.public_key().clone()], 1),
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
         )?;
 
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
@@ -1335,8 +1324,7 @@ pub mod tests {
         use constants::SIGNERS_DIR;
         use constants::SIGNERS_FILE;
         use features_lib::{
-            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-            AsfaloadSignatureTrait, sha512_for_file,
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file,
         };
         use rest_api_test_helpers::print_logs;
         use rest_api_types::SubmitSignatureRequest;
@@ -1349,15 +1337,14 @@ pub mod tests {
         git2::Repository::init(&git_repo_path)?;
 
         // Create signers config with 2 signers, threshold 2
-        let key_pair1 = features_lib::AsfaloadKeyPairs::new("test_password1")?;
-        let key_pair2 = features_lib::AsfaloadKeyPairs::new("test_password2")?;
+        let test_keys = test_helpers::TestKeys::new(2);
 
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             2,
             (
                 vec![
-                    key_pair1.public_key().clone(),
-                    key_pair2.public_key().clone(),
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
                 ],
                 2,
             ),
@@ -1377,9 +1364,9 @@ pub mod tests {
 
         // Create signatures
         let digest = sha512_for_file(&artifact_file)?;
-        let secret_key1 = key_pair1.secret_key("test_password1")?;
+        let secret_key1 = test_keys.sec_key(0).unwrap();
         let signature1 = secret_key1.sign(&digest)?;
-        let secret_key2 = key_pair2.secret_key("test_password2")?;
+        let secret_key2 = test_keys.sec_key(1).unwrap();
         let signature2 = secret_key2.sign(&digest)?;
 
         let port = get_random_port().await?;
@@ -1399,7 +1386,7 @@ pub mod tests {
             .post("/v1/signatures")
             .json(&SubmitSignatureRequest {
                 file_path: "releases/release.txt".to_string(),
-                public_key: key_pair1.public_key().to_base64(),
+                public_key: test_keys.pub_key(0).unwrap().to_base64(),
                 signature: signature1.to_base64(),
             })
             .await;
@@ -1427,7 +1414,7 @@ pub mod tests {
             .post("/v1/signatures")
             .json(&SubmitSignatureRequest {
                 file_path: "releases/release.txt".to_string(),
-                public_key: key_pair2.public_key().to_base64(),
+                public_key: test_keys.pub_key(1).unwrap().to_base64(),
                 signature: signature2.to_base64(),
             })
             .await;
@@ -1468,7 +1455,7 @@ pub mod tests {
     #[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_submit_signature_file_not_found() -> Result<(), anyhow::Error> {
-        use features_lib::{AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait};
+        use features_lib::AsfaloadPublicKeyTrait;
         use rest_api_types::SubmitSignatureRequest;
 
         let temp_dir = TempDir::new()?;
@@ -1476,8 +1463,8 @@ pub mod tests {
 
         git2::Repository::init(&git_repo_path)?;
 
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
-        let public_key = key_pair.public_key();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
 
         let port = get_random_port().await?;
         let config = build_test_config(&git_repo_path, port);
@@ -1519,8 +1506,8 @@ pub mod tests {
     #[tokio::test]
     async fn test_revoke_fully_signed_artifact() -> Result<(), anyhow::Error> {
         use features_lib::{
-            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-            AsfaloadSignatureTrait, sha512_for_content, sha512_for_file,
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+            sha512_for_content, sha512_for_file,
         };
         use rest_api_types::{
             RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
@@ -1532,8 +1519,8 @@ pub mod tests {
         git2::Repository::init(&git_repo_path)?;
 
         // Create signers config
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
-        let public_key = key_pair.public_key();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
 
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             1,
@@ -1554,7 +1541,7 @@ pub mod tests {
 
         // Sign the artifact
         let digest = sha512_for_file(&artifact_file)?;
-        let secret_key = key_pair.secret_key("test_password")?;
+        let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&digest)?;
 
         let port = get_random_port().await?;

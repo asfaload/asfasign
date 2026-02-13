@@ -421,7 +421,7 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 mod tests {
     use super::*;
     use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
-    use features_lib::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait, sha512_for_file};
+    use features_lib::{AsfaloadSecretKeyTrait, sha512_for_file};
     use git2::{Repository, Signature};
     use kameo::actor::Spawn;
     use signers_file_types::SignersConfig;
@@ -471,8 +471,8 @@ mod tests {
         std::fs::create_dir_all(&pending_dir)?;
 
         // Create test keys
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
-        let public_key = key_pair.public_key();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
 
         // Create signers config with 1 signer, threshold 1
         let signers_config =
@@ -483,7 +483,7 @@ mod tests {
 
         // Create the signature
         let digest = sha512_for_file(&pending_signers_path)?;
-        let secret_key = key_pair.secret_key("test_password")?;
+        let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&digest)?;
 
         // Create NormalisedPaths
@@ -497,7 +497,7 @@ mod tests {
         let actor_ref = SignatureCollector::spawn(git_actor);
         let request = CollectSignatureRequest {
             file_path,
-            public_key,
+            public_key: public_key.clone(),
             signature,
             request_id: "test-123".to_string(),
         };
@@ -539,9 +539,11 @@ mod tests {
         std::fs::create_dir_all(&signers_dir)?;
 
         // Create signers config
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))?;
+        let test_keys = test_helpers::TestKeys::new(1);
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )?;
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
         std::fs::write(signers_dir.join(SIGNERS_FILE), signers_json)?;
 
@@ -556,9 +558,9 @@ mod tests {
         std::fs::write(&artifact_file, "artifact content")?;
 
         // Create the signature
-        let public_key = key_pair.public_key();
+        let public_key = test_keys.pub_key(0).unwrap();
         let digest = sha512_for_file(&artifact_file)?;
-        let secret_key = key_pair.secret_key("test_password")?;
+        let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&digest)?;
 
         let file_path = make_normalised_paths(&temp_dir, &artifact_path).await;
@@ -570,7 +572,7 @@ mod tests {
         let actor_ref = SignatureCollector::spawn(git_actor);
         let request = CollectSignatureRequest {
             file_path,
-            public_key,
+            public_key: public_key.clone(),
             signature,
             request_id: "test-456".to_string(),
         };
@@ -597,17 +599,19 @@ mod tests {
         std::fs::create_dir_all(&pending_dir)?;
 
         // Create key pair
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))?;
+        let test_keys = test_helpers::TestKeys::new(1);
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )?;
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
         std::fs::write(&pending_signers_path, signers_json)?;
 
         // Create a signature
         let digest = sha512_for_file(&pending_signers_path)?;
-        let secret_key = key_pair.secret_key("test_password")?;
+        let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&digest)?;
-        let public_key = key_pair.public_key();
+        let public_key = test_keys.pub_key(0).unwrap();
 
         let file_path =
             make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
@@ -638,7 +642,7 @@ mod tests {
         let result2 = actor_ref
             .ask(CollectSignatureRequest {
                 file_path: active_file_path,
-                public_key,
+                public_key: public_key.clone(),
                 signature,
                 request_id: "duplicate-sign".to_string(),
             })
@@ -676,16 +680,15 @@ mod tests {
         std::fs::create_dir_all(&pending_dir)?;
 
         // Create test keys - we'll need 2 for threshold > 1
-        let key_pair1 = features_lib::AsfaloadKeyPairs::new("test_password1")?;
-        let key_pair2 = features_lib::AsfaloadKeyPairs::new("test_password2")?;
+        let test_keys = test_helpers::TestKeys::new(2);
 
         // Create signers config with 2 signers, threshold 2
         let signers_config = SignersConfig::with_artifact_signers_only(
             2,
             (
                 vec![
-                    key_pair1.public_key().clone(),
-                    key_pair2.public_key().clone(),
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
                 ],
                 2,
             ),
@@ -696,9 +699,9 @@ mod tests {
 
         // Create first signature
         let digest = sha512_for_file(&pending_signers_path)?;
-        let secret_key1 = key_pair1.secret_key("test_password1")?;
+        let secret_key1 = test_keys.sec_key(0).unwrap();
         let signature1 = secret_key1.sign(&digest)?;
-        let public_key1 = key_pair1.public_key();
+        let public_key1 = test_keys.pub_key(0).unwrap();
 
         let file_path =
             make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
@@ -711,7 +714,7 @@ mod tests {
         let result1 = actor_ref
             .ask(CollectSignatureRequest {
                 file_path: file_path.clone(),
-                public_key: public_key1,
+                public_key: public_key1.clone(),
                 signature: signature1,
                 request_id: "first-sign".to_string(),
             })
@@ -722,13 +725,13 @@ mod tests {
         assert!(!collect_result1.is_complete); // Should be false - threshold not met yet
 
         // Add second signature to complete aggregate signature
-        let secret_key2 = key_pair2.secret_key("test_password2")?;
+        let secret_key2 = test_keys.sec_key(1).unwrap();
         let signature2 = secret_key2.sign(&digest)?;
-        let public_key2 = key_pair2.public_key();
+        let public_key2 = test_keys.pub_key(1).unwrap();
         let result2 = actor_ref
             .ask(CollectSignatureRequest {
                 file_path: file_path.clone(),
-                public_key: public_key2,
+                public_key: public_key2.clone(),
                 signature: signature2,
                 request_id: "second-sign".to_string(),
             })
@@ -747,9 +750,11 @@ mod tests {
         initialise_git_repo(temp_dir.path())?;
 
         // Create signers config
-        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))?;
+        let test_keys = test_helpers::TestKeys::new(1);
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )?;
 
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
 
@@ -763,9 +768,9 @@ mod tests {
         std::fs::write(&artifact_file, "artifact content")?;
 
         // Create the signature
-        let public_key = key_pair.public_key();
+        let public_key = test_keys.pub_key(0).unwrap();
         let digest = sha512_for_file(&artifact_file)?;
-        let secret_key = key_pair.secret_key("test_password")?;
+        let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&digest)?;
 
         let file_path = make_normalised_paths(&temp_dir, Path::new("release.txt")).await;
@@ -777,7 +782,7 @@ mod tests {
         let result = actor_ref
             .ask(CollectSignatureRequest {
                 file_path,
-                public_key,
+                public_key: public_key.clone(),
                 signature,
                 request_id: "test-root-file".to_string(),
             })
@@ -801,16 +806,14 @@ mod tests {
         let temp_dir = TempDir::new()?;
         initialise_git_repo(temp_dir.path())?;
 
-        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1")?;
-        let key_pair2 = features_lib::AsfaloadKeyPairs::new("pwd2")?;
-        let key_pair_unauth = features_lib::AsfaloadKeyPairs::new("unauth")?;
+        let test_keys = test_helpers::TestKeys::new(3);
 
         let signers_config = SignersConfig::with_artifact_signers_only(
             2,
             (
                 vec![
-                    key_pair1.public_key().clone(),
-                    key_pair2.public_key().clone(),
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
                 ],
                 2,
             ),
@@ -827,7 +830,7 @@ mod tests {
 
         let file_path = make_normalised_paths(&temp_dir, artifact_path).await;
         let digest = sha512_for_file(&artifact_full_path)?;
-        let signature = key_pair_unauth.secret_key("unauth")?.sign(&digest)?;
+        let signature = test_keys.sec_key(2).unwrap().sign(&digest)?;
 
         let git_actor =
             crate::file_auth::actors::git_actor::GitActor::spawn(artifact_full_path.clone());
@@ -836,7 +839,7 @@ mod tests {
         let result = actor_ref
             .ask(CollectSignatureRequest {
                 file_path,
-                public_key: key_pair_unauth.public_key(),
+                public_key: test_keys.pub_key(2).unwrap().clone(),
                 signature,
                 request_id: "test-unauth-1".to_string(),
             })
@@ -865,18 +868,15 @@ mod tests {
         initialise_git_repo(temp_dir.path())?;
 
         // Create old signers config with admin (key 0) and master (key 1)
-        let key_pair0 = features_lib::AsfaloadKeyPairs::new("pwd0")?;
-        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1")?;
-        let key_pair_unauth = features_lib::AsfaloadKeyPairs::new("unauth")?;
-        let key_pair2 = features_lib::AsfaloadKeyPairs::new("pwd2")?;
+        let test_keys = test_helpers::TestKeys::new(4);
 
         // First, establish the current signers configuration
         // We create a config with admin and master signers (existing signers for the signers file)
         let old_config = SignersConfig::with_keys(
             1,
             (vec![], 1),
-            Some((vec![key_pair0.public_key().clone()], 1)),
-            Some((vec![key_pair1.public_key().clone()], 1)),
+            Some((vec![test_keys.pub_key(0).unwrap().clone()], 1)),
+            Some((vec![test_keys.pub_key(1).unwrap().clone()], 1)),
         )?;
 
         let signers_dir = temp_dir.path().join(SIGNERS_DIR);
@@ -886,12 +886,12 @@ mod tests {
             serde_json::to_string_pretty(&old_config)?,
         )?;
 
-        // Create new signers config (in pending) that adds key_pair2 as artifact signer
+        // Create new signers config (in pending) that adds key 3 as artifact signer
         let new_config = SignersConfig::with_keys(
             2,
-            (vec![key_pair2.public_key().clone()], 1),
-            Some((vec![key_pair0.public_key().clone()], 1)),
-            Some((vec![key_pair1.public_key().clone()], 1)),
+            (vec![test_keys.pub_key(3).unwrap().clone()], 1),
+            Some((vec![test_keys.pub_key(0).unwrap().clone()], 1)),
+            Some((vec![test_keys.pub_key(1).unwrap().clone()], 1)),
         )?;
         let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
         std::fs::create_dir_all(&pending_dir)?;
@@ -905,8 +905,8 @@ mod tests {
         let relative_path = format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE);
         let file_path = make_normalised_paths(&temp_dir, &relative_path).await;
 
-        let digest = sha512_for_file(&pending_dir.join(SIGNERS_FILE))?;
-        let signature = key_pair_unauth.secret_key("unauth")?.sign(&digest)?;
+        let digest = sha512_for_file(pending_dir.join(SIGNERS_FILE))?;
+        let signature = test_keys.sec_key(2).unwrap().sign(&digest)?;
 
         let git_actor =
             crate::file_auth::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
@@ -915,7 +915,7 @@ mod tests {
         let result = actor_ref
             .ask(CollectSignatureRequest {
                 file_path,
-                public_key: key_pair_unauth.public_key(),
+                public_key: test_keys.pub_key(2).unwrap().clone(),
                 signature,
                 request_id: "test-unauth-signers".to_string(),
             })
@@ -939,16 +939,14 @@ mod tests {
         initialise_git_repo(temp_dir.path())?;
 
         // Create initial signers config
-        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1")?;
-        let key_pair2 = features_lib::AsfaloadKeyPairs::new("pwd2")?;
-        let key_pair_unauth = features_lib::AsfaloadKeyPairs::new("unauth")?;
+        let test_keys = test_helpers::TestKeys::new(3);
 
         let config = SignersConfig::with_artifact_signers_only(
             2,
             (
                 vec![
-                    key_pair1.public_key().clone(),
-                    key_pair2.public_key().clone(),
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
                 ],
                 2,
             ),
@@ -965,8 +963,8 @@ mod tests {
         let relative_path = format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE);
         let file_path = make_normalised_paths(&temp_dir, &relative_path).await;
 
-        let digest = sha512_for_file(&pending_dir.join(SIGNERS_FILE))?;
-        let signature = key_pair_unauth.secret_key("unauth")?.sign(&digest)?;
+        let digest = sha512_for_file(pending_dir.join(SIGNERS_FILE))?;
+        let signature = test_keys.sec_key(2).unwrap().sign(&digest)?;
 
         let git_actor =
             crate::file_auth::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
@@ -975,7 +973,7 @@ mod tests {
         let result = actor_ref
             .ask(CollectSignatureRequest {
                 file_path,
-                public_key: key_pair_unauth.public_key(),
+                public_key: test_keys.pub_key(2).unwrap().clone(),
                 signature,
                 request_id: "test-unauth-initial".to_string(),
             })

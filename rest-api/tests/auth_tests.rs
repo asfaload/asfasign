@@ -5,7 +5,6 @@ pub mod auth_tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
-    use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
     use rest_api::{auth_middleware::MAX_BODY_SIZE, server::run_server};
     use rest_api_auth::{HEADER_NONCE, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::{
@@ -15,6 +14,7 @@ pub mod auth_tests {
     };
     use serde_json::{Value, json};
     use tempfile::TempDir;
+    use test_helpers::TestKeys;
 
     // We test success and error cases in one test. Doing it in different tests duplicates
     // the server setup, keypair generation, etc.
@@ -44,12 +44,11 @@ pub mod auth_tests {
             "content": "This should succeed with proper authentication"
         });
 
-        // Generate a test key pair
-        let test_password = "test_password";
-        let key_pair = AsfaloadKeyPairs::new(test_password).unwrap();
-        let secret_key = key_pair.secret_key(test_password).unwrap();
+        // Load a pre-generated test key pair
+        let test_keys = TestKeys::new(1);
+        let secret_key = test_keys.sec_key(0).unwrap();
 
-        let response = send_add_file_request_with_key(&client, port, &secret_key, &payload).await;
+        let response = send_add_file_request_with_key(&client, port, secret_key, &payload).await;
 
         // Check the response status - should be 200 OK
         let status = response.status();
@@ -75,11 +74,7 @@ pub mod auth_tests {
             "invalid_signature".to_string(),
         );
         let response = send_add_file_request_with_key_and_overwrite(
-            &client,
-            port,
-            &secret_key,
-            &payload,
-            overwrite,
+            &client, port, secret_key, &payload, overwrite,
         )
         .await;
 
@@ -100,11 +95,7 @@ pub mod auth_tests {
         let mut overwrite: HashMap<String, String> = HashMap::new();
         overwrite.insert(HEADER_TIMESTAMP.to_string(), old_timestamp.to_rfc3339());
         let response = send_add_file_request_with_key_and_overwrite(
-            &client,
-            port,
-            &secret_key,
-            &payload,
-            overwrite,
+            &client, port, secret_key, &payload, overwrite,
         )
         .await;
 
@@ -127,11 +118,7 @@ pub mod auth_tests {
         let mut overwrite: HashMap<String, String> = HashMap::new();
         overwrite.insert(HEADER_NONCE.to_string(), "invalid_nonce".to_string());
         let response = send_add_file_request_with_key_and_overwrite(
-            &client,
-            port,
-            &secret_key,
-            &payload,
-            overwrite,
+            &client, port, secret_key, &payload, overwrite,
         )
         .await;
 
@@ -184,10 +171,9 @@ pub mod auth_tests {
         // Create a client to send requests
         let client = reqwest::Client::new();
 
-        // Generate a test key pair
-        let test_password = "test_password";
-        let key_pair = AsfaloadKeyPairs::new(test_password).unwrap();
-        let secret_key = key_pair.secret_key(test_password).unwrap();
+        // Load a pre-generated test key pair
+        let test_keys = TestKeys::new(1);
+        let secret_key = test_keys.sec_key(0).unwrap();
 
         // Test 1: Normal sized file (should succeed)
         let normal_content = "This is a normal sized file content".to_string();
@@ -195,7 +181,7 @@ pub mod auth_tests {
             "file_path": "normal_file.txt",
             "content": normal_content
         });
-        let response = send_add_file_request_with_key(&client, port, &secret_key, &payload).await;
+        let response = send_add_file_request_with_key(&client, port, secret_key, &payload).await;
 
         assert_eq!(response.status(), StatusCode::OK);
         let response_body: Value = response.json().await.expect("Failed to parse response");
@@ -208,7 +194,7 @@ pub mod auth_tests {
             "content": oversized_content
         });
 
-        let response = send_add_file_request_with_key(&client, port, &secret_key, &payload).await;
+        let response = send_add_file_request_with_key(&client, port, secret_key, &payload).await;
 
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
         let response_body: Value = response.json().await.expect("Failed to parse response");
@@ -230,7 +216,7 @@ pub mod auth_tests {
             "file_path": file_path,
             "content": max_content
         });
-        let response = send_add_file_request_with_key(&client, port, &secret_key, &payload).await;
+        let response = send_add_file_request_with_key(&client, port, secret_key, &payload).await;
         assert_eq!(response.status(), StatusCode::OK);
         let response_body: Value = response.json().await.expect("Failed to parse response");
         assert_eq!(response_body["success"], true);
