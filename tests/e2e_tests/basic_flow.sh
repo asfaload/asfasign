@@ -211,7 +211,7 @@ run_step "Download artifact (v0.8.0)" \
 run_step "Revoke artifact (v0.6.0)" \
     cargo run -- revoke --secret-key "$SCRIPT_DIR/private/key4" -p secret -u "$backend" github.com/asfaload/asfald/releases/tag/v0.6.0/asfaload.index.json
 
-run_step "Download artifact (v0.6.0, revoked)" \
+expect_fail "Download artifact (v0.6.0, revoked)" \
     cargo run --quiet -- download -o "$(mktemp)" -u "$backend" https://github.com/asfaload/asfald/releases/download/v0.6.0/asfald-x86_64-unknown-linux-musl.tar.gz
 
 ################################################################################

@@ -1,4 +1,5 @@
 mod github;
+mod revocation;
 mod v1;
 
 use crate::{AsfaloadLibResult, ClientLibError};

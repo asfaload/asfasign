@@ -54,7 +54,27 @@ pub async fn download_file_with_verification(
         forge.construct_file_repo_path(&url, &signatures_filename.to_string_lossy())?;
     let signatures_url = format!("{}/v1/files/{}", backend_url, signatures_file_path);
     let signatures_content =
-        download_file(&client, &signatures_url, &DownloadCallbacks::default()).await?;
+        match download_file(&client, &signatures_url, &DownloadCallbacks::default()).await {
+            Ok(content) => content,
+            Err(ClientLibError::HttpError {
+                status: 404,
+                url: missing_url,
+            }) => {
+                return Err(super::revocation::check_revocation(
+                    &client,
+                    &url,
+                    &forge,
+                    backend_url,
+                    callbacks,
+                    ClientLibError::HttpError {
+                        status: 404,
+                        url: missing_url,
+                    },
+                )
+                .await);
+            }
+            Err(e) => return Err(e),
+        };
     callbacks.emit_signatures_downloaded(signatures_content.len());
 
     let file_hash = sha512_for_content(index_content)?;

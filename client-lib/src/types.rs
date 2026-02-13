@@ -123,6 +123,12 @@ pub struct FileSavedArgs {
 }
 
 #[derive(Clone)]
+pub struct RevocationDetectedArgs {
+    pub timestamp: String,
+    pub initiator: String,
+}
+
+#[derive(Clone)]
 pub struct CompletedArgs {
     pub result: DownloadResult,
 }
@@ -152,6 +158,7 @@ pub struct DownloadCallbacks {
     pub on_file_download_completed: Option<Box<dyn Fn(&FileDownloadCompletedArgs) + Send>>,
     pub on_file_hash_verified: Option<Box<dyn Fn(&FileHashVerifiedArgs) + Send>>,
     pub on_file_saved: Option<Box<dyn Fn(&FileSavedArgs) + Send>>,
+    pub on_revocation_detected: Option<Box<dyn Fn(&RevocationDetectedArgs) + Send>>,
     pub on_completed: Option<Box<dyn Fn(&CompletedArgs) + Send>>,
 }
 
@@ -232,6 +239,14 @@ impl DownloadCallbacks {
 
     pub fn with_file_saved<F: Fn(&FileSavedArgs) + Send + 'static>(mut self, f: F) -> Self {
         self.on_file_saved = Some(Box::new(f));
+        self
+    }
+
+    pub fn with_revocation_detected<F: Fn(&RevocationDetectedArgs) + Send + 'static>(
+        mut self,
+        f: F,
+    ) -> Self {
+        self.on_revocation_detected = Some(Box::new(f));
         self
     }
 
@@ -335,6 +350,16 @@ impl DownloadCallbacks {
         if let Some(ref f) = self.on_file_saved {
             let args = FileSavedArgs {
                 path: path.to_path_buf(),
+            };
+            f(&args);
+        }
+    }
+
+    pub(crate) fn emit_revocation_detected(&self, timestamp: &str, initiator: &str) {
+        if let Some(ref f) = self.on_revocation_detected {
+            let args = RevocationDetectedArgs {
+                timestamp: timestamp.to_string(),
+                initiator: initiator.to_string(),
             };
             f(&args);
         }

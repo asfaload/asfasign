@@ -29,6 +29,11 @@ pub async fn handle_download_command(
                 args.valid_count
             );
         })
+        .with_revocation_detected(|args| {
+            eprintln!("This file has been revoked.");
+            eprintln!("  Revoked at: {}", args.timestamp);
+            eprintln!("  Revoked by: {}", args.initiator);
+        })
         .with_file_hash_verified(|args| {
             println!(
                 "✓ File hash verified ({})",

@@ -40,6 +40,12 @@ pub enum ClientLibError {
         computed: features_lib::HashAlgorithm,
     },
 
+    #[error("File has been revoked at {timestamp} by {initiator}")]
+    FileRevoked {
+        timestamp: String,
+        initiator: String,
+    },
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
