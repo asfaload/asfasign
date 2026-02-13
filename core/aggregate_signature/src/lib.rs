@@ -734,8 +734,8 @@ mod tests {
         PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR,
         SIGNERS_FILE, SIGNERS_SUFFIX,
     };
-    use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
-    use signatures::types::{AsfaloadKeyPairs, AsfaloadSecretKeys};
+    use signatures::keys::AsfaloadSecretKeyTrait;
+    use signatures::types::AsfaloadSecretKeys;
     use signers_file_types::{
         KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig,
         SignersConfigProposal,
@@ -749,12 +749,10 @@ mod tests {
     #[test]
     fn test_load_and_complete() -> Result<()> {
         // Generate keypairs
-        let keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey = keypair.public_key();
-        let seckey = keypair.secret_key("password").unwrap();
-        let keypair2 = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey2 = keypair2.public_key();
-        let _seckey2 = keypair2.secret_key("password").unwrap();
+        let test_keys = TestKeys::new(2);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+        let seckey = test_keys.sec_key(0).unwrap();
+        let pubkey2 = test_keys.pub_key(1).unwrap().clone();
 
         // Create signature
         let data = common::sha512_for_content(b"test data".to_vec())?;
@@ -832,13 +830,10 @@ mod tests {
         fs::create_dir_all(&dir_path).unwrap();
 
         // Generate keypairs
-        let keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey = keypair.public_key();
-        let seckey = keypair.secret_key("password").unwrap();
-
-        let keypair2 = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey2 = keypair2.public_key();
-        let _seckey2 = keypair2.secret_key("password").unwrap();
+        let test_keys = TestKeys::new(2);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+        let seckey = test_keys.sec_key(0).unwrap();
+        let pubkey2 = test_keys.pub_key(1).unwrap().clone();
 
         // Create signers configuration with threshold 2
 
@@ -930,12 +925,11 @@ mod tests {
     #[test]
     fn test_multiple_groups() -> Result<()> {
         // Generate two keypairs
-        let keypair1 = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey1 = keypair1.public_key();
-        let seckey1 = keypair1.secret_key("password").unwrap();
-        let keypair2 = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey2 = keypair2.public_key();
-        let seckey2 = keypair2.secret_key("password").unwrap();
+        let test_keys = TestKeys::new(2);
+        let pubkey1 = test_keys.pub_key(0).unwrap().clone();
+        let seckey1 = test_keys.sec_key(0).unwrap();
+        let pubkey2 = test_keys.pub_key(1).unwrap().clone();
+        let seckey2 = test_keys.sec_key(1).unwrap();
 
         // Create signatures
         let data = common::sha512_for_content(b"test data".to_vec())?;
@@ -1841,9 +1835,9 @@ mod tests {
         fs::write(&test_file, file_content).unwrap();
 
         // Generate a keypair for signing
-        let keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey = keypair.public_key();
-        let seckey = keypair.secret_key("password").unwrap();
+        let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+        let seckey = test_keys.sec_key(0).unwrap();
 
         // Create a signature for the file content
         let signature = seckey.sign(&hash_for_content).unwrap();
@@ -2726,9 +2720,9 @@ mod tests {
         fs::write(&test_file, file_content)?;
 
         // Generate keypairs
-        let keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey = keypair.public_key();
-        let seckey = keypair.secret_key("password").unwrap();
+        let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+        let seckey = test_keys.sec_key(0).unwrap();
 
         // Create a signature
         let hash_for_content = common::sha512_for_content(file_content.to_vec())?;
@@ -2776,9 +2770,9 @@ mod tests {
         fs::write(&test_file, file_content)?;
 
         // Generate keypairs
-        let keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey = keypair.public_key();
-        let seckey = keypair.secret_key("password").unwrap();
+        let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+        let seckey = test_keys.sec_key(0).unwrap();
 
         // Create a signature
         let hash_for_content = common::sha512_for_content(file_content.to_vec())?;
@@ -2826,12 +2820,11 @@ mod tests {
         fs::write(&test_file, file_content)?;
 
         // Generate two keypairs
-        let keypair1 = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey1 = keypair1.public_key();
-        let seckey1 = keypair1.secret_key("password").unwrap();
-        let keypair2 = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey2 = keypair2.public_key();
-        let seckey2 = keypair2.secret_key("password").unwrap();
+        let test_keys = TestKeys::new(2);
+        let pubkey1 = test_keys.pub_key(0).unwrap().clone();
+        let seckey1 = test_keys.sec_key(0).unwrap();
+        let pubkey2 = test_keys.pub_key(1).unwrap().clone();
+        let seckey2 = test_keys.sec_key(1).unwrap();
 
         // Create signatures
         let hash_for_content = common::sha512_for_content(file_content.to_vec())?;
@@ -2927,9 +2920,9 @@ mod tests {
         fs::write(&pending_sig_path, existing_content)?;
 
         // Generate a keypair
-        let keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let pubkey = keypair.public_key();
-        let seckey = keypair.secret_key("password").unwrap();
+        let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+        let seckey = test_keys.sec_key(0).unwrap();
 
         // Create a signature
         let hash_for_content = common::sha512_for_content(b"test content".to_vec())?;
@@ -2988,13 +2981,11 @@ mod tests {
     // Helper function to sign a file and write its signature to disk
     fn sign_and_write_sig_file(
         file_path: &Path,
-        keypair: &AsfaloadKeyPairs,
+        pubkey: &AsfaloadPublicKeys,
+        seckey: &AsfaloadSecretKeys,
     ) -> Result<PathBuf, AggregateSignatureError> {
         let content = std::fs::read_to_string(file_path)?;
         let hash = common::sha512_for_content(content.into_bytes())?;
-        let seckey = keypair.secret_key("password").map_err(|e| {
-            AggregateSignatureError::Signature(format!("Failed to decrypt secret key: {}", e))
-        })?;
         let signature = seckey.sign(&hash).map_err(|e| {
             AggregateSignatureError::Signature(format!("Failed to sign file: {}", e))
         })?;
@@ -3006,7 +2997,7 @@ mod tests {
         ));
 
         let mut sigs = HashMap::new();
-        sigs.insert(keypair.public_key().to_base64(), signature.to_base64());
+        sigs.insert(pubkey.to_base64(), signature.to_base64());
         let sig_json = serde_json::to_string_pretty(&sigs)?;
         std::fs::write(&sig_file_path, sig_json)?;
 
@@ -3024,7 +3015,8 @@ mod tests {
     fn setup_test_hierarchy(
         temp_dir: &TempDir,
         signers_config: &SignersConfig,
-        signers_keypair: &AsfaloadKeyPairs,
+        signers_pubkey: &AsfaloadPublicKeys,
+        signers_seckey: &AsfaloadSecretKeys,
     ) -> Result<(PathBuf, PathBuf), AggregateSignatureError> {
         let root = temp_dir.path();
 
@@ -3042,7 +3034,7 @@ mod tests {
         fs::write(&signers_file, &config_json)?;
 
         // Sign the signers file itself
-        sign_and_write_sig_file(&signers_file, signers_keypair)?;
+        sign_and_write_sig_file(&signers_file, signers_pubkey, signers_seckey)?;
 
         Ok((test_file, signers_file))
     }
@@ -3051,20 +3043,19 @@ mod tests {
     fn test_add_individual_signature_success_pending_to_complete_threshold_2() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
 
-        // Generate a keypair for signing the artifact
-        let artifact_keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let artifact_pubkey = artifact_keypair.public_key();
-        let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
-
-        // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
+        // Generate keypairs
+        let test_keys = TestKeys::new(2);
+        let artifact_pubkey = test_keys.pub_key(0).unwrap().clone();
+        let artifact_seckey = test_keys.sec_key(0).unwrap();
+        let signers_pubkey = test_keys.pub_key(1).unwrap();
+        let signers_seckey = test_keys.sec_key(1).unwrap();
 
         // Create a signers configuration with threshold 1
         let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
 
         // Setup the test hierarchy
         let (test_file, _signers_file) =
-            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+            setup_test_hierarchy(&temp_dir, &signers_config, signers_pubkey, signers_seckey)?;
 
         // Create a signature for the file content
         let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
@@ -3098,21 +3089,16 @@ mod tests {
     fn test_add_individual_signature_success_with_threshold_3() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
 
-        // Generate three keypairs for signing the artifact
-        let artifact_keypair1 = AsfaloadKeyPairs::new("password").unwrap();
-        let artifact_pubkey1 = artifact_keypair1.public_key();
-        let artifact_seckey1 = artifact_keypair1.secret_key("password").unwrap();
-
-        let artifact_keypair2 = AsfaloadKeyPairs::new("password").unwrap();
-        let artifact_pubkey2 = artifact_keypair2.public_key();
-        let artifact_seckey2 = artifact_keypair2.secret_key("password").unwrap();
-
-        let artifact_keypair3 = AsfaloadKeyPairs::new("password").unwrap();
-        let artifact_pubkey3 = artifact_keypair3.public_key();
-        let artifact_seckey3 = artifact_keypair3.secret_key("password").unwrap();
-
-        // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
+        // Generate keypairs (3 for artifact + 1 for signers file)
+        let test_keys = TestKeys::new(4);
+        let artifact_pubkey1 = test_keys.pub_key(0).unwrap().clone();
+        let artifact_seckey1 = test_keys.sec_key(0).unwrap();
+        let artifact_pubkey2 = test_keys.pub_key(1).unwrap().clone();
+        let artifact_seckey2 = test_keys.sec_key(1).unwrap();
+        let artifact_pubkey3 = test_keys.pub_key(2).unwrap().clone();
+        let artifact_seckey3 = test_keys.sec_key(2).unwrap();
+        let signers_pubkey = test_keys.pub_key(3).unwrap();
+        let signers_seckey = test_keys.sec_key(3).unwrap();
 
         // Create a signers configuration with threshold 3
         let signers_config = create_signers_config(
@@ -3126,7 +3112,7 @@ mod tests {
 
         // Setup the test hierarchy
         let (test_file, _signers_file) =
-            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+            setup_test_hierarchy(&temp_dir, &signers_config, signers_pubkey, signers_seckey)?;
 
         // Create empty pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
@@ -3181,15 +3167,13 @@ mod tests {
     fn test_add_individual_signature_success_stays_pending() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
 
-        // Generate two keypairs for signing the artifact
-        let artifact_keypair1 = AsfaloadKeyPairs::new("password").unwrap();
-        let artifact_pubkey1 = artifact_keypair1.public_key();
-        let artifact_seckey1 = artifact_keypair1.secret_key("password").unwrap();
-        let artifact_keypair2 = AsfaloadKeyPairs::new("password").unwrap();
-        let artifact_pubkey2 = artifact_keypair2.public_key();
-
-        // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
+        // Generate keypairs (2 for artifact + 1 for signers file)
+        let test_keys = TestKeys::new(3);
+        let artifact_pubkey1 = test_keys.pub_key(0).unwrap().clone();
+        let artifact_seckey1 = test_keys.sec_key(0).unwrap();
+        let artifact_pubkey2 = test_keys.pub_key(1).unwrap().clone();
+        let signers_pubkey = test_keys.pub_key(2).unwrap();
+        let signers_seckey = test_keys.sec_key(2).unwrap();
 
         // Create a signers configuration with threshold 2
         let signers_config =
@@ -3197,7 +3181,7 @@ mod tests {
 
         // Setup the test hierarchy
         let (test_file, _signers_file) =
-            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+            setup_test_hierarchy(&temp_dir, &signers_config, signers_pubkey, signers_seckey)?;
 
         // Create a signature for the file content
         let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
@@ -3229,20 +3213,19 @@ mod tests {
     fn test_add_individual_signature_io_error_on_save() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
 
-        // Generate a keypair for signing the artifact
-        let artifact_keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let artifact_pubkey = artifact_keypair.public_key();
-        let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
-
-        // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
+        // Generate keypairs
+        let test_keys = TestKeys::new(2);
+        let artifact_pubkey = test_keys.pub_key(0).unwrap().clone();
+        let artifact_seckey = test_keys.sec_key(0).unwrap();
+        let signers_pubkey = test_keys.pub_key(1).unwrap();
+        let signers_seckey = test_keys.sec_key(1).unwrap();
 
         // Create a signers configuration
         let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
 
         // Setup the test hierarchy
         let (test_file, _signers_file) =
-            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+            setup_test_hierarchy(&temp_dir, &signers_config, signers_pubkey, signers_seckey)?;
 
         // Create a signature for the file content
         let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
@@ -3285,20 +3268,19 @@ mod tests {
     fn test_add_individual_signature_signature_error() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
 
-        // Generate a keypair for signing the artifact
-        let artifact_keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let artifact_pubkey = artifact_keypair.public_key();
-        let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
-
-        // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
+        // Generate keypairs
+        let test_keys = TestKeys::new(2);
+        let artifact_pubkey = test_keys.pub_key(0).unwrap().clone();
+        let artifact_seckey = test_keys.sec_key(0).unwrap();
+        let signers_pubkey = test_keys.pub_key(1).unwrap();
+        let signers_seckey = test_keys.sec_key(1).unwrap();
 
         // Create a signers configuration
         let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
 
         // Setup the test hierarchy
         let (test_file, _signers_file) =
-            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+            setup_test_hierarchy(&temp_dir, &signers_config, signers_pubkey, signers_seckey)?;
 
         // Create a signature for different content with artifact_keypair
         let wrong_hash = common::sha512_for_content(b"wrong content".to_vec())?;
@@ -3329,20 +3311,19 @@ mod tests {
     fn test_add_individual_signature_load_error() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
 
-        // Generate a keypair for signing the artifact
-        let artifact_keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let artifact_pubkey = artifact_keypair.public_key();
-        let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
-
-        // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
+        // Generate keypairs
+        let test_keys = TestKeys::new(2);
+        let artifact_pubkey = test_keys.pub_key(0).unwrap().clone();
+        let artifact_seckey = test_keys.sec_key(0).unwrap();
+        let signers_pubkey = test_keys.pub_key(1).unwrap();
+        let signers_seckey = test_keys.sec_key(1).unwrap();
 
         // Create a signers configuration
         let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 1);
 
         // Setup the test hierarchy
         let (test_file, _signers_file) =
-            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+            setup_test_hierarchy(&temp_dir, &signers_config, signers_pubkey, signers_seckey)?;
 
         // Create a signature for the file content
         let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
@@ -3378,20 +3359,19 @@ mod tests {
     fn test_add_individual_signature_io_error_on_directory_creation() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
 
-        // Generate a keypair for signing the artifact
-        let artifact_keypair = AsfaloadKeyPairs::new("password").unwrap();
-        let artifact_pubkey = artifact_keypair.public_key();
-        let artifact_seckey = artifact_keypair.secret_key("password").unwrap();
-
-        // Generate a keypair for signing the signers file itself
-        let signers_keypair = AsfaloadKeyPairs::new("password").unwrap();
+        // Generate keypairs
+        let test_keys = TestKeys::new(2);
+        let artifact_pubkey = test_keys.pub_key(0).unwrap().clone();
+        let artifact_seckey = test_keys.sec_key(0).unwrap();
+        let signers_pubkey = test_keys.pub_key(1).unwrap();
+        let signers_seckey = test_keys.sec_key(1).unwrap();
 
         // Create a signers configuration
         let signers_config = create_signers_config(vec![artifact_pubkey.clone()], 2);
 
         // Setup the test hierarchy
         let (test_file, _signers_file) =
-            setup_test_hierarchy(&temp_dir, &signers_config, &signers_keypair)?;
+            setup_test_hierarchy(&temp_dir, &signers_config, signers_pubkey, signers_seckey)?;
 
         // Create a signature for the file content
         let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
@@ -4634,8 +4614,8 @@ mod tests {
     fn test_can_signer_add_signature_authorized() {
         let temp_dir = TempDir::new().unwrap();
 
-        let key_pair = AsfaloadKeyPairs::new("test_pwd").unwrap();
-        let public_key = key_pair.public_key();
+        let test_keys = TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap().clone();
 
         let signers_config =
             SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1)).unwrap();
@@ -4663,10 +4643,9 @@ mod tests {
     fn test_can_signer_add_signature_unauthorized() {
         let temp_dir = TempDir::new().unwrap();
 
-        let key_pair1 = AsfaloadKeyPairs::new("test_pwd1").unwrap();
-        let key_pair2 = AsfaloadKeyPairs::new("test_pwd2").unwrap();
-        let public_key1 = key_pair1.public_key();
-        let public_key2 = key_pair2.public_key();
+        let test_keys = TestKeys::new(2);
+        let public_key1 = test_keys.pub_key(0).unwrap().clone();
+        let public_key2 = test_keys.pub_key(1).unwrap().clone();
 
         let signers_config =
             SignersConfig::with_artifact_signers_only(1, (vec![public_key1.clone()], 1)).unwrap();
@@ -4693,8 +4672,9 @@ mod tests {
     fn test_can_signer_add_signature_already_signed() {
         let temp_dir = TempDir::new().unwrap();
 
-        let key_pair = AsfaloadKeyPairs::new("test_pwd").unwrap();
-        let public_key = key_pair.public_key();
+        let test_keys = TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap().clone();
+        let secret_key = test_keys.sec_key(0).unwrap();
 
         let signers_config =
             SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1)).unwrap();
@@ -4711,7 +4691,6 @@ mod tests {
 
         let pending_sig_path = pending_signatures_path_for(&artifact_path).unwrap();
         let hash = sha512_for_file(&artifact_path).unwrap();
-        let secret_key = key_pair.secret_key("test_pwd").unwrap();
         let signature = secret_key.sign(&hash).unwrap();
         let pending_content = serde_json::json!({
             public_key.to_base64(): signature.to_base64()
