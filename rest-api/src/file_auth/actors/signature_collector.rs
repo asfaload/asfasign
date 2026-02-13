@@ -338,6 +338,15 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 
         let abs_path = msg.file_path.absolute_path();
 
+        // Check validity of path for revocation
+        let rel_path = msg.file_path.relative_path();
+        let rel_parent = rel_path.parent();
+        if rel_parent.is_none() || rel_parent == Some(Path::new("")) {
+            return Err(ApiError::InvalidRequestBody(
+                "Files at git repository root cannot be revoked. Files must be in a subdirectory."
+                    .to_string(),
+            ));
+        }
         // Validate file exists
         if !abs_path.exists() {
             return Err(ApiError::InvalidRequestBody(format!(
