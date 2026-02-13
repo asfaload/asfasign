@@ -3,9 +3,9 @@ pub mod tests {
     use anyhow::Result;
     use axum::http::StatusCode;
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
-    use features_lib::{
-        AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadSignatureTrait,
-    };
+    #[cfg(feature = "test-utils")]
+    use features_lib::AsfaloadKeyPairTrait;
+    use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
@@ -40,11 +40,11 @@ pub mod tests {
         let port = get_random_port().await?;
 
         let test_key_path = temp_dir.path().join("test_key.json");
-        let test_password = "test_password_123";
-        let test_key_pair = AsfaloadKeyPairs::new(test_password)?;
+        let test_keys = test_helpers::TestKeys::new_generated(1);
+        let test_key_pair = test_keys.key_pair(0).unwrap();
         test_key_pair.save(&test_key_path)?;
-        let test_secret_key = test_key_pair.secret_key(test_password)?;
-        let test_public_key = test_key_pair.public_key();
+        let test_secret_key = test_keys.sec_key(0).unwrap();
+        let test_public_key = test_keys.pub_key(0).unwrap();
         let public_key_b64 = test_public_key.to_base64();
 
         let signers_dir = git_repo_path
@@ -85,7 +85,7 @@ pub mod tests {
         let payload_str = payload.to_string();
 
         let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
-        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, &test_secret_key)?;
+        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, test_secret_key)?;
 
         let response = tokio::time::timeout(
             Duration::from_secs(10),
@@ -157,9 +157,9 @@ pub mod tests {
 
         let port = get_random_port().await?;
 
-        let test_key_pair = AsfaloadKeyPairs::new("test_password")?;
-        let test_secret_key = test_key_pair.secret_key("test_password")?;
-        let test_public_key = test_key_pair.public_key();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let test_secret_key = test_keys.sec_key(0).unwrap();
+        let test_public_key = test_keys.pub_key(0).unwrap();
         let public_key_b64 = test_public_key.to_base64();
 
         let config = build_test_config(&git_repo_path, port);
@@ -182,7 +182,7 @@ pub mod tests {
         let payload_str = json_body.to_string();
 
         let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
-        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, &test_secret_key)?;
+        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, test_secret_key)?;
 
         let response = tokio::time::timeout(
             Duration::from_secs(5),
@@ -220,9 +220,9 @@ pub mod tests {
 
         let port = get_random_port().await?;
 
-        let test_key_pair = AsfaloadKeyPairs::new("test_password")?;
-        let test_secret_key = test_key_pair.secret_key("test_password")?;
-        let test_public_key = test_key_pair.public_key();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let test_secret_key = test_keys.sec_key(0).unwrap();
+        let test_public_key = test_keys.pub_key(0).unwrap();
         let public_key_b64 = test_public_key.to_base64();
 
         let signers_dir = git_repo_path
@@ -252,7 +252,7 @@ pub mod tests {
         let payload_str = json_body.to_string();
 
         let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
-        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, &test_secret_key)?;
+        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, test_secret_key)?;
 
         let response = tokio::time::timeout(
             Duration::from_secs(5),

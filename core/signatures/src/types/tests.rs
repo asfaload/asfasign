@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use common::errors::keys::{KeyError, SignatureError};
 use constants::PENDING_SIGNATURES_SUFFIX;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 use super::*;
@@ -12,10 +13,38 @@ use super::*;
 //------------------------------------------------------------
 // Keypairs
 //------------------------------------------------------------
-// Helper to initialise a new key pair and get its keys
+
+/// Path to the pre-generated fixture keys directory.
+fn fixtures_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("test_helpers")
+        .join("fixtures")
+        .join("keys")
+}
+
+/// Load a key pair from fixture files (much faster than generating).
 fn get_key_pair() -> Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
-    let kp = AsfaloadKeyPairs::new("mypass")?;
-    Ok((kp.public_key(), kp.secret_key("mypass")?))
+    let dir = fixtures_dir();
+    let pk = AsfaloadPublicKeys::from_file(dir.join("key_0.pub"))?;
+    let sk = AsfaloadSecretKeys::from_file(dir.join("key_0"), "password")?;
+    Ok((pk, sk))
+}
+
+/// Load two key pairs from fixture files.
+fn get_two_key_pairs() -> Result<(
+    AsfaloadPublicKeys,
+    AsfaloadSecretKeys,
+    AsfaloadPublicKeys,
+    AsfaloadSecretKeys,
+)> {
+    let dir = fixtures_dir();
+    let pk1 = AsfaloadPublicKeys::from_file(dir.join("key_0.pub"))?;
+    let sk1 = AsfaloadSecretKeys::from_file(dir.join("key_0"), "password")?;
+    let pk2 = AsfaloadPublicKeys::from_file(dir.join("key_1.pub"))?;
+    let sk2 = AsfaloadSecretKeys::from_file(dir.join("key_1"), "password")?;
+    Ok((pk1, sk1, pk2, sk2))
 }
 
 // Helper function to create a file to sign
@@ -186,14 +215,8 @@ fn test_add_to_aggregate() -> Result<()> {
     let signed_file_path = create_file_to_sign(dir_path.to_path_buf())?;
     std::fs::write(&signed_file_path, "test data")?;
 
-    // Generate a keypair and create a signature
-    let keypair = AsfaloadKeyPairs::new("password")?;
-    let pubkey = keypair.public_key();
-    let seckey = keypair.secret_key("password")?;
-
-    let keypair2 = AsfaloadKeyPairs::new("password")?;
-    let pubkey2 = keypair2.public_key();
-    let seckey2 = keypair2.secret_key("password")?;
+    // Load keypairs from fixtures
+    let (pubkey, seckey, pubkey2, seckey2) = get_two_key_pairs()?;
 
     let data = common::sha512_for_content(b"test data".to_vec())?;
     let wrong_data = common::sha512_for_content(b"wrong data".to_vec())?;
@@ -314,9 +337,7 @@ fn test_signature_trait_error_mapping() -> Result<()> {
 
 #[test]
 fn test_public_key_from_secret_key() -> Result<()> {
-    let kp = AsfaloadKeyPairs::new("mypass")?;
-    let pubkey = kp.public_key();
-    let seckey = kp.secret_key("mypass")?;
+    let (pubkey, seckey) = get_key_pair()?;
 
     let derived_pubkey = AsfaloadPublicKeys::from_secret_key(&seckey)?;
     assert_eq!(derived_pubkey.to_base64(), pubkey.to_base64());

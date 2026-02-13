@@ -102,8 +102,7 @@ mod tests {
     use common::fs::names::{find_global_signers_for, pending_signatures_path_for};
     use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{
-        AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-        AsfaloadSignatureTrait, sha512_for_file,
+        AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file,
     };
     use signers_file_types::{SignersConfig, parse_signers_config};
     use std::fs;
@@ -161,11 +160,13 @@ mod tests {
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
 
         // The keypair for which we will search pending sigs
-        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1").unwrap();
+        let test_keys = test_helpers::TestKeys::new(1);
 
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![key_pair1.public_key().clone()], 1))
-                .unwrap();
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
         let signers_json = serde_json::to_string(&signers_config).unwrap();
 
         let signers_dir = temp_dir.path().join(SIGNERS_DIR);
@@ -186,10 +187,10 @@ mod tests {
         let artifact2 = artifact2_dir.join("file2.txt");
         fs::write(&artifact2, "content2").unwrap();
         let hash = sha512_for_file(&artifact2).unwrap();
-        let sig = key_pair1.secret_key("pwd1").unwrap().sign(&hash).unwrap();
+        let sig = test_keys.sec_key(0).unwrap().sign(&hash).unwrap();
         let pending2 = pending_signatures_path_for(&artifact2).unwrap();
         let pending2_content = serde_json::json!({
-            key_pair1.public_key().to_base64(): sig.to_base64()
+            test_keys.pub_key(0).unwrap().to_base64(): sig.to_base64()
         });
         fs::write(&pending2, pending2_content.to_string()).unwrap();
 
@@ -203,7 +204,7 @@ mod tests {
 
         let discovery = WalkdirPendingDiscovery::new();
         let result = discovery
-            .find_pending_for_signer(&normalised, &key_pair1.public_key())
+            .find_pending_for_signer(&normalised, test_keys.pub_key(0).unwrap())
             .unwrap();
 
         // Only file1 is awaiting a signature
@@ -219,11 +220,13 @@ mod tests {
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
 
         // The keypair for which we will search pending sigs
-        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1").unwrap();
+        let test_keys = test_helpers::TestKeys::new(1);
 
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![key_pair1.public_key().clone()], 1))
-                .unwrap();
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
         let signers_json = serde_json::to_string(&signers_config).unwrap();
         let signers_file = setup_asfald_project_registered(temp_dir.path(), signers_json)?;
         let pending_signatures_file = pending_signatures_path_for(&signers_file)?;
@@ -268,10 +271,12 @@ mod tests {
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
 
-        let key_pair = features_lib::AsfaloadKeyPairs::new("pwd").unwrap();
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))
-                .unwrap();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
 
         let project_dir = temp_dir.path().join("project");
         fs::create_dir_all(&project_dir).unwrap();
@@ -303,10 +308,12 @@ mod tests {
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
 
-        let key_pair = features_lib::AsfaloadKeyPairs::new("pwd").unwrap();
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))
-                .unwrap();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
 
         let project_dir = temp_dir.path().join("project");
         fs::create_dir_all(&project_dir).unwrap();
@@ -354,10 +361,12 @@ mod tests {
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
 
-        let key_pair = features_lib::AsfaloadKeyPairs::new("pwd").unwrap();
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))
-                .unwrap();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
         let signers_json = serde_json::to_string(&signers_config).unwrap();
         let signers_file = setup_asfald_project_registered(temp_dir.path(), signers_json)?;
         let pending_signatures_file = pending_signatures_path_for(&signers_file)?;
@@ -411,7 +420,7 @@ mod tests {
 
         let discovery = WalkdirPendingDiscovery::new();
         let result = discovery
-            .find_pending_for_signer(&normalised, &key_pair.public_key())
+            .find_pending_for_signer(&normalised, test_keys.pub_key(0).unwrap())
             .unwrap();
 
         assert_eq!(result.len(), 1);
@@ -428,10 +437,12 @@ mod tests {
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
 
-        let key_pair = features_lib::AsfaloadKeyPairs::new("pwd").unwrap();
-        let signers_config =
-            SignersConfig::with_artifact_signers_only(1, (vec![key_pair.public_key().clone()], 1))
-                .unwrap();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
 
         let project_dir = temp_dir.path().join("project");
         fs::create_dir_all(&project_dir).unwrap();
@@ -446,9 +457,9 @@ mod tests {
         let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
 
         let hash = sha512_for_file(&signers_file).unwrap();
-        let sig = key_pair.secret_key("pwd").unwrap().sign(&hash).unwrap();
+        let sig = test_keys.sec_key(0).unwrap().sign(&hash).unwrap();
         let signed_content = serde_json::json!({
-            key_pair.public_key().to_base64(): sig.to_base64()
+            test_keys.pub_key(0).unwrap().to_base64(): sig.to_base64()
         });
         fs::write(&pending_signers_sig, signed_content.to_string()).unwrap();
 
@@ -458,7 +469,7 @@ mod tests {
 
         let discovery = WalkdirPendingDiscovery::new();
         let result = discovery
-            .find_pending_for_signer(&normalised, &key_pair.public_key())
+            .find_pending_for_signer(&normalised, test_keys.pub_key(0).unwrap())
             .unwrap();
 
         assert!(
@@ -473,15 +484,14 @@ mod tests {
         let normalised =
             build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
 
-        let key_pair1 = features_lib::AsfaloadKeyPairs::new("pwd1").unwrap();
-        let key_pair2 = features_lib::AsfaloadKeyPairs::new("pwd2").unwrap();
+        let test_keys = test_helpers::TestKeys::new(2);
 
         let signers_config = SignersConfig::with_artifact_signers_only(
             2,
             (
                 vec![
-                    key_pair1.public_key().clone(),
-                    key_pair2.public_key().clone(),
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
                 ],
                 2,
             ),
@@ -508,10 +518,10 @@ mod tests {
         let discovery = WalkdirPendingDiscovery::new();
 
         let result1 = discovery
-            .find_pending_for_signer(&normalised, &key_pair1.public_key())
+            .find_pending_for_signer(&normalised, test_keys.pub_key(0).unwrap())
             .unwrap();
         let result2 = discovery
-            .find_pending_for_signer(&normalised, &key_pair2.public_key())
+            .find_pending_for_signer(&normalised, test_keys.pub_key(1).unwrap())
             .unwrap();
 
         assert_eq!(

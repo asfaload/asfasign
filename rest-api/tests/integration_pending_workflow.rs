@@ -2,8 +2,7 @@ use anyhow::Result;
 use common::fs::names::pending_signatures_path_for;
 use constants::{SIGNERS_DIR, SIGNERS_FILE};
 use features_lib::{
-    AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-    AsfaloadSignatureTrait, sha512_for_content,
+    AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_content,
 };
 use rest_api::server::run_server;
 use rest_api_auth::{
@@ -34,19 +33,18 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     let port = get_random_port().await?;
     let config = build_test_config(&repo_path_buf, port);
 
-    // Generate key pairs
-    let key_pair1 = AsfaloadKeyPairs::new("pwd1")?;
-    let key_pair2 = AsfaloadKeyPairs::new("pwd2")?;
-    let secret_key1 = key_pair1.secret_key("pwd1")?;
-    let secret_key2 = key_pair2.secret_key("pwd2")?;
+    // Load pre-generated key pairs from fixtures
+    let test_keys = test_helpers::TestKeys::new(2);
+    let secret_key1 = test_keys.sec_key(0).unwrap();
+    let secret_key2 = test_keys.sec_key(1).unwrap();
 
     // Setup signers configuration: require 2 out of 2 signatures
     let signers_config = SignersConfig::with_artifact_signers_only(
         2,
         (
             vec![
-                key_pair1.public_key().clone(),
-                key_pair2.public_key().clone(),
+                test_keys.pub_key(0).unwrap().clone(),
+                test_keys.pub_key(1).unwrap().clone(),
             ],
             2,
         ),
@@ -78,7 +76,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     // ===== Test 1: key1 requests pending list =====
     let pending_request_payload = "";
     let auth_info1 = AuthInfo::new(pending_request_payload.to_string());
-    let auth_signature1 = AuthSignature::new(&auth_info1, &secret_key1)?;
+    let auth_signature1 = AuthSignature::new(&auth_info1, secret_key1)?;
 
     let response1 = client
         .get(format!("http://127.0.0.1:{}/v1/pending_signatures", port))
@@ -88,7 +86,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
         )
         .header(HEADER_NONCE, auth_signature1.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature1.signature().to_base64())
-        .header(HEADER_PUBLIC_KEY, key_pair1.public_key().to_base64())
+        .header(HEADER_PUBLIC_KEY, test_keys.pub_key(0).unwrap().to_base64())
         .send()
         .await?;
 
@@ -107,13 +105,13 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
 
     let submit_payload = serde_json::json!({
         "file_path": file_path_str,
-        "public_key": key_pair1.public_key().to_base64(),
+        "public_key": test_keys.pub_key(0).unwrap().to_base64(),
         "signature": sig.to_base64()
     });
 
     let submit_payload_str = submit_payload.to_string();
     let auth_info2 = AuthInfo::new(submit_payload_str.clone());
-    let auth_signature2 = AuthSignature::new(&auth_info2, &secret_key1)?;
+    let auth_signature2 = AuthSignature::new(&auth_info2, secret_key1)?;
 
     let response2 = client
         .post(format!("http://127.0.0.1:{}/v1/signatures", port))
@@ -123,7 +121,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
         )
         .header(HEADER_NONCE, auth_signature2.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature2.signature().to_base64())
-        .header(HEADER_PUBLIC_KEY, key_pair1.public_key().to_base64())
+        .header(HEADER_PUBLIC_KEY, test_keys.pub_key(0).unwrap().to_base64())
         .json(&submit_payload)
         .send()
         .await?;
@@ -138,7 +136,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     // ===== Test 3: key1 requests pending list again =====
     // Should be empty now since key1 already signed
     let auth_info3 = AuthInfo::new("".to_string());
-    let auth_signature3 = AuthSignature::new(&auth_info3, &secret_key1)?;
+    let auth_signature3 = AuthSignature::new(&auth_info3, secret_key1)?;
 
     let response3 = client
         .get(format!("http://127.0.0.1:{}/v1/pending_signatures", port))
@@ -148,7 +146,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
         )
         .header(HEADER_NONCE, auth_signature3.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature3.signature().to_base64())
-        .header(HEADER_PUBLIC_KEY, key_pair1.public_key().to_base64())
+        .header(HEADER_PUBLIC_KEY, test_keys.pub_key(0).unwrap().to_base64())
         .send()
         .await?;
 
@@ -164,7 +162,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
 
     // ===== Test 4: Verify key2 still sees pending file =====
     let auth_info4 = AuthInfo::new("".to_string());
-    let auth_signature4 = AuthSignature::new(&auth_info4, &secret_key2)?;
+    let auth_signature4 = AuthSignature::new(&auth_info4, secret_key2)?;
 
     let response4 = client
         .get(format!("http://127.0.0.1:{}/v1/pending_signatures", port))
@@ -174,7 +172,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
         )
         .header(HEADER_NONCE, auth_signature4.auth_info().nonce())
         .header(HEADER_SIGNATURE, auth_signature4.signature().to_base64())
-        .header(HEADER_PUBLIC_KEY, key_pair2.public_key().to_base64())
+        .header(HEADER_PUBLIC_KEY, test_keys.pub_key(1).unwrap().to_base64())
         .send()
         .await?;
 

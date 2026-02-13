@@ -7,7 +7,7 @@ use features_lib::SignedFileWithKindTrait;
 use features_lib::SignersFile;
 use features_lib::SignersFileTrait;
 use features_lib::constants::{METADATA_FILE, PENDING_SIGNERS_DIR, SIGNERS_DIR};
-use signatures::keys::{AsfaloadKeyPairTrait, AsfaloadSecretKeyTrait};
+use signatures::keys::AsfaloadSecretKeyTrait;
 use signers_file::initialize_signers_file;
 use signers_file_types::{SignersConfig, SignersConfigMetadata};
 use std::fs;
@@ -21,10 +21,12 @@ fn basic_flow() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let root_dir = temp_dir.path();
 
-    // Create key pairs for two users
+    // Load pre-generated keys for two users
     let test_keys = TestKeys::new(2);
-    let user1_keypair = test_keys.key_pair(0).unwrap();
-    let user2_keypair = test_keys.key_pair(1).unwrap();
+    let user1_pk = test_keys.pub_key(0).unwrap();
+    let user1_sk = test_keys.sec_key(0).unwrap();
+    let user2_pk = test_keys.pub_key(1).unwrap();
+    let user2_sk = test_keys.sec_key(1).unwrap();
 
     // We create scopes for each operation taking place, to ensure each
     // user has access to the data it needs.
@@ -34,10 +36,7 @@ fn basic_flow() -> Result<()> {
         // User1 scope for initialising the signers file
         let signers_content = SignersConfig::with_artifact_signers_only(
             1,
-            (
-                vec![user1_keypair.public_key(), user2_keypair.public_key()],
-                2,
-            ),
+            (vec![user1_pk.clone(), user2_pk.clone()], 2),
         )
         .expect("Could not build signers config")
         .to_json()
@@ -46,9 +45,7 @@ fn basic_flow() -> Result<()> {
         // It is the sha512 of the content of the file that is signed.
         let signers_file_hash = sha512_for_content(signers_content.as_bytes().to_vec())?;
         // The user1 signs the file
-        let signature1 = user1_keypair
-            .secret_key("password")?
-            .sign(&signers_file_hash)?;
+        let signature1 = user1_sk.sign(&signers_file_hash)?;
 
         // And the signers file is initialised for root_dir.
         initialize_signers_file(
@@ -56,7 +53,7 @@ fn basic_flow() -> Result<()> {
             &signers_content,
             test_metadata(),
             &signature1,
-            &user1_keypair.public_key(),
+            user1_pk,
         )?;
     }
 
@@ -77,11 +74,9 @@ fn basic_flow() -> Result<()> {
         // It computes the hash of the content
         let signers_file_hash_for_user2 = sha512_for_file(&signers_file)?;
         // Then it signs it
-        let signature2 = user2_keypair
-            .secret_key("password")?
-            .sign(&signers_file_hash_for_user2)?;
+        let signature2 = user2_sk.sign(&signers_file_hash_for_user2)?;
         // And adds it to the signers_file signatures.
-        signed_file.add_signature(signature2, user2_keypair.public_key())?;
+        signed_file.add_signature(signature2, user2_pk.clone())?;
     }
 
     // Verify metadata.json moved to active signers dir
@@ -109,11 +104,9 @@ fn basic_flow() -> Result<()> {
     {
         // User2 scope for signing the file
         let text_file_hash = sha512_for_file(&text_file)?;
-        let signature2 = user2_keypair
-            .secret_key("password")?
-            .sign(&text_file_hash)?;
+        let signature2 = user2_sk.sign(&text_file_hash)?;
         let signed_file = SignedFileLoader::load(&text_file);
-        signed_file.add_signature(signature2, user2_keypair.public_key())?;
+        signed_file.add_signature(signature2, user2_pk.clone())?;
     }
 
     // Check it left the signature as pending
@@ -128,10 +121,8 @@ fn basic_flow() -> Result<()> {
     {
         // User1 scope for signing the file
         let text_file_hash = sha512_for_file(&text_file)?;
-        let signature1 = user1_keypair
-            .secret_key("password")?
-            .sign(&text_file_hash)?;
-        SignedFileLoader::load(&text_file).add_signature(signature1, user1_keypair.public_key())?;
+        let signature1 = user1_sk.sign(&text_file_hash)?;
+        SignedFileLoader::load(&text_file).add_signature(signature1, user1_pk.clone())?;
     }
 
     // As both signatures have been collected, the aggregate signature is now complete.

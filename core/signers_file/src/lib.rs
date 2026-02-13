@@ -1424,7 +1424,7 @@ mod tests {
 
         // Use distinct TestKeys instances for existing and new signers
         let existing_keys = TestKeys::new(1);
-        let new_keys = TestKeys::new(2);
+        let new_keys = TestKeys::new_from(1, 2);
 
         // Create existing active directory and signers file
         let active_dir = root_dir.join(SIGNERS_DIR);
@@ -4725,7 +4725,7 @@ mod tests {
         // with a threshold of 2
         // As those are new signers, both signatures have also to be collected for the
         // signers file to be activated.
-        let new_keys = TestKeys::new(2);
+        let new_keys = TestKeys::new_from(2, 2);
 
         // Create active signers in parent directory
         let _active_signers_file = create_active_signers_in_parent(parent_dir, &test_keys)?;

@@ -93,7 +93,7 @@ async fn setup_server_and_keys() -> Result<TestState> {
     let keys_dir = temp_dir.path().join("keys");
     std::fs::create_dir_all(&keys_dir)?;
 
-    let test_keys = test_helpers::TestKeys::new(5);
+    let test_keys = test_helpers::TestKeys::new_generated(5);
     let mut secret_key_paths = Vec::with_capacity(5);
 
     for i in 0..5 {

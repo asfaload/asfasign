@@ -392,11 +392,9 @@ mod tests {
     #[tokio::test]
     async fn test_authenticate_with_localhost_url() {
         let mock_server = httpmock::MockServer::start();
-        use features_lib::AsfaloadKeyPairTrait;
 
-        let test_password = "test_password";
-        let key_pair = features_lib::AsfaloadKeyPairs::new(test_password).unwrap();
-        let public_key = key_pair.public_key();
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
 
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             1,
