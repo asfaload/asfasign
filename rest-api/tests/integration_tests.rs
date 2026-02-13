@@ -3,6 +3,9 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
+    use constants::SIGNERS_DIR;
+    use constants::SIGNERS_FILE;
+    use constants::SIGNERS_HISTORY_FILE;
     use rest_api::file_auth::actors::forge_signers_validator::SignersInfo;
     use rest_api::file_auth::github::get_project_normalised_paths;
     use rest_api::server::run_server;
@@ -894,9 +897,9 @@ pub mod tests {
 
         let project_id = "github.com/test/repo";
         let project_dir = git_repo_path.join(project_id);
-        let signers_pending_dir = project_dir.join("asfaload.signers.pending");
-        let signers_file_path = signers_pending_dir.join("index.json");
-        let history_file_path = project_dir.join("asfaload.signers.history.json");
+        let signers_pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
+        let signers_file_path = signers_pending_dir.join(SIGNERS_FILE);
+        let history_file_path = project_dir.join(SIGNERS_HISTORY_FILE);
         let project_path = get_project_normalised_paths(&git_repo_path, project_id).await?;
 
         let signers_initialiser = SignersInitialiser::spawn(());
@@ -1081,7 +1084,7 @@ pub mod tests {
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
 
         // Create signers directory and file
-        let signers_dir = git_repo_path.join("asfaload.signers");
+        let signers_dir = git_repo_path.join(SIGNERS_DIR);
         tokio::fs::create_dir_all(&signers_dir).await?;
         tokio::fs::write(signers_dir.join("index.json"), &signers_json).await?;
 
@@ -1207,7 +1210,11 @@ pub mod tests {
 
         let client = reqwest::Client::new();
         let payload = json!(&SubmitSignatureRequest {
-            file_path: "github.com/test/repo/asfaload.signers.pending/index.json".to_string(),
+            file_path: format!(
+                "github.com/test/repo/{}/{}",
+                PENDING_SIGNERS_DIR, SIGNERS_FILE
+            )
+            .to_string(),
             public_key: public_key.to_base64(),
             signature: signature.to_base64(),
         });
@@ -1291,9 +1298,9 @@ pub mod tests {
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
 
         // Create artifact file (without signatures)
-        let signers_dir = git_repo_path.join("asfaload.signers");
+        let signers_dir = git_repo_path.join(SIGNERS_DIR);
         tokio::fs::create_dir_all(&signers_dir).await?;
-        tokio::fs::write(signers_dir.join("index.json"), &signers_json).await?;
+        tokio::fs::write(signers_dir.join(SIGNERS_FILE), &signers_json).await?;
 
         let artifact_file = git_repo_path.join("data.txt");
         tokio::fs::write(&artifact_file, "test data").await?;
@@ -1536,9 +1543,9 @@ pub mod tests {
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
 
         // Create signers directory and file
-        let signers_dir = git_repo_path.join("asfaload.signers");
+        let signers_dir = git_repo_path.join(SIGNERS_DIR);
         tokio::fs::create_dir_all(&signers_dir).await?;
-        tokio::fs::write(signers_dir.join("index.json"), &signers_json).await?;
+        tokio::fs::write(signers_dir.join(SIGNERS_FILE), &signers_json).await?;
 
         // Create artifact file
         let artifact_file = git_repo_path.join("releases/release.txt");
@@ -1563,9 +1570,7 @@ pub mod tests {
                 "/revoke",
                 axum::routing::post(rest_api::handlers::revoke_handler),
             );
-        let app = axum::Router::new()
-            .nest("/v1", inner)
-            .with_state(app_state);
+        let app = axum::Router::new().nest("/v1", inner).with_state(app_state);
 
         let server = axum_test::TestServer::new(app)?;
 
