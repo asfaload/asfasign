@@ -13,6 +13,9 @@ pub enum ClientLibError {
     #[error("Signers config parse error: {0}")]
     SignersConfigParse(String),
 
+    #[error("Revocation parse error: {0}")]
+    RevocationParse(String),
+
     #[error("Unsupported forge: {0}")]
     UnsupportedForge(String),
 
@@ -66,6 +69,15 @@ pub enum ClientLibError {
 
     #[error("Signers file error: {0}")]
     SignersFile(#[from] SignersFileError),
+
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+
+    #[error("Revocation invalid: {0}")]
+    RevocationInvalid(String),
+
+    #[error("An error occured: {0}")]
+    GenericError(String),
 }
 
 pub type AsfaloadLibResult<T> = std::result::Result<T, ClientLibError>;

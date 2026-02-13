@@ -46,7 +46,7 @@ async fn try_verify_revocation(
     url: &Url,
     forge: &impl ForgeTrait,
     backend_url: &str,
-) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(String, String), ClientLibError> {
     // Construct revocation file names from INDEX_FILE + constants
     let revocation_filename = format!("{}.{}", INDEX_FILE, REVOCATION_SUFFIX);
     let revocation_sig_filename =
@@ -73,45 +73,51 @@ async fn try_verify_revocation(
         download_file(client, &revocation_signers_url, &no_callbacks)
     )?;
     // Parse signers config
-    let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)
-        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() })?;
+    let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)?;
 
     // Parse revocation JSON to extract timestamp and initiator
     let revocation_value: serde_json::Value = serde_json::from_slice(&revocation_content)?;
     let timestamp = revocation_value
         .get("timestamp")
         .and_then(|v| v.as_str())
-        .ok_or("Missing timestamp in revocation file")?
+        .ok_or(ClientLibError::RevocationParse(
+            "Missing timestamp in revocation file".to_string(),
+        ))?
         .to_string();
     let initiator_str = revocation_value
         .get("initiator")
         .and_then(|v| v.as_str())
-        .ok_or("Missing initiator in revocation file")?
+        .ok_or(ClientLibError::RevocationParse(
+            "Missing initiator in revocation file".to_string(),
+        ))?
         .to_string();
 
     // Parse initiator public key
     let initiator_pubkey = AsfaloadPublicKeys::from_base64(&initiator_str)
-        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() })?;
+        .map_err(|e| ClientLibError::GenericError(e.to_string()))?;
 
     // Check authorization
     if !can_revoke(&initiator_pubkey, &signers_config) {
-        return Err("Initiator is not authorized to revoke".into());
+        return Err(ClientLibError::Unauthorized(
+            "Initiator is not authorized to revoke".into(),
+        ));
     }
 
     // Parse revocation signatures
-    let signatures = get_individual_signatures_from_bytes(revocation_sig_content)
-        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() })?;
+    let signatures = get_individual_signatures_from_bytes(revocation_sig_content)?;
 
     // Look up initiator's signature
     let signature = signatures
         .get(&initiator_pubkey)
-        .ok_or("Initiator's signature not found in revocation signatures")?;
+        .ok_or(ClientLibError::RevocationInvalid(
+            "Initiator's signature not found in revocation signatures".to_string(),
+        ))?;
 
     // Compute SHA512 hash of revocation content and verify
     let hash = sha512_for_content(revocation_content)?;
     initiator_pubkey
         .verify(signature, &hash)
-        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() })?;
+        .map_err(|e| ClientLibError::RevocationInvalid(e.to_string()))?;
 
     Ok((timestamp, initiator_str))
 }
