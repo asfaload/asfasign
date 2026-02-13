@@ -67,10 +67,11 @@ async fn try_verify_revocation(
     let revocation_signers_url = format!("{}/v1/files/{}", backend_url, revocation_signers_path);
 
     // Download all three files
-    let revocation_content = download_file(client, &revocation_url, &no_callbacks).await?;
-    let revocation_sig_content = download_file(client, &revocation_sig_url, &no_callbacks).await?;
-    let signers_content = download_file(client, &revocation_signers_url, &no_callbacks).await?;
-
+    let (revocation_content, revocation_sig_content, signers_content) = try_join!(
+        download_file(client, &revocation_url, &no_callbacks),
+        download_file(client, &revocation_sig_url, &no_callbacks),
+        download_file(client, &revocation_signers_url, &no_callbacks)
+    )?;
     // Parse signers config
     let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() })?;
