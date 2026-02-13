@@ -8,6 +8,7 @@ use features_lib::{
     parse_signers_config, sha512_for_content,
 };
 use reqwest::{Client, Url};
+use serde::Deserialize;
 use tokio::try_join;
 
 use super::ForgeTrait;
@@ -76,21 +77,15 @@ async fn try_verify_revocation(
     let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)?;
 
     // Parse revocation JSON to extract timestamp and initiator
-    let revocation_value: serde_json::Value = serde_json::from_slice(&revocation_content)?;
-    let timestamp = revocation_value
-        .get("timestamp")
-        .and_then(|v| v.as_str())
-        .ok_or(ClientLibError::RevocationParse(
-            "Missing timestamp in revocation file".to_string(),
-        ))?
-        .to_string();
-    let initiator_str = revocation_value
-        .get("initiator")
-        .and_then(|v| v.as_str())
-        .ok_or(ClientLibError::RevocationParse(
-            "Missing initiator in revocation file".to_string(),
-        ))?
-        .to_string();
+    #[derive(Deserialize)]
+    struct RevocationInfo {
+        timestamp: String,
+        initiator: String,
+    }
+    let info: RevocationInfo = serde_json::from_slice(&revocation_content)
+        .map_err(|e| ClientLibError::RevocationParse(e.to_string()))?;
+    let timestamp = info.timestamp;
+    let initiator_str = info.initiator;
 
     // Parse initiator public key
     let initiator_pubkey = AsfaloadPublicKeys::from_base64(&initiator_str)
