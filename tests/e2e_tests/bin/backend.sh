@@ -34,9 +34,9 @@ fi
 echo "Build successful!"
 
 # Set the environment variables and start the server
-export ASFASIGN_GIT_REPO_PATH="$GIT_REPO_PATH"
-export ASFASIGN_SERVER_PORT="${ASFASIGN_SERVER_PORT:-3000}"
-echo "Starting REST API server on port $ASFASIGN_SERVER_PORT with git repository at: $GIT_REPO_PATH"
+export ASFALOAD_GIT_REPO_PATH="$GIT_REPO_PATH"
+export ASFALOAD_SERVER_PORT="${ASFALOAD_SERVER_PORT:-3000}"
+echo "Starting REST API server on port $ASFALOAD_SERVER_PORT with git repository at: $GIT_REPO_PATH"
 
 set -x
 base_dir=$(git rev-parse --show-toplevel)

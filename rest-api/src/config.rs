@@ -53,7 +53,7 @@ pub fn build_config_from_defaults(
     let config = Config::builder()
         .add_source(defaults_source)
         .add_source(
-            Environment::with_prefix("ASFASIGN")
+            Environment::with_prefix("ASFALOAD")
                 .prefix_separator("_")
                 .separator("__"),
         )

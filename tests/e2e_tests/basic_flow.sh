@@ -54,13 +54,13 @@ if [[ -n "${backend:-}" ]] && curl "$backend" --silent > /dev/null 2>&1; then
     printf '%sUsing existing backend at %s%s\n\n' "$DIM" "$backend" "$RESET"
 else
     # No running backend — start one automatically
-    port="${ASFASIGN_SERVER_PORT:-$((3000 + RANDOM % 1000))}"
-    export ASFASIGN_SERVER_PORT="$port"
+    port="${ASFALOAD_SERVER_PORT:-$((3000 + RANDOM % 1000))}"
+    export ASFALOAD_SERVER_PORT="$port"
     backend="http://localhost:$port"
 
     E2E_GIT_REPO_PATH=$(mktemp -d)
     git init "$E2E_GIT_REPO_PATH" --quiet
-    export ASFASIGN_GIT_REPO_PATH="$E2E_GIT_REPO_PATH"
+    export ASFALOAD_GIT_REPO_PATH="$E2E_GIT_REPO_PATH"
 
     cargo build -p rest-api --quiet
     "${base_dir}/target/debug/rest-api" > $E2E_GIT_REPO_PATH/server.log &

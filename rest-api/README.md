@@ -8,7 +8,7 @@ The Asfaload REST API server handles artifact signing workflows and provides end
 
 ```bash
 # Set required environment variable
-export ASFASIGN_GIT_REPO_PATH=/path/to/git/repo
+export ASFALOAD_GIT_REPO_PATH=/path/to/git/repo
 
 # Start server in debug mode
 cargo run --package rest-api
@@ -21,9 +21,9 @@ cargo run --release --package rest-api
 
 ```bash
 # Set environment variables
-export ASFASIGN_GIT_REPO_PATH=/path/to/git/repo
-export ASFASIGN_SERVER_PORT=8080
-export ASFASIGN_LOG_LEVEL=info
+export ASFALOAD_GIT_REPO_PATH=/path/to/git/repo
+export ASFALOAD_SERVER_PORT=8080
+export ASFALOAD_LOG_LEVEL=info
 
 # Build and start
 cargo build --release --package rest-api
@@ -46,11 +46,11 @@ make help
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ASFASIGN_GIT_REPO_PATH` | ✅ Yes | *none* | Path to git repository for storing signed artifacts |
-| `ASFASIGN_SERVER_PORT` | ❌ No | `3000` | Port for the server to listen on |
-| `ASFASIGN_LOG_LEVEL` | ❌ No | `info` | Logging level: `debug`, `info`, `warn`, or `error` |
-| `ASFASIGN_GITHUB_API_KEY` | ❌ No | *none* | GitHub API token for fetching signers files |
-| `ASFASIGN_GITLAB_API_KEY` | ❌ No | *none* | GitLab API token for fetching signers files |
+| `ASFALOAD_GIT_REPO_PATH` | ✅ Yes | *none* | Path to git repository for storing signed artifacts |
+| `ASFALOAD_SERVER_PORT` | ❌ No | `3000` | Port for the server to listen on |
+| `ASFALOAD_LOG_LEVEL` | ❌ No | `info` | Logging level: `debug`, `info`, `warn`, or `error` |
+| `ASFALOAD_GITHUB_API_KEY` | ❌ No | *none* | GitHub API token for fetching signers files |
+| `ASFALOAD_GITLAB_API_KEY` | ❌ No | *none* | GitLab API token for fetching signers files |
 
 ## Quick Start Examples
 
@@ -64,9 +64,9 @@ git -C /tmp/asfaload-repo config user.name "Dev User"
 git -C /tmp/asfaload-repo config user.email "dev@example.com"
 
 # Start server
-export ASFASIGN_GIT_REPO_PATH=/tmp/asfaload-repo
-export ASFASIGN_SERVER_PORT=3000
-export ASFASIGN_LOG_LEVEL=debug
+export ASFALOAD_GIT_REPO_PATH=/tmp/asfaload-repo
+export ASFALOAD_SERVER_PORT=3000
+export ASFALOAD_LOG_LEVEL=debug
 cargo run --package rest-api
 ```
 
@@ -79,8 +79,8 @@ docker build -t asfaload/rest-api .
 # Run container
 docker run -d \
   -p 3000:3000 \
-  -e ASFASIGN_GIT_REPO_PATH=/data/repo \
-  -e ASFASIGN_LOG_LEVEL=info \
+  -e ASFALOAD_GIT_REPO_PATH=/data/repo \
+  -e ASFALOAD_LOG_LEVEL=info \
   -v /path/to/repo:/data/repo \
   asfaload/rest-api
 ```
@@ -168,7 +168,7 @@ lsof -i :3000
 kill <PID>
 
 # Or use a different port
-export ASFASIGN_SERVER_PORT=8080
+export ASFALOAD_SERVER_PORT=8080
 ```
 
 ### "git_repo_path cannot be empty" error
@@ -176,7 +176,7 @@ export ASFASIGN_SERVER_PORT=8080
 Required environment variable not set:
 
 ```bash
-export ASFASIGN_GIT_REPO_PATH=/path/to/repo
+export ASFALOAD_GIT_REPO_PATH=/path/to/repo
 ```
 
 ### Server not starting
