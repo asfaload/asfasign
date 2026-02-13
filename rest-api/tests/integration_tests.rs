@@ -1507,4 +1507,119 @@ pub mod tests {
 
         Ok(())
     }
+
+    #[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn test_revoke_fully_signed_artifact() -> Result<(), anyhow::Error> {
+        use features_lib::{
+            AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
+            AsfaloadSignatureTrait, sha512_for_content, sha512_for_file,
+        };
+        use rest_api_types::{
+            RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+        };
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        git2::Repository::init(&git_repo_path)?;
+
+        // Create signers config
+        let key_pair = features_lib::AsfaloadKeyPairs::new("test_password")?;
+        let public_key = key_pair.public_key();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        // Create signers directory and file
+        let signers_dir = git_repo_path.join("asfaload.signers");
+        tokio::fs::create_dir_all(&signers_dir).await?;
+        tokio::fs::write(signers_dir.join("index.json"), &signers_json).await?;
+
+        // Create artifact file
+        let artifact_file = git_repo_path.join("releases/release.txt");
+        tokio::fs::create_dir_all(artifact_file.parent().unwrap()).await?;
+        tokio::fs::write(&artifact_file, "artifact content").await?;
+
+        // Sign the artifact
+        let digest = sha512_for_file(&artifact_file)?;
+        let secret_key = key_pair.secret_key("test_password")?;
+        let signature = secret_key.sign(&digest)?;
+
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
+
+        let inner = axum::Router::new()
+            .route(
+                "/signatures",
+                axum::routing::post(rest_api::handlers::submit_signature_handler),
+            )
+            .route(
+                "/revoke",
+                axum::routing::post(rest_api::handlers::revoke_handler),
+            );
+        let app = axum::Router::new()
+            .nest("/v1", inner)
+            .with_state(app_state);
+
+        let server = axum_test::TestServer::new(app)?;
+
+        // Step 1: Submit signature to complete signing
+        let sign_response = server
+            .post("/v1/signatures")
+            .json(&SubmitSignatureRequest {
+                file_path: "releases/release.txt".to_string(),
+                public_key: public_key.to_base64(),
+                signature: signature.to_base64(),
+            })
+            .await;
+
+        sign_response.assert_status_ok();
+        let sign_body = sign_response.json::<SubmitSignatureResponse>();
+        assert!(sign_body.is_complete);
+
+        // Wait for the signing commit to be processed
+        wait_for_commit(
+            git_repo_path.clone(),
+            "completed signature collection for releases/release.txt",
+            None,
+        )
+        .await?;
+
+        // Step 2: Build and submit revocation
+        let subject_digest = sha512_for_file(&artifact_file)?;
+
+        let revocation = signers_file_types::revocation::RevocationFile {
+            timestamp: chrono::Utc::now(),
+            subject_digest,
+            initiator: public_key.clone(),
+        };
+        let revocation_json = serde_json::to_string_pretty(&revocation)?;
+
+        let revocation_hash = sha512_for_content(revocation_json.as_bytes().to_vec())?;
+        let revoke_signature = secret_key.sign(&revocation_hash)?;
+
+        let revoke_response = server
+            .post("/v1/revoke")
+            .json(&RevokeFileRequest {
+                file_path: "releases/release.txt".to_string(),
+                revocation_json,
+                signature: revoke_signature.to_base64(),
+                public_key: public_key.to_base64(),
+            })
+            .await;
+
+        revoke_response.assert_status_ok();
+
+        let revoke_body = revoke_response.json::<RevokeFileResponse>();
+        assert!(revoke_body.success);
+        assert_eq!(revoke_body.message, "File revoked successfully");
+
+        Ok(())
+    }
 }
