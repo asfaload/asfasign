@@ -56,20 +56,14 @@ pub async fn download_file_with_verification(
     let signatures_content =
         match download_file(&client, &signatures_url, &DownloadCallbacks::default()).await {
             Ok(content) => content,
-            Err(ClientLibError::HttpError {
-                status: 404,
-                url: missing_url,
-            }) => {
+            Err(e @ ClientLibError::HttpError { status: 404, .. }) => {
                 return Err(super::revocation::check_revocation(
                     &client,
                     &url,
                     &forge,
                     backend_url,
                     callbacks,
-                    ClientLibError::HttpError {
-                        status: 404,
-                        url: missing_url,
-                    },
+                    e,
                 )
                 .await);
             }
