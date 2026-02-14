@@ -8,18 +8,18 @@ set -euo pipefail
 #
 #
 #This is a test script that I use manually to test both client and server.
-# In private/, I have 3 key pairs named key1, key2 and key3 as well as an env file with this content:
+# In private/, I have an env file with this content:
 #  signers_file=https://raw.githubusercontent.com/asfaload/asfald/refs/heads/signers_file/asfaload_signers_file.json
 #  repo=github.com/afaload/asfaload
 #  pending_signers_file=github.com/asfaload/asfald/asfaload.signers.pending/index.json
 #  backend=http://localhost:3000
-#  release_url=https://github.com/asfaload/asfald/releases/tag/v0.9.0
-#  release_index=github.com/asfaload/asfald/releases/tag/v0.9.0/asfaload.index.json
+#  release_url=https://github.com/asfaload/asfald/releases/tag/v0.6.0
+#  release_index=github.com/asfaload/asfald/releases/tag/v0.6.0/asfaload.index.json
 #
-# This lets me validate github repo registration, signers file activation, pending sigs listing, release registration,
-# index file signing, download of a release artifact.
+# Keys are sourced from core/test_helpers/fixtures/keys/ (committed to repo).
+# Variables KEY_0 through KEY_3 are defined in lib/helpers.sh.
 # You can use it with your own information, but you need to:
-# * generate 3 keypairs in private/ named as mentioned above
+# * ensure your signers file references the fixture public keys (key_0.pub through key_3.pub)
 # * commit a signers file in your repo
 # * have a release available for that repo
 # * create the env file with correct values under private/
@@ -100,7 +100,7 @@ section "Initial Setup and Repo Registration"
 
 run_step_json "Register repo with key1" \
     '.success == true' \
-    cargo run --quiet -- register-repo --secret-key "$SCRIPT_DIR/private/key1" -u $backend --password secret $signers_file
+    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password secret $signers_file
 
 ################################################################################
 section "Signers File Activation"
@@ -108,23 +108,23 @@ section "Signers File Activation"
 
 run_step_json "List pending for key1 (none expected, key1 submitted)" \
     '.file_paths | length == 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key1" -u "$backend" --password secret
+    cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password secret
 
 run_step_json "List pending for key2" \
     '.file_paths | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key2" -u "$backend" --password secret
+    cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password secret
 
 run_step_json "Sign signers file with key2" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key2" -u "$backend" --password secret $pending_signers_file
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password secret $pending_signers_file
 
 run_step_json "Sign signers file with key3 (completes signature)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key3" -u "$backend" --password secret $pending_signers_file
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password secret $pending_signers_file
 
 expect_fail_json "Sign signers file with key1 (already completed)" \
     '.error | length > 0' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key1" -u "$backend" --password secret $pending_signers_file
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password secret $pending_signers_file
 
 ################################################################################
 section "Release Registration and Signing"
@@ -132,23 +132,23 @@ section "Release Registration and Signing"
 
 run_step_json "Register release with key3 (does not sign it)" \
     '.success == true' \
-    cargo run --quiet -- register-release --secret-key "$SCRIPT_DIR/private/key3" -u "$backend" --password secret $release_url
+    cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password secret $release_url
 
 run_step_json "List pending for key3" \
     '.file_paths | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key3" -u "$backend" --password secret
+    cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password secret
 
 run_step_json "Sign release index with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key1" -u "$backend" --password secret $release_index
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password secret $release_index
 
 run_step_json "Sign release index with key2 (completes, threshold=2)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key2" -u "$backend" --password secret $release_index
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password secret $release_index
 
 expect_fail_json "Sign release index with key3 (already completed)" \
     '.error | length > 0' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key3" -u "$backend" --password secret $release_index
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password secret $release_index
 
 run_step "Download release artifact (v0.6.0)" \
     cargo run --quiet -- download -o "$(mktemp)" -u "$backend" https://github.com/asfaload/asfald/releases/download/v0.6.0/asfald-x86_64-unknown-linux-musl.tar.gz
@@ -159,23 +159,23 @@ section "Updating Signers File"
 
 run_step_json "Update signers file with key1" \
     '.success == true' \
-    cargo run -- update-signers --secret-key "$SCRIPT_DIR/private/key1" -u "$backend" -p secret https://github.com/asfaload/asfald/blob/signers_file/asfaload_signers_file_update_01.json
+    cargo run -- update-signers --secret-key "$KEY_0" -u "$backend" -p secret https://github.com/asfaload/asfald/blob/signers_file/asfaload_signers_file_update_01.json
 
 run_step_json "List pending for key1 (none expected, key1 submitted)" \
     '.file_paths | length == 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key1" -u "$backend" --password secret
+    cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password secret
 
 run_step_json "List pending for key2 (should show pending)" \
     '.file_paths | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key2" -u "$backend" --password secret
+    cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password secret
 
 run_step_json "Sign pending signers with key2" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key2" -u "$backend" --password secret $pending_signers_file
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password secret $pending_signers_file
 
 run_step_json "Sign pending signers with key4 (activates new signers file)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key4" -u "$backend" --password secret $pending_signers_file
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password secret $pending_signers_file
 
 run_step "Download artifact (v0.6.0, signed with historical signers)" \
     cargo run --quiet -- download -o "$(mktemp)" -u "$backend" https://github.com/asfaload/asfald/releases/download/v0.6.0/asfald-x86_64-unknown-linux-musl.tar.gz
@@ -186,30 +186,30 @@ section "Registering Release with New Signers File"
 
 run_step_json "Register second release with key3" \
     '.success == true' \
-    cargo run --quiet -- register-release --secret-key "$SCRIPT_DIR/private/key3" -u "$backend" --password secret $release_url_2
+    cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password secret $release_url_2
 
 run_step_json "List pending for key3" \
     '.file_paths | length > 0' \
-    cargo run --quiet -- list-pending --secret-key "$SCRIPT_DIR/private/key3" -u "$backend" --password secret
+    cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password secret
 
 run_step_json "Sign release index with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key1" -u "$backend" --password secret $release_index_2
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password secret $release_index_2
 
 run_step_json "Sign release index with key2" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key2" -u "$backend" --password secret $release_index_2
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password secret $release_index_2
 
 run_step_json "Sign release index with key4 (key3 does not sign)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$SCRIPT_DIR/private/key4" -u "$backend" --password secret $release_index_2
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password secret $release_index_2
 
 run_step "Download artifact (v0.8.0)" \
     cargo run --quiet -- download -o "$(mktemp)" -u "$backend" https://github.com/asfaload/asfald/releases/download/v0.8.0/asfald-x86_64-unknown-linux-musl.tar.gz
 
 
 run_step "Revoke artifact (v0.6.0)" \
-    cargo run -- revoke --secret-key "$SCRIPT_DIR/private/key4" -p secret -u "$backend" github.com/asfaload/asfald/releases/tag/v0.6.0/asfaload.index.json
+    cargo run -- revoke --secret-key "$KEY_3" -p secret -u "$backend" github.com/asfaload/asfald/releases/tag/v0.6.0/asfaload.index.json
 
 expect_fail "Download artifact (v0.6.0, revoked)" \
     cargo run --quiet -- download -o "$(mktemp)" -u "$backend" https://github.com/asfaload/asfald/releases/download/v0.6.0/asfald-x86_64-unknown-linux-musl.tar.gz

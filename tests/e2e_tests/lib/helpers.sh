@@ -1,3 +1,11 @@
+# --- Fixture key paths ---
+_HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KEYS_DIR="$(cd "$_HELPERS_DIR/../../.." && pwd)/core/test_helpers/fixtures/keys"
+KEY_0="$KEYS_DIR/key_0"
+KEY_1="$KEYS_DIR/key_1"
+KEY_2="$KEYS_DIR/key_2"
+KEY_3="$KEYS_DIR/key_3"
+
 # --- Terminal color support ---
 if [ -t 1 ]; then
     BOLD=$'\033[1m'
