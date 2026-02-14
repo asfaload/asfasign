@@ -1,5 +1,6 @@
 # --- Fixture key paths ---
 _HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$_HELPERS_DIR/urls.sh"
 KEYS_DIR="$(cd "$_HELPERS_DIR/../../.." && pwd)/core/test_helpers/fixtures/keys"
 KEY_0="$KEYS_DIR/key_0"
 KEY_1="$KEYS_DIR/key_1"

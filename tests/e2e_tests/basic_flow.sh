@@ -9,15 +9,12 @@ set -euo pipefail
 #
 #This is a test script that I use manually to test both client and server.
 # In private/, I have an env file with this content:
-#  signers_file=https://raw.githubusercontent.com/asfaload/asfald/refs/heads/signers_file/asfaload_signers_file.json
-#  repo=github.com/afaload/asfaload
-#  pending_signers_file=github.com/asfaload/asfald/asfaload.signers.pending/index.json
 #  backend=http://localhost:3000
-#  release_url=https://github.com/asfaload/asfald/releases/tag/v0.6.0
-#  release_index=github.com/asfaload/asfald/releases/tag/v0.6.0/asfaload.index.json
+#  key_password="password"
 #
 # Keys are sourced from core/test_helpers/fixtures/keys/ (committed to repo).
 # Variables KEY_0 through KEY_3 are defined in lib/helpers.sh.
+# URL helpers (signers_file, release_url, etc.) are defined in lib/urls.sh.
 # You can use it with your own information, but you need to:
 # * ensure your signers file references the fixture public keys (key_0.pub through key_3.pub)
 # * commit a signers file in your repo
@@ -100,7 +97,7 @@ section "Initial Setup and Repo Registration"
 
 run_step_json "Register repo with key1" \
     '.success == true' \
-    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password $signers_file
+    cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password $(signers_file 1)
 
 ################################################################################
 section "Signers File Activation"
@@ -116,15 +113,15 @@ run_step_json "List pending for key2" \
 
 run_step_json "Sign signers file with key2" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $pending_signers_file
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
 
 run_step_json "Sign signers file with key3 (completes signature)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $pending_signers_file
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(pending_signers_file)
 
 expect_fail_json "Sign signers file with key1 (already completed)" \
     '.error | length > 0' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $pending_signers_file
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
 
 ################################################################################
 section "Release Registration and Signing"
@@ -132,7 +129,7 @@ section "Release Registration and Signing"
 
 run_step_json "Register release with key3 (does not sign it)" \
     '.success == true' \
-    cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password $key_password $release_url
+    cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_url 0.1)
 
 run_step_json "List pending for key3" \
     '.file_paths | length > 0' \
@@ -140,18 +137,18 @@ run_step_json "List pending for key3" \
 
 run_step_json "Sign release index with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $release_index
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
 
 run_step_json "Sign release index with key2 (completes, threshold=2)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $release_index
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(release_index 0.1)
 
 expect_fail_json "Sign release index with key3 (already completed)" \
     '.error | length > 0' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $release_index
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_index 0.1)
 
 run_step "Download release artifact (v0.1)" \
-    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $artifact_for_release_0_1
+    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $(artifact_url 0.1)
 
 ################################################################################
 section "Updating Signers File"
@@ -159,7 +156,7 @@ section "Updating Signers File"
 
 run_step_json "Update signers file with key1" \
     '.success == true' \
-    cargo run -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password $signers_file_2
+    cargo run -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password $(signers_file 2)
 
 run_step_json "List pending for key1 (none expected, key1 submitted)" \
     '.file_paths | length == 0' \
@@ -171,14 +168,14 @@ run_step_json "List pending for key2 (should show pending)" \
 
 run_step_json "Sign pending signers with key2" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $pending_signers_file
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
 
 run_step_json "Sign pending signers with key4 (activates new signers file)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $pending_signers_file
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(pending_signers_file)
 
 run_step "Download artifact (v0.1, signed with historical signers)" \
-    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $artifact_for_release_0_1
+    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $(artifact_url 0.1)
 
 ################################################################################
 section "Registering Release with New Signers File"
@@ -186,7 +183,7 @@ section "Registering Release with New Signers File"
 
 run_step_json "Register second release with key3" \
     '.success == true' \
-    cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password $key_password $release_url_2
+    cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_url 0.2)
 
 run_step_json "List pending for key3" \
     '.file_paths | length > 0' \
@@ -194,25 +191,25 @@ run_step_json "List pending for key3" \
 
 run_step_json "Sign release index with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $release_index_2
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.2)
 
 run_step_json "Sign release index with key2" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $release_index_2
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(release_index 0.2)
 
 run_step_json "Sign release index with key4 (key3 does not sign)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $release_index_2
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(release_index 0.2)
 
 run_step "Download artifact (v0.2)" \
-    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $artifact_for_release_0_2
+    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $(artifact_url 0.2)
 
 
 run_step "Revoke index file for v0.1" \
-    cargo run -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" $release_index
+    cargo run -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" $(release_index 0.1)
 
 expect_fail "Download artifact (v0.1, revoked)" \
-    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $artifact_for_release_0_1
+    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $(artifact_url 0.1)
 
 ################################################################################
 print_summary
