@@ -5,22 +5,6 @@ set -euo pipefail
 # run with env var debug=1 to print commands and outputs.
 # If you start the backend separately, send the backend env var the the backedn url,
 # eg http://localhost:3000
-#
-#
-#This is a test script that I use manually to test both client and server.
-# In private/, I have an env file with this content:
-#  backend=http://localhost:3000
-#  key_password="password"
-#
-# Keys are sourced from core/test_helpers/fixtures/keys/ (committed to repo).
-# Variables KEY_0 through KEY_3 are defined in lib/helpers.sh.
-# URL helpers (signers_file, release_url, etc.) are defined in lib/urls.sh.
-# You can use it with your own information, but you need to:
-# * ensure your signers file references the fixture public keys (key_0.pub through key_3.pub)
-# * commit a signers file in your repo
-# * have a release available for that repo
-# * create the env file with correct values under private/
-#
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/helpers.sh"
@@ -43,8 +27,6 @@ cleanup() {
 trap cleanup EXIT
 
 # --- Detect or start backend ---
-
-. "$SCRIPT_DIR/private/env"
 
 base_dir="$(git rev-parse --show-toplevel)"
 

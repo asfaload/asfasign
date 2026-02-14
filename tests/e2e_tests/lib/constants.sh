@@ -12,3 +12,7 @@ SIGNERS_SUFFIX="signers.json"
 REVOCATION_SUFFIX="revocation.json"
 REVOKED_SUFFIX="revoked"
 SIGNERS_HISTORY_FILE="asfaload.signers.history.json"
+
+
+backend=http://localhost:3000
+key_password="password"
