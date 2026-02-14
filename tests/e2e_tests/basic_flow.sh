@@ -38,6 +38,7 @@ cleanup() {
     if [[ -n "$E2E_GIT_REPO_PATH" ]] && [[ -d "$E2E_GIT_REPO_PATH" ]]; then
         rm -rf "$E2E_GIT_REPO_PATH"
     fi
+    rm -f "${DOWNLOAD_V01:-}" "${DOWNLOAD_V01_HISTORICAL:-}" "${DOWNLOAD_V02:-}"
 }
 trap cleanup EXIT
 
@@ -99,6 +100,12 @@ run_step_json "Register repo with key1" \
     '.success == true' \
     cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password $(signers_file 1)
 
+# --- Backend: verify pending signers created ---
+assert_pending_signers_exist
+assert_pending_signers_signature_count 1
+assert_pending_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2"
+assert_last_commit_contains "$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
+
 ################################################################################
 section "Signers File Activation"
 ################################################################################
@@ -115,9 +122,16 @@ run_step_json "Sign signers file with key2" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
 
+# --- Backend: verify 2nd signature on pending signers ---
+assert_pending_signers_signature_count 2
+
 run_step_json "Sign signers file with key3 (completes signature)" \
     '.is_complete == true' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(pending_signers_file)
+
+# --- Backend: verify signers activated ---
+assert_signers_active
+assert_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2"
 
 expect_fail_json "Sign signers file with key1 (already completed)" \
     '.error | length > 0' \
@@ -131,6 +145,11 @@ run_step_json "Register release with key3 (does not sign it)" \
     '.success == true' \
     cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_url 0.1)
 
+# --- Backend: verify release index created ---
+assert_release_index_exists "0.1"
+assert_release_index_pending "0.1"
+assert_last_commit_contains "$INDEX_FILE"
+
 run_step_json "List pending for key3" \
     '.file_paths | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
@@ -139,16 +158,26 @@ run_step_json "Sign release index with key1" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
 
+assert_release_index_signature_count "0.1" 1
+
 run_step_json "Sign release index with key2 (completes, threshold=2)" \
     '.is_complete == true' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(release_index 0.1)
+
+# --- Backend: verify release index activated ---
+assert_release_index_active "0.1"
+assert_release_index_signers "0.1" "$KEY_0" "$KEY_1" "$KEY_2"
 
 expect_fail_json "Sign release index with key3 (already completed)" \
     '.error | length > 0' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_index 0.1)
 
+DOWNLOAD_V01="$(mktemp)"
 run_step "Download release artifact (v0.1)" \
-    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $(artifact_url 0.1)
+    cargo run --quiet -- download -o "$DOWNLOAD_V01" -u "$backend" $(artifact_url 0.1)
+
+# --- Backend: verify artifact hash ---
+assert_artifact_hash_matches "0.1" "artifact.bin" "$DOWNLOAD_V01"
 
 ################################################################################
 section "Updating Signers File"
@@ -157,6 +186,11 @@ section "Updating Signers File"
 run_step_json "Update signers file with key1" \
     '.success == true' \
     cargo run -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password $(signers_file 2)
+
+# --- Backend: verify pending signers updated ---
+assert_pending_signers_exist
+assert_pending_signers_signature_count 1
+assert_pending_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2" "$KEY_3"
 
 run_step_json "List pending for key1 (none expected, key1 submitted)" \
     '.file_paths | length == 0' \
@@ -170,12 +204,21 @@ run_step_json "Sign pending signers with key2" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
 
+assert_pending_signers_signature_count 2
+
 run_step_json "Sign pending signers with key4 (activates new signers file)" \
     '.is_complete == true' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(pending_signers_file)
 
+# --- Backend: verify new signers activated ---
+assert_signers_active
+assert_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2" "$KEY_3"
+
+DOWNLOAD_V01_HISTORICAL="$(mktemp)"
 run_step "Download artifact (v0.1, signed with historical signers)" \
-    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $(artifact_url 0.1)
+    cargo run --quiet -- download -o "$DOWNLOAD_V01_HISTORICAL" -u "$backend" $(artifact_url 0.1)
+
+assert_artifact_hash_matches "0.1" "artifact.bin" "$DOWNLOAD_V01_HISTORICAL"
 
 ################################################################################
 section "Registering Release with New Signers File"
@@ -185,6 +228,10 @@ run_step_json "Register second release with key3" \
     '.success == true' \
     cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_url 0.2)
 
+# --- Backend: verify second release index created ---
+assert_release_index_exists "0.2"
+assert_release_index_pending "0.2"
+
 run_step_json "List pending for key3" \
     '.file_paths | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
@@ -193,20 +240,36 @@ run_step_json "Sign release index with key1" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.2)
 
+assert_release_index_signature_count "0.2" 1
+
 run_step_json "Sign release index with key2" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(release_index 0.2)
+
+assert_release_index_signature_count "0.2" 2
 
 run_step_json "Sign release index with key4 (key3 does not sign)" \
     '.is_complete == true' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(release_index 0.2)
 
+# --- Backend: verify v0.2 release index activated ---
+assert_release_index_active "0.2"
+assert_release_index_signers "0.2" "$KEY_0" "$KEY_1" "$KEY_2" "$KEY_3"
+
+DOWNLOAD_V02="$(mktemp)"
 run_step "Download artifact (v0.2)" \
-    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $(artifact_url 0.2)
+    cargo run --quiet -- download -o "$DOWNLOAD_V02" -u "$backend" $(artifact_url 0.2)
+
+assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02"
 
 
 run_step "Revoke index file for v0.1" \
     cargo run -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" $(release_index 0.1)
+
+# --- Backend: verify v0.1 revoked ---
+assert_release_index_revoked "0.1"
+assert_revocation_signers "0.1" "$KEY_0" "$KEY_1" "$KEY_2" "$KEY_3"
+assert_last_commit_contains "$REVOCATION_SUFFIX"
 
 expect_fail "Download artifact (v0.1, revoked)" \
     cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $(artifact_url 0.1)
