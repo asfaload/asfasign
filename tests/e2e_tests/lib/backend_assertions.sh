@@ -82,6 +82,22 @@ assert_signers_contain_keys() {
     done
 }
 
+# Assert that the pending signers signatures file contains signatures from given keys.
+# Checks which keys have actually SIGNED (appear as keys in .signatures.json.pending).
+# Usage: assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1"
+assert_pending_signers_signatures_contain_keys() {
+    local project_dir sig_file
+    project_dir="$(_project_dir)"
+    sig_file="$project_dir/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$PENDING_SIGNATURES_SUFFIX"
+    for key_file in "$@"; do
+        local pk
+        pk="$(pubkey_of "$key_file")"
+        assert_json_field "$sig_file" \
+            "has(\"$pk\")" \
+            "Pending signers signed by $(basename "$key_file")"
+    done
+}
+
 assert_pending_signers_contain_keys() {
     local project_dir signers_path
     project_dir="$(_project_dir)"

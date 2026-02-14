@@ -103,6 +103,7 @@ run_step_json "Register repo with key1" \
 # --- Backend: verify pending signers created ---
 assert_pending_signers_exist
 assert_pending_signers_signature_count 1
+assert_pending_signers_signatures_contain_keys "$KEY_0"
 assert_pending_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2"
 assert_last_commit_contains "$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
 
@@ -124,6 +125,7 @@ run_step_json "Sign signers file with key2" \
 
 # --- Backend: verify 2nd signature on pending signers ---
 assert_pending_signers_signature_count 2
+assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1"
 
 run_step_json "Sign signers file with key3 (completes signature)" \
     '.is_complete == true' \
@@ -190,6 +192,7 @@ run_step_json "Update signers file with key1" \
 # --- Backend: verify pending signers updated ---
 assert_pending_signers_exist
 assert_pending_signers_signature_count 1
+assert_pending_signers_signatures_contain_keys "$KEY_0"
 assert_pending_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2" "$KEY_3"
 
 run_step_json "List pending for key1 (none expected, key1 submitted)" \
@@ -205,6 +208,7 @@ run_step_json "Sign pending signers with key2" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
 
 assert_pending_signers_signature_count 2
+assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1"
 
 run_step_json "Sign pending signers with key4 (activates new signers file)" \
     '.is_complete == true' \
