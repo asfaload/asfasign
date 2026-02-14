@@ -238,7 +238,7 @@ _string_contains() {
 
 assert_last_commit_contains() {
     local committed_files
-    committed_files=$(git -C "$E2E_GIT_REPO_PATH" diff-tree --root --no-commit-id --name-only -r HEAD 2>/dev/null || true)
+    committed_files=$(git -C "$E2E_GIT_REPO_PATH" show --pretty="" --name-only HEAD 2>/dev/null || true)
     for pattern in "$@"; do
         run_step "Backend: last commit contains $pattern" \
             _string_contains "$committed_files" "$pattern"
