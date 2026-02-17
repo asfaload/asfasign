@@ -602,6 +602,78 @@ mod asfaload_common_tests {
         );
     }
 
+    // --- has_revocation_suffix tests ---
+
+    #[test]
+    fn test_has_revocation_suffix_standalone_no_match() {
+        // Exactly "revocation.json" is not a revocation file — it needs a prefix
+        let s = format!("/repo/{}", REVOCATION_SUFFIX);
+        let path = Path::new(&s);
+        assert!(!has_revocation_suffix(path));
+    }
+
+    #[test]
+    fn test_has_revocation_suffix_standalone_pending_no_match() {
+        // Exactly "revocation.json.pending" is not a revocation file
+        let s = format!("/repo/{}.{}", REVOCATION_SUFFIX, PENDING_SUFFIX);
+        let path = Path::new(&s);
+        assert!(!has_revocation_suffix(path));
+    }
+
+    #[test]
+    fn test_has_revocation_suffix_bare_suffix_no_match() {
+        let path = Path::new(REVOCATION_SUFFIX);
+        assert!(!has_revocation_suffix(path));
+    }
+
+    #[test]
+    fn test_has_revocation_suffix_bare_pending_suffix_no_match() {
+        let s = format!("{}.{}", REVOCATION_SUFFIX, PENDING_SUFFIX);
+        let path = Path::new(&s);
+        assert!(!has_revocation_suffix(path));
+    }
+
+    #[test]
+    fn test_has_revocation_suffix_dotted_filename() {
+        // "artifact.revocation.json" — typical revocation file produced by revocation_path_for
+        let s = format!("/repo/artifact.{}", REVOCATION_SUFFIX);
+        let path = Path::new(&s);
+        assert!(has_revocation_suffix(path));
+    }
+
+    #[test]
+    fn test_has_revocation_suffix_dotted_pending() {
+        let s = format!("/repo/artifact.{}.{}", REVOCATION_SUFFIX, PENDING_SUFFIX);
+        let path = Path::new(&s);
+        assert!(has_revocation_suffix(path));
+    }
+
+    #[test]
+    fn test_has_revocation_suffix_plain_file() {
+        let path = Path::new("/repo/some_file.txt");
+        assert!(!has_revocation_suffix(path));
+    }
+
+    #[test]
+    fn test_has_revocation_suffix_signatures_file() {
+        let path = Path::new("/repo/some_file.signatures.json");
+        assert!(!has_revocation_suffix(path));
+    }
+
+    #[test]
+    fn test_has_revocation_suffix_partial_match_no_match() {
+        // "revocation" alone is not the full suffix
+        let path = Path::new("/repo/file.revocation");
+        assert!(!has_revocation_suffix(path));
+    }
+
+    #[test]
+    fn test_has_revocation_suffix_signers_file_no_match() {
+        let s = format!("/repo/{}/{}", SIGNERS_DIR, SIGNERS_FILE);
+        let path = Path::new(&s);
+        assert!(!has_revocation_suffix(path));
+    }
+
     #[test]
     fn test_deserialize_case_insensitivity() {
         // Algorithm prefix should ideally be case-insensitive (our impl converts to lowercase)
