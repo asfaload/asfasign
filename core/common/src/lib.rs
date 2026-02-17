@@ -494,6 +494,47 @@ mod asfaload_common_tests {
         assert_eq!(determine_file_type(&nested_index), FileType::Signers);
     }
 
+    #[test]
+    fn test_determine_file_type_revocation() {
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // A revocation file: "artifact.revocation.json" → Revocation
+        let revocation_file =
+            temp_path.join(format!("my_binary.{}", constants::REVOCATION_SUFFIX));
+        fs::write(&revocation_file, "content").unwrap();
+        assert_eq!(determine_file_type(&revocation_file), FileType::Revocation);
+
+        // A pending revocation file: "artifact.revocation.json.pending" → Revocation
+        let pending_revocation = temp_path.join(format!(
+            "my_binary.{}.{}",
+            constants::REVOCATION_SUFFIX,
+            constants::PENDING_SUFFIX,
+        ));
+        fs::write(&pending_revocation, "content").unwrap();
+        assert_eq!(
+            determine_file_type(&pending_revocation),
+            FileType::Revocation
+        );
+
+        // A revocation file inside a signers directory is still Revocation
+        // (revocation check takes priority over signers-dir check)
+        let signers_dir = temp_path.join(PENDING_SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).unwrap();
+        let revocation_in_signers =
+            signers_dir.join(format!("artifact.{}", constants::REVOCATION_SUFFIX));
+        fs::write(&revocation_in_signers, "content").unwrap();
+        assert_eq!(
+            determine_file_type(&revocation_in_signers),
+            FileType::Revocation
+        );
+
+        // Bare "revocation.json" (no prefix) is NOT a revocation file → Artifact
+        let bare_revocation = temp_path.join(constants::REVOCATION_SUFFIX);
+        fs::write(&bare_revocation, "content").unwrap();
+        assert_eq!(determine_file_type(&bare_revocation), FileType::Artifact);
+    }
+
     // AsfaloadHashes serde
     use sha2::digest::generic_array::GenericArray;
     use sha2::digest::typenum::consts::U64;
