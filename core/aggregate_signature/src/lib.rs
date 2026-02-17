@@ -748,6 +748,12 @@ impl AggregateSignature<PendingSignature> {
     }
 }
 
+/// Check if a signer is authorized to add a signature and has not already signed.
+///
+/// This function performs authorization checks only (group membership and
+/// duplicate detection). It does NOT check for revocation status of the file.
+/// Revocation is enforced at the signature addition level in
+/// `add_to_aggregate_for_file`.
 pub fn can_signer_add_signature<PP: AsRef<Path>>(
     pending_sig_path: PP,
     signer: &AsfaloadPublicKeys,

@@ -394,3 +394,90 @@ fn test_public_key_serde_round_trip() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_add_to_aggregate_rejects_revoked_file() -> Result<()> {
+    // Create a temporary directory and a file to sign
+    let temp_dir = tempfile::tempdir()?;
+    let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
+
+    // Load a key pair and create a valid signature
+    let (pubkey, seckey) = get_key_pair()?;
+    let data = common::sha512_for_file(&signed_file_path)?;
+    let signature = seckey.sign(&data)?;
+
+    // Create a completed revocation file (filename.revocation.json)
+    let revocation_path = common::fs::names::revocation_path_for(&signed_file_path)?;
+    fs::write(&revocation_path, r#"{"revoked": true}"#)?;
+
+    // Attempting to add a signature should fail with FileRevoked
+    let result = signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        SignatureError::FileRevoked(path) => {
+            assert_eq!(path, signed_file_path);
+        }
+        other => panic!("Expected FileRevoked error, got: {:?}", other),
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_add_to_aggregate_allows_pending_revocation() -> Result<()> {
+    // Create a temporary directory and a file to sign
+    let temp_dir = tempfile::tempdir()?;
+    let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
+
+    // Load a key pair and create a valid signature
+    let (pubkey, seckey) = get_key_pair()?;
+    let data = common::sha512_for_file(&signed_file_path)?;
+    let signature = seckey.sign(&data)?;
+
+    // Create a PENDING revocation file (should NOT block)
+    let revocation_path = common::fs::names::revocation_path_for(&signed_file_path)?;
+    let pending_revocation_path = PathBuf::from(format!(
+        "{}.{}",
+        revocation_path.to_string_lossy(),
+        constants::PENDING_SUFFIX
+    ));
+    fs::write(&pending_revocation_path, r#"{"revoked": true}"#)?;
+
+    // Attempting to add a signature should succeed
+    let result = signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+    assert!(
+        result.is_ok(),
+        "Pending revocation should not block signature addition, but got: {:?}",
+        result.unwrap_err()
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_add_to_aggregate_works_without_revocation_file() -> Result<()> {
+    // Create a temporary directory and a file to sign
+    let temp_dir = tempfile::tempdir()?;
+    let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
+
+    // Load a key pair and create a valid signature
+    let (pubkey, seckey) = get_key_pair()?;
+    let data = common::sha512_for_file(&signed_file_path)?;
+    let signature = seckey.sign(&data)?;
+
+    // No revocation file exists — signature should succeed
+    let revocation_path = common::fs::names::revocation_path_for(&signed_file_path)?;
+    assert!(
+        !revocation_path.exists(),
+        "Revocation file should not exist in this test"
+    );
+
+    let result = signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+    assert!(
+        result.is_ok(),
+        "Signature should succeed when no revocation file exists, but got: {:?}",
+        result.unwrap_err()
+    );
+
+    Ok(())
+}

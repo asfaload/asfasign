@@ -140,6 +140,8 @@ pub mod keys {
         InvalidSignatureForAggregate(PathBuf),
         #[error("Duplicate signature: this key has already signed")]
         DuplicateSignature,
+        #[error("File has been revoked: {0}")]
+        FileRevoked(PathBuf),
     }
 
     impl From<minisign::PError> for KeyError {
