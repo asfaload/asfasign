@@ -877,6 +877,7 @@ mod tests {
             (vec![], 1),
             Some((vec![test_keys.pub_key(0).unwrap().clone()], 1)),
             Some((vec![test_keys.pub_key(1).unwrap().clone()], 1)),
+            None,
         )?;
 
         let signers_dir = temp_dir.path().join(SIGNERS_DIR);
@@ -892,6 +893,7 @@ mod tests {
             (vec![test_keys.pub_key(3).unwrap().clone()], 1),
             Some((vec![test_keys.pub_key(0).unwrap().clone()], 1)),
             Some((vec![test_keys.pub_key(1).unwrap().clone()], 1)),
+            None,
         )?;
         let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
         std::fs::create_dir_all(&pending_dir)?;
