@@ -123,6 +123,9 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             master_key,
             master_key_file,
             master_threshold,
+            revocation_key,
+            revocation_key_file,
+            revocation_threshold,
             output_file,
             json_args,
         } => {
@@ -136,6 +139,9 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 master_key,
                 master_key_file,
                 master_threshold.as_ref().copied(),
+                revocation_key,
+                revocation_key_file,
+                revocation_threshold.as_ref().copied(),
                 output_file,
                 json_args.json,
             )?;

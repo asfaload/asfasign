@@ -122,6 +122,18 @@ pub enum Commands {
         #[arg(long, short = 'M')]
         master_threshold: Option<u32>,
 
+        /// Revocation public key string as base64 string (can be repeated)
+        #[arg(long, short)]
+        revocation_key: Vec<String>,
+
+        /// Revocation public key file (can be repeated, combines with --master-key)
+        #[arg(long)]
+        revocation_key_file: Vec<PathBuf>,
+
+        /// Threshold for revocation keys (required if revocation keys are provided)
+        #[arg(long, short = 'R')]
+        revocation_threshold: Option<u32>,
+
         /// Path to the signers file to be created
         #[arg(long, short)]
         output_file: PathBuf,
