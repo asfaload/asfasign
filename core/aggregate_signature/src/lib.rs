@@ -4557,12 +4557,14 @@ mod tests {
         with_artifact: bool,
         with_admin: bool,
         with_master: bool,
+        with_revocation: bool,
     ) -> (
         Vec<AsfaloadPublicKeys>,
         Vec<AsfaloadPublicKeys>,
         Vec<AsfaloadPublicKeys>,
+        Vec<AsfaloadPublicKeys>,
     ) {
-        let test_keys = TestKeys::new(6);
+        let test_keys = TestKeys::new(8);
         let artifact_keys = if with_artifact {
             vec![
                 test_keys.pub_key(0).unwrap().clone(),
@@ -4588,19 +4590,27 @@ mod tests {
             vec![]
         };
 
-        (artifact_keys, admin_keys, master_keys)
+        let revocation_keys = if with_revocation {
+            vec![
+                test_keys.pub_key(6).unwrap().clone(),
+                test_keys.pub_key(7).unwrap().clone(),
+            ]
+        } else {
+            vec![]
+        };
+        (artifact_keys, admin_keys, master_keys, revocation_keys)
     }
     #[test]
     fn test_can_revoke_with_all_levels_present_in_config() -> Result<()> {
-        let (artifact_keys, admin_keys, master_keys) =
-            signers_keys_for_revocation_tests(true, true, true);
-        // Create a config with admin_keys
+        let (artifact_keys, admin_keys, master_keys, revocation_keys) =
+            signers_keys_for_revocation_tests(true, true, true, true);
+        // Create a config with explicit revocation_keys set
         let config_with_all = SignersConfig::with_keys(
             1,
             (artifact_keys.clone(), 2),
             Some((admin_keys.clone(), 2)),
             Some((master_keys.clone(), 2)),
-            None,
+            Some((revocation_keys.clone(), 2)),
         )?;
 
         assert!(!can_revoke(
@@ -4608,15 +4618,26 @@ mod tests {
             &config_with_all
         ));
         assert!(!can_revoke(admin_keys.first().unwrap(), &config_with_all));
-        assert!(can_revoke(master_keys.first().unwrap(), &config_with_all));
+        assert!(!can_revoke(admin_keys.get(1).unwrap(), &config_with_all));
+
+        assert!(!can_revoke(master_keys.first().unwrap(), &config_with_all));
+        assert!(!can_revoke(master_keys.get(1).unwrap(), &config_with_all));
+        assert!(can_revoke(
+            revocation_keys.first().unwrap(),
+            &config_with_all
+        ));
+        assert!(can_revoke(
+            revocation_keys.get(1).unwrap(),
+            &config_with_all
+        ));
 
         Ok(())
     }
 
     #[test]
-    fn test_can_revoke_with_explicit_empty_admin_group() -> Result<()> {
-        let (artifact_keys, admin_keys, master_keys) =
-            signers_keys_for_revocation_tests(true, true, true);
+    fn test_can_revoke_with_explicit_empty_admin_and_no_revocation_group() -> Result<()> {
+        let (artifact_keys, admin_keys, master_keys, _revocation_keys) =
+            signers_keys_for_revocation_tests(true, true, true, true);
         // Create a config with empty admin_keys list.
         // The SignersConfig will be built with None admin_keys.
         let config_with_all =
@@ -4629,11 +4650,11 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn test_can_revoke_with_no_master_present_in_config() -> Result<()> {
-        let (artifact_keys, admin_keys, master_keys) =
-            signers_keys_for_revocation_tests(true, true, true);
+    fn test_can_revoke_with_no_revocation_present_in_config() -> Result<()> {
+        let (artifact_keys, admin_keys, master_keys, _revocation_keys) =
+            signers_keys_for_revocation_tests(true, true, true, false);
         // Create a config with admin_keys
-        let config_sans_master = SignersConfig::with_keys(
+        let config_sans_revocation = SignersConfig::with_keys(
             1,
             (artifact_keys.clone(), 2),
             Some((admin_keys.clone(), 2)),
@@ -4643,12 +4664,15 @@ mod tests {
 
         assert!(!can_revoke(
             artifact_keys.first().unwrap(),
-            &config_sans_master
+            &config_sans_revocation
         ));
-        assert!(can_revoke(admin_keys.first().unwrap(), &config_sans_master));
+        assert!(can_revoke(
+            admin_keys.first().unwrap(),
+            &config_sans_revocation
+        ));
         assert!(!can_revoke(
             master_keys.first().unwrap(),
-            &config_sans_master
+            &config_sans_revocation
         ));
 
         Ok(())
@@ -4656,8 +4680,8 @@ mod tests {
 
     #[test]
     fn test_can_revoke_with_only_artifact_present_in_config() -> Result<()> {
-        let (artifact_keys, admin_keys, master_keys) =
-            signers_keys_for_revocation_tests(true, true, true);
+        let (artifact_keys, admin_keys, master_keys, _revocation_keys) =
+            signers_keys_for_revocation_tests(true, true, true, false);
         // Create a config with admin_keys
         let config_sans_master =
             SignersConfig::with_keys(1, (artifact_keys.clone(), 2), None, None, None)?;
