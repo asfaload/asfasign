@@ -876,6 +876,7 @@ mod tests {
             artifact_signers: vec![group.clone()],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         };
         let signers_config = signers_config_proposal.build();
         // Write signers configuration
@@ -1558,6 +1559,7 @@ mod tests {
             }],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -1872,6 +1874,7 @@ mod tests {
             }],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -2057,6 +2060,7 @@ mod tests {
             }],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         };
         let signers_config = signers_config_proposal.build();
 
@@ -2198,6 +2202,7 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
+            revocation_keys: None,
         }
         .build();
 
@@ -2240,6 +2245,7 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
+            revocation_keys: None,
         }
         .build();
 
@@ -2387,6 +2393,7 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
+            revocation_keys: None,
         }
         .build();
 
@@ -2420,6 +2427,7 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
+            revocation_keys: None,
         }
         .build();
 
@@ -2501,6 +2509,7 @@ mod tests {
                 artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
                 master_keys: None,
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2530,6 +2539,7 @@ mod tests {
                 ],
                 master_keys: None,
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2553,6 +2563,7 @@ mod tests {
                 artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
                 master_keys: None,
                 admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
+                revocation_keys: None,
             }
             .build();
 
@@ -2576,6 +2587,7 @@ mod tests {
                 artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
                 master_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2599,6 +2611,7 @@ mod tests {
                 artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
                 master_keys: None,
                 admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
+                revocation_keys: None,
             }
             .build();
 
@@ -2626,6 +2639,7 @@ mod tests {
                     create_group(vec![create_signer(pubkey0.clone())], 1),
                     create_group(vec![create_signer(pubkey3.clone())], 1),
                 ]),
+                revocation_keys: None,
             }
             .build();
 
@@ -2660,6 +2674,7 @@ mod tests {
                 )],
                 master_keys: None,
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2683,6 +2698,7 @@ mod tests {
                 artifact_signers: vec![],
                 master_keys: None,
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2706,6 +2722,7 @@ mod tests {
                 )],
                 master_keys: None,
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2988,6 +3005,7 @@ mod tests {
             artifact_signers: vec![SignerGroup { signers, threshold }],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build()
     }
@@ -3504,6 +3522,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3522,6 +3541,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3531,6 +3551,7 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             artifact_signers: vec![create_group(&test_keys, vec![1, 0], 2)], // Reordered
+            revocation_keys: None,
         }
         .build();
 
@@ -3547,6 +3568,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3556,6 +3578,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)], // Added key 1
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3573,6 +3596,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3582,6 +3606,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3599,6 +3624,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3608,6 +3634,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
+            revocation_keys: None,
         }
         .build();
 
@@ -3625,6 +3652,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3634,6 +3662,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 5, 8], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![2, 6, 9], 2)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![7], 2)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3660,6 +3689,7 @@ mod tests {
             artifact_signers: vec![],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3669,6 +3699,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3689,6 +3720,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3698,6 +3730,7 @@ mod tests {
             artifact_signers: vec![],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3724,6 +3757,7 @@ mod tests {
             artifact_signers: vec![artifact_group.clone()],
             admin_keys: Some(vec![admin_group]),
             master_keys: Some(vec![master_group]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3755,6 +3789,7 @@ mod tests {
             artifact_signers: vec![artifact_group],
             admin_keys: None,
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3784,6 +3819,7 @@ mod tests {
             artifact_signers: vec![artifact_group1, artifact_group2],
             admin_keys: None,
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3813,6 +3849,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -3824,6 +3861,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)], // Added signer
             admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),    // New admin
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),   // Same master
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -3852,6 +3890,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![1], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -3862,6 +3901,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![1, 2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0, 3], 1)]),
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -3888,6 +3928,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -3899,6 +3940,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0, 3], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -3927,6 +3969,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
@@ -3977,6 +4020,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 1)],
             admin_keys: None,
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &config);
@@ -4002,6 +4046,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &config);
@@ -4028,6 +4073,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1, 2], 2)],
             admin_keys: None,
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &config);
@@ -4063,6 +4109,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: None,
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &config);
@@ -4100,6 +4147,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -4111,6 +4159,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -4136,6 +4185,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -4146,6 +4196,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -4184,6 +4235,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -4194,6 +4246,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -4232,6 +4285,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -4242,6 +4296,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -4284,6 +4339,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
@@ -4309,6 +4365,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
@@ -4341,6 +4398,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
@@ -4548,6 +4606,7 @@ mod tests {
             (artifact_keys.clone(), 2),
             Some((admin_keys.clone(), 2)),
             Some((master_keys.clone(), 2)),
+            None,
         )?;
 
         assert!(!can_revoke(
@@ -4567,7 +4626,7 @@ mod tests {
         // Create a config with empty admin_keys list.
         // The SignersConfig will be built with None admin_keys.
         let config_with_all =
-            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), Some((vec![], 1)), None)?;
+            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), Some((vec![], 1)), None, None)?;
 
         assert!(can_revoke(artifact_keys.first().unwrap(), &config_with_all));
         assert!(!can_revoke(admin_keys.first().unwrap(), &config_with_all));
@@ -4584,6 +4643,7 @@ mod tests {
             1,
             (artifact_keys.clone(), 2),
             Some((admin_keys.clone(), 2)),
+            None,
             None,
         )?;
 
@@ -4606,7 +4666,7 @@ mod tests {
             signers_keys_for_revocation_tests(true, true, true);
         // Create a config with admin_keys
         let config_sans_master =
-            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), None, None)?;
+            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), None, None, None)?;
 
         assert!(can_revoke(
             artifact_keys.first().unwrap(),

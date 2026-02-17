@@ -644,6 +644,7 @@ mod tests {
             }],
             master_keys: master_keys.clone(),
             admin_keys: admin_keys.clone(),
+            revocation_keys: None,
         };
 
         let signers_config = signers_config_proposal.build();
