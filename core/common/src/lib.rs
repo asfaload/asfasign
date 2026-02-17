@@ -361,8 +361,7 @@ mod asfaload_common_tests {
     #[test]
     fn test_determine_file_type_github_hierarchy() -> Result<()> {
         let temp_dir = TempDir::new()?;
-        let pending_index_file =
-            setup_asfald_project_registered(temp_dir.path().to_path_buf(), "{}")?;
+        let pending_index_file = setup_asfald_project_registered(temp_dir.path(), "{}")?;
         // This should be InitialSigners because there's NO asfaload.signers dir
         // in asfald/ or any parent directory
         assert_eq!(
