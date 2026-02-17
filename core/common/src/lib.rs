@@ -2,7 +2,9 @@ pub mod errors;
 pub mod fs;
 pub mod index_types;
 
-use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
+use constants::{
+    PENDING_SIGNERS_DIR, PENDING_SUFFIX, REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha512, digest::typenum};
 use std::fmt;
@@ -111,6 +113,7 @@ pub enum FileType {
     Artifact,
     Signers,
     InitialSigners,
+    Revocation,
 }
 
 impl Display for FileType {
@@ -119,12 +122,26 @@ impl Display for FileType {
             FileType::Artifact => write!(f, "Artifact"),
             FileType::Signers => write!(f, "Signers"),
             FileType::InitialSigners => write!(f, "InitialSigners"),
+            FileType::Revocation => write!(f, "Revocation"),
         }
     }
 }
-
+pub fn has_revocation_suffix<P: AsRef<Path>>(path_in: P) -> bool {
+    let Some(file_name) = path_in.as_ref().file_name().and_then(|f| f.to_str()) else {
+        return false;
+    };
+    let revocation_pending = format!("{}.{}", REVOCATION_SUFFIX, PENDING_SUFFIX);
+    (file_name.ends_with(REVOCATION_SUFFIX) || file_name.ends_with(&revocation_pending))
+        && file_name != REVOCATION_SUFFIX
+        && file_name != revocation_pending
+}
 pub fn determine_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
     let path = file_path.as_ref();
+    // Return immediately if we identify a revocation file
+    if has_revocation_suffix(path) {
+        return FileType::Revocation;
+    }
+
     let global_signers = find_global_signers_for(file_path.as_ref());
     let is_in_signers_dir = path
         .parent()
@@ -172,6 +189,8 @@ pub struct InitialSignersFileMarker;
 pub struct SignersFileMarker;
 #[derive(Clone)]
 pub struct ArtifactMarker;
+#[derive(Clone)]
+pub struct RevocationMarker;
 
 // As we have marker types on the SignedFile, we need a DU type to be able to have
 // one function creating a SignedFile (ortherwise we would need one loader function
@@ -181,6 +200,7 @@ pub enum SignedFileWithKind {
     InitialSignersFile(SignedFile<InitialSignersFileMarker>),
     SignersFile(SignedFile<SignersFileMarker>),
     Artifact(SignedFile<ArtifactMarker>),
+    Revocation(SignedFile<RevocationMarker>),
 }
 
 impl SignedFileWithKind {
@@ -211,6 +231,7 @@ impl SignedFileWithKind {
             SignedFileWithKind::InitialSignersFile(f) => f.location.clone(),
             SignedFileWithKind::SignersFile(f) => f.location.clone(),
             SignedFileWithKind::Artifact(f) => f.location.clone(),
+            SignedFileWithKind::Revocation(f) => f.location.clone(),
         }
     }
 
@@ -219,6 +240,7 @@ impl SignedFileWithKind {
             SignedFileWithKind::InitialSignersFile(_) => FileType::InitialSigners,
             SignedFileWithKind::SignersFile(_) => FileType::Signers,
             SignedFileWithKind::Artifact(_) => FileType::Artifact,
+            SignedFileWithKind::Revocation(_) => FileType::Revocation,
         }
     }
 
@@ -241,6 +263,7 @@ impl AsRef<Path> for SignedFileWithKind {
             SignedFileWithKind::InitialSignersFile(f) => f.location.as_ref(),
             SignedFileWithKind::SignersFile(f) => f.location.as_ref(),
             SignedFileWithKind::Artifact(f) => f.location.as_ref(),
+            SignedFileWithKind::Revocation(f) => f.location.as_ref(),
         }
     }
 }
@@ -270,6 +293,13 @@ impl SignedFileLoader {
                 digest: None,
                 marker: PhantomData,
             }),
+            FileType::Revocation => {
+                SignedFileWithKind::Revocation(SignedFile::<RevocationMarker> {
+                    location: path.as_ref().to_string_lossy().to_string(),
+                    digest: None,
+                    marker: PhantomData,
+                })
+            }
         }
     }
 }

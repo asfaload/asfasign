@@ -44,6 +44,8 @@ pub struct SignersConfig {
     admin_keys: Option<Vec<SignerGroup>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     master_keys: Option<Vec<SignerGroup>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revocation_keys: Option<Vec<SignerGroup>>,
 }
 
 // Introduced to make fields of SignersConfig private while:
@@ -67,6 +69,7 @@ pub struct SignersConfigProposal {
     pub artifact_signers: Vec<SignerGroup>,
     pub admin_keys: Option<Vec<SignerGroup>>,
     pub master_keys: Option<Vec<SignerGroup>>,
+    pub revocation_keys: Option<Vec<SignerGroup>>,
 }
 
 impl SignersConfigProposal {
@@ -84,6 +87,7 @@ impl SignersConfig {
             artifact_signers: p.artifact_signers,
             master_keys: p.master_keys,
             admin_keys: p.admin_keys,
+            revocation_keys: p.revocation_keys,
         }
     }
 
@@ -111,6 +115,7 @@ impl SignersConfig {
             artifact_signers: self.artifact_signers.clone(),
             master_keys: self.master_keys.clone(),
             admin_keys: self.admin_keys.clone(),
+            revocation_keys: self.revocation_keys.clone(),
         }
     }
 
@@ -120,6 +125,7 @@ impl SignersConfig {
         (artifact_signers, artifact_threshold): (Vec<AsfaloadPublicKeys>, u32),
         admin_keys: Option<(Vec<AsfaloadPublicKeys>, u32)>,
         master_keys: Option<(Vec<AsfaloadPublicKeys>, u32)>,
+        revocation_keys: Option<(Vec<AsfaloadPublicKeys>, u32)>,
     ) -> Result<Self, SignersConfigError> {
         // Helper function to create a SignerGroup from a vector of public key strings
         // Create the artifact signers group
@@ -143,12 +149,19 @@ impl SignersConfig {
             None => None,
         };
 
+        let revocation_keys = match revocation_keys {
+            Some((keys, _threshold)) if keys.is_empty() => None,
+            Some((keys, threshold)) => Some(vec![Self::create_group(keys, threshold)?]),
+            None => None,
+        };
+
         Ok(Self::new(SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version,
             artifact_signers,
             admin_keys,
             master_keys,
+            revocation_keys,
         }))
     }
 
@@ -156,7 +169,7 @@ impl SignersConfig {
         version: u32,
         artifact_signers_and_threshold: (Vec<AsfaloadPublicKeys>, u32),
     ) -> Result<Self, SignersConfigError> {
-        Self::with_keys(version, artifact_signers_and_threshold, None, None)
+        Self::with_keys(version, artifact_signers_and_threshold, None, None, None)
     }
 
     pub fn artifact_signers(&self) -> &[SignerGroup] {
@@ -170,6 +183,15 @@ impl SignersConfig {
     }
     pub fn master_keys(&self) -> Option<Vec<SignerGroup>> {
         self.master_keys.clone()
+    }
+
+    // Revocation keys are either specified explicitly, or we fall back
+    // to admin_keys, which themselves fall back to artifact signers.
+    pub fn revocation_keys(&self) -> &[SignerGroup] {
+        match &self.revocation_keys {
+            Some(v) if !v.is_empty() => v,
+            _ => self.admin_keys(),
+        }
     }
 
     pub fn version(&self) -> u32 {

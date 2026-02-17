@@ -380,6 +380,11 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
             // All signers in the config must sign initial signers files
             Ok(config.all_signer_keys())
         }
+        SignedFileWithKind::Revocation(_) => {
+            let config = load_signers_config(file_path)?;
+            // All signers in the config must sign initial signers files
+            Ok(config.all_signer_keys())
+        }
     }
 }
 
@@ -455,6 +460,15 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
             // and we require all signers in the file to sign it
             let signers_config = load_signers_config(file_path)?;
             check_all_signers(&signatures, &signers_config, &file_hash)
+        }
+        SignedFileWithKind::Revocation(_) => {
+            let signers_file_path = if look_at_pending {
+                find_global_signers_for(file_path)
+            } else {
+                local_signers_path_for(file_path)
+            }?;
+            let signers_config = load_signers_config(&signers_file_path)?;
+            check_groups(signers_config.revocation_keys(), &signatures, &file_hash)
         }
     };
     if !look_at_pending && !is_complete {

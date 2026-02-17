@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::RevocationMarker;
 pub use common::errors;
 use common::fs::names::{find_global_signers_for, pending_signers_file_in_dir};
 pub use common::fs::names::{local_signers_path_for, signatures_path_for};
@@ -113,6 +114,37 @@ where
     }
 }
 
+impl SignedFileTrait for SignedFile<RevocationMarker>
+where
+    AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+    AsfaloadSignatures: AsfaloadSignatureTrait,
+{
+    fn add_signature(
+        &self,
+        sig: AsfaloadSignatures,
+        pubkey: AsfaloadPublicKeys,
+    ) -> Result<SignatureWithState, SignedFileError> {
+        let agg_sig_with_state = SignatureWithState::load_for_file(&self.location)?;
+        if let Some(pending_sig) = agg_sig_with_state.get_pending() {
+            pending_sig
+                .add_individual_signature(&sig, &pubkey)
+                .map_err(|e| e.into())
+        } else {
+            Err(SignedFileError::AggregateSignatureError(
+                common::errors::AggregateSignatureError::LogicError(
+                    "Signature is already complete; cannot add another signature.".to_string(),
+                ),
+            ))
+        }
+    }
+
+    fn is_signed(&self) -> Result<bool, SignedFileError> {
+        let r = SignatureWithState::load_for_file(&self.location)?
+            .get_complete()
+            .is_some();
+        Ok(r)
+    }
+}
 pub trait SignedFileWithKindTrait
 where
     AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
@@ -140,6 +172,7 @@ where
             SignedFileWithKind::InitialSignersFile(sf) => sf.add_signature(sig, pubkey),
             SignedFileWithKind::SignersFile(sf) => sf.add_signature(sig, pubkey),
             SignedFileWithKind::Artifact(sf) => sf.add_signature(sig, pubkey),
+            SignedFileWithKind::Revocation(sf) => sf.add_signature(sig, pubkey),
         }
     }
 
@@ -148,6 +181,7 @@ where
             SignedFileWithKind::InitialSignersFile(sf) => sf.is_signed(),
             SignedFileWithKind::SignersFile(sf) => sf.is_signed(),
             SignedFileWithKind::Artifact(sf) => sf.is_signed(),
+            SignedFileWithKind::Revocation(sf) => sf.is_signed(),
         }
     }
 }
