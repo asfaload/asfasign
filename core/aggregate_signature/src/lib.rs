@@ -231,17 +231,11 @@ pub fn can_revoke(pubkey: &AsfaloadPublicKeys, signers_config: &SignersConfig) -
         })
     };
 
-    if let Some(master_keys) = signers_config.master_keys()
-        && !master_keys.is_empty()
-    {
-        return is_in_groups(&master_keys);
-    }
-
     // Using the admin_keys() accessor will implicitly return the
     // artifact signers if the admin group definition is empty.
     // It is thus sufficient to check if the key is in the vec of
     // keys returned by admin_keys()
-    is_in_groups(signers_config.admin_keys())
+    is_in_groups(signers_config.revocation_keys())
 }
 
 /// Load signers configuration from a file
