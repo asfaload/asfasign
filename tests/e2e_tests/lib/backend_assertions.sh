@@ -204,7 +204,7 @@ assert_revocation_signers() {
         local pk
         pk="$(pubkey_of "$key_file")"
         assert_json_field "$signers_path" \
-            "[.artifact_signers[].signers[].data.pubkey] | any(. == \"$pk\")" \
+            "[.revocation_keys[].signers[].data.pubkey] | any(. == \"$pk\")" \
             "Release v$version revocation signers contains $(basename "$key_file")"
     done
 }

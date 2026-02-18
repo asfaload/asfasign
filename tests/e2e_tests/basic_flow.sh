@@ -22,7 +22,7 @@ cleanup() {
     if [[ -n "$E2E_GIT_REPO_PATH" ]] && [[ -d "$E2E_GIT_REPO_PATH" ]]; then
         rm -rf "$E2E_GIT_REPO_PATH"
     fi
-    rm -f "${DOWNLOAD_V01:-}" "${DOWNLOAD_V01_HISTORICAL:-}" "${DOWNLOAD_V02:-}"
+    rm -f "${DOWNLOAD_V01:-}" "${DOWNLOAD_V01_HISTORICAL:-}" "${DOWNLOAD_V02:-}" "${DOWNLOAD_V01_bis:-}"
 }
 trap cleanup EXIT
 
@@ -248,13 +248,23 @@ run_step "Download artifact (v0.2)" \
 
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02"
 
-
-run_step "Revoke index file for v0.1" \
+expect_fail "revoke index file for v0.1, not authorized" \
     cargo run -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" $(release_index 0.1)
 
+run_step "revoke index file for v0.1" \
+    cargo run -- revoke --secret-key "$KEY_4" -p $key_password -u "$backend" $(release_index 0.1)
+
+DOWNLOAD_V01_bis="$(mktemp)"
+run_step "Download artifact (v0.1), not yet revoked as need 2 signatures" \
+    cargo run --quiet -- download -o "$DOWNLOAD_V01_bis" -u "$backend" $(artifact_url 0.1)
+
+run_step "revoke index file for v0.1" \
+    cargo run -- revoke --secret-key "$KEY_5" -p $key_password -u "$backend" $(release_index 0.1)
+
+assert_artifact_hash_matches "0.1" "artifact.bin" "$DOWNLOAD_V01_bis"
 # --- Backend: verify v0.1 revoked ---
 assert_release_index_revoked "0.1"
-assert_revocation_signers "0.1" "$KEY_0" "$KEY_1" "$KEY_2" "$KEY_3"
+assert_revocation_signers "0.1" "$KEY_4" "$KEY_5" "$KEY_6"
 assert_last_commit_contains "$REVOCATION_SUFFIX"
 
 expect_fail "Download artifact (v0.1, revoked)" \
