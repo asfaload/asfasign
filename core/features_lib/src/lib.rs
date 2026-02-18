@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use common::RevocationMarker;
 pub use common::errors;
 use common::fs::names::{find_global_signers_for, pending_signers_file_in_dir};
 pub use common::fs::names::{local_signers_path_for, signatures_path_for};
@@ -8,6 +7,7 @@ pub use common::{
     ArtifactMarker, FileType, InitialSignersFileMarker, SignedFile, SignersFileMarker,
     errors::SignedFileError,
 };
+use common::{RevocationMarker, RevokedArtifactMarker};
 pub use common::{SignedFileLoader, SignedFileWithKind};
 
 pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file};
@@ -145,6 +145,25 @@ where
         Ok(r)
     }
 }
+
+impl SignedFileTrait for SignedFile<RevokedArtifactMarker>
+where
+    AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
+    AsfaloadSignatures: AsfaloadSignatureTrait,
+{
+    fn add_signature(
+        &self,
+        _sig: AsfaloadSignatures,
+        _pubkey: AsfaloadPublicKeys,
+    ) -> Result<SignatureWithState, SignedFileError> {
+        Err(SignedFileError::Revoked())
+    }
+
+    fn is_signed(&self) -> Result<bool, SignedFileError> {
+        Ok(false)
+    }
+}
+
 pub trait SignedFileWithKindTrait
 where
     AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
@@ -173,6 +192,7 @@ where
             SignedFileWithKind::SignersFile(sf) => sf.add_signature(sig, pubkey),
             SignedFileWithKind::Artifact(sf) => sf.add_signature(sig, pubkey),
             SignedFileWithKind::Revocation(sf) => sf.add_signature(sig, pubkey),
+            SignedFileWithKind::RevokedArtifact(sf) => sf.add_signature(sig, pubkey),
         }
     }
 
@@ -182,6 +202,7 @@ where
             SignedFileWithKind::SignersFile(sf) => sf.is_signed(),
             SignedFileWithKind::Artifact(sf) => sf.is_signed(),
             SignedFileWithKind::Revocation(sf) => sf.is_signed(),
+            SignedFileWithKind::RevokedArtifact(sf) => sf.is_signed(),
         }
     }
 }

@@ -1349,7 +1349,9 @@ mod tests {
                     err_str
                 );
             }
-            Ok(_) => panic!("Expected revocation to fail for master key when revocation group exists"),
+            Ok(_) => {
+                panic!("Expected revocation to fail for master key when revocation group exists")
+            }
         }
 
         // Verify no revocation files were created

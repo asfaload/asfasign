@@ -10,6 +10,8 @@ pub enum SignedFileError {
     AuthorisedSignersRetrievalFailure(AggregateSignatureError),
     #[error("stdio error: {0}")]
     StdIoError(#[from] std::io::Error),
+    #[error("File is revoked")]
+    Revoked(),
 }
 
 #[derive(Debug, Error)]
@@ -49,6 +51,8 @@ pub enum AggregateSignatureError {
     // we would get a Some with SignatureWithState::get_pending because we tested it before.
     #[error("Logic error: {0}")]
     LogicError(String),
+    #[error("File is revoked")]
+    FileRevoked,
 }
 
 #[derive(Debug, Error)]

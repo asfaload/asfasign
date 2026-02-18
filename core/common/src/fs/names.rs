@@ -156,6 +156,11 @@ pub fn revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBu
     file_path_with_suffix(path_in, REVOCATION_SUFFIX)
 }
 
+pub fn has_revocation_file<P: AsRef<Path>>(signed_file_path_in: P) -> std::io::Result<bool> {
+    let exists = revocation_path_for(signed_file_path_in.as_ref())?.exists();
+    Ok(exists)
+}
+
 pub fn revocation_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     let rev_path = revocation_path_for(path_in)?;
     file_path_with_suffix(rev_path, SIGNATURES_SUFFIX)

@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 use std::path::Path;
 use std::str::FromStr;
 
-use crate::fs::names::find_global_signers_for;
+use crate::fs::names::{find_global_signers_for, has_revocation_file};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -114,6 +114,7 @@ pub enum FileType {
     Signers,
     InitialSigners,
     Revocation,
+    RevokedArtifact,
 }
 
 impl Display for FileType {
@@ -123,6 +124,7 @@ impl Display for FileType {
             FileType::Signers => write!(f, "Signers"),
             FileType::InitialSigners => write!(f, "InitialSigners"),
             FileType::Revocation => write!(f, "Revocation"),
+            FileType::RevokedArtifact => write!(f, "RevokedArtifact"),
         }
     }
 }
@@ -153,7 +155,13 @@ pub fn determine_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
     match (is_in_signers_dir, is_signers_file, global_signers) {
         (true, true, Err(_)) => FileType::InitialSigners,
         (true, true, Ok(_)) => FileType::Signers,
-        (_, _, _) => FileType::Artifact,
+        (_, _, _) => {
+            if has_revocation_file(path).unwrap_or(false) {
+                FileType::RevokedArtifact
+            } else {
+                FileType::Artifact
+            }
+        }
     }
 }
 
@@ -191,6 +199,8 @@ pub struct SignersFileMarker;
 pub struct ArtifactMarker;
 #[derive(Clone)]
 pub struct RevocationMarker;
+#[derive(Clone)]
+pub struct RevokedArtifactMarker;
 
 // As we have marker types on the SignedFile, we need a DU type to be able to have
 // one function creating a SignedFile (ortherwise we would need one loader function
@@ -201,6 +211,7 @@ pub enum SignedFileWithKind {
     SignersFile(SignedFile<SignersFileMarker>),
     Artifact(SignedFile<ArtifactMarker>),
     Revocation(SignedFile<RevocationMarker>),
+    RevokedArtifact(SignedFile<RevokedArtifactMarker>),
 }
 
 impl SignedFileWithKind {
@@ -223,6 +234,12 @@ impl SignedFileWithKind {
             _ => None,
         }
     }
+    pub fn get_revoked_artifact(&self) -> Option<&SignedFile<RevokedArtifactMarker>> {
+        match self {
+            SignedFileWithKind::RevokedArtifact(f) => Some(f),
+            _ => None,
+        }
+    }
 
     // Function to extract info from the wrapped SignedFile without
     // requiring the caller to unwrap it.
@@ -232,6 +249,7 @@ impl SignedFileWithKind {
             SignedFileWithKind::SignersFile(f) => f.location.clone(),
             SignedFileWithKind::Artifact(f) => f.location.clone(),
             SignedFileWithKind::Revocation(f) => f.location.clone(),
+            SignedFileWithKind::RevokedArtifact(f) => f.location.clone(),
         }
     }
 
@@ -241,6 +259,7 @@ impl SignedFileWithKind {
             SignedFileWithKind::SignersFile(_) => FileType::Signers,
             SignedFileWithKind::Artifact(_) => FileType::Artifact,
             SignedFileWithKind::Revocation(_) => FileType::Revocation,
+            SignedFileWithKind::RevokedArtifact(_) => FileType::Revocation,
         }
     }
 
@@ -264,6 +283,7 @@ impl AsRef<Path> for SignedFileWithKind {
             SignedFileWithKind::SignersFile(f) => f.location.as_ref(),
             SignedFileWithKind::Artifact(f) => f.location.as_ref(),
             SignedFileWithKind::Revocation(f) => f.location.as_ref(),
+            SignedFileWithKind::RevokedArtifact(f) => f.location.as_ref(),
         }
     }
 }
@@ -295,6 +315,13 @@ impl SignedFileLoader {
             }),
             FileType::Revocation => {
                 SignedFileWithKind::Revocation(SignedFile::<RevocationMarker> {
+                    location: path.as_ref().to_string_lossy().to_string(),
+                    digest: None,
+                    marker: PhantomData,
+                })
+            }
+            FileType::RevokedArtifact => {
+                SignedFileWithKind::RevokedArtifact(SignedFile::<RevokedArtifactMarker> {
                     location: path.as_ref().to_string_lossy().to_string(),
                     digest: None,
                     marker: PhantomData,
@@ -500,8 +527,7 @@ mod asfaload_common_tests {
         let temp_path = temp_dir.path();
 
         // A revocation file: "artifact.revocation.json" → Revocation
-        let revocation_file =
-            temp_path.join(format!("my_binary.{}", constants::REVOCATION_SUFFIX));
+        let revocation_file = temp_path.join(format!("my_binary.{}", constants::REVOCATION_SUFFIX));
         fs::write(&revocation_file, "content").unwrap();
         assert_eq!(determine_file_type(&revocation_file), FileType::Revocation);
 

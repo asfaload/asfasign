@@ -5,7 +5,7 @@ use common::fs::names::{
     create_local_signers_for, find_global_signers_for, local_signers_path_for,
     pending_signatures_path_for, signatures_path_for, subject_path_from_pending_signatures,
 };
-use common::{AsfaloadHashes, SignedFileLoader, SignedFileWithKind};
+use common::{AsfaloadHashes, FileType, SignedFileLoader, SignedFileWithKind};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 use signers_file_types::{SignerGroup, SignersConfig};
@@ -379,6 +379,7 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
             // All signers in the config must sign initial signers files
             Ok(config.all_signer_keys())
         }
+        SignedFileWithKind::RevokedArtifact(_) => Err(AggregateSignatureError::FileRevoked),
     }
 }
 
@@ -464,8 +465,9 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
             let signers_config = load_signers_config(&signers_file_path)?;
             check_groups(signers_config.revocation_keys(), &signatures, &file_hash)
         }
+        SignedFileWithKind::RevokedArtifact(_) => false,
     };
-    if !look_at_pending && !is_complete {
+    if !(signed_file.kind() == FileType::RevokedArtifact) && !look_at_pending && !is_complete {
         Err(AggregateSignatureError::MissingSignaturesInCompleteSignature)
     } else {
         Ok(is_complete)
@@ -5116,5 +5118,40 @@ mod tests {
             Ok(v) => assert_eq!(v.len(), 0),
             Err(e) => panic!("Expected Ok value but got error {}", e),
         }
+    }
+
+    #[test]
+    fn test_get_authorized_signers_for_revoked_artifact_returns_error() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+
+        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir)?;
+        let signers_file = signers_dir.join(SIGNERS_FILE);
+
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (vec![pubkey.clone()], 1))?;
+        fs::write(&signers_file, serde_json::to_string(&signers_config)?)?;
+
+        let subdir = temp_dir.path().join("releases");
+        fs::create_dir_all(&subdir)?;
+        let artifact_path = subdir.join("artifact.bin");
+        fs::write(&artifact_path, "artifact content")?;
+
+        let revocation_path = common::fs::names::revocation_path_for(&artifact_path)?;
+        fs::write(&revocation_path, r#"{"revoked": true}"#)?;
+
+        let result = get_authorized_signers_for_file(&artifact_path);
+
+        match result {
+            Err(AggregateSignatureError::FileRevoked) => {}
+            other => panic!(
+                "Expected AggregateSignatureError::FileRevoked, got: {:?}",
+                other
+            ),
+        }
+
+        Ok(())
     }
 }
