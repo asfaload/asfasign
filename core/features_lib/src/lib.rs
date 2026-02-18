@@ -273,7 +273,7 @@ pub mod aggregate_signature_helpers {
 }
 
 pub mod constants {
-    pub use constants::*;
+    pub use ::constants::*;
 }
 pub mod rest_api {
     pub use rest_api_types::{
@@ -287,7 +287,7 @@ mod tests_signed_file_revocation {
     use super::*;
     use ::constants::{REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use chrono::Utc;
-    use common::fs::names::local_signers_path_for;
+    use common::fs::names::{local_signers_path_for, revocation_path_for};
     use common::{sha512_for_content, sha512_for_file};
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signers_file_types::SignersConfig;
@@ -549,6 +549,55 @@ mod tests_signed_file_revocation {
         assert!(
             sf.is_signed()?,
             "Expected is_signed=true after both required signatures"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_signature_rejected_for_revoked_artifact() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let test_keys = TestKeys::new(1);
+
+        let artifact_path = temp_dir.path().join("artifact.bin");
+        fs::write(&artifact_path, "artifact content")?;
+
+        let revocation_path = revocation_path_for(&artifact_path)?;
+        fs::write(&revocation_path, r#"{"revoked": true}"#)?;
+
+        let signed_file = SignedFile::<RevokedArtifactMarker>::new(
+            artifact_path.to_string_lossy().to_string(),
+            None,
+        );
+
+        let file_hash = sha512_for_file(&artifact_path)?;
+        let sig = test_keys.sec_key(0).unwrap().sign(&file_hash)?;
+
+        let result = signed_file.add_signature(sig, test_keys.pub_key(0).unwrap().clone());
+
+        match result {
+            Err(SignedFileError::Revoked()) => {}
+            Ok(_) => panic!("Expected SignedFileError::Revoked(), got Ok"),
+            Err(e) => panic!("Expected SignedFileError::Revoked(), got: {}", e),
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_signed_returns_false_for_revoked_artifact() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let artifact_path = temp_dir.path().join("artifact.bin");
+
+        let signed_file = SignedFile::<RevokedArtifactMarker>::new(
+            artifact_path.to_string_lossy().to_string(),
+            None,
+        );
+
+        let result = signed_file.is_signed()?;
+        assert!(
+            !result,
+            "Expected is_signed() to return false for revoked artifact"
         );
 
         Ok(())
