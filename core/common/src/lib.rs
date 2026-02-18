@@ -6,7 +6,7 @@ use constants::{
     PENDING_SIGNERS_DIR, PENDING_SUFFIX, REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha512, digest::typenum};
+use sha2::{digest::typenum, Digest, Sha512};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
@@ -561,6 +561,76 @@ mod asfaload_common_tests {
         assert_eq!(determine_file_type(&bare_revocation), FileType::Artifact);
     }
 
+    #[test]
+    fn test_determine_file_type_revoked_artifact() {
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create an artifact file
+        let artifact_path = temp_path.join("my_binary.bin");
+        fs::write(&artifact_path, "artifact content").unwrap();
+
+        // Initially, it's an Artifact
+        assert_eq!(determine_file_type(&artifact_path), FileType::Artifact);
+
+        // Create a revocation file for the artifact
+        let revocation_file =
+            temp_path.join(format!("my_binary.bin.{}", constants::REVOCATION_SUFFIX));
+        fs::write(&revocation_file, r#"{"revoked": true}"#).unwrap();
+
+        // Now it should be RevokedArtifact
+        assert_eq!(
+            determine_file_type(&artifact_path),
+            FileType::RevokedArtifact
+        );
+    }
+
+    #[test]
+    fn test_determine_file_type_revoked_artifact_in_subdirectory() {
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create subdirectory structure
+        let subdir = temp_path.join("releases");
+        fs::create_dir(&subdir).unwrap();
+
+        // Create artifact in subdirectory
+        let artifact_path = subdir.join("release.tar.gz");
+        fs::write(&artifact_path, "release content").unwrap();
+
+        // Create revocation file
+        let revocation_file =
+            subdir.join(format!("release.tar.gz.{}", constants::REVOCATION_SUFFIX));
+        fs::write(&revocation_file, r#"{"revoked": true}"#).unwrap();
+
+        assert_eq!(
+            determine_file_type(&artifact_path),
+            FileType::RevokedArtifact
+        );
+    }
+
+    #[test]
+    fn test_determine_file_type_pending_revocation_is_still_artifact() {
+        // A pending revocation should NOT make the file RevokedArtifact
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create an artifact file
+        let artifact_path = temp_path.join("my_binary.bin");
+        fs::write(&artifact_path, "artifact content").unwrap();
+
+        // Create a PENDING revocation file (not complete)
+        let pending_revocation = temp_path.join(format!(
+            "my_binary.bin.{}.{}",
+            constants::REVOCATION_SUFFIX,
+            constants::PENDING_SUFFIX
+        ));
+        fs::write(&pending_revocation, r#"{"revoked": true}"#).unwrap();
+
+        // Should still be Artifact (only complete revocations block)
+        assert_eq!(determine_file_type(&artifact_path), FileType::Artifact);
+    }
+
     // AsfaloadHashes serde
     use sha2::digest::generic_array::GenericArray;
     use sha2::digest::typenum::consts::U64;
@@ -661,12 +731,10 @@ mod asfaload_common_tests {
         let result: Result<AsfaloadHashes, _> = serde_json::from_str(json);
 
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid hex string")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid hex string"));
     }
 
     // --- has_revocation_suffix tests ---
