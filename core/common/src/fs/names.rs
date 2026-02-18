@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use constants::{
-    PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, REVOCATION_SUFFIX, REVOKED_SUFFIX,
-    SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_SUFFIX,
+    PENDING_REVOCATION_SUFFIX, PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, REVOCATION_SUFFIX,
+    REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_SUFFIX,
 };
 
 /// Find the active signers file by traversing parent directories
@@ -154,6 +154,10 @@ pub fn local_signers_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<Pat
 
 pub fn revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     file_path_with_suffix(path_in, REVOCATION_SUFFIX)
+}
+
+pub fn pending_revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    file_path_with_suffix(path_in, PENDING_REVOCATION_SUFFIX)
 }
 
 pub fn has_revocation_file<P: AsRef<Path>>(signed_file_path_in: P) -> std::io::Result<bool> {
@@ -394,6 +398,52 @@ mod asfaload_index_tests {
         let result = subject_path_from_pending_signatures(&input)?;
         let expected = PathBuf::new();
         assert_eq!(result, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_has_revocation_file_returns_true_when_exists() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let artifact_path = temp_dir.path().join("my_artifact.bin");
+        fs::write(&artifact_path, "content")?;
+
+        let revocation_path = revocation_path_for(&artifact_path)?;
+        fs::write(&revocation_path, r#"{"revoked": true}"#)?;
+
+        assert!(has_revocation_file(&artifact_path)?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_has_revocation_file_returns_false_when_pending_revocation_exists() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let artifact_path = temp_dir.path().join("my_artifact.bin");
+        fs::write(&artifact_path, "content")?;
+
+        let pending_revocation_path = pending_revocation_path_for(&artifact_path)?;
+        fs::write(&pending_revocation_path, r#"{"revoked": true}"#)?;
+
+        assert!(!has_revocation_file(&artifact_path)?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_has_revocation_file_returns_false_when_not_exists() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let artifact_path = temp_dir.path().join("my_artifact.bin");
+        fs::write(&artifact_path, "content")?;
+
+        assert!(!has_revocation_file(&artifact_path)?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_has_revocation_file_returns_false_for_directory() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let subdir = temp_dir.path().join("subdir");
+        fs::create_dir(&subdir)?;
+
+        assert!(!has_revocation_file(&subdir)?);
         Ok(())
     }
 }
