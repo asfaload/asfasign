@@ -1,4 +1,8 @@
 pub mod scenarios;
+pub mod signers_setup;
+
+pub use signers_setup::*;
+
 use signatures::keys::AsfaloadKeyPairTrait;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::keys::AsfaloadSecretKeyTrait;

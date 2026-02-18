@@ -770,7 +770,10 @@ mod tests {
     use std::path::PathBuf;
     use std::str::FromStr;
     use tempfile::TempDir;
-    use test_helpers::TestKeys;
+    use test_helpers::{
+        TestKeys, create_complete_signers_setup, create_group, write_artifact_file,
+        write_pending_signatures, write_pending_signers_config, write_signers_config,
+    };
 
     #[test]
     fn test_load_and_complete() -> Result<()> {
@@ -3457,74 +3460,6 @@ mod tests {
     // Test get_newly_added_signer_keys
     // ---------------------------------
 
-    /// Helper function to create a Signer from a TestKeys instance.
-    fn create_signer(test_keys: &TestKeys, index: usize) -> Signer {
-        Signer {
-            kind: SignerKind::Key,
-            data: SignerData {
-                format: KeyFormat::Minisign,
-                pubkey: test_keys.pub_key(index).unwrap().clone(),
-            },
-        }
-    }
-
-    /// Helper function to create a SignerGroup from a vector of Signer indices.
-    fn create_group(test_keys: &TestKeys, indices: Vec<usize>, threshold: u32) -> SignerGroup {
-        let signers = indices
-            .into_iter()
-            .map(|i| create_signer(test_keys, i))
-            .collect();
-        SignerGroup { signers, threshold }
-    }
-
-    /// Create a signers config on disk at `root/SIGNERS_DIR/SIGNERS_FILE`.
-    /// Returns the path to the signers file.
-    fn write_signers_config(root: &Path, config: &SignersConfig) -> PathBuf {
-        let sig_dir = root.join(SIGNERS_DIR);
-        fs::create_dir_all(&sig_dir).unwrap();
-        let signers_file = sig_dir.join(SIGNERS_FILE);
-        let json = serde_json::to_string_pretty(config).unwrap();
-        fs::write(&signers_file, json).unwrap();
-        signers_file
-    }
-
-    /// Create a pending signers config on disk at `root/PENDING_SIGNERS_DIR/SIGNERS_FILE`.
-    /// Returns the path to the pending signers file.
-    fn write_pending_signers_config(root: &Path, config: &SignersConfig) -> PathBuf {
-        let pending_dir = root.join(PENDING_SIGNERS_DIR);
-        fs::create_dir_all(&pending_dir).unwrap();
-        let signers_file = pending_dir.join(SIGNERS_FILE);
-        let json = serde_json::to_string_pretty(config).unwrap();
-        fs::write(&signers_file, json).unwrap();
-        signers_file
-    }
-
-    /// Create an artifact file at `root/nested/artifact.txt` with dummy content.
-    /// Returns the path to the artifact file.
-    fn write_artifact_file(root: &Path) -> PathBuf {
-        let artifact_path = root.join("nested/artifact.txt");
-        fs::create_dir_all(artifact_path.parent().unwrap()).unwrap();
-        fs::write(&artifact_path, "content").unwrap();
-        artifact_path
-    }
-
-    /// Write a pending signatures file for the given file path.
-    /// `signed_keys` contains (pubkey, secret_key) pairs that should have valid signatures.
-    fn write_pending_signatures(
-        file_path: &Path,
-        signed_keys: &[(AsfaloadPublicKeys, AsfaloadSecretKeys)],
-    ) {
-        let file_hash = sha512_for_file(file_path).unwrap();
-        let mut sig_map: HashMap<String, String> = HashMap::new();
-        for (pubkey, seckey) in signed_keys {
-            let sig = seckey.sign(&file_hash).unwrap();
-            sig_map.insert(pubkey.to_base64(), sig.to_base64());
-        }
-        let sig_path = pending_signatures_path_for(file_path).unwrap();
-        let json = serde_json::to_string_pretty(&sig_map).unwrap();
-        fs::write(sig_path, json).unwrap();
-    }
-
     #[test]
     fn test_no_new_signers_identical_configs() {
         let test_keys = TestKeys::new(3);
@@ -4022,42 +3957,31 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(5);
 
-        // Create signers config with artifact, admin, master, and explicit revocation keys
-        let artifact_group = create_group(&test_keys, vec![0], 1);
-        let admin_group = create_group(&test_keys, vec![1], 1);
-        let master_group = create_group(&test_keys, vec![2], 1);
-        let revocation_group = create_group(&test_keys, vec![3, 4], 2);
-        let config = SignersConfigProposal {
-            timestamp: chrono::Utc::now(),
-            version: 1,
-            artifact_signers: vec![artifact_group],
-            admin_keys: Some(vec![admin_group]),
-            master_keys: Some(vec![master_group]),
-            revocation_keys: Some(vec![revocation_group]),
-        }
-        .build();
+        let (signers_file, _) = create_complete_signers_setup(
+            &temp_dir,
+            &test_keys,
+            Some(vec![1]),
+            Some(vec![2]),
+            Some(vec![3, 4]),
+        )
+        .expect("Should succeed");
 
-        // Write global signers config
-        write_signers_config(temp_dir.path(), &config);
-
-        // Create an artifact file
         let artifact_path = write_artifact_file(temp_dir.path());
 
-        // Create a revocation file (artifact + .revocation.json suffix)
-        // The revocation file itself contains the signers config
         let revocation_path = artifact_path.with_extension(format!(
             "{}.{}",
             artifact_path.extension().unwrap().to_string_lossy(),
             constants::REVOCATION_SUFFIX
         ));
-        let revocation_json = serde_json::to_string_pretty(&config).unwrap();
+
+        let signers_config =
+            signers_file_types::parse_signers_config(&fs::read_to_string(&signers_file).unwrap())
+                .unwrap();
+        let revocation_json = serde_json::to_string_pretty(&signers_config).unwrap();
         fs::write(&revocation_path, revocation_json).unwrap();
 
-        // Get authorized signers for the revocation file
         let authorized = get_authorized_signers_for_file(&revocation_path).expect("Should succeed");
 
-        // Verify: Only revocation_keys (keys 3 and 4) are authorized
-        // Artifact (key 0), admin (key 1), and master (key 2) should NOT be authorized
         assert_eq!(authorized.len(), 2);
         assert!(!authorized.contains(test_keys.pub_key(0).unwrap()));
         assert!(!authorized.contains(test_keys.pub_key(1).unwrap()));

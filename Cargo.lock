@@ -4743,8 +4743,10 @@ dependencies = [
  "common",
  "constants",
  "minisign",
+ "serde_json",
  "signatures",
  "signers_file_types",
+ "tempfile",
 ]
 
 [[package]]
