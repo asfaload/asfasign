@@ -4,7 +4,9 @@ use common::{
     errors::RevocationError,
     fs::names::{find_global_signers_for, pending_signatures_path_for, signatures_path_for},
 };
-use constants::{REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
+use constants::{
+    PENDING_SIGNATURES_SUFFIX, REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX,
+};
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
@@ -84,6 +86,7 @@ where
     let revocation_sig_path = get_revocation_sig_path(signed_file_path)?;
     let revocation_signers_path = get_revocation_signers_path(signed_file_path)?;
     let revoked_sig_path = get_revoked_sig_path(signed_file_path)?;
+    let revoked_pending_sig_path = get_revoked_pending_sig_path(signed_file_path)?;
 
     // 7. Check for existing files to avoid overwriting
     check_existing_files(
@@ -114,6 +117,11 @@ where
         fs::rename(&original_sig_path, &revoked_sig_path)?;
     }
 
+    // Move the pending signatures file to .revoked if it exists
+    let original_pending_sig_path = pending_signatures_path_for(signed_file_path)?;
+    if original_pending_sig_path.exists() && original_pending_sig_path.is_file() {
+        fs::rename(&original_pending_sig_path, &revoked_pending_sig_path)?;
+    }
     Ok(())
 }
 
@@ -178,6 +186,25 @@ fn get_revoked_sig_path(signed_file_path: &Path) -> Result<PathBuf, RevocationEr
     Ok(path)
 }
 
+// {signed_file_name}.{PENDING_SIGNATURES_SUFFIX}.{REVOKED_SUFFIX}
+fn get_revoked_pending_sig_path(signed_file_path: &Path) -> Result<PathBuf, RevocationError> {
+    let file_name = signed_file_path.file_name().ok_or_else(|| {
+        RevocationError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Invalid file path",
+        ))
+    })?;
+
+    let revoked_name = format!(
+        "{}.{}.{}",
+        file_name.to_string_lossy(),
+        PENDING_SIGNATURES_SUFFIX,
+        REVOKED_SUFFIX
+    );
+    let mut path = signed_file_path.to_path_buf();
+    path.set_file_name(revoked_name);
+    Ok(path)
+}
 /// Check for existing files to avoid overwriting
 fn check_existing_files(
     revocation_file_path: &Path,
