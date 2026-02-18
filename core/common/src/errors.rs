@@ -53,6 +53,8 @@ pub enum AggregateSignatureError {
     LogicError(String),
     #[error("File is revoked")]
     FileRevoked,
+    #[error("Revocation error: {0}")]
+    RevocationError(#[from] RevocationError),
 }
 
 #[derive(Debug, Error)]

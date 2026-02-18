@@ -672,14 +672,23 @@ impl AggregateSignature<PendingSignature> {
             if self.subject.is_artifact() {
                 create_local_signers_for(&self.subject)?;
             }
-            std::fs::rename(&pending_sig_path, &complete_sig_path).map_err(|e| {
-                AggregateSignatureError::Io(std::io::Error::other(format!(
-                    "Error renaming pending to complete: {} -> {} : {}",
-                    pending_sig_path.to_string_lossy(),
-                    complete_sig_path.to_string_lossy(),
-                    e
-                )))
-            })?;
+            // For revocation signatures, we need to finalize the revocation
+            // which moves the pending files and the artifact signatures.
+            // finalise_revocation_for handles all file moves, so we don't
+            // need to rename the signature file separately.
+            if self.subject.is_revocation() {
+                let artifact_path = self.subject.artifact_path_for_revocation()?;
+                crate::revocation::finalise_revocation_for(artifact_path)?;
+            } else {
+                std::fs::rename(&pending_sig_path, &complete_sig_path).map_err(|e| {
+                    AggregateSignatureError::Io(std::io::Error::other(format!(
+                        "Error renaming pending to complete: {} -> {} : {}",
+                        pending_sig_path.to_string_lossy(),
+                        complete_sig_path.to_string_lossy(),
+                        e
+                    )))
+                })?;
+            }
             Ok(AggregateSignature::<CompleteSignature>::new(
                 self.signatures.clone(),
                 self.origin.clone(),

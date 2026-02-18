@@ -3,7 +3,8 @@ pub mod fs;
 pub mod index_types;
 
 use constants::{
-    PENDING_SIGNERS_DIR, PENDING_SUFFIX, REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE,
+    PENDING_REVOCATION_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX, REVOCATION_SUFFIX, SIGNERS_DIR,
+    SIGNERS_FILE,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha512, digest::typenum};
@@ -11,7 +12,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::fs::names::{find_global_signers_for, has_revocation_file};
@@ -259,7 +260,7 @@ impl SignedFileWithKind {
             SignedFileWithKind::SignersFile(_) => FileType::Signers,
             SignedFileWithKind::Artifact(_) => FileType::Artifact,
             SignedFileWithKind::Revocation(_) => FileType::Revocation,
-            SignedFileWithKind::RevokedArtifact(_) => FileType::Revocation,
+            SignedFileWithKind::RevokedArtifact(_) => FileType::RevokedArtifact,
         }
     }
 
@@ -272,6 +273,43 @@ impl SignedFileWithKind {
     }
     pub fn is_artifact(&self) -> bool {
         matches!(self, SignedFileWithKind::Artifact(_))
+    }
+    pub fn is_revocation(&self) -> bool {
+        matches!(self, SignedFileWithKind::Revocation(_))
+    }
+    pub fn artifact_path_for_revocation(&self) -> Result<PathBuf, std::io::Error> {
+        match self {
+            SignedFileWithKind::Revocation(rev) => {
+                let path = PathBuf::from(&rev.location);
+                let file_name = path.file_name().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Revocation file has no filename",
+                    )
+                })?;
+                let name = file_name.to_string_lossy();
+                let artifact_name: &str = name
+                    .strip_suffix(REVOCATION_SUFFIX)
+                    .and_then(|s: &str| s.strip_suffix("."))
+                    .or_else(|| {
+                        name.strip_suffix(PENDING_REVOCATION_SUFFIX)
+                            .and_then(|s: &str| s.strip_suffix("."))
+                    })
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Revocation file has invalid suffix",
+                        )
+                    })?;
+                let mut artifact_path = path.clone();
+                artifact_path.set_file_name(artifact_name);
+                Ok(artifact_path)
+            }
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Not a revocation file",
+            )),
+        }
     }
 }
 
@@ -338,7 +376,7 @@ mod asfaload_common_tests {
     use sha2::{Digest, Sha512};
     use std::fs;
     use std::io::Write;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use tempfile::{NamedTempFile, TempDir};
     use test_helpers::scenarios::setup_asfald_project_registered;
     //

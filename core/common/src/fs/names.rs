@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use constants::{
-    PENDING_REVOCATION_SUFFIX, PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, REVOCATION_SUFFIX,
+    PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX, REVOCATION_SUFFIX,
     REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_SUFFIX,
 };
 
@@ -157,7 +157,8 @@ pub fn revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBu
 }
 
 pub fn pending_revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
-    file_path_with_suffix(path_in, PENDING_REVOCATION_SUFFIX)
+    let rev_path = revocation_path_for(path_in)?;
+    file_path_with_suffix(rev_path, PENDING_SUFFIX)
 }
 
 pub fn has_revocation_file<P: AsRef<Path>>(signed_file_path_in: P) -> std::io::Result<bool> {
