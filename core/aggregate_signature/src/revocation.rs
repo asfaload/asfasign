@@ -644,7 +644,7 @@ mod tests {
     use std::collections::HashMap;
     use std::fs;
     use tempfile::TempDir;
-    use test_helpers::{TestKeys, pause};
+    use test_helpers::TestKeys;
     // ----------------
     // Helper functions
     // ----------------

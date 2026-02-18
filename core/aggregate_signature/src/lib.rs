@@ -376,8 +376,15 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
         }
         SignedFileWithKind::Revocation(_) => {
             let config = load_signers_config(file_path)?;
+            let mut signers = HashSet::new();
+
+            for group in config.revocation_keys() {
+                for signer in &group.signers {
+                    signers.insert(signer.data.pubkey.clone());
+                }
+            }
             // All signers in the config must sign initial signers files
-            Ok(config.all_signer_keys())
+            Ok(signers)
         }
         SignedFileWithKind::RevokedArtifact(_) => Err(AggregateSignatureError::FileRevoked),
     }
@@ -4008,6 +4015,142 @@ mod tests {
             }
             other => panic!("Expected IO error, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_get_authorized_signers_for_file_revocation_with_explicit_revocation_keys() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(5);
+
+        // Create signers config with artifact, admin, master, and explicit revocation keys
+        let artifact_group = create_group(&test_keys, vec![0], 1);
+        let admin_group = create_group(&test_keys, vec![1], 1);
+        let master_group = create_group(&test_keys, vec![2], 1);
+        let revocation_group = create_group(&test_keys, vec![3, 4], 2);
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![artifact_group],
+            admin_keys: Some(vec![admin_group]),
+            master_keys: Some(vec![master_group]),
+            revocation_keys: Some(vec![revocation_group]),
+        }
+        .build();
+
+        // Write global signers config
+        write_signers_config(temp_dir.path(), &config);
+
+        // Create an artifact file
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        // Create a revocation file (artifact + .revocation.json suffix)
+        // The revocation file itself contains the signers config
+        let revocation_path = artifact_path.with_extension(format!(
+            "{}.{}",
+            artifact_path.extension().unwrap().to_string_lossy(),
+            constants::REVOCATION_SUFFIX
+        ));
+        let revocation_json = serde_json::to_string_pretty(&config).unwrap();
+        fs::write(&revocation_path, revocation_json).unwrap();
+
+        // Get authorized signers for the revocation file
+        let authorized = get_authorized_signers_for_file(&revocation_path).expect("Should succeed");
+
+        // Verify: Only revocation_keys (keys 3 and 4) are authorized
+        // Artifact (key 0), admin (key 1), and master (key 2) should NOT be authorized
+        assert_eq!(authorized.len(), 2);
+        assert!(!authorized.contains(test_keys.pub_key(0).unwrap()));
+        assert!(!authorized.contains(test_keys.pub_key(1).unwrap()));
+        assert!(!authorized.contains(test_keys.pub_key(2).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(3).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(4).unwrap()));
+    }
+
+    #[test]
+    fn test_get_authorized_signers_for_file_revocation_fallback_to_admin_keys() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(3);
+
+        // Create signers config with artifact, admin, but NO explicit revocation keys
+        // revocation_keys() should fall back to admin_keys
+        let artifact_group = create_group(&test_keys, vec![0], 1);
+        let admin_group = create_group(&test_keys, vec![1], 1);
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![artifact_group],
+            admin_keys: Some(vec![admin_group]),
+            master_keys: None,
+            revocation_keys: None,
+        }
+        .build();
+
+        // Write global signers config
+        write_signers_config(temp_dir.path(), &config);
+
+        // Create an artifact file
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        // Create a revocation file
+        let revocation_path = artifact_path.with_extension(format!(
+            "{}.{}",
+            artifact_path.extension().unwrap().to_string_lossy(),
+            constants::REVOCATION_SUFFIX
+        ));
+        let revocation_json = serde_json::to_string_pretty(&config).unwrap();
+        fs::write(&revocation_path, revocation_json).unwrap();
+
+        // Get authorized signers for the revocation file
+        let authorized = get_authorized_signers_for_file(&revocation_path).expect("Should succeed");
+
+        // Verify: Admin key (key 1) is authorized (fallback from no revocation_keys)
+        // Artifact signer (key 0) should NOT be authorized
+        assert_eq!(authorized.len(), 1);
+        assert!(!authorized.contains(test_keys.pub_key(0).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(1).unwrap()));
+        assert!(!authorized.contains(test_keys.pub_key(2).unwrap()));
+    }
+
+    #[test]
+    fn test_get_authorized_signers_for_file_revocation_fallback_to_artifact_signers() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(2);
+
+        // Create signers config with ONLY artifact signers (no admin, no master, no revocation)
+        // revocation_keys() should fall back to artifact_signers
+        let artifact_group = create_group(&test_keys, vec![0, 1], 2);
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![artifact_group],
+            admin_keys: None,
+            master_keys: None,
+            revocation_keys: None,
+        }
+        .build();
+
+        // Write global signers config
+        write_signers_config(temp_dir.path(), &config);
+
+        // Create an artifact file
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        // Create a revocation file
+        let revocation_path = artifact_path.with_extension(format!(
+            "{}.{}",
+            artifact_path.extension().unwrap().to_string_lossy(),
+            constants::REVOCATION_SUFFIX
+        ));
+        let revocation_json = serde_json::to_string_pretty(&config).unwrap();
+        fs::write(&revocation_path, revocation_json).unwrap();
+
+        // Get authorized signers for the revocation file
+        let authorized = get_authorized_signers_for_file(&revocation_path).expect("Should succeed");
+
+        // Verify: Artifact signers (keys 0 and 1) are authorized (fallback)
+        assert_eq!(authorized.len(), 2);
+        assert!(authorized.contains(test_keys.pub_key(0).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(1).unwrap()));
     }
 
     // ---------------------------------
