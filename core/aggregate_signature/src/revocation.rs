@@ -1,6 +1,9 @@
 // aggregate_signature/src/revocation.rs
 
-use common::{errors::RevocationError, fs::names::find_global_signers_for};
+use common::{
+    errors::RevocationError,
+    fs::names::{find_global_signers_for, pending_signatures_path_for, signatures_path_for},
+};
 use constants::{REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
@@ -106,12 +109,7 @@ where
     fs::copy(&signers_file_path, &revocation_signers_path)?;
 
     // Move the original signatures file to .revoked if it exists
-    let original_sig_path = signed_file_path.with_file_name(format!(
-        "{}.{}",
-        signed_file_path.file_name().unwrap().to_string_lossy(),
-        SIGNATURES_SUFFIX
-    ));
-
+    let original_sig_path = signatures_path_for(signed_file_path)?;
     if original_sig_path.exists() && original_sig_path.is_file() {
         fs::rename(&original_sig_path, &revoked_sig_path)?;
     }
