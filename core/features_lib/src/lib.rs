@@ -273,7 +273,7 @@ pub mod aggregate_signature_helpers {
 }
 
 pub mod constants {
-    pub use ::constants::*;
+    pub use constants::*;
 }
 pub mod rest_api {
     pub use rest_api_types::{
@@ -599,6 +599,52 @@ mod tests_signed_file_revocation {
             !result,
             "Expected is_signed() to return false for revoked artifact"
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_signed_file_with_kind_rejects_revoked_artifact() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let test_keys = TestKeys::new(1);
+
+        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir)?;
+        let signers_file = signers_dir.join(SIGNERS_FILE);
+
+        let signers_config = SignersConfig::with_keys(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+            None,
+            None,
+            None,
+        )?;
+        fs::write(&signers_file, serde_json::to_string(&signers_config)?)?;
+
+        let artifact_path = temp_dir.path().join("artifact.bin");
+        fs::write(&artifact_path, "artifact content")?;
+
+        let revocation_path = revocation_path_for(&artifact_path)?;
+        fs::write(&revocation_path, r#"{"revoked": true}"#)?;
+
+        let signed_file = SignedFileLoader::load(&artifact_path);
+
+        match &signed_file {
+            SignedFileWithKind::RevokedArtifact(_) => {}
+            _ => panic!("Expected RevokedArtifact variant"),
+        }
+
+        let file_hash = sha512_for_file(&artifact_path)?;
+        let sig = test_keys.sec_key(0).unwrap().sign(&file_hash)?;
+
+        use crate::SignedFileWithKindTrait;
+        let result = signed_file.add_signature(sig, test_keys.pub_key(0).unwrap().clone());
+
+        match result {
+            Err(SignedFileError::Revoked()) => {}
+            Ok(_) => panic!("Expected SignedFileError::Revoked(), got Ok"),
+            Err(e) => panic!("Expected SignedFileError::Revoked(), got: {}", e),
+        }
 
         Ok(())
     }

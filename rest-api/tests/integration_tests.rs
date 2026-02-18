@@ -1614,4 +1614,77 @@ pub mod tests {
 
         Ok(())
     }
+
+    #[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn test_submit_signature_for_revoked_file_rejected() -> Result<(), anyhow::Error> {
+        use constants::SIGNERS_DIR;
+        use constants::SIGNERS_FILE;
+        use features_lib::{
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file,
+        };
+        use rest_api_types::SubmitSignatureRequest;
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+
+        init_git_repo(&git_repo_path)?;
+
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let signers_dir = git_repo_path.join(SIGNERS_DIR);
+        tokio::fs::create_dir_all(&signers_dir).await?;
+        tokio::fs::write(signers_dir.join(SIGNERS_FILE), &signers_json).await?;
+
+        let artifact_file = git_repo_path.join("releases/release.tar.gz");
+        tokio::fs::create_dir_all(artifact_file.parent().unwrap()).await?;
+        tokio::fs::write(&artifact_file, "artifact content").await?;
+
+        let revocation_path = common::fs::names::revocation_path_for(&artifact_file)?;
+        tokio::fs::write(&revocation_path, r#"{"revoked": true}"#).await?;
+
+        let digest = sha512_for_file(&artifact_file)?;
+        let secret_key = test_keys.sec_key(0).unwrap();
+        let signature = secret_key.sign(&digest)?;
+
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let client = reqwest::Client::new();
+        let payload = json!(&SubmitSignatureRequest {
+            file_path: "releases/release.tar.gz".to_string(),
+            public_key: public_key.to_base64(),
+            signature: signature.to_base64(),
+        });
+        let response = client
+            .post(url_for("signatures", port))
+            .json(&payload)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let response_body: serde_json::Value = response.json().await?;
+        let error_msg = response_body["error"].as_str().unwrap_or("");
+
+        assert!(
+            error_msg.contains("revoked"),
+            "Error message should mention 'revoked', got: {}",
+            error_msg
+        );
+
+        server_handle.abort();
+        Ok(())
+    }
 }
