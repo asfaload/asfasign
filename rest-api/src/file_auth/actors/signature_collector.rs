@@ -147,7 +147,14 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                         error = %e,
                         "failed to get authorized signers"
                     );
-                    ApiError::InternalServerError("Failed to get authorized signers".to_string())
+                    match e {
+                        AggregateSignatureError::FileRevoked => {
+                            ApiError::FileRevoked("Cannot sign a revoked file".to_string())
+                        }
+                        _ => ApiError::InternalServerError(
+                            "Failed to get authorized signers".to_string(),
+                        ),
+                    }
                 })?;
 
         if !authorized_signers.contains(&msg.public_key) {
