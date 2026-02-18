@@ -868,8 +868,13 @@ mod tests {
         let pub_key1 = test_keys.pub_key(1).unwrap().clone();
         let sec_key0 = test_keys.sec_key(0).unwrap();
 
-        let signers_config =
-            SignersConfig::with_keys(1, (vec![pub_key0.clone(), pub_key1.clone()], 1), None, None, None)?;
+        let signers_config = SignersConfig::with_keys(
+            1,
+            (vec![pub_key0.clone(), pub_key1.clone()], 1),
+            None,
+            None,
+            None,
+        )?;
         let json_content = serde_json::json!(signers_config).to_string();
 
         //let json_content = &test_keys.substitute_keys(json_content_template.to_string());
@@ -941,7 +946,8 @@ mod tests {
         let sec_key = test_keys.sec_key(0).unwrap();
 
         // Build signers config
-        let signers_config = SignersConfig::with_keys(1, (vec![pub_key.clone()], 1), None, None, None)?;
+        let signers_config =
+            SignersConfig::with_keys(1, (vec![pub_key.clone()], 1), None, None, None)?;
         let json_content = serde_json::json!(signers_config).to_string();
         let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 

@@ -6,7 +6,7 @@ use constants::{
     PENDING_SIGNERS_DIR, PENDING_SUFFIX, REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{digest::typenum, Digest, Sha512};
+use sha2::{Digest, Sha512, digest::typenum};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
@@ -731,10 +731,12 @@ mod asfaload_common_tests {
         let result: Result<AsfaloadHashes, _> = serde_json::from_str(json);
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid hex string"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid hex string")
+        );
     }
 
     // --- has_revocation_suffix tests ---
