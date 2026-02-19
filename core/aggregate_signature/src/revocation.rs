@@ -95,7 +95,20 @@ where
         &revoked_sig_path,
     )?;
 
-    // Write pending revocation JSON file
+    // If a pending revocation already exists, error out.
+    // The `revoke` command is initiation-only. Additional signatures
+    // should go through the normal `sign-pending` flow.
+    if pending_revocation_file_path.exists() {
+        return Err(RevocationError::Io(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!(
+                "A pending revocation already exists: {}. Should be signed instead.",
+                pending_revocation_file_path.display()
+            ),
+        )));
+    }
+
+    // First revocation: write pending revocation JSON file
     fs::write(&pending_revocation_file_path, json_content)?;
 
     // Add signature to the pending revocation signatures file
