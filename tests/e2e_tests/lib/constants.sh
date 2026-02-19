@@ -11,6 +11,7 @@ PENDING_SIGNATURES_SUFFIX="signatures.json.pending"
 SIGNERS_SUFFIX="signers.json"
 REVOCATION_SUFFIX="revocation.json"
 REVOKED_SUFFIX="revoked"
+PENDING_SUFFIX="pending"
 SIGNERS_HISTORY_FILE="asfaload.signers.history.json"
 
 
