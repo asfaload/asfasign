@@ -275,7 +275,7 @@ mod tests {
 
     use super::*;
     use common::{
-        FileType, SignedFileLoader,
+        FileType, SignedFileLoader, SignedFileWithKind,
         fs::names::{
             local_signers_path_for, pending_revocation_pending_signatures_path_for,
             revocation_path_for, revocation_signatures_path_for, revocation_signers_path_for,
@@ -1437,7 +1437,7 @@ mod tests {
     }
 
     #[test]
-    fn test_revoke_signed_file_second_call_preserves_first_signature()
+    fn test_revoke_signed_file_second_call_errors_when_pending_exists()
     -> Result<(), Box<dyn std::error::Error>> {
         // Bug: revoke_signed_file overwrites the pending signatures file each time,
         // so calling it with a second signer loses the first signer's signature.
@@ -1455,6 +1455,9 @@ mod tests {
 
         let artifact_path =
             create_signed_artifact_file(&temp_dir, &test_keys, b"Multi-sig revocation artifact")?;
+
+        let pending_sig_path = pending_revocation_pending_signatures_path_for(&artifact_path)?;
+        let revocation_sig_path = revocation_signatures_path_for(&artifact_path)?;
 
         let timestamp = Utc::now();
         let subject_digest = common::sha512_for_file(&artifact_path)?;
@@ -1476,6 +1479,14 @@ mod tests {
             result.is_pending(),
             "Should be pending after first signature"
         );
+        assert!(
+            pending_sig_path.exists(),
+            "Pending revocation signatures file should exist"
+        );
+        assert!(
+            !revocation_sig_path.exists(),
+            "Final revocation signatures file should not exist"
+        );
 
         // Read the pending signatures file and verify key 3's signature is present
         let pending_revocation_file_path = pending_revocation_path_for(&artifact_path)?;
@@ -1485,43 +1496,68 @@ mod tests {
         assert_eq!(sig_map.len(), 1, "Should have 1 signature after first call");
         assert!(sig_map.contains_key(&first_pubkey.to_base64()));
 
-        // Second revocation call with key 4 (calling revoke_signed_file again,
-        // not add_individual_signature)
+        // Second revocation call with key 4 — should now ERROR because
+        // pending revocation already exists. Additional signatures go
+        // through sign-pending, not revoke.
         let second_pubkey = test_keys.pub_key(4).unwrap();
         let second_seckey = test_keys.sec_key(4).unwrap();
         let second_signature = second_seckey.sign(&revocation_hash)?;
 
-        revoke_signed_file(
+        let result = revoke_signed_file(
             &artifact_path,
             &revocation_json,
             &second_signature,
             second_pubkey,
-        )?;
+        );
 
-        // After two revocation-key signatures (threshold=2), revocation should
-        // be finalised. Check the final revocation signature file has both sigs.
-        let pending_sig_path = pending_revocation_pending_signatures_path_for(&artifact_path)?;
+        assert!(
+            result.is_err(),
+            "Second revoke call should error when pending exists"
+        );
+        let err = match result {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("Expected error but got Ok"),
+        };
+        assert!(
+            err.contains("pending revocation already exists"),
+            "Error should mention existing pending revocation, got: {}",
+            err
+        );
+        // Signatures of the revocation should not have changed
+        assert!(
+            pending_sig_path.exists(),
+            "Pending revocation signatures file should exist"
+        );
+        assert!(
+            !revocation_sig_path.exists(),
+            "Final revocation signatures file should not exist"
+        );
+
+        // Verify first signature is still intact
+        let sig_content = fs::read_to_string(&pending_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 1, "Should still have exactly 1 signature");
+        assert!(sig_map.contains_key(&first_pubkey.to_base64()));
+
+        let pending_revocation = SignatureWithState::load_for_file(pending_revocation_file_path)?;
+        let final_sig = pending_revocation
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&second_signature, second_pubkey)?;
+
+        assert!(final_sig.is_complete());
+
         assert!(
             !pending_sig_path.exists(),
             "Pending revocation signatures file should not exist after both signers called revoke_signed_file"
         );
-        let revocation_sig_path = revocation_signatures_path_for(&artifact_path)?;
         assert!(
             revocation_sig_path.exists(),
             "Final revocation signatures file should exist after both signers called revoke_signed_file"
         );
 
-        let revocation_sig_content = fs::read_to_string(&revocation_sig_path)?;
-        let revocation_sig_map: HashMap<String, String> =
-            serde_json::from_str(&revocation_sig_content)?;
-        assert_eq!(
-            revocation_sig_map.len(),
-            2,
-            "Both revocation signatures should be present, but found {}",
-            revocation_sig_map.len()
-        );
-        assert!(revocation_sig_map.contains_key(&first_pubkey.to_base64()));
-        assert!(revocation_sig_map.contains_key(&second_pubkey.to_base64()));
+        let signed_file = SignedFileLoader::load(artifact_path)?;
+        assert_eq!(signed_file.kind(), FileType::RevokedArtifact);
 
         Ok(())
     }
