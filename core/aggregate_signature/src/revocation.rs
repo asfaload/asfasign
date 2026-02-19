@@ -131,7 +131,8 @@ where
         .map_err(|e| RevocationError::Signature(format!("Error checking completeness: {}", e)))?
     {
         finalise_revocation_for(signed_file_path)?;
-        let complete = SignatureWithState::load_for_file(pending_revocation_file_path)
+        let revocation_file_path = get_revocation_file_path(signed_file_path)?;
+        let complete = SignatureWithState::load_for_file(&revocation_file_path)
             .map_err(load_error_to_revocation_error)?;
         Ok(complete)
     } else {
@@ -288,7 +289,7 @@ mod tests {
 
     use super::*;
     use common::{
-        FileType, SignedFileLoader, SignedFileWithKind,
+        FileType, SignedFileLoader,
         fs::names::{
             local_signers_path_for, pending_revocation_pending_signatures_path_for,
             revocation_path_for, revocation_signatures_path_for, revocation_signers_path_for,
@@ -731,12 +732,18 @@ mod tests {
         let revocation_signature = initiator_seckey.sign(&revocation_hash)?;
 
         // Perform revocation
-        revoke_signed_file(
+        let result = revoke_signed_file(
             &artifact_path,
             &revocation_json,
             &revocation_signature,
             initiator_pubkey,
         )?;
+
+        // Single revocation key → threshold 1 → should complete immediately
+        assert!(
+            result.is_complete(),
+            "Single-signer revocation should return Complete, got Pending"
+        );
 
         // Verify revocation files were created
         let revocation_file_path = revocation_path_for(&artifact_path)?;
@@ -1342,12 +1349,18 @@ mod tests {
         let admin_seckey = test_keys.sec_key(2).unwrap();
         let revocation_signature = admin_seckey.sign(&revocation_hash)?;
 
-        revoke_signed_file(
+        let result = revoke_signed_file(
             &artifact_path,
             &revocation_json,
             &revocation_signature,
             admin_pubkey,
         )?;
+
+        // Single admin key as revocation fallback → threshold 1 → should complete immediately
+        assert!(
+            result.is_complete(),
+            "Single-signer revocation should return Complete, got Pending"
+        );
 
         // Verify revocation succeeded
         let revocation_file_path = revocation_path_for(&artifact_path)?;
