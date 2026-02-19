@@ -88,7 +88,6 @@ where
     let revocation_file_path = get_revocation_file_path(signed_file_path)?;
     let pending_revocation_file_path = pending_revocation_path_for(signed_file_path)?;
     let revocation_sig_path = get_revocation_sig_path(signed_file_path)?;
-    let pending_revocation_sig_path = pending_signatures_path_for(&pending_revocation_file_path)?;
     let revoked_sig_path = get_revoked_sig_path(signed_file_path)?;
 
     // 7. Check for existing files to avoid overwriting
@@ -101,14 +100,11 @@ where
     // Write pending revocation JSON file
     fs::write(&pending_revocation_file_path, json_content)?;
 
-    // Write pending revocation (pending) signatures file
-    let signature_map = serde_json::json!({
-        pubkey.to_base64(): signature.to_base64()
-    });
-    fs::write(
-        &pending_revocation_sig_path,
-        serde_json::to_string_pretty(&signature_map)?,
-    )?;
+    // Add signature to the pending revocation signatures file
+    // (loads existing signatures if present, appends, and writes back)
+    signature
+        .add_to_aggregate_for_file(&pending_revocation_file_path, pubkey)
+        .map_err(|e| RevocationError::Signature(e.to_string()))?;
 
     let load_error_to_revocation_error = |e| {
         RevocationError::Signature(format!(
