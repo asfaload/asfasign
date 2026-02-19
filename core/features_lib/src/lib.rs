@@ -14,6 +14,7 @@ pub use common::{AsfaloadHashes, sha512_for_content, sha512_for_file};
 
 pub use common::index_types::{AsfaloadIndex, FileChecksum, HashAlgorithm};
 
+use ::constants::PENDING_SUFFIX;
 // Re-export traits for users
 pub use signatures::keys::AsfaloadKeyPairTrait;
 pub use signatures::keys::AsfaloadPublicKeyTrait;
@@ -127,8 +128,17 @@ where
         // If it is not found, it might be that the revocation was completed and the pending
         // revocation file was moved to its final location for artivation
         let path = PathBuf::from(&self.location);
+        // Check if it was completed and moved. This applies to revocation files
         if !path.exists() {
-            return Err(SignedFileError::NotFound(self.location.clone()));
+            if let Some(location_str) = self.location.strip_suffix(&format!(".{}", PENDING_SUFFIX))
+                && Path::new(location_str).exists()
+            {
+                return Err(SignedFileError::AggregateSignatureError(
+                    common::errors::AggregateSignatureError::SignatureAlreadyComplete,
+                ));
+            } else {
+                return Err(SignedFileError::NotFound(self.location.clone()));
+            }
         }
         let agg_sig_with_state = SignatureWithState::load_for_file(&self.location)?;
         if let Some(pending_sig) = agg_sig_with_state.get_pending() {
@@ -295,6 +305,7 @@ mod tests_signed_file_revocation {
     use super::*;
     use ::constants::{PENDING_REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use chrono::Utc;
+    use common::errors::AggregateSignatureError;
     use common::fs::names::revocation_path_for;
     use common::{sha512_for_content, sha512_for_file};
     use signatures::keys::AsfaloadSecretKeyTrait;
@@ -477,14 +488,12 @@ mod tests_signed_file_revocation {
         let result = sf.add_signature(sig2, test_keys.pub_key(2).unwrap().clone());
 
         match result {
-            Err(e) => {
-                let err_str = e.to_string();
-                assert!(
-                    err_str.contains("File not found"),
-                    "Expected 'file not found' error, got: {}",
-                    err_str
-                );
-            }
+            Err(e) => match e {
+                SignedFileError::AggregateSignatureError(
+                    AggregateSignatureError::SignatureAlreadyComplete,
+                ) => {}
+                other => panic!("Expected 'already complete' error, got {}", other),
+            },
             Ok(_) => panic!(
                 "Expected error when adding signature to already complete revocation as file shuld have been moved"
             ),
