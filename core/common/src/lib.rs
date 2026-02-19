@@ -376,7 +376,7 @@ mod asfaload_common_tests {
     use sha2::{Digest, Sha512};
     use std::fs;
     use std::io::Write;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use tempfile::{NamedTempFile, TempDir};
     use test_helpers::scenarios::setup_asfald_project_registered;
     //
@@ -514,7 +514,10 @@ mod asfaload_common_tests {
         fs::create_dir_all(&nested_dir).unwrap();
         let nested_index = nested_dir.join(SIGNERS_FILE);
         fs::write(&nested_index, "content").unwrap();
-        assert_eq!(determine_file_type(&nested_index)?, FileType::InitialSigners);
+        assert_eq!(
+            determine_file_type(&nested_index)?,
+            FileType::InitialSigners
+        );
 
         //  Directory named similarly but not exactly "asfaload.signers.pending" (should be Artifact)
         let similar_dir = temp_path.join(format!("{}.{}", PENDING_SIGNERS_DIR, "backup"));

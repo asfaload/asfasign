@@ -293,9 +293,9 @@ pub mod rest_api {
 #[cfg(test)]
 mod tests_signed_file_revocation {
     use super::*;
-    use ::constants::{PENDING_REVOCATION_SUFFIX, REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
+    use ::constants::{PENDING_REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use chrono::Utc;
-    use common::fs::names::{local_signers_path_for, revocation_path_for};
+    use common::fs::names::revocation_path_for;
     use common::{sha512_for_content, sha512_for_file};
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signers_file_types::SignersConfig;
