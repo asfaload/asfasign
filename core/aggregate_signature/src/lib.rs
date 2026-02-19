@@ -771,7 +771,8 @@ mod tests {
     use tempfile::TempDir;
     use test_helpers::{
         TestKeys, create_complete_signers_setup, create_group, write_artifact_file,
-        write_pending_signatures, write_pending_signers_config, write_signers_config,
+        write_pending_signatures, write_pending_signers_config, write_revocation_file,
+        write_signers_config,
     };
 
     #[test]
@@ -3956,7 +3957,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let test_keys = TestKeys::new(5);
 
-        let (signers_file, _) = create_complete_signers_setup(
+        let (_signers_file, _) = create_complete_signers_setup(
             &temp_dir,
             &test_keys,
             Some(vec![1]),
@@ -3967,17 +3968,7 @@ mod tests {
 
         let artifact_path = write_artifact_file(temp_dir.path());
 
-        let revocation_path = artifact_path.with_extension(format!(
-            "{}.{}",
-            artifact_path.extension().unwrap().to_string_lossy(),
-            constants::REVOCATION_SUFFIX
-        ));
-
-        let signers_config =
-            signers_file_types::parse_signers_config(&fs::read_to_string(&signers_file).unwrap())
-                .unwrap();
-        let revocation_json = serde_json::to_string_pretty(&signers_config).unwrap();
-        fs::write(&revocation_path, revocation_json).unwrap();
+        let revocation_path = write_revocation_file(&artifact_path, test_keys.pub_key(3).unwrap());
 
         let authorized = get_authorized_signers_for_file(&revocation_path).expect("Should succeed");
 
@@ -4015,13 +4006,7 @@ mod tests {
         let artifact_path = write_artifact_file(temp_dir.path());
 
         // Create a revocation file
-        let revocation_path = artifact_path.with_extension(format!(
-            "{}.{}",
-            artifact_path.extension().unwrap().to_string_lossy(),
-            constants::REVOCATION_SUFFIX
-        ));
-        let revocation_json = serde_json::to_string_pretty(&config).unwrap();
-        fs::write(&revocation_path, revocation_json).unwrap();
+        let revocation_path = write_revocation_file(&artifact_path, test_keys.pub_key(1).unwrap());
 
         // Get authorized signers for the revocation file
         let authorized = get_authorized_signers_for_file(&revocation_path).expect("Should succeed");
@@ -4059,13 +4044,7 @@ mod tests {
         let artifact_path = write_artifact_file(temp_dir.path());
 
         // Create a revocation file
-        let revocation_path = artifact_path.with_extension(format!(
-            "{}.{}",
-            artifact_path.extension().unwrap().to_string_lossy(),
-            constants::REVOCATION_SUFFIX
-        ));
-        let revocation_json = serde_json::to_string_pretty(&config).unwrap();
-        fs::write(&revocation_path, revocation_json).unwrap();
+        let revocation_path = write_revocation_file(&artifact_path, test_keys.pub_key(0).unwrap());
 
         // Get authorized signers for the revocation file
         let authorized = get_authorized_signers_for_file(&revocation_path).expect("Should succeed");
