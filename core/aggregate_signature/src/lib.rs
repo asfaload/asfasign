@@ -375,7 +375,9 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
             Ok(config.all_signer_keys())
         }
         SignedFileWithKind::Revocation(_) => {
-            let config = load_signers_config(file_path)?;
+            let artifact_path = signed_file.artifact_path_for_revocation()?;
+            let signers_file_path = find_global_signers_for(&artifact_path)?;
+            let config = load_signers_config(&signers_file_path)?;
             let mut signers = HashSet::new();
 
             for group in config.revocation_keys() {
