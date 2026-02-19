@@ -527,26 +527,30 @@ mod tests_signed_file_revocation {
     fn test_is_signed_true_when_complete() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
         let test_keys = TestKeys::new(2);
-        let revocation_path = setup_revocation_test(&temp_dir, &test_keys, &[0, 1], 2)?;
+        let pending_revocation_path = setup_revocation_test(&temp_dir, &test_keys, &[0, 1], 2)?;
 
-        let file_hash = sha512_for_file(&revocation_path)?;
+        let file_hash = sha512_for_file(&pending_revocation_path)?;
 
         // Add both signatures
         let sf = SignedFile::<common::RevocationMarker>::new(
-            revocation_path.to_string_lossy().to_string(),
+            pending_revocation_path.to_string_lossy().to_string(),
             None,
         );
         let sig0 = test_keys.sec_key(0).unwrap().sign(&file_hash)?;
         sf.add_signature(sig0, test_keys.pub_key(0).unwrap().clone())?;
 
         let sf = SignedFile::<common::RevocationMarker>::new(
-            revocation_path.to_string_lossy().to_string(),
+            pending_revocation_path.to_string_lossy().to_string(),
             None,
         );
         let sig1 = test_keys.sec_key(1).unwrap().sign(&file_hash)?;
-        sf.add_signature(sig1, test_keys.pub_key(1).unwrap().clone())?;
+        let signed = sf.add_signature(sig1, test_keys.pub_key(1).unwrap().clone())?;
+        // Check the returned SignatureWithState is complete
+        assert!(signed.is_complete());
 
-        // Verify is_signed
+        // Load the renamed complete revocation and check is_signed
+        let artifact_path = temp_dir.path().join("releases").join("artifact.bin");
+        let revocation_path = revocation_path_for(artifact_path)?;
         let sf = SignedFile::<common::RevocationMarker>::new(
             revocation_path.to_string_lossy().to_string(),
             None,
