@@ -4,17 +4,17 @@ use common::{
     errors::RevocationError,
     fs::names::{
         find_global_signers_for, pending_revocation_path_for, pending_signatures_path_for,
-        revoked_pending_signatures_path_for, signatures_path_for,
+        revocation_path_for, revocation_signatures_path_for, revocation_signers_path_for,
+        revoked_pending_signatures_path_for, revoked_signatures_path_for, signatures_path_for,
     },
 };
-use constants::{REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
 use signers_file_types::{SignersConfig, parse_signers_config};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::{SignatureWithState, can_revoke, is_aggregate_signature_complete};
 
@@ -83,10 +83,10 @@ where
         .map_err(|e| RevocationError::Signature(format!("Signature verification failed: {}", e)))?;
 
     //  Create revocation file paths
-    let revocation_file_path = get_revocation_file_path(signed_file_path)?;
+    let revocation_file_path = revocation_path_for(signed_file_path)?;
     let pending_revocation_file_path = pending_revocation_path_for(signed_file_path)?;
-    let revocation_sig_path = get_revocation_sig_path(signed_file_path)?;
-    let revoked_sig_path = get_revoked_sig_path(signed_file_path)?;
+    let revocation_sig_path = revocation_signatures_path_for(signed_file_path)?;
+    let revoked_sig_path = revoked_signatures_path_for(signed_file_path)?;
 
     // 7. Check for existing files to avoid overwriting
     check_existing_files(
@@ -131,7 +131,7 @@ where
         .map_err(|e| RevocationError::Signature(format!("Error checking completeness: {}", e)))?
     {
         finalise_revocation_for(signed_file_path)?;
-        let revocation_file_path = get_revocation_file_path(signed_file_path)?;
+        let revocation_file_path = revocation_path_for(signed_file_path)?;
         let complete = SignatureWithState::load_for_file(&revocation_file_path)
             .map_err(load_error_to_revocation_error)?;
         Ok(complete)
@@ -145,20 +145,20 @@ pub fn finalise_revocation_for<P: AsRef<Path>>(
 ) -> Result<(), RevocationError> {
     let signed_file_path = signed_file_path_in.as_ref();
     let signers_file_path = find_global_signers_for(signed_file_path)?;
-    let revocation_signers_path = get_revocation_signers_path(signed_file_path)?;
+    let revocation_signers_path = revocation_signers_path_for(signed_file_path)?;
     let revoked_pending_sig_path = revoked_pending_signatures_path_for(signed_file_path)?;
-    let revoked_sig_path = get_revoked_sig_path(signed_file_path)?;
+    let revoked_sig_path = revoked_signatures_path_for(signed_file_path)?;
 
     // Move the pending revocation file to the final location
     let pending_revocation_file_path = pending_revocation_path_for(signed_file_path)?;
-    let revocation_file_path = get_revocation_file_path(signed_file_path)?;
+    let revocation_file_path = revocation_path_for(signed_file_path)?;
     if pending_revocation_file_path.exists() {
         fs::rename(&pending_revocation_file_path, &revocation_file_path)?;
     }
 
     // Move the pending revocation signatures file to the final location
     let pending_revocation_sig_path = pending_signatures_path_for(&pending_revocation_file_path)?;
-    let revocation_sig_path = get_revocation_sig_path(signed_file_path)?;
+    let revocation_sig_path = revocation_signatures_path_for(signed_file_path)?;
     if pending_revocation_sig_path.exists() {
         fs::rename(&pending_revocation_sig_path, &revocation_sig_path)?;
     }
@@ -179,67 +179,6 @@ pub fn finalise_revocation_for<P: AsRef<Path>>(
         fs::rename(&original_pending_sig_path, &revoked_pending_sig_path)?;
     }
     Ok(())
-}
-
-// {signed_file_name}.{REVOCATION_SUFFIX}
-fn get_revocation_file_path(signed_file_path: &Path) -> Result<PathBuf, RevocationError> {
-    let file_name = signed_file_path.file_name().ok_or_else(|| {
-        RevocationError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Invalid file path",
-        ))
-    })?;
-
-    let revocation_name = format!("{}.{}", file_name.to_string_lossy(), REVOCATION_SUFFIX);
-    let mut path = signed_file_path.to_path_buf();
-    path.set_file_name(revocation_name);
-    Ok(path)
-}
-
-// {signed_file_name}.{REVOCATION_SUFFIX}.{SIGNATURES_SUFFIX}
-fn get_revocation_sig_path(signed_file_path: &Path) -> Result<PathBuf, RevocationError> {
-    let revocation_file_path = get_revocation_file_path(signed_file_path)?;
-    let sig_name = format!(
-        "{}.{}",
-        revocation_file_path.file_name().unwrap().to_string_lossy(),
-        SIGNATURES_SUFFIX
-    );
-    let mut path = revocation_file_path.clone();
-    path.set_file_name(sig_name);
-    Ok(path)
-}
-
-// {signed_file_name}.{REVOCATION_SUFFIX}.{SIGNERS_SUFFIX}
-fn get_revocation_signers_path(signed_file_path: &Path) -> Result<PathBuf, RevocationError> {
-    let revocation_file_path = get_revocation_file_path(signed_file_path)?;
-    let signers_name = format!(
-        "{}.{}",
-        revocation_file_path.file_name().unwrap().to_string_lossy(),
-        SIGNERS_SUFFIX
-    );
-    let mut path = revocation_file_path.clone();
-    path.set_file_name(signers_name);
-    Ok(path)
-}
-
-// {signed_file_name}.{SIGNATURES_SUFFIX}.{REVOKED_SUFFIX}
-fn get_revoked_sig_path(signed_file_path: &Path) -> Result<PathBuf, RevocationError> {
-    let file_name = signed_file_path.file_name().ok_or_else(|| {
-        RevocationError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Invalid file path",
-        ))
-    })?;
-
-    let revoked_name = format!(
-        "{}.{}.{}",
-        file_name.to_string_lossy(),
-        SIGNATURES_SUFFIX,
-        REVOKED_SUFFIX
-    );
-    let mut path = signed_file_path.to_path_buf();
-    path.set_file_name(revoked_name);
-    Ok(path)
 }
 
 /// Check for existing files to avoid overwriting
@@ -296,254 +235,9 @@ mod tests {
             revoked_signatures_path_for, signatures_path_for,
         },
     };
-    use constants::{REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
+    use constants::SIGNERS_SUFFIX;
     use signatures::types::AsfaloadPublicKeys;
     use std::path::PathBuf;
-
-    // Helper function to create a test path
-    fn create_test_path() -> PathBuf {
-        PathBuf::from("/test/directory/file.txt")
-    }
-
-    #[test]
-    fn test_get_revocation_file_path() {
-        let test_path = create_test_path();
-        let result = get_revocation_file_path(&test_path).unwrap();
-
-        let expected_name = format!("file.txt.{}", REVOCATION_SUFFIX);
-        let expected_path = PathBuf::from("/test/directory").join(expected_name);
-
-        assert_eq!(result, expected_path);
-        assert_eq!(
-            result.file_name().unwrap().to_string_lossy(),
-            format!("file.txt.{}", REVOCATION_SUFFIX)
-        );
-    }
-
-    #[test]
-    fn test_get_revocation_file_path_with_different_extensions() {
-        let test_cases = vec![
-            ("file.txt", format!("file.txt.{}", REVOCATION_SUFFIX)),
-            ("file.tar.gz", format!("file.tar.gz.{}", REVOCATION_SUFFIX)),
-            ("file", format!("file.{}", REVOCATION_SUFFIX)),
-            (
-                "file.with.dots.txt",
-                format!("file.with.dots.txt.{}", REVOCATION_SUFFIX),
-            ),
-        ];
-
-        for (input, expected_name) in test_cases {
-            let test_path = PathBuf::from("/test/directory").join(input);
-            let result = get_revocation_file_path(&test_path).unwrap();
-
-            let expected_path = PathBuf::from("/test/directory").join(&expected_name);
-            assert_eq!(result, expected_path);
-            assert_eq!(result.file_name().unwrap().to_string_lossy(), expected_name);
-        }
-    }
-
-    #[test]
-    fn test_get_revocation_file_path_invalid_path() {
-        // Test with empty path
-        let empty_path = PathBuf::from("");
-        let result = get_revocation_file_path(&empty_path);
-        assert!(result.is_err());
-
-        // Test with path ending with ..
-        let dot_dot_path = PathBuf::from("/test/directory/..");
-        let result = get_revocation_file_path(&dot_dot_path);
-        assert!(result.is_err());
-
-        // Test with path ending with .
-        // FIXME: ideally this should fail, but  Path::file_name is
-        // returning the directory in this case
-        //let dot_path = PathBuf::from("/test/directory/.");
-        //let result = get_revocation_file_path(&dot_path);
-        //match result {
-        //    Ok(ref p) => {
-        //        dbg!(p);
-        //    }
-        //    Err(ref e) => {
-        //        dbg!(e);
-        //    }
-        //}
-        //assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_get_revocation_sig_path() {
-        let test_path = create_test_path();
-        let result = get_revocation_sig_path(&test_path).unwrap();
-
-        let expected_name = format!("file.txt.{}.{}", REVOCATION_SUFFIX, SIGNATURES_SUFFIX);
-        let expected_path = PathBuf::from("/test/directory").join(expected_name);
-
-        assert_eq!(result, expected_path);
-        assert_eq!(
-            result.file_name().unwrap().to_string_lossy(),
-            format!("file.txt.{}.{}", REVOCATION_SUFFIX, SIGNATURES_SUFFIX)
-        );
-    }
-
-    #[test]
-    fn test_get_revocation_signers_path() {
-        let test_path = create_test_path();
-        let result = get_revocation_signers_path(&test_path).unwrap();
-
-        let expected_name = format!("file.txt.{}.{}", REVOCATION_SUFFIX, SIGNERS_SUFFIX);
-        let expected_path = PathBuf::from("/test/directory").join(expected_name);
-
-        assert_eq!(result, expected_path);
-        assert_eq!(
-            result.file_name().unwrap().to_string_lossy(),
-            format!("file.txt.{}.{}", REVOCATION_SUFFIX, SIGNERS_SUFFIX)
-        );
-    }
-
-    #[test]
-    fn test_get_revoked_sig_path() {
-        let test_path = create_test_path();
-        let result = get_revoked_sig_path(&test_path).unwrap();
-
-        let expected_name = format!("file.txt.{}.{}", SIGNATURES_SUFFIX, REVOKED_SUFFIX);
-        let expected_path = PathBuf::from("/test/directory").join(expected_name);
-
-        assert_eq!(result, expected_path);
-    }
-
-    #[test]
-    fn test_path_functions_with_unicode_characters() {
-        let test_cases = vec![
-            ("file_with_unicode_🚀.txt", "file_with_unicode_🚀.txt"),
-            ("café.txt", "café.txt"),
-            ("文件.txt", "文件.txt"),
-        ];
-
-        for (input, expected_base) in test_cases {
-            let test_path = PathBuf::from("/test/directory").join(input);
-
-            // Test get_revocation_file_path
-            let revocation_path = get_revocation_file_path(&test_path).unwrap();
-            assert_eq!(
-                revocation_path.file_name().unwrap().to_string_lossy(),
-                format!("{}.{}", expected_base, REVOCATION_SUFFIX)
-            );
-
-            // Test get_revocation_sig_path
-            let sig_path = get_revocation_sig_path(&test_path).unwrap();
-            assert_eq!(
-                sig_path.file_name().unwrap().to_string_lossy(),
-                format!(
-                    "{}.{}.{}",
-                    expected_base, REVOCATION_SUFFIX, SIGNATURES_SUFFIX
-                )
-            );
-
-            // Test get_revocation_signers_path
-            let signers_path = get_revocation_signers_path(&test_path).unwrap();
-            assert_eq!(
-                signers_path.file_name().unwrap().to_string_lossy(),
-                format!("{}.{}.{}", expected_base, REVOCATION_SUFFIX, SIGNERS_SUFFIX)
-            );
-
-            // Test get_revoked_sig_path
-            let revoked_path = get_revoked_sig_path(&test_path).unwrap();
-            assert_eq!(
-                revoked_path.file_name().unwrap().to_string_lossy(),
-                format!("{}.{}.{}", expected_base, SIGNATURES_SUFFIX, REVOKED_SUFFIX)
-            );
-        }
-    }
-
-    #[test]
-    fn test_path_functions_with_spaces_and_special_chars() {
-        let test_cases = vec![
-            ("file with spaces.txt", "file with spaces.txt"),
-            ("file-with-dashes.txt", "file-with-dashes.txt"),
-            ("file_with_underscores.txt", "file_with_underscores.txt"),
-            ("file(mixed)chars.txt", "file(mixed)chars.txt"),
-        ];
-
-        for (input, expected_base) in test_cases {
-            let test_path = PathBuf::from("/test/directory").join(input);
-
-            // Test all path functions
-            let revocation_path = get_revocation_file_path(&test_path).unwrap();
-            assert_eq!(
-                revocation_path.file_name().unwrap().to_string_lossy(),
-                format!("{}.{}", expected_base, REVOCATION_SUFFIX)
-            );
-
-            let sig_path = get_revocation_sig_path(&test_path).unwrap();
-            assert_eq!(
-                sig_path.file_name().unwrap().to_string_lossy(),
-                format!(
-                    "{}.{}.{}",
-                    expected_base, REVOCATION_SUFFIX, SIGNATURES_SUFFIX
-                )
-            );
-
-            let signers_path = get_revocation_signers_path(&test_path).unwrap();
-            assert_eq!(
-                signers_path.file_name().unwrap().to_string_lossy(),
-                format!("{}.{}.{}", expected_base, REVOCATION_SUFFIX, SIGNERS_SUFFIX)
-            );
-
-            let revoked_path = get_revoked_sig_path(&test_path).unwrap();
-            assert_eq!(
-                revoked_path.file_name().unwrap().to_string_lossy(),
-                format!("{}.{}.{}", expected_base, SIGNATURES_SUFFIX, REVOKED_SUFFIX)
-            );
-        }
-    }
-
-    #[test]
-    fn test_path_functions_with_relative_paths() {
-        let test_cases = vec![
-            PathBuf::from("relative/file.txt"),
-            PathBuf::from("./current/file.txt"),
-            PathBuf::from("../parent/file.txt"),
-        ];
-
-        for test_path in test_cases {
-            // All functions should work with relative paths
-            let revocation_path = get_revocation_file_path(&test_path).unwrap();
-            assert!(
-                revocation_path
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .ends_with(&format!(".{}", REVOCATION_SUFFIX))
-            );
-
-            let sig_path = get_revocation_sig_path(&test_path).unwrap();
-            assert!(
-                sig_path
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .ends_with(&format!(".{}.{}", REVOCATION_SUFFIX, SIGNATURES_SUFFIX))
-            );
-
-            let signers_path = get_revocation_signers_path(&test_path).unwrap();
-            assert!(
-                signers_path
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .ends_with(&format!(".{}.{}", REVOCATION_SUFFIX, SIGNERS_SUFFIX))
-            );
-
-            let revoked_path = get_revoked_sig_path(&test_path).unwrap();
-            assert!(
-                revoked_path
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .ends_with(&format!(".{}.{}", SIGNATURES_SUFFIX, REVOKED_SUFFIX))
-            );
-        }
-    }
 
     #[test]
     fn test_check_existing_files() {

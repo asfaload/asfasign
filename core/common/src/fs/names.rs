@@ -568,4 +568,214 @@ mod asfaload_index_tests {
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
     }
+
+    // test revocation_path_for
+    // ------------------------
+    #[test]
+    fn test_revocation_path_for_basic() -> Result<()> {
+        let test_path = PathBuf::from("/test/directory/file.txt");
+        let result = revocation_path_for(&test_path)?;
+        let expected = PathBuf::from("/test/directory/file.txt.revocation.json");
+        assert_eq!(result, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_revocation_path_for_with_different_extensions() -> Result<()> {
+        let test_cases = vec![
+            ("file.txt", "file.txt.revocation.json"),
+            ("file.tar.gz", "file.tar.gz.revocation.json"),
+            ("file", "file.revocation.json"),
+            ("file.with.dots.txt", "file.with.dots.txt.revocation.json"),
+        ];
+        for (input, expected_name) in test_cases {
+            let test_path = PathBuf::from("/test/directory").join(input);
+            let result = revocation_path_for(&test_path)?;
+            let expected_path = PathBuf::from("/test/directory").join(expected_name);
+            assert_eq!(result, expected_path);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_revocation_path_for_invalid_path() {
+        let empty_path = PathBuf::from("");
+        assert!(revocation_path_for(&empty_path).is_err());
+
+        let dot_dot_path = PathBuf::from("/test/directory/..");
+        assert!(revocation_path_for(&dot_dot_path).is_err());
+    }
+
+    // test revocation_signatures_path_for
+    // ------------------------------------
+    #[test]
+    fn test_revocation_signatures_path_for_basic() -> Result<()> {
+        let test_path = PathBuf::from("/test/directory/file.txt");
+        let result = revocation_signatures_path_for(&test_path)?;
+        assert_eq!(
+            result,
+            PathBuf::from_str("/test/directory/file.txt.revocation.json.signatures.json")?
+        );
+        Ok(())
+    }
+
+    // test revocation_signers_path_for
+    // --------------------------------
+    #[test]
+    fn test_revocation_signers_path_for_basic() -> Result<()> {
+        let test_path = PathBuf::from("/test/directory/file.txt");
+        let result = revocation_signers_path_for(&test_path)?;
+        assert_eq!(
+            result,
+            PathBuf::from_str("/test/directory/file.txt.revocation.json.signers.json")?
+        );
+        Ok(())
+    }
+
+    // test revoked_signatures_path_for
+    // --------------------------------
+    #[test]
+    fn test_revoked_signatures_path_for_basic() -> Result<()> {
+        let test_path = PathBuf::from("/test/directory/file.txt");
+        let result = revoked_signatures_path_for(&test_path)?;
+        assert_eq!(
+            result,
+            PathBuf::from_str("/test/directory/file.txt.signatures.json.revoked")?
+        );
+        Ok(())
+    }
+
+    // test revocation path functions with unicode characters
+    // ------------------------------------------------------
+    #[test]
+    fn test_revocation_path_functions_with_unicode_characters() -> Result<()> {
+        let test_cases = vec![
+            ("file_with_unicode_🚀.txt", "file_with_unicode_🚀.txt"),
+            ("café.txt", "café.txt"),
+            ("文件.txt", "文件.txt"),
+        ];
+        for (input, expected_base) in test_cases {
+            let test_path = PathBuf::from("/test/directory").join(input);
+
+            let revocation_path = revocation_path_for(&test_path)?;
+            assert_eq!(
+                revocation_path.file_name().unwrap().to_string_lossy(),
+                format!("{}.{}", expected_base, REVOCATION_SUFFIX)
+            );
+
+            let sig_path = revocation_signatures_path_for(&test_path)?;
+            assert_eq!(
+                sig_path.file_name().unwrap().to_string_lossy(),
+                format!(
+                    "{}.{}.{}",
+                    expected_base, REVOCATION_SUFFIX, SIGNATURES_SUFFIX
+                )
+            );
+
+            let signers_path = revocation_signers_path_for(&test_path)?;
+            assert_eq!(
+                signers_path.file_name().unwrap().to_string_lossy(),
+                format!("{}.{}.{}", expected_base, REVOCATION_SUFFIX, SIGNERS_SUFFIX)
+            );
+
+            let revoked_path = revoked_signatures_path_for(&test_path)?;
+            assert_eq!(
+                revoked_path.file_name().unwrap().to_string_lossy(),
+                format!("{}.{}.{}", expected_base, SIGNATURES_SUFFIX, REVOKED_SUFFIX)
+            );
+        }
+        Ok(())
+    }
+
+    // test revocation path functions with spaces and special chars
+    // ------------------------------------------------------------
+    #[test]
+    fn test_revocation_path_functions_with_spaces_and_special_chars() -> Result<()> {
+        let test_cases = vec![
+            ("file with spaces.txt", "file with spaces.txt"),
+            ("file-with-dashes.txt", "file-with-dashes.txt"),
+            ("file_with_underscores.txt", "file_with_underscores.txt"),
+            ("file(mixed)chars.txt", "file(mixed)chars.txt"),
+        ];
+        for (input, expected_base) in test_cases {
+            let test_path = PathBuf::from("/test/directory").join(input);
+
+            let revocation_path = revocation_path_for(&test_path)?;
+            assert_eq!(
+                revocation_path.file_name().unwrap().to_string_lossy(),
+                format!("{}.{}", expected_base, REVOCATION_SUFFIX)
+            );
+
+            let sig_path = revocation_signatures_path_for(&test_path)?;
+            assert_eq!(
+                sig_path.file_name().unwrap().to_string_lossy(),
+                format!(
+                    "{}.{}.{}",
+                    expected_base, REVOCATION_SUFFIX, SIGNATURES_SUFFIX
+                )
+            );
+
+            let signers_path = revocation_signers_path_for(&test_path)?;
+            assert_eq!(
+                signers_path.file_name().unwrap().to_string_lossy(),
+                format!("{}.{}.{}", expected_base, REVOCATION_SUFFIX, SIGNERS_SUFFIX)
+            );
+
+            let revoked_path = revoked_signatures_path_for(&test_path)?;
+            assert_eq!(
+                revoked_path.file_name().unwrap().to_string_lossy(),
+                format!("{}.{}.{}", expected_base, SIGNATURES_SUFFIX, REVOKED_SUFFIX)
+            );
+        }
+        Ok(())
+    }
+
+    // test revocation path functions with relative paths
+    // --------------------------------------------------
+    #[test]
+    fn test_revocation_path_functions_with_relative_paths() -> Result<()> {
+        let test_cases = vec![
+            PathBuf::from("relative/file.txt"),
+            PathBuf::from("./current/file.txt"),
+            PathBuf::from("../parent/file.txt"),
+        ];
+        for test_path in test_cases {
+            let revocation_path = revocation_path_for(&test_path)?;
+            assert!(
+                revocation_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .ends_with(&format!(".{}", REVOCATION_SUFFIX))
+            );
+
+            let sig_path = revocation_signatures_path_for(&test_path)?;
+            assert!(
+                sig_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .ends_with(&format!(".{}.{}", REVOCATION_SUFFIX, SIGNATURES_SUFFIX))
+            );
+
+            let signers_path = revocation_signers_path_for(&test_path)?;
+            assert!(
+                signers_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .ends_with(&format!(".{}.{}", REVOCATION_SUFFIX, SIGNERS_SUFFIX))
+            );
+
+            let revoked_path = revoked_signatures_path_for(&test_path)?;
+            assert!(
+                revoked_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .ends_with(&format!(".{}.{}", SIGNATURES_SUFFIX, REVOKED_SUFFIX))
+            );
+        }
+        Ok(())
+    }
 }
