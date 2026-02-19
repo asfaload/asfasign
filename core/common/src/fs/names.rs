@@ -171,6 +171,13 @@ pub fn revocation_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Re
     file_path_with_suffix(rev_path, SIGNATURES_SUFFIX)
 }
 
+pub fn pending_revocation_pending_signatures_path_for<P: AsRef<Path>>(
+    path_in: P,
+) -> std::io::Result<PathBuf> {
+    let rev_path = pending_revocation_path_for(path_in)?;
+    file_path_with_suffix(rev_path, PENDING_SIGNATURES_SUFFIX)
+}
+
 pub fn revocation_signers_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     let rev_path = revocation_path_for(path_in)?;
     file_path_with_suffix(rev_path, SIGNERS_SUFFIX)
@@ -446,5 +453,62 @@ mod asfaload_index_tests {
 
         assert!(!has_revocation_file(&subdir)?);
         Ok(())
+    }
+
+    // test pending_revocation_pending_signatures_path_for
+    // ---------------------------------------------------
+    #[test]
+    fn test_pending_revocation_pending_signatures_path_for_basic() -> Result<()> {
+        let input = Path::new("/my/path/to/artifact.bin");
+        let result = pending_revocation_pending_signatures_path_for(input)?;
+        assert_eq!(
+            result,
+            PathBuf::from_str(
+                "/my/path/to/artifact.bin.revocation.json.pending.signatures.json.pending"
+            )?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_pending_revocation_pending_signatures_path_for_relative() -> Result<()> {
+        let input = Path::new("relative/artifact.bin");
+        let result = pending_revocation_pending_signatures_path_for(input)?;
+        assert_eq!(
+            result,
+            PathBuf::from_str(
+                "relative/artifact.bin.revocation.json.pending.signatures.json.pending"
+            )?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_pending_revocation_pending_signatures_path_for_no_extension() -> Result<()> {
+        let input = Path::new("/my/path/artifact");
+        let result = pending_revocation_pending_signatures_path_for(input)?;
+        assert_eq!(
+            result,
+            PathBuf::from_str(
+                "/my/path/artifact.revocation.json.pending.signatures.json.pending"
+            )?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_pending_revocation_pending_signatures_path_for_empty_path() {
+        let input = Path::new("");
+        let result = pending_revocation_pending_signatures_path_for(input);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn test_pending_revocation_pending_signatures_path_for_root() {
+        let input = Path::new("/");
+        let result = pending_revocation_pending_signatures_path_for(input);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
     }
 }
