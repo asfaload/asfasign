@@ -22,6 +22,8 @@ pub enum RevocationError {
     JsonError(#[from] serde_json::Error),
     #[error("Signature error: {0}")]
     Signature(String),
+    #[error("File error: {0}")]
+    FileError(String),
 }
 
 #[derive(Debug, Error)]

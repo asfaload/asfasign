@@ -1071,7 +1071,7 @@ mod tests {
         // Verify original signatures file was moved
         assert!(!signatures_file.exists());
 
-        let signed_file = SignedFileLoader::load(artifact_path);
+        let signed_file = SignedFileLoader::load(artifact_path)?;
         assert_eq!(signed_file.kind(), FileType::RevokedArtifact);
 
         Ok(())

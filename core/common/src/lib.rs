@@ -138,11 +138,11 @@ pub fn has_revocation_suffix<P: AsRef<Path>>(path_in: P) -> bool {
         && file_name != REVOCATION_SUFFIX
         && file_name != revocation_pending
 }
-pub fn determine_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
+pub fn determine_file_type<P: AsRef<Path>>(file_path: P) -> Result<FileType, std::io::Error> {
     let path = file_path.as_ref();
     // Return immediately if we identify a revocation file
     if has_revocation_suffix(path) {
-        return FileType::Revocation;
+        return Ok(FileType::Revocation);
     }
 
     let global_signers = find_global_signers_for(file_path.as_ref());
@@ -154,15 +154,13 @@ pub fn determine_file_type<P: AsRef<Path>>(file_path: P) -> FileType {
 
     // Signers file if {SIGNERS_DIR}/{SIGNERSFILE}
     match (is_in_signers_dir, is_signers_file, global_signers) {
-        (true, true, Err(_)) => FileType::InitialSigners,
-        (true, true, Ok(_)) => FileType::Signers,
-        (_, _, _) => {
-            if has_revocation_file(path).unwrap_or(false) {
-                FileType::RevokedArtifact
-            } else {
-                FileType::Artifact
-            }
-        }
+        (true, true, Err(_)) => Ok(FileType::InitialSigners),
+        (true, true, Ok(_)) => Ok(FileType::Signers),
+        (_, _, _) => match has_revocation_file(path) {
+            Ok(true) => Ok(FileType::RevokedArtifact),
+            Ok(false) => Ok(FileType::Artifact),
+            Err(e) => Err(e),
+        },
     }
 }
 
@@ -331,40 +329,42 @@ impl AsRef<Path> for SignedFileWithKind {
 pub struct SignedFileLoader();
 impl SignedFileLoader {
     // This simply builds the record and wrapts is in the enum according to its kind.
-    pub fn load<P: AsRef<Path>>(path: P) -> SignedFileWithKind {
-        let file_type = determine_file_type(&path);
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<SignedFileWithKind, std::io::Error> {
+        let file_type = determine_file_type(&path)?;
         match file_type {
-            FileType::InitialSigners => {
-                SignedFileWithKind::InitialSignersFile(SignedFile::<InitialSignersFileMarker> {
-                    location: path.as_ref().to_string_lossy().to_string(),
-                    digest: None,
-                    marker: PhantomData,
-                })
-            }
-            FileType::Signers => SignedFileWithKind::SignersFile(SignedFile::<SignersFileMarker> {
+            FileType::InitialSigners => Ok(SignedFileWithKind::InitialSignersFile(SignedFile::<
+                InitialSignersFileMarker,
+            > {
                 location: path.as_ref().to_string_lossy().to_string(),
                 digest: None,
                 marker: PhantomData,
-            }),
-            FileType::Artifact => SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker> {
+            })),
+            FileType::Signers => Ok(SignedFileWithKind::SignersFile(SignedFile::<
+                SignersFileMarker,
+            > {
                 location: path.as_ref().to_string_lossy().to_string(),
                 digest: None,
                 marker: PhantomData,
-            }),
-            FileType::Revocation => {
-                SignedFileWithKind::Revocation(SignedFile::<RevocationMarker> {
-                    location: path.as_ref().to_string_lossy().to_string(),
-                    digest: None,
-                    marker: PhantomData,
-                })
-            }
-            FileType::RevokedArtifact => {
-                SignedFileWithKind::RevokedArtifact(SignedFile::<RevokedArtifactMarker> {
-                    location: path.as_ref().to_string_lossy().to_string(),
-                    digest: None,
-                    marker: PhantomData,
-                })
-            }
+            })),
+            FileType::Artifact => Ok(SignedFileWithKind::Artifact(SignedFile::<ArtifactMarker> {
+                location: path.as_ref().to_string_lossy().to_string(),
+                digest: None,
+                marker: PhantomData,
+            })),
+            FileType::Revocation => Ok(SignedFileWithKind::Revocation(SignedFile::<
+                RevocationMarker,
+            > {
+                location: path.as_ref().to_string_lossy().to_string(),
+                digest: None,
+                marker: PhantomData,
+            })),
+            FileType::RevokedArtifact => Ok(SignedFileWithKind::RevokedArtifact(SignedFile::<
+                RevokedArtifactMarker,
+            > {
+                location: path.as_ref().to_string_lossy().to_string(),
+                digest: None,
+                marker: PhantomData,
+            })),
         }
     }
 }
@@ -460,7 +460,7 @@ mod asfaload_common_tests {
         // This should be InitialSigners because there's NO asfaload.signers dir
         // in asfald/ or any parent directory
         assert_eq!(
-            determine_file_type(&pending_index_file),
+            determine_file_type(&pending_index_file)?,
             FileType::InitialSigners,
             "Pending signers file in github.com/asfaload/asfald/ with no \
              asfaload.signers directory should be InitialSigners"
@@ -469,7 +469,7 @@ mod asfaload_common_tests {
     }
 
     #[test]
-    fn test_determine_file_type() {
+    fn test_determine_file_type() -> Result<()> {
         // Create a temporary directory
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
@@ -477,7 +477,7 @@ mod asfaload_common_tests {
         //  Regular file (should be Artifact)
         let regular_file = temp_path.join("regular_file.txt");
         fs::write(&regular_file, "content").unwrap();
-        assert_eq!(determine_file_type(&regular_file), FileType::Artifact);
+        assert_eq!(determine_file_type(&regular_file)?, FileType::Artifact);
 
         //  File in a regular directory (should be Artifact)
         let regular_dir = temp_path.join("regular_dir");
@@ -485,7 +485,7 @@ mod asfaload_common_tests {
         let file_in_regular_dir = regular_dir.join("some_file.json");
         fs::write(&file_in_regular_dir, "content").unwrap();
         assert_eq!(
-            determine_file_type(&file_in_regular_dir),
+            determine_file_type(&file_in_regular_dir)?,
             FileType::Artifact
         );
 
@@ -494,46 +494,46 @@ mod asfaload_common_tests {
         fs::create_dir(&pending_signers_dir).unwrap();
         let other_file = pending_signers_dir.join("other_file.json");
         fs::write(&other_file, "content").unwrap();
-        assert_eq!(determine_file_type(&other_file), FileType::Artifact);
+        assert_eq!(determine_file_type(&other_file)?, FileType::Artifact);
 
         //  File named "index.json" but not in "asfaload.signers.pending" (should be Artifact)
         let index_in_regular_dir = regular_dir.join(SIGNERS_FILE);
         fs::write(&index_in_regular_dir, "content").unwrap();
         assert_eq!(
-            determine_file_type(&index_in_regular_dir),
+            determine_file_type(&index_in_regular_dir)?,
             FileType::Artifact
         );
 
         //  File named "index.json" in "asfaload.signers.pending" (should be Signers)
         let index_file = pending_signers_dir.join(SIGNERS_FILE);
         fs::write(&index_file, "content").unwrap();
-        assert_eq!(determine_file_type(&index_file), FileType::InitialSigners);
+        assert_eq!(determine_file_type(&index_file)?, FileType::InitialSigners);
 
         //  Nested "asfaload.signers.pending" directory (should still work)
         let nested_dir = temp_path.join("nested").join(PENDING_SIGNERS_DIR);
         fs::create_dir_all(&nested_dir).unwrap();
         let nested_index = nested_dir.join(SIGNERS_FILE);
         fs::write(&nested_index, "content").unwrap();
-        assert_eq!(determine_file_type(&nested_index), FileType::InitialSigners);
+        assert_eq!(determine_file_type(&nested_index)?, FileType::InitialSigners);
 
         //  Directory named similarly but not exactly "asfaload.signers.pending" (should be Artifact)
         let similar_dir = temp_path.join(format!("{}.{}", PENDING_SIGNERS_DIR, "backup"));
         fs::create_dir(&similar_dir).unwrap();
         let similar_index = similar_dir.join(SIGNERS_FILE);
         fs::write(&similar_index, "content").unwrap();
-        assert_eq!(determine_file_type(&similar_index), FileType::Artifact);
+        assert_eq!(determine_file_type(&similar_index)?, FileType::Artifact);
 
         //  Case sensitivity check (should be Artifact since exact match is required)
         let case_dir = temp_path.join(PENDING_SIGNERS_DIR.to_uppercase());
         fs::create_dir(&case_dir).unwrap();
         let case_index = case_dir.join(SIGNERS_FILE);
         fs::write(&case_index, "content").unwrap();
-        assert_eq!(determine_file_type(&case_index), FileType::Artifact);
+        assert_eq!(determine_file_type(&case_index)?, FileType::Artifact);
 
         //  File named "INDEX.JSON" (uppercase) in "asfaload.signers.pending" (should be Artifact)
         let upper_index = pending_signers_dir.join("INDEX.JSON");
         fs::write(&upper_index, "content").unwrap();
-        assert_eq!(determine_file_type(&upper_index), FileType::Artifact);
+        assert_eq!(determine_file_type(&upper_index)?, FileType::Artifact);
 
         // Create a current signers file, and validate that tests that
         // previously returned initial signers now return signers.
@@ -549,25 +549,26 @@ mod asfaload_common_tests {
         //  File named "index.json" in "asfaload.signers.pending" (should be Signers)
         let index_file = pending_signers_dir.join(SIGNERS_FILE);
         fs::write(&index_file, "content").unwrap();
-        assert_eq!(determine_file_type(&index_file), FileType::Signers);
+        assert_eq!(determine_file_type(&index_file)?, FileType::Signers);
 
         //  Nested "asfaload.signers.pending" directory (should still work)
         let nested_dir = temp_path.join("nested").join(PENDING_SIGNERS_DIR);
         fs::create_dir_all(&nested_dir).unwrap();
         let nested_index = nested_dir.join(SIGNERS_FILE);
         fs::write(&nested_index, "content").unwrap();
-        assert_eq!(determine_file_type(&nested_index), FileType::Signers);
+        assert_eq!(determine_file_type(&nested_index)?, FileType::Signers);
+        Ok(())
     }
 
     #[test]
-    fn test_determine_file_type_revocation() {
+    fn test_determine_file_type_revocation() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
         // A revocation file: "artifact.revocation.json" → Revocation
         let revocation_file = temp_path.join(format!("my_binary.{}", constants::REVOCATION_SUFFIX));
         fs::write(&revocation_file, "content").unwrap();
-        assert_eq!(determine_file_type(&revocation_file), FileType::Revocation);
+        assert_eq!(determine_file_type(&revocation_file)?, FileType::Revocation);
 
         // A pending revocation file: "artifact.revocation.json.pending" → Revocation
         let pending_revocation = temp_path.join(format!(
@@ -577,7 +578,7 @@ mod asfaload_common_tests {
         ));
         fs::write(&pending_revocation, "content").unwrap();
         assert_eq!(
-            determine_file_type(&pending_revocation),
+            determine_file_type(&pending_revocation)?,
             FileType::Revocation
         );
 
@@ -589,18 +590,19 @@ mod asfaload_common_tests {
             signers_dir.join(format!("artifact.{}", constants::REVOCATION_SUFFIX));
         fs::write(&revocation_in_signers, "content").unwrap();
         assert_eq!(
-            determine_file_type(&revocation_in_signers),
+            determine_file_type(&revocation_in_signers)?,
             FileType::Revocation
         );
 
         // Bare "revocation.json" (no prefix) is NOT a revocation file → Artifact
         let bare_revocation = temp_path.join(constants::REVOCATION_SUFFIX);
         fs::write(&bare_revocation, "content").unwrap();
-        assert_eq!(determine_file_type(&bare_revocation), FileType::Artifact);
+        assert_eq!(determine_file_type(&bare_revocation)?, FileType::Artifact);
+        Ok(())
     }
 
     #[test]
-    fn test_determine_file_type_revoked_artifact() {
+    fn test_determine_file_type_revoked_artifact() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
@@ -609,7 +611,7 @@ mod asfaload_common_tests {
         fs::write(&artifact_path, "artifact content").unwrap();
 
         // Initially, it's an Artifact
-        assert_eq!(determine_file_type(&artifact_path), FileType::Artifact);
+        assert_eq!(determine_file_type(&artifact_path)?, FileType::Artifact);
 
         // Create a revocation file for the artifact
         let revocation_file =
@@ -618,13 +620,14 @@ mod asfaload_common_tests {
 
         // Now it should be RevokedArtifact
         assert_eq!(
-            determine_file_type(&artifact_path),
+            determine_file_type(&artifact_path)?,
             FileType::RevokedArtifact
         );
+        Ok(())
     }
 
     #[test]
-    fn test_determine_file_type_revoked_artifact_in_subdirectory() {
+    fn test_determine_file_type_revoked_artifact_in_subdirectory() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
 
@@ -642,13 +645,14 @@ mod asfaload_common_tests {
         fs::write(&revocation_file, r#"{"revoked": true}"#).unwrap();
 
         assert_eq!(
-            determine_file_type(&artifact_path),
+            determine_file_type(&artifact_path)?,
             FileType::RevokedArtifact
         );
+        Ok(())
     }
 
     #[test]
-    fn test_determine_file_type_pending_revocation_is_still_artifact() {
+    fn test_determine_file_type_pending_revocation_is_still_artifact() -> Result<()> {
         // A pending revocation should NOT make the file RevokedArtifact
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path();
@@ -666,7 +670,8 @@ mod asfaload_common_tests {
         fs::write(&pending_revocation, r#"{"revoked": true}"#).unwrap();
 
         // Should still be Artifact (only complete revocations block)
-        assert_eq!(determine_file_type(&artifact_path), FileType::Artifact);
+        assert_eq!(determine_file_type(&artifact_path)?, FileType::Artifact);
+        Ok(())
     }
 
     // AsfaloadHashes serde

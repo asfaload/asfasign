@@ -208,7 +208,15 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
         let is_complete = new_state.is_complete();
 
         let commit_msg = if let SignatureWithState::Complete(complete_agg_sig) = new_state {
-            let signed_file = SignedFileLoader::load(&msg.file_path);
+            let signed_file = SignedFileLoader::load(&msg.file_path).map_err(|e| {
+                tracing::error!(
+                    actor = ACTOR_NAME,
+                    request_id = %msg.request_id,
+                    error = %e,
+                    "failed to load signed file"
+                );
+                ApiError::InternalServerError(format!("Failed to load signed file: {}", e))
+            })?;
             // If signature is complete and this is a signers file, activate it
             // In that case, the dirname changes for a signers file, which influences
             // the git commit

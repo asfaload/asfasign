@@ -82,7 +82,7 @@ pub fn sign_signers_file<P>(
 where
     P: AsRef<Path>,
 {
-    let signed_file = SignedFileLoader::load(&signers_file_path);
+    let signed_file = SignedFileLoader::load(&signers_file_path)?;
     if !(signed_file.is_initial_signers() || signed_file.is_signers()) {
         return Err(SignersFileError::FileSystemHierarchyError(format!(
             "Trying to sign a file as signers file, which it is not: {}",

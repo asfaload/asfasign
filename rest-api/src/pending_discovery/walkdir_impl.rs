@@ -250,7 +250,7 @@ mod tests {
             "signers file was not named correctly"
         );
         assert!(pending_signatures_file.exists());
-        let file_type = determine_file_type(signers_file);
+        let file_type = determine_file_type(signers_file)?;
         assert_eq!(
             file_type,
             common::FileType::InitialSigners,
@@ -391,7 +391,7 @@ mod tests {
             "signers file was not named correctly"
         );
         assert!(pending_signatures_file.exists());
-        let file_type = determine_file_type(&signers_file);
+        let file_type = determine_file_type(&signers_file)?;
         assert_eq!(
             file_type,
             common::FileType::InitialSigners,

@@ -304,7 +304,7 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
     file_path: P,
 ) -> Result<HashSet<AsfaloadPublicKeys>, AggregateSignatureError> {
     let file_path = file_path.as_ref();
-    let signed_file = SignedFileLoader::load(file_path);
+    let signed_file = SignedFileLoader::load(file_path)?;
 
     match signed_file {
         SignedFileWithKind::Artifact(_) => {
@@ -383,7 +383,6 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
                     signers.insert(signer.data.pubkey.clone());
                 }
             }
-            // All signers in the config must sign initial signers files
             Ok(signers)
         }
         SignedFileWithKind::RevokedArtifact(_) => Err(AggregateSignatureError::FileRevoked),
@@ -398,7 +397,7 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
     let file_path = file_path.as_ref();
 
     //  Determine the file type
-    let signed_file = SignedFileLoader::load(file_path);
+    let signed_file = SignedFileLoader::load(file_path)?;
 
     //  Get the path to the signatures file
     let sig_file_path = if look_at_pending {
@@ -539,7 +538,7 @@ pub fn get_missing_signers<P: AsRef<Path>>(
 fn generic_load_for_file<PP: AsRef<Path>>(
     path_in: PP,
 ) -> Result<SignatureWithState, AggregateSignatureError> {
-    let signed_file = SignedFileLoader::load(&path_in);
+    let signed_file = SignedFileLoader::load(&path_in)?;
     let file_path = path_in.as_ref();
 
     // Check if the aggregate signature is complete
@@ -798,7 +797,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             signed_file_path.to_string_lossy().to_string(),
-            SignedFileLoader::load(signed_file_path),
+            SignedFileLoader::load(signed_file_path)?,
         );
 
         // Create signers config JSON string
@@ -1913,7 +1912,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Transition to complete
@@ -1958,7 +1957,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             HashMap::new(),
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file).unwrap(),
         );
 
         // Attempt to transition to complete
@@ -1996,7 +1995,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             HashMap::new(),
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file).unwrap(),
         );
 
         // Attempt to transition to complete
@@ -2780,7 +2779,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Save the signature to file
@@ -2830,7 +2829,7 @@ mod tests {
         let agg_sig: AggregateSignature<CompleteSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Save the signature to file
@@ -2884,7 +2883,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Save the signature to file
@@ -2924,7 +2923,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             HashMap::new(),
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Save the signature to file
@@ -2980,7 +2979,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Save the signature to file (should overwrite)

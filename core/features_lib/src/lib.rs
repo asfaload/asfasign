@@ -627,7 +627,7 @@ mod tests_signed_file_revocation {
         let revocation_path = revocation_path_for(&artifact_path)?;
         fs::write(&revocation_path, r#"{"revoked": true}"#)?;
 
-        let signed_file = SignedFileLoader::load(&artifact_path);
+        let signed_file = SignedFileLoader::load(&artifact_path)?;
 
         match &signed_file {
             SignedFileWithKind::RevokedArtifact(_) => {}
