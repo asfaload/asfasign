@@ -12,6 +12,8 @@ pub enum SignedFileError {
     StdIoError(#[from] std::io::Error),
     #[error("File is revoked")]
     Revoked(),
+    #[error("File not found: {0}")]
+    NotFound(String),
 }
 
 #[derive(Debug, Error)]

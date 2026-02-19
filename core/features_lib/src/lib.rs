@@ -124,12 +124,20 @@ where
         sig: AsfaloadSignatures,
         pubkey: AsfaloadPublicKeys,
     ) -> Result<SignatureWithState, SignedFileError> {
+        // If it is not found, it might be that the revocation was completed and the pending
+        // revocation file was moved to its final location for artivation
+        let path = PathBuf::from(&self.location);
+        if !path.exists() {
+            return Err(SignedFileError::NotFound(self.location.clone()));
+        }
         let agg_sig_with_state = SignatureWithState::load_for_file(&self.location)?;
         if let Some(pending_sig) = agg_sig_with_state.get_pending() {
             pending_sig
                 .add_individual_signature(&sig, &pubkey)
                 .map_err(|e| e.into())
         } else {
+            // This should never happend for a revocation, as the signature subject is moved once
+            // the signature is complete.
             Err(SignedFileError::AggregateSignatureError(
                 common::errors::AggregateSignatureError::LogicError(
                     "Signature is already complete; cannot add another signature.".to_string(),
@@ -285,7 +293,7 @@ pub mod rest_api {
 #[cfg(test)]
 mod tests_signed_file_revocation {
     use super::*;
-    use ::constants::{REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
+    use ::constants::{PENDING_REVOCATION_SUFFIX, REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use chrono::Utc;
     use common::fs::names::{local_signers_path_for, revocation_path_for};
     use common::{sha512_for_content, sha512_for_file};
@@ -344,13 +352,8 @@ mod tests_signed_file_revocation {
                 .clone(),
         };
         let revocation_json = serde_json::to_string_pretty(&revocation_file)?;
-        let revocation_path = sub_dir.join(format!("artifact.bin.{}", REVOCATION_SUFFIX));
+        let revocation_path = sub_dir.join(format!("artifact.bin.{}", PENDING_REVOCATION_SUFFIX));
         fs::write(&revocation_path, &revocation_json)?;
-
-        // Create local signers copy for the revocation file
-        // (mirrors what revoke_signed_file does; needed when signatures complete)
-        let local_signers = local_signers_path_for(&revocation_path)?;
-        fs::copy(&signers_file, &local_signers)?;
 
         Ok(revocation_path)
     }
@@ -477,12 +480,14 @@ mod tests_signed_file_revocation {
             Err(e) => {
                 let err_str = e.to_string();
                 assert!(
-                    err_str.contains("already complete"),
-                    "Expected 'already complete' error, got: {}",
+                    err_str.contains("File not found"),
+                    "Expected 'file not found' error, got: {}",
                     err_str
                 );
             }
-            Ok(_) => panic!("Expected error when adding signature to already complete revocation"),
+            Ok(_) => panic!(
+                "Expected error when adding signature to already complete revocation as file shuld have been moved"
+            ),
         }
 
         Ok(())
