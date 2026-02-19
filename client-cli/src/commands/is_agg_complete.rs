@@ -15,7 +15,7 @@ pub fn handle_is_agg_complete_command<P: AsRef<Path>>(
     json: bool,
 ) -> Result<()> {
     // Load the signed file
-    let signed_file_with_kind = SignedFileLoader::load(signed_file);
+    let signed_file_with_kind = SignedFileLoader::load(signed_file)?;
 
     // Check that we have an artifact file
     if signed_file_with_kind.kind() != features_lib::FileType::Artifact {

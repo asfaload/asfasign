@@ -193,7 +193,7 @@ fn setup_aggregate_scenario(
 
     // Create signers file
     let signers_config =
-        features_lib::SignersConfig::with_keys(1, (pub_keys, threshold), None, None).unwrap();
+        features_lib::SignersConfig::with_keys(1, (pub_keys, threshold), None, None, None).unwrap();
     let signers_path = temp_dir.path().join("signers.json");
     let signers_json = signers_config.to_json().unwrap();
     std::fs::write(&signers_path, signers_json).unwrap();

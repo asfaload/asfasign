@@ -8,6 +8,12 @@ KEY_0="$KEYS_DIR/key_0"
 KEY_1="$KEYS_DIR/key_1"
 KEY_2="$KEYS_DIR/key_2"
 KEY_3="$KEYS_DIR/key_3"
+KEY_4="$KEYS_DIR/key_4"
+KEY_5="$KEYS_DIR/key_5"
+KEY_6="$KEYS_DIR/key_6"
+KEY_7="$KEYS_DIR/key_7"
+KEY_8="$KEYS_DIR/key_8"
+KEY_9="$KEYS_DIR/key_9"
 
 # --- Terminal color support ---
 if [ -t 1 ]; then

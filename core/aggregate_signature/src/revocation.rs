@@ -1,6 +1,12 @@
 // aggregate_signature/src/revocation.rs
 
-use common::{errors::RevocationError, fs::names::find_global_signers_for};
+use common::{
+    errors::RevocationError,
+    fs::names::{
+        find_global_signers_for, pending_revocation_path_for, pending_signatures_path_for,
+        revoked_pending_signatures_path_for, signatures_path_for,
+    },
+};
 use constants::{REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
@@ -10,7 +16,7 @@ use signers_file_types::{SignersConfig, parse_signers_config};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::can_revoke;
+use crate::{SignatureWithState, can_revoke, is_aggregate_signature_complete};
 
 /// Revoke a signed file by creating a revocation file.
 ///
@@ -32,7 +38,7 @@ pub fn revoke_signed_file<P>(
     json_content: &str,
     signature: &AsfaloadSignatures,
     pubkey: &AsfaloadPublicKeys,
-) -> Result<(), RevocationError>
+) -> Result<SignatureWithState, RevocationError>
 where
     P: AsRef<Path>,
 {
@@ -78,8 +84,8 @@ where
 
     //  Create revocation file paths
     let revocation_file_path = get_revocation_file_path(signed_file_path)?;
+    let pending_revocation_file_path = pending_revocation_path_for(signed_file_path)?;
     let revocation_sig_path = get_revocation_sig_path(signed_file_path)?;
-    let revocation_signers_path = get_revocation_signers_path(signed_file_path)?;
     let revoked_sig_path = get_revoked_sig_path(signed_file_path)?;
 
     // 7. Check for existing files to avoid overwriting
@@ -89,33 +95,89 @@ where
         &revoked_sig_path,
     )?;
 
-    // Write revocation JSON file
-    fs::write(&revocation_file_path, json_content)?;
+    // If a pending revocation already exists, error out.
+    // The `revoke` command is initiation-only. Additional signatures
+    // should go through the normal `sign-pending` flow.
+    if pending_revocation_file_path.exists() {
+        return Err(RevocationError::Io(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!(
+                "A pending revocation already exists: {}. Should be signed instead.",
+                pending_revocation_file_path.display()
+            ),
+        )));
+    }
 
-    // Write revocation signature file (single signature)
-    let signature_map = serde_json::json!({
-        pubkey.to_base64(): signature.to_base64()
-    });
-    fs::write(
-        &revocation_sig_path,
-        serde_json::to_string_pretty(&signature_map)?,
-    )?;
+    // First revocation: write pending revocation JSON file
+    fs::write(&pending_revocation_file_path, json_content)?;
+
+    // Add signature to the pending revocation signatures file
+    // (loads existing signatures if present, appends, and writes back)
+    signature
+        .add_to_aggregate_for_file(&pending_revocation_file_path, pubkey)
+        .map_err(|e| RevocationError::Signature(e.to_string()))?;
+
+    let load_error_to_revocation_error = |e| {
+        RevocationError::Signature(format!(
+            "Could not load signature with state for {}: {}",
+            signed_file_path.display(),
+            e
+        ))
+    };
+    let signature_with_state = SignatureWithState::load_for_file(&pending_revocation_file_path)
+        .map_err(load_error_to_revocation_error)?;
+
+    if is_aggregate_signature_complete(&pending_revocation_file_path, true)
+        .map_err(|e| RevocationError::Signature(format!("Error checking completeness: {}", e)))?
+    {
+        finalise_revocation_for(signed_file_path)?;
+        let revocation_file_path = get_revocation_file_path(signed_file_path)?;
+        let complete = SignatureWithState::load_for_file(&revocation_file_path)
+            .map_err(load_error_to_revocation_error)?;
+        Ok(complete)
+    } else {
+        Ok(signature_with_state)
+    }
+}
+
+pub fn finalise_revocation_for<P: AsRef<Path>>(
+    signed_file_path_in: P,
+) -> Result<(), RevocationError> {
+    let signed_file_path = signed_file_path_in.as_ref();
+    let signers_file_path = find_global_signers_for(signed_file_path)?;
+    let revocation_signers_path = get_revocation_signers_path(signed_file_path)?;
+    let revoked_pending_sig_path = revoked_pending_signatures_path_for(signed_file_path)?;
+    let revoked_sig_path = get_revoked_sig_path(signed_file_path)?;
+
+    // Move the pending revocation file to the final location
+    let pending_revocation_file_path = pending_revocation_path_for(signed_file_path)?;
+    let revocation_file_path = get_revocation_file_path(signed_file_path)?;
+    if pending_revocation_file_path.exists() {
+        fs::rename(&pending_revocation_file_path, &revocation_file_path)?;
+    }
+
+    // Move the pending revocation signatures file to the final location
+    let pending_revocation_sig_path = pending_signatures_path_for(&pending_revocation_file_path)?;
+    let revocation_sig_path = get_revocation_sig_path(signed_file_path)?;
+    if pending_revocation_sig_path.exists() {
+        fs::rename(&pending_revocation_sig_path, &revocation_sig_path)?;
+    }
 
     // Copy current signers file for reference (keep trace of which
     // signers file was used)
     fs::copy(&signers_file_path, &revocation_signers_path)?;
 
     // Move the original signatures file to .revoked if it exists
-    let original_sig_path = signed_file_path.with_file_name(format!(
-        "{}.{}",
-        signed_file_path.file_name().unwrap().to_string_lossy(),
-        SIGNATURES_SUFFIX
-    ));
-
+    let original_sig_path = signatures_path_for(signed_file_path)?;
     if original_sig_path.exists() && original_sig_path.is_file() {
         fs::rename(&original_sig_path, &revoked_sig_path)?;
     }
 
+    // Move the pending signatures file to .revoked if it exists
+    let original_pending_sig_path = pending_signatures_path_for(signed_file_path)?;
+    if original_pending_sig_path.exists() && original_pending_sig_path.is_file() {
+        fs::rename(&original_pending_sig_path, &revoked_pending_sig_path)?;
+    }
     Ok(())
 }
 
@@ -226,9 +288,13 @@ mod tests {
     use crate::SignatureWithState;
 
     use super::*;
-    use common::fs::names::{
-        local_signers_path_for, revocation_path_for, revocation_signatures_path_for,
-        revocation_signers_path_for, revoked_signatures_path_for, signatures_path_for,
+    use common::{
+        FileType, SignedFileLoader,
+        fs::names::{
+            local_signers_path_for, pending_revocation_pending_signatures_path_for,
+            revocation_path_for, revocation_signatures_path_for, revocation_signers_path_for,
+            revoked_signatures_path_for, signatures_path_for,
+        },
     };
     use constants::{REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
     use signatures::types::AsfaloadPublicKeys;
@@ -559,133 +625,14 @@ mod tests {
 
     use chrono::Utc;
     use common::{AsfaloadHashes, fs::names::find_global_signers_for};
-    use constants::{SIGNERS_DIR, SIGNERS_FILE};
     use signatures::keys::AsfaloadSecretKeyTrait;
-    use signers_file_types::{
-        KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfigProposal,
-    };
     use std::collections::HashMap;
     use std::fs;
     use tempfile::TempDir;
-    use test_helpers::TestKeys;
+    use test_helpers::{TestKeys, create_complete_signers_setup};
     // ----------------
     // Helper functions
     // ----------------
-
-    // Helper to create a complete signers file setup with signatures
-    fn create_complete_signers_setup(
-        temp_dir: &TempDir,
-        test_keys: &TestKeys,
-        admin_key_indices: Option<Vec<usize>>,
-        master_key_indices: Option<Vec<usize>>,
-    ) -> Result<(PathBuf, PathBuf), Box<dyn std::error::Error>> {
-        let root = temp_dir.path();
-
-        // Create signers directory and file
-        let signers_dir = root.join(SIGNERS_DIR);
-        fs::create_dir_all(&signers_dir)?;
-        let signers_file = signers_dir.join(SIGNERS_FILE);
-
-        // Create signers configuration
-        let artifact_signers = vec![
-            Signer {
-                kind: SignerKind::Key,
-                data: SignerData {
-                    format: KeyFormat::Minisign,
-                    pubkey: test_keys.pub_key(0).unwrap().clone(),
-                },
-            },
-            Signer {
-                kind: SignerKind::Key,
-                data: SignerData {
-                    format: KeyFormat::Minisign,
-                    pubkey: test_keys.pub_key(1).unwrap().clone(),
-                },
-            },
-        ];
-
-        let master_keys = master_key_indices.clone().map(|indices| {
-            vec![SignerGroup {
-                signers: indices
-                    .iter()
-                    .map(|&i| Signer {
-                        kind: SignerKind::Key,
-                        data: SignerData {
-                            format: KeyFormat::Minisign,
-                            pubkey: test_keys.pub_key(i).unwrap().clone(),
-                        },
-                    })
-                    .collect(),
-                threshold: indices.len() as u32,
-            }]
-        });
-
-        let admin_keys = admin_key_indices.clone().map(|indices| {
-            vec![SignerGroup {
-                signers: indices
-                    .iter()
-                    .map(|&i| Signer {
-                        kind: SignerKind::Key,
-                        data: SignerData {
-                            format: KeyFormat::Minisign,
-                            pubkey: test_keys.pub_key(i).unwrap().clone(),
-                        },
-                    })
-                    .collect(),
-                threshold: indices.len() as u32,
-            }]
-        });
-        let signers_config_proposal = SignersConfigProposal {
-            timestamp: chrono::Utc::now(),
-            version: 1,
-            artifact_signers: vec![SignerGroup {
-                signers: artifact_signers,
-                threshold: 2,
-            }],
-            master_keys: master_keys.clone(),
-            admin_keys: admin_keys.clone(),
-        };
-
-        let signers_config = signers_config_proposal.build();
-
-        // Write signers configuration
-        let config_json = serde_json::to_string_pretty(&signers_config)?;
-        fs::write(&signers_file, config_json)?;
-
-        // Sign the signers file itself to make it active
-        let hash = common::sha512_for_file(&signers_file)?;
-
-        // Create complete signature for the signers file
-        let mut signatures = HashMap::new();
-
-        // Sign with master keys if present, otherwise with artifact signers
-        if let Some(indices) = master_key_indices {
-            for &index in &indices {
-                let pubkey = test_keys.pub_key(index).unwrap();
-                let seckey = test_keys.sec_key(index).unwrap();
-                let signature = seckey.sign(&hash)?;
-                signatures.insert(pubkey.to_base64(), signature.to_base64());
-            }
-        } else {
-            // Sign with both artifact signers
-            for i in 0..2 {
-                let pubkey = test_keys.pub_key(i).unwrap();
-                let seckey = test_keys.sec_key(i).unwrap();
-                let signature = seckey.sign(&hash)?;
-                signatures.insert(pubkey.to_base64(), signature.to_base64());
-            }
-        }
-
-        // Write signatures file
-        let signatures_file = signers_file.with_file_name(format!(
-            "{}.{}",
-            signers_file.file_name().unwrap().to_string_lossy(),
-            SIGNATURES_SUFFIX
-        ));
-        fs::write(&signatures_file, serde_json::to_string_pretty(&signatures)?)?;
-
-        Ok((signers_file, signatures_file))
-    }
 
     // Helper to create a signed artifact file with complete aggregate signature
     fn create_signed_artifact_file(
@@ -747,7 +694,7 @@ mod tests {
         Ok(serde_json::to_string_pretty(&revocation_file)?)
     }
     #[test]
-    fn test_revoke_signed_file_with_master() -> Result<(), Box<dyn std::error::Error>> {
+    fn test_revoke_signed_file_with_revocation_key() -> Result<(), Box<dyn std::error::Error>> {
         // -----------------------------------------------------------------
         // Main test logic
         // -----------------------------------------------------------------
@@ -755,11 +702,11 @@ mod tests {
         // Create temporary directory
         let temp_dir = TempDir::new()?;
 
-        // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
-        let test_keys = TestKeys::new(3);
+        // Generate test keys: 0,1 for artifact signing, 2 for master, 3 for revocation
+        let test_keys = TestKeys::new(4);
 
-        // Create signers setup with master keys (key 2 is master)
-        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]))?;
+        // Create signers setup with master keys (key 2) and revocation keys (key 3)
+        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]), Some(vec![3]))?;
 
         // Create signed artifact file
         let artifact_content = b"This is an artifact that will be revoked";
@@ -773,24 +720,30 @@ mod tests {
         assert!(signatures_file.exists());
         assert!(local_signers_file.exists());
 
-        // Prepare revocation
+        // Prepare revocation with revocation key (key 3)
         let timestamp = Utc::now();
         let subject_digest = common::sha512_for_file(&artifact_path)?;
-        let initiator_pubkey = test_keys.pub_key(2).unwrap(); // Master key
+        let initiator_pubkey = test_keys.pub_key(3).unwrap(); // Revocation key
         let revocation_json = create_revocation_json(timestamp, &subject_digest, initiator_pubkey)?;
 
         // Sign the revocation JSON
         let revocation_hash = common::sha512_for_content(revocation_json.as_bytes().to_vec())?;
-        let initiator_seckey = test_keys.sec_key(2).unwrap();
+        let initiator_seckey = test_keys.sec_key(3).unwrap();
         let revocation_signature = initiator_seckey.sign(&revocation_hash)?;
 
         // Perform revocation
-        revoke_signed_file(
+        let result = revoke_signed_file(
             &artifact_path,
             &revocation_json,
             &revocation_signature,
             initiator_pubkey,
         )?;
+
+        // Single revocation key → threshold 1 → should complete immediately
+        assert!(
+            result.is_complete(),
+            "Single-signer revocation should return Complete, got Pending"
+        );
 
         // Verify revocation files were created
         let revocation_file_path = revocation_path_for(&artifact_path)?;
@@ -850,13 +803,13 @@ mod tests {
     fn test_revoke_signed_file_with_artifact_fail_when_master_present()
     -> Result<(), Box<dyn std::error::Error>> {
         // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
-        let test_keys = TestKeys::new(3);
+        let test_keys = TestKeys::new(4);
 
         // Create new temp dir for clean test
         let temp_dir2 = TempDir::new()?;
 
-        // Create signers setup without master keys
-        create_complete_signers_setup(&temp_dir2, &test_keys, None, Some(vec![2]))?;
+        // Create signers setup with master keys and explicit revocation keys (key 2)
+        create_complete_signers_setup(&temp_dir2, &test_keys, None, Some(vec![2]), Some(vec![3]))?;
 
         // Create signed artifact file
         let artifact_path =
@@ -916,8 +869,8 @@ mod tests {
         // Create new temp dir for clean test
         let temp_dir2 = TempDir::new()?;
 
-        // Create signers setup without master keys
-        create_complete_signers_setup(&temp_dir2, &test_keys, Some(vec![2]), None)?;
+        // Create signers setup with admin keys (key 2), no master, no explicit revocation
+        create_complete_signers_setup(&temp_dir2, &test_keys, Some(vec![2]), None, None)?;
 
         // Create signed artifact file
         let artifact_path =
@@ -972,13 +925,19 @@ mod tests {
     fn test_revoke_signed_file_with_admin_fail_when_master_present()
     -> Result<(), Box<dyn std::error::Error>> {
         // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
-        let test_keys = TestKeys::new(4);
+        let test_keys = TestKeys::new(5);
 
         // Create new temp dir for clean test
         let temp_dir2 = TempDir::new()?;
 
-        // Create signers setup without master keys
-        create_complete_signers_setup(&temp_dir2, &test_keys, Some(vec![2]), Some(vec![3]))?;
+        // Create signers setup with admin (key 2), master (key 3), and explicit revocation
+        create_complete_signers_setup(
+            &temp_dir2,
+            &test_keys,
+            Some(vec![2]),
+            Some(vec![3]),
+            Some(vec![4]),
+        )?;
 
         // Create signed artifact file
         let artifact_path =
@@ -1038,8 +997,8 @@ mod tests {
         // Create new temp dir for clean test
         let temp_dir2 = TempDir::new()?;
 
-        // Create signers setup without master keys
-        create_complete_signers_setup(&temp_dir2, &test_keys, None, None)?;
+        // Create signers setup without admin or master keys
+        create_complete_signers_setup(&temp_dir2, &test_keys, None, None, None)?;
 
         // Create signed artifact file
         let artifact_path =
@@ -1058,24 +1017,53 @@ mod tests {
         let revocation_signature = initiator_seckey.sign(&revocation_hash)?;
 
         // Perform revocation
-        revoke_signed_file(
+        let result = revoke_signed_file(
             &artifact_path,
             &revocation_json,
             &revocation_signature,
             initiator_pubkey,
         )?;
 
-        // Verify revocation succeeded
+        let second_pubkey = test_keys.pub_key(1).unwrap();
+        let second_seckey = test_keys.sec_key(1).unwrap();
+        let second_signature = second_seckey.sign(&revocation_hash)?;
+
         let revocation_file_path = revocation_path_for(&artifact_path)?;
-        assert!(revocation_file_path.exists());
         let revocation_sig_path = revocation_signatures_path_for(&artifact_path)?;
-        assert!(revocation_sig_path.exists());
         let revocation_signers_path = revocation_signers_path_for(&artifact_path)?;
-        assert!(revocation_signers_path.exists());
         let revoked_sig_path = revoked_signatures_path_for(&artifact_path)?;
+
+        let pending_revocation_file_path = pending_revocation_path_for(&artifact_path)?;
+        let pending_revocation_sig_path =
+            pending_signatures_path_for(&pending_revocation_file_path)?;
+
+        let pending = result
+            .get_pending()
+            .expect("Should be pending after first signature");
+
+        assert!(pending_revocation_file_path.exists());
+        assert!(pending_revocation_sig_path.exists());
+        assert!(!revocation_file_path.exists());
+        assert!(!revocation_sig_path.exists());
+        assert!(!revocation_signers_path.exists());
+        assert!(!revoked_sig_path.exists());
+
+        let _complete = pending
+            .add_individual_signature(&second_signature, second_pubkey)?
+            .get_complete()
+            .expect("Should be complete after both artifact signers");
+
+        assert!(!pending_revocation_file_path.exists());
+        assert!(!pending_revocation_sig_path.exists());
+        assert!(revocation_file_path.exists());
+        assert!(revocation_sig_path.exists());
+        assert!(revocation_signers_path.exists());
         assert!(revoked_sig_path.exists());
         // Verify original signatures file was moved
         assert!(!signatures_file.exists());
+
+        let signed_file = SignedFileLoader::load(artifact_path)?;
+        assert_eq!(signed_file.kind(), FileType::RevokedArtifact);
 
         Ok(())
     }
@@ -1083,11 +1071,11 @@ mod tests {
     #[test]
     fn test_revoke_signed_file_with_unauthorized() -> Result<(), Box<dyn std::error::Error>> {
         // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
-        let test_keys = TestKeys::new(3);
+        let test_keys = TestKeys::new(4);
         let temp_dir = TempDir::new()?;
 
-        // Create signers setup with master keys (key 2 is master)
-        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]))?;
+        // Create signers setup with master keys and explicit revocation keys (key 2)
+        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]), Some(vec![3]))?;
 
         // Create signed artifact file
         let artifact_path =
@@ -1143,32 +1131,33 @@ mod tests {
     fn test_revoke_signed_file_with_invalid_signature() -> Result<(), Box<dyn std::error::Error>> {
         let temp_dir4 = TempDir::new()?;
         // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
-        let test_keys = TestKeys::new(3);
+        let test_keys = TestKeys::new(4);
 
-        // Create signers setup with master keys
-        create_complete_signers_setup(&temp_dir4, &test_keys, None, Some(vec![2]))?;
+        // Create signers setup with master keys and explicit revocation keys (key 2)
+        create_complete_signers_setup(&temp_dir4, &test_keys, None, Some(vec![2]), Some(vec![3]))?;
 
         // Create signed artifact file
         let artifact_path =
             create_signed_artifact_file(&temp_dir4, &test_keys, b"Another artifact")?;
 
-        // Prepare revocation with master key but sign wrong data
+        // Prepare revocation with revocation key (key 3) but sign wrong data
         let timestamp = Utc::now();
         let subject_digest = common::sha512_for_file(&artifact_path)?;
-        let master_pubkey = test_keys.pub_key(2).unwrap();
-        let revocation_json = create_revocation_json(timestamp, &subject_digest, master_pubkey)?;
+        let revocation_pubkey = test_keys.pub_key(3).unwrap();
+        let revocation_json =
+            create_revocation_json(timestamp, &subject_digest, revocation_pubkey)?;
 
         // Sign WRONG data (different hash)
         let wrong_hash = common::sha512_for_content(b"wrong data".to_vec())?;
-        let master_seckey = test_keys.sec_key(2).unwrap();
-        let wrong_signature = master_seckey.sign(&wrong_hash)?;
+        let revocation_seckey = test_keys.sec_key(3).unwrap();
+        let wrong_signature = revocation_seckey.sign(&wrong_hash)?;
 
         // Attempt revocation - should fail due to invalid signature
         let result = revoke_signed_file(
             &artifact_path,
             &revocation_json,
             &wrong_signature,
-            master_pubkey,
+            revocation_pubkey,
         );
 
         assert!(result.is_err());
@@ -1200,9 +1189,9 @@ mod tests {
     #[test]
     fn test_revoke_inexisting_signed_file() -> Result<(), Box<dyn std::error::Error>> {
         // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
-        let test_keys = TestKeys::new(3);
+        let test_keys = TestKeys::new(4);
         let temp_dir = TempDir::new()?;
-        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]))?;
+        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]), Some(vec![3]))?;
 
         let non_existent_path = temp_dir.path().join("nonexistent.bin");
         let master_pubkey = test_keys.pub_key(2).unwrap();
@@ -1250,10 +1239,10 @@ mod tests {
     #[test]
     fn test_revoke_directory_should_fail() -> Result<(), Box<dyn std::error::Error>> {
         // Generate test keys (we need at least 3: 2 for artifact signing, 1 for master/revocation)
-        let test_keys = TestKeys::new(3);
+        let test_keys = TestKeys::new(4);
 
         let temp_dir = TempDir::new()?;
-        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]))?;
+        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]), Some(vec![3]))?;
 
         let dir_path = temp_dir.path().join("subdir");
         fs::create_dir(&dir_path)?;
@@ -1281,6 +1270,320 @@ mod tests {
             }
             Ok(_) => panic!("Expected revocation to fail for directory"),
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_revoke_signed_file_master_fails_with_explicit_revocation_group()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // When explicit revocation keys exist, master key should NOT be able to revoke
+        let test_keys = TestKeys::new(4);
+        let temp_dir = TempDir::new()?;
+
+        // master=key 2, revocation=key 3
+        create_complete_signers_setup(&temp_dir, &test_keys, None, Some(vec![2]), Some(vec![3]))?;
+
+        let artifact_path =
+            create_signed_artifact_file(&temp_dir, &test_keys, b"Protected artifact")?;
+
+        // Try to revoke with master key (key 2) — should fail
+        let timestamp = Utc::now();
+        let subject_digest = common::sha512_for_file(&artifact_path)?;
+        let master_pubkey = test_keys.pub_key(2).unwrap();
+        let revocation_json = create_revocation_json(timestamp, &subject_digest, master_pubkey)?;
+
+        let revocation_hash = common::sha512_for_content(revocation_json.as_bytes().to_vec())?;
+        let master_seckey = test_keys.sec_key(2).unwrap();
+        let revocation_signature = master_seckey.sign(&revocation_hash)?;
+
+        let result = revoke_signed_file(
+            &artifact_path,
+            &revocation_json,
+            &revocation_signature,
+            master_pubkey,
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(e) => {
+                let err_str = e.to_string();
+                assert!(
+                    err_str.contains("Public key is not authorized to revoke this file"),
+                    "Expected authorization error, got: {}",
+                    err_str
+                );
+            }
+            Ok(_) => {
+                panic!("Expected revocation to fail for master key when revocation group exists")
+            }
+        }
+
+        // Verify no revocation files were created
+        let revocation_file_path = revocation_path_for(&artifact_path)?;
+        assert!(!revocation_file_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_revoke_signed_file_with_admin_ok() -> Result<(), Box<dyn std::error::Error>> {
+        // When no master and no explicit revocation keys, admin is the revocation fallback
+        let test_keys = TestKeys::new(3);
+        let temp_dir = TempDir::new()?;
+
+        // admin=key 2, no master, no revocation
+        create_complete_signers_setup(&temp_dir, &test_keys, Some(vec![2]), None, None)?;
+
+        let artifact_path =
+            create_signed_artifact_file(&temp_dir, &test_keys, b"Admin revocable artifact")?;
+        let signatures_file = signatures_path_for(&artifact_path)?;
+
+        // Revoke with admin key (key 2) — should succeed via revocation_keys() fallback
+        let timestamp = Utc::now();
+        let subject_digest = common::sha512_for_file(&artifact_path)?;
+        let admin_pubkey = test_keys.pub_key(2).unwrap();
+        let revocation_json = create_revocation_json(timestamp, &subject_digest, admin_pubkey)?;
+
+        let revocation_hash = common::sha512_for_content(revocation_json.as_bytes().to_vec())?;
+        let admin_seckey = test_keys.sec_key(2).unwrap();
+        let revocation_signature = admin_seckey.sign(&revocation_hash)?;
+
+        let result = revoke_signed_file(
+            &artifact_path,
+            &revocation_json,
+            &revocation_signature,
+            admin_pubkey,
+        )?;
+
+        // Single admin key as revocation fallback → threshold 1 → should complete immediately
+        assert!(
+            result.is_complete(),
+            "Single-signer revocation should return Complete, got Pending"
+        );
+
+        // Verify revocation succeeded
+        let revocation_file_path = revocation_path_for(&artifact_path)?;
+        assert!(revocation_file_path.exists());
+        let revocation_sig_path = revocation_signatures_path_for(&artifact_path)?;
+        assert!(revocation_sig_path.exists());
+        let revocation_signers_path = revocation_signers_path_for(&artifact_path)?;
+        assert!(revocation_signers_path.exists());
+        let revoked_sig_path = revoked_signatures_path_for(&artifact_path)?;
+        assert!(revoked_sig_path.exists());
+        // Original signatures file was moved
+        assert!(!signatures_file.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_revoke_signed_file_with_revocation_threshold_gt_1()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let test_keys = TestKeys::new(5);
+
+        let temp_dir = TempDir::new()?;
+
+        // Create signers setup with 2 revocation keys (keys 3, 4) -> threshold will be 2
+        create_complete_signers_setup(
+            &temp_dir,
+            &test_keys,
+            None,
+            Some(vec![2]),
+            Some(vec![3, 4]),
+        )?;
+
+        let artifact_path =
+            create_signed_artifact_file(&temp_dir, &test_keys, b"Multi-sig revocation artifact")?;
+
+        let timestamp = Utc::now();
+        let subject_digest = common::sha512_for_file(&artifact_path)?;
+        let initiator_pubkey = test_keys.pub_key(3).unwrap();
+        let revocation_json = create_revocation_json(timestamp, &subject_digest, initiator_pubkey)?;
+
+        let revocation_hash = common::sha512_for_content(revocation_json.as_bytes().to_vec())?;
+
+        // First signature from key 3
+        let initiator_seckey = test_keys.sec_key(3).unwrap();
+        let first_signature = initiator_seckey.sign(&revocation_hash)?;
+
+        // After first signature, revocation should be pending (threshold is 2)
+        let result = revoke_signed_file(
+            &artifact_path,
+            &revocation_json,
+            &first_signature,
+            initiator_pubkey,
+        )?;
+        assert!(
+            result.is_pending(),
+            "Revocation should be pending after first signature"
+        );
+
+        // Verify pending revocation file exists
+        let pending_revocation_path = pending_revocation_path_for(&artifact_path)?;
+        assert!(pending_revocation_path.exists());
+
+        // Verify final revocation file does NOT exist yet
+        let revocation_file_path = revocation_path_for(&artifact_path)?;
+        assert!(!revocation_file_path.exists());
+
+        // Add second signature from key 4
+        let second_pubkey = test_keys.pub_key(4).unwrap();
+        let second_seckey = test_keys.sec_key(4).unwrap();
+        let second_signature = second_seckey.sign(&revocation_hash)?;
+
+        let pending = result.get_pending().expect("Should have pending signature");
+        let _complete = pending
+            .add_individual_signature(&second_signature, second_pubkey)?
+            .get_complete()
+            .expect("Should be complete after both revocation signatures");
+
+        // Now verify revocation files exist
+        assert!(revocation_file_path.exists());
+        let revocation_sig_path = revocation_signatures_path_for(&artifact_path)?;
+        assert!(revocation_sig_path.exists());
+        let revocation_signers_path = revocation_signers_path_for(&artifact_path)?;
+        assert!(revocation_signers_path.exists());
+        let revoked_sig_path = revoked_signatures_path_for(&artifact_path)?;
+        assert!(revoked_sig_path.exists());
+
+        // Verify the signatures file was moved
+        let signatures_file = signatures_path_for(&artifact_path)?;
+        assert!(!signatures_file.exists());
+
+        // Verify both signatures are in the revocation signature file
+        let revocation_sig_content = fs::read_to_string(&revocation_sig_path)?;
+        let revocation_sig_map: HashMap<String, String> =
+            serde_json::from_str(&revocation_sig_content)?;
+        assert_eq!(revocation_sig_map.len(), 2);
+        assert!(revocation_sig_map.contains_key(&initiator_pubkey.to_base64()));
+        assert!(revocation_sig_map.contains_key(&second_pubkey.to_base64()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_revoke_signed_file_second_call_errors_when_pending_exists()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // Bug: revoke_signed_file overwrites the pending signatures file each time,
+        // so calling it with a second signer loses the first signer's signature.
+        let test_keys = TestKeys::new(5);
+        let temp_dir = TempDir::new()?;
+
+        // 2 revocation keys (keys 3, 4) → threshold 2
+        create_complete_signers_setup(
+            &temp_dir,
+            &test_keys,
+            None,
+            Some(vec![2]),
+            Some(vec![3, 4]),
+        )?;
+
+        let artifact_path =
+            create_signed_artifact_file(&temp_dir, &test_keys, b"Multi-sig revocation artifact")?;
+
+        let pending_sig_path = pending_revocation_pending_signatures_path_for(&artifact_path)?;
+        let revocation_sig_path = revocation_signatures_path_for(&artifact_path)?;
+
+        let timestamp = Utc::now();
+        let subject_digest = common::sha512_for_file(&artifact_path)?;
+        let first_pubkey = test_keys.pub_key(3).unwrap();
+        let revocation_json = create_revocation_json(timestamp, &subject_digest, first_pubkey)?;
+        let revocation_hash = common::sha512_for_content(revocation_json.as_bytes().to_vec())?;
+
+        // First revocation call with key 3
+        let first_seckey = test_keys.sec_key(3).unwrap();
+        let first_signature = first_seckey.sign(&revocation_hash)?;
+
+        let result = revoke_signed_file(
+            &artifact_path,
+            &revocation_json,
+            &first_signature,
+            first_pubkey,
+        )?;
+        assert!(
+            result.is_pending(),
+            "Should be pending after first signature"
+        );
+        assert!(
+            pending_sig_path.exists(),
+            "Pending revocation signatures file should exist"
+        );
+        assert!(
+            !revocation_sig_path.exists(),
+            "Final revocation signatures file should not exist"
+        );
+
+        // Read the pending signatures file and verify key 3's signature is present
+        let pending_revocation_file_path = pending_revocation_path_for(&artifact_path)?;
+        let pending_sig_path = pending_signatures_path_for(&pending_revocation_file_path)?;
+        let sig_content = fs::read_to_string(&pending_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 1, "Should have 1 signature after first call");
+        assert!(sig_map.contains_key(&first_pubkey.to_base64()));
+
+        // Second revocation call with key 4 — should now ERROR because
+        // pending revocation already exists. Additional signatures go
+        // through sign-pending, not revoke.
+        let second_pubkey = test_keys.pub_key(4).unwrap();
+        let second_seckey = test_keys.sec_key(4).unwrap();
+        let second_signature = second_seckey.sign(&revocation_hash)?;
+
+        let result = revoke_signed_file(
+            &artifact_path,
+            &revocation_json,
+            &second_signature,
+            second_pubkey,
+        );
+
+        assert!(
+            result.is_err(),
+            "Second revoke call should error when pending exists"
+        );
+        let err = match result {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("Expected error but got Ok"),
+        };
+        assert!(
+            err.contains("pending revocation already exists"),
+            "Error should mention existing pending revocation, got: {}",
+            err
+        );
+        // Signatures of the revocation should not have changed
+        assert!(
+            pending_sig_path.exists(),
+            "Pending revocation signatures file should exist"
+        );
+        assert!(
+            !revocation_sig_path.exists(),
+            "Final revocation signatures file should not exist"
+        );
+
+        // Verify first signature is still intact
+        let sig_content = fs::read_to_string(&pending_sig_path)?;
+        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.len(), 1, "Should still have exactly 1 signature");
+        assert!(sig_map.contains_key(&first_pubkey.to_base64()));
+
+        let pending_revocation = SignatureWithState::load_for_file(pending_revocation_file_path)?;
+        let final_sig = pending_revocation
+            .get_pending()
+            .unwrap()
+            .add_individual_signature(&second_signature, second_pubkey)?;
+
+        assert!(final_sig.is_complete());
+
+        assert!(
+            !pending_sig_path.exists(),
+            "Pending revocation signatures file should not exist after both signers called revoke_signed_file"
+        );
+        assert!(
+            revocation_sig_path.exists(),
+            "Final revocation signatures file should exist after both signers called revoke_signed_file"
+        );
+
+        let signed_file = SignedFileLoader::load(artifact_path)?;
+        assert_eq!(signed_file.kind(), FileType::RevokedArtifact);
 
         Ok(())
     }

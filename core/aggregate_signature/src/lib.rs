@@ -5,7 +5,7 @@ use common::fs::names::{
     create_local_signers_for, find_global_signers_for, local_signers_path_for,
     pending_signatures_path_for, signatures_path_for, subject_path_from_pending_signatures,
 };
-use common::{AsfaloadHashes, SignedFileLoader, SignedFileWithKind};
+use common::{AsfaloadHashes, FileType, SignedFileLoader, SignedFileWithKind};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 use signers_file_types::{SignerGroup, SignersConfig};
@@ -231,17 +231,11 @@ pub fn can_revoke(pubkey: &AsfaloadPublicKeys, signers_config: &SignersConfig) -
         })
     };
 
-    if let Some(master_keys) = signers_config.master_keys()
-        && !master_keys.is_empty()
-    {
-        return is_in_groups(&master_keys);
-    }
-
     // Using the admin_keys() accessor will implicitly return the
     // artifact signers if the admin group definition is empty.
     // It is thus sufficient to check if the key is in the vec of
     // keys returned by admin_keys()
-    is_in_groups(signers_config.admin_keys())
+    is_in_groups(signers_config.revocation_keys())
 }
 
 /// Load signers configuration from a file
@@ -310,7 +304,7 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
     file_path: P,
 ) -> Result<HashSet<AsfaloadPublicKeys>, AggregateSignatureError> {
     let file_path = file_path.as_ref();
-    let signed_file = SignedFileLoader::load(file_path);
+    let signed_file = SignedFileLoader::load(file_path)?;
 
     match signed_file {
         SignedFileWithKind::Artifact(_) => {
@@ -380,6 +374,20 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
             // All signers in the config must sign initial signers files
             Ok(config.all_signer_keys())
         }
+        SignedFileWithKind::Revocation(_) => {
+            let artifact_path = signed_file.artifact_path_for_revocation()?;
+            let signers_file_path = find_global_signers_for(&artifact_path)?;
+            let config = load_signers_config(&signers_file_path)?;
+            let mut signers = HashSet::new();
+
+            for group in config.revocation_keys() {
+                for signer in &group.signers {
+                    signers.insert(signer.data.pubkey.clone());
+                }
+            }
+            Ok(signers)
+        }
+        SignedFileWithKind::RevokedArtifact(_) => Err(AggregateSignatureError::FileRevoked),
     }
 }
 
@@ -391,7 +399,7 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
     let file_path = file_path.as_ref();
 
     //  Determine the file type
-    let signed_file = SignedFileLoader::load(file_path);
+    let signed_file = SignedFileLoader::load(file_path)?;
 
     //  Get the path to the signatures file
     let sig_file_path = if look_at_pending {
@@ -456,8 +464,18 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
             let signers_config = load_signers_config(file_path)?;
             check_all_signers(&signatures, &signers_config, &file_hash)
         }
+        SignedFileWithKind::Revocation(_) => {
+            let signers_file_path = if look_at_pending {
+                find_global_signers_for(file_path)
+            } else {
+                local_signers_path_for(file_path)
+            }?;
+            let signers_config = load_signers_config(&signers_file_path)?;
+            check_groups(signers_config.revocation_keys(), &signatures, &file_hash)
+        }
+        SignedFileWithKind::RevokedArtifact(_) => false,
     };
-    if !look_at_pending && !is_complete {
+    if !(signed_file.kind() == FileType::RevokedArtifact) && !look_at_pending && !is_complete {
         Err(AggregateSignatureError::MissingSignaturesInCompleteSignature)
     } else {
         Ok(is_complete)
@@ -522,7 +540,7 @@ pub fn get_missing_signers<P: AsRef<Path>>(
 fn generic_load_for_file<PP: AsRef<Path>>(
     path_in: PP,
 ) -> Result<SignatureWithState, AggregateSignatureError> {
-    let signed_file = SignedFileLoader::load(&path_in);
+    let signed_file = SignedFileLoader::load(&path_in)?;
     let file_path = path_in.as_ref();
 
     // Check if the aggregate signature is complete
@@ -662,14 +680,23 @@ impl AggregateSignature<PendingSignature> {
             if self.subject.is_artifact() {
                 create_local_signers_for(&self.subject)?;
             }
-            std::fs::rename(&pending_sig_path, &complete_sig_path).map_err(|e| {
-                AggregateSignatureError::Io(std::io::Error::other(format!(
-                    "Error renaming pending to complete: {} -> {} : {}",
-                    pending_sig_path.to_string_lossy(),
-                    complete_sig_path.to_string_lossy(),
-                    e
-                )))
-            })?;
+            // For revocation signatures, we need to finalize the revocation
+            // which moves the pending files and the artifact signatures.
+            // finalise_revocation_for handles all file moves, so we don't
+            // need to rename the signature file separately.
+            if self.subject.is_revocation() {
+                let artifact_path = self.subject.artifact_path_for_revocation()?;
+                crate::revocation::finalise_revocation_for(artifact_path)?;
+            } else {
+                std::fs::rename(&pending_sig_path, &complete_sig_path).map_err(|e| {
+                    AggregateSignatureError::Io(std::io::Error::other(format!(
+                        "Error renaming pending to complete: {} -> {} : {}",
+                        pending_sig_path.to_string_lossy(),
+                        complete_sig_path.to_string_lossy(),
+                        e
+                    )))
+                })?;
+            }
             Ok(AggregateSignature::<CompleteSignature>::new(
                 self.signatures.clone(),
                 self.origin.clone(),
@@ -744,7 +771,11 @@ mod tests {
     use std::path::PathBuf;
     use std::str::FromStr;
     use tempfile::TempDir;
-    use test_helpers::TestKeys;
+    use test_helpers::{
+        TestKeys, create_complete_signers_setup, create_group, write_artifact_file,
+        write_pending_signatures, write_pending_signers_config, write_revocation_file,
+        write_signers_config,
+    };
 
     #[test]
     fn test_load_and_complete() -> Result<()> {
@@ -769,7 +800,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             signed_file_path.to_string_lossy().to_string(),
-            SignedFileLoader::load(signed_file_path),
+            SignedFileLoader::load(signed_file_path)?,
         );
 
         // Create signers config JSON string
@@ -862,6 +893,7 @@ mod tests {
             artifact_signers: vec![group.clone()],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         };
         let signers_config = signers_config_proposal.build();
         // Write signers configuration
@@ -1544,6 +1576,7 @@ mod tests {
             }],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -1858,6 +1891,7 @@ mod tests {
             }],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -1881,7 +1915,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Transition to complete
@@ -1926,7 +1960,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             HashMap::new(),
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file).unwrap(),
         );
 
         // Attempt to transition to complete
@@ -1964,7 +1998,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             HashMap::new(),
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file).unwrap(),
         );
 
         // Attempt to transition to complete
@@ -2043,6 +2077,7 @@ mod tests {
             }],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         };
         let signers_config = signers_config_proposal.build();
 
@@ -2184,6 +2219,7 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
+            revocation_keys: None,
         }
         .build();
 
@@ -2226,6 +2262,7 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
+            revocation_keys: None,
         }
         .build();
 
@@ -2373,6 +2410,7 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
+            revocation_keys: None,
         }
         .build();
 
@@ -2406,6 +2444,7 @@ mod tests {
                 }],
                 threshold: 1,
             }]),
+            revocation_keys: None,
         }
         .build();
 
@@ -2487,6 +2526,7 @@ mod tests {
                 artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
                 master_keys: None,
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2516,6 +2556,7 @@ mod tests {
                 ],
                 master_keys: None,
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2539,6 +2580,7 @@ mod tests {
                 artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
                 master_keys: None,
                 admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
+                revocation_keys: None,
             }
             .build();
 
@@ -2562,6 +2604,7 @@ mod tests {
                 artifact_signers: vec![create_group(vec![create_signer(pubkey1.clone())], 1)],
                 master_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2585,6 +2628,7 @@ mod tests {
                 artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
                 master_keys: None,
                 admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
+                revocation_keys: None,
             }
             .build();
 
@@ -2612,6 +2656,7 @@ mod tests {
                     create_group(vec![create_signer(pubkey0.clone())], 1),
                     create_group(vec![create_signer(pubkey3.clone())], 1),
                 ]),
+                revocation_keys: None,
             }
             .build();
 
@@ -2646,6 +2691,7 @@ mod tests {
                 )],
                 master_keys: None,
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2669,6 +2715,7 @@ mod tests {
                 artifact_signers: vec![],
                 master_keys: None,
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2692,6 +2739,7 @@ mod tests {
                 )],
                 master_keys: None,
                 admin_keys: None,
+                revocation_keys: None,
             }
             .build();
 
@@ -2734,7 +2782,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Save the signature to file
@@ -2784,7 +2832,7 @@ mod tests {
         let agg_sig: AggregateSignature<CompleteSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Save the signature to file
@@ -2838,7 +2886,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Save the signature to file
@@ -2878,7 +2926,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             HashMap::new(),
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Save the signature to file
@@ -2934,7 +2982,7 @@ mod tests {
         let agg_sig: AggregateSignature<PendingSignature> = AggregateSignature::new(
             signatures,
             test_file.to_string_lossy().to_string(),
-            SignedFileLoader::load(&test_file),
+            SignedFileLoader::load(&test_file)?,
         );
 
         // Save the signature to file (should overwrite)
@@ -2974,6 +3022,7 @@ mod tests {
             artifact_signers: vec![SignerGroup { signers, threshold }],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build()
     }
@@ -3413,74 +3462,6 @@ mod tests {
     // Test get_newly_added_signer_keys
     // ---------------------------------
 
-    /// Helper function to create a Signer from a TestKeys instance.
-    fn create_signer(test_keys: &TestKeys, index: usize) -> Signer {
-        Signer {
-            kind: SignerKind::Key,
-            data: SignerData {
-                format: KeyFormat::Minisign,
-                pubkey: test_keys.pub_key(index).unwrap().clone(),
-            },
-        }
-    }
-
-    /// Helper function to create a SignerGroup from a vector of Signer indices.
-    fn create_group(test_keys: &TestKeys, indices: Vec<usize>, threshold: u32) -> SignerGroup {
-        let signers = indices
-            .into_iter()
-            .map(|i| create_signer(test_keys, i))
-            .collect();
-        SignerGroup { signers, threshold }
-    }
-
-    /// Create a signers config on disk at `root/SIGNERS_DIR/SIGNERS_FILE`.
-    /// Returns the path to the signers file.
-    fn write_signers_config(root: &Path, config: &SignersConfig) -> PathBuf {
-        let sig_dir = root.join(SIGNERS_DIR);
-        fs::create_dir_all(&sig_dir).unwrap();
-        let signers_file = sig_dir.join(SIGNERS_FILE);
-        let json = serde_json::to_string_pretty(config).unwrap();
-        fs::write(&signers_file, json).unwrap();
-        signers_file
-    }
-
-    /// Create a pending signers config on disk at `root/PENDING_SIGNERS_DIR/SIGNERS_FILE`.
-    /// Returns the path to the pending signers file.
-    fn write_pending_signers_config(root: &Path, config: &SignersConfig) -> PathBuf {
-        let pending_dir = root.join(PENDING_SIGNERS_DIR);
-        fs::create_dir_all(&pending_dir).unwrap();
-        let signers_file = pending_dir.join(SIGNERS_FILE);
-        let json = serde_json::to_string_pretty(config).unwrap();
-        fs::write(&signers_file, json).unwrap();
-        signers_file
-    }
-
-    /// Create an artifact file at `root/nested/artifact.txt` with dummy content.
-    /// Returns the path to the artifact file.
-    fn write_artifact_file(root: &Path) -> PathBuf {
-        let artifact_path = root.join("nested/artifact.txt");
-        fs::create_dir_all(artifact_path.parent().unwrap()).unwrap();
-        fs::write(&artifact_path, "content").unwrap();
-        artifact_path
-    }
-
-    /// Write a pending signatures file for the given file path.
-    /// `signed_keys` contains (pubkey, secret_key) pairs that should have valid signatures.
-    fn write_pending_signatures(
-        file_path: &Path,
-        signed_keys: &[(AsfaloadPublicKeys, AsfaloadSecretKeys)],
-    ) {
-        let file_hash = sha512_for_file(file_path).unwrap();
-        let mut sig_map: HashMap<String, String> = HashMap::new();
-        for (pubkey, seckey) in signed_keys {
-            let sig = seckey.sign(&file_hash).unwrap();
-            sig_map.insert(pubkey.to_base64(), sig.to_base64());
-        }
-        let sig_path = pending_signatures_path_for(file_path).unwrap();
-        let json = serde_json::to_string_pretty(&sig_map).unwrap();
-        fs::write(sig_path, json).unwrap();
-    }
-
     #[test]
     fn test_no_new_signers_identical_configs() {
         let test_keys = TestKeys::new(3);
@@ -3490,6 +3471,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3508,6 +3490,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3517,6 +3500,7 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             artifact_signers: vec![create_group(&test_keys, vec![1, 0], 2)], // Reordered
+            revocation_keys: None,
         }
         .build();
 
@@ -3533,6 +3517,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3542,6 +3527,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)], // Added key 1
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3559,6 +3545,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3568,6 +3555,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3585,6 +3573,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3594,6 +3583,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: None,
             admin_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
+            revocation_keys: None,
         }
         .build();
 
@@ -3611,6 +3601,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             master_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3620,6 +3611,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 5, 8], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![2, 6, 9], 2)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![7], 2)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3646,6 +3638,7 @@ mod tests {
             artifact_signers: vec![],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3655,6 +3648,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3675,6 +3669,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0], 1)],
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3684,6 +3679,7 @@ mod tests {
             artifact_signers: vec![],
             master_keys: None,
             admin_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3710,6 +3706,7 @@ mod tests {
             artifact_signers: vec![artifact_group.clone()],
             admin_keys: Some(vec![admin_group]),
             master_keys: Some(vec![master_group]),
+            revocation_keys: None,
         }
         .build();
 
@@ -3741,6 +3738,7 @@ mod tests {
             artifact_signers: vec![artifact_group],
             admin_keys: None,
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3770,6 +3768,7 @@ mod tests {
             artifact_signers: vec![artifact_group1, artifact_group2],
             admin_keys: None,
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
 
@@ -3799,6 +3798,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -3810,6 +3810,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)], // Added signer
             admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),    // New admin
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),   // Same master
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -3838,6 +3839,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![1], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -3848,6 +3850,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![1, 2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0, 3], 1)]),
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -3874,6 +3877,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -3885,6 +3889,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0, 3], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -3913,6 +3918,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
@@ -3948,6 +3954,109 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_get_authorized_signers_for_file_revocation_with_explicit_revocation_keys() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(5);
+
+        let (_signers_file, _) = create_complete_signers_setup(
+            &temp_dir,
+            &test_keys,
+            Some(vec![1]),
+            Some(vec![2]),
+            Some(vec![3, 4]),
+        )
+        .expect("Should succeed");
+
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        let revocation_path = write_revocation_file(&artifact_path, test_keys.pub_key(3).unwrap());
+
+        let authorized = get_authorized_signers_for_file(&revocation_path).expect("Should succeed");
+
+        assert_eq!(authorized.len(), 2);
+        assert!(!authorized.contains(test_keys.pub_key(0).unwrap()));
+        assert!(!authorized.contains(test_keys.pub_key(1).unwrap()));
+        assert!(!authorized.contains(test_keys.pub_key(2).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(3).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(4).unwrap()));
+    }
+
+    #[test]
+    fn test_get_authorized_signers_for_file_revocation_fallback_to_admin_keys() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(3);
+
+        // Create signers config with artifact, admin, but NO explicit revocation keys
+        // revocation_keys() should fall back to admin_keys
+        let artifact_group = create_group(&test_keys, vec![0], 1);
+        let admin_group = create_group(&test_keys, vec![1], 1);
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![artifact_group],
+            admin_keys: Some(vec![admin_group]),
+            master_keys: None,
+            revocation_keys: None,
+        }
+        .build();
+
+        // Write global signers config
+        write_signers_config(temp_dir.path(), &config);
+
+        // Create an artifact file
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        // Create a revocation file
+        let revocation_path = write_revocation_file(&artifact_path, test_keys.pub_key(1).unwrap());
+
+        // Get authorized signers for the revocation file
+        let authorized = get_authorized_signers_for_file(&revocation_path).expect("Should succeed");
+
+        // Verify: Admin key (key 1) is authorized (fallback from no revocation_keys)
+        // Artifact signer (key 0) should NOT be authorized
+        assert_eq!(authorized.len(), 1);
+        assert!(!authorized.contains(test_keys.pub_key(0).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(1).unwrap()));
+        assert!(!authorized.contains(test_keys.pub_key(2).unwrap()));
+    }
+
+    #[test]
+    fn test_get_authorized_signers_for_file_revocation_fallback_to_artifact_signers() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(2);
+
+        // Create signers config with ONLY artifact signers (no admin, no master, no revocation)
+        // revocation_keys() should fall back to artifact_signers
+        let artifact_group = create_group(&test_keys, vec![0, 1], 2);
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![artifact_group],
+            admin_keys: None,
+            master_keys: None,
+            revocation_keys: None,
+        }
+        .build();
+
+        // Write global signers config
+        write_signers_config(temp_dir.path(), &config);
+
+        // Create an artifact file
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        // Create a revocation file
+        let revocation_path = write_revocation_file(&artifact_path, test_keys.pub_key(0).unwrap());
+
+        // Get authorized signers for the revocation file
+        let authorized = get_authorized_signers_for_file(&revocation_path).expect("Should succeed");
+
+        // Verify: Artifact signers (keys 0 and 1) are authorized (fallback)
+        assert_eq!(authorized.len(), 2);
+        assert!(authorized.contains(test_keys.pub_key(0).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(1).unwrap()));
+    }
+
     // ---------------------------------
     // Test get_missing_signers
     // ---------------------------------
@@ -3963,6 +4072,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 1)],
             admin_keys: None,
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &config);
@@ -3988,6 +4098,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &config);
@@ -4014,6 +4125,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1, 2], 2)],
             admin_keys: None,
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &config);
@@ -4049,6 +4161,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: None,
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &config);
@@ -4086,6 +4199,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -4097,6 +4211,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -4122,6 +4237,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -4132,6 +4248,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -4170,6 +4287,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -4180,6 +4298,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -4218,6 +4337,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         write_signers_config(temp_dir.path(), &old_config);
@@ -4228,6 +4348,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
@@ -4270,6 +4391,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
@@ -4295,6 +4417,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
@@ -4327,6 +4450,7 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             master_keys: None,
+            revocation_keys: None,
         }
         .build();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
@@ -4491,12 +4615,14 @@ mod tests {
         with_artifact: bool,
         with_admin: bool,
         with_master: bool,
+        with_revocation: bool,
     ) -> (
         Vec<AsfaloadPublicKeys>,
         Vec<AsfaloadPublicKeys>,
         Vec<AsfaloadPublicKeys>,
+        Vec<AsfaloadPublicKeys>,
     ) {
-        let test_keys = TestKeys::new(6);
+        let test_keys = TestKeys::new(8);
         let artifact_keys = if with_artifact {
             vec![
                 test_keys.pub_key(0).unwrap().clone(),
@@ -4522,18 +4648,27 @@ mod tests {
             vec![]
         };
 
-        (artifact_keys, admin_keys, master_keys)
+        let revocation_keys = if with_revocation {
+            vec![
+                test_keys.pub_key(6).unwrap().clone(),
+                test_keys.pub_key(7).unwrap().clone(),
+            ]
+        } else {
+            vec![]
+        };
+        (artifact_keys, admin_keys, master_keys, revocation_keys)
     }
     #[test]
     fn test_can_revoke_with_all_levels_present_in_config() -> Result<()> {
-        let (artifact_keys, admin_keys, master_keys) =
-            signers_keys_for_revocation_tests(true, true, true);
-        // Create a config with admin_keys
+        let (artifact_keys, admin_keys, master_keys, revocation_keys) =
+            signers_keys_for_revocation_tests(true, true, true, true);
+        // Create a config with explicit revocation_keys set
         let config_with_all = SignersConfig::with_keys(
             1,
             (artifact_keys.clone(), 2),
             Some((admin_keys.clone(), 2)),
             Some((master_keys.clone(), 2)),
+            Some((revocation_keys.clone(), 2)),
         )?;
 
         assert!(!can_revoke(
@@ -4541,19 +4676,30 @@ mod tests {
             &config_with_all
         ));
         assert!(!can_revoke(admin_keys.first().unwrap(), &config_with_all));
-        assert!(can_revoke(master_keys.first().unwrap(), &config_with_all));
+        assert!(!can_revoke(admin_keys.get(1).unwrap(), &config_with_all));
+
+        assert!(!can_revoke(master_keys.first().unwrap(), &config_with_all));
+        assert!(!can_revoke(master_keys.get(1).unwrap(), &config_with_all));
+        assert!(can_revoke(
+            revocation_keys.first().unwrap(),
+            &config_with_all
+        ));
+        assert!(can_revoke(
+            revocation_keys.get(1).unwrap(),
+            &config_with_all
+        ));
 
         Ok(())
     }
 
     #[test]
-    fn test_can_revoke_with_explicit_empty_admin_group() -> Result<()> {
-        let (artifact_keys, admin_keys, master_keys) =
-            signers_keys_for_revocation_tests(true, true, true);
+    fn test_can_revoke_with_explicit_empty_admin_and_no_revocation_group() -> Result<()> {
+        let (artifact_keys, admin_keys, master_keys, _revocation_keys) =
+            signers_keys_for_revocation_tests(true, true, true, true);
         // Create a config with empty admin_keys list.
         // The SignersConfig will be built with None admin_keys.
         let config_with_all =
-            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), Some((vec![], 1)), None)?;
+            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), Some((vec![], 1)), None, None)?;
 
         assert!(can_revoke(artifact_keys.first().unwrap(), &config_with_all));
         assert!(!can_revoke(admin_keys.first().unwrap(), &config_with_all));
@@ -4562,25 +4708,29 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn test_can_revoke_with_no_master_present_in_config() -> Result<()> {
-        let (artifact_keys, admin_keys, master_keys) =
-            signers_keys_for_revocation_tests(true, true, true);
+    fn test_can_revoke_with_no_revocation_present_in_config() -> Result<()> {
+        let (artifact_keys, admin_keys, master_keys, _revocation_keys) =
+            signers_keys_for_revocation_tests(true, true, true, false);
         // Create a config with admin_keys
-        let config_sans_master = SignersConfig::with_keys(
+        let config_sans_revocation = SignersConfig::with_keys(
             1,
             (artifact_keys.clone(), 2),
             Some((admin_keys.clone(), 2)),
+            None,
             None,
         )?;
 
         assert!(!can_revoke(
             artifact_keys.first().unwrap(),
-            &config_sans_master
+            &config_sans_revocation
         ));
-        assert!(can_revoke(admin_keys.first().unwrap(), &config_sans_master));
+        assert!(can_revoke(
+            admin_keys.first().unwrap(),
+            &config_sans_revocation
+        ));
         assert!(!can_revoke(
             master_keys.first().unwrap(),
-            &config_sans_master
+            &config_sans_revocation
         ));
 
         Ok(())
@@ -4588,11 +4738,11 @@ mod tests {
 
     #[test]
     fn test_can_revoke_with_only_artifact_present_in_config() -> Result<()> {
-        let (artifact_keys, admin_keys, master_keys) =
-            signers_keys_for_revocation_tests(true, true, true);
+        let (artifact_keys, admin_keys, master_keys, _revocation_keys) =
+            signers_keys_for_revocation_tests(true, true, true, false);
         // Create a config with admin_keys
         let config_sans_master =
-            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), None, None)?;
+            SignersConfig::with_keys(1, (artifact_keys.clone(), 2), None, None, None)?;
 
         assert!(can_revoke(
             artifact_keys.first().unwrap(),
@@ -5024,5 +5174,40 @@ mod tests {
             Ok(v) => assert_eq!(v.len(), 0),
             Err(e) => panic!("Expected Ok value but got error {}", e),
         }
+    }
+
+    #[test]
+    fn test_get_authorized_signers_for_revoked_artifact_returns_error() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+
+        let signers_dir = temp_dir.path().join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir)?;
+        let signers_file = signers_dir.join(SIGNERS_FILE);
+
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (vec![pubkey.clone()], 1))?;
+        fs::write(&signers_file, serde_json::to_string(&signers_config)?)?;
+
+        let subdir = temp_dir.path().join("releases");
+        fs::create_dir_all(&subdir)?;
+        let artifact_path = subdir.join("artifact.bin");
+        fs::write(&artifact_path, "artifact content")?;
+
+        let revocation_path = common::fs::names::revocation_path_for(&artifact_path)?;
+        fs::write(&revocation_path, r#"{"revoked": true}"#)?;
+
+        let result = get_authorized_signers_for_file(&artifact_path);
+
+        match result {
+            Err(AggregateSignatureError::FileRevoked) => {}
+            other => panic!(
+                "Expected AggregateSignatureError::FileRevoked, got: {:?}",
+                other
+            ),
+        }
+
+        Ok(())
     }
 }

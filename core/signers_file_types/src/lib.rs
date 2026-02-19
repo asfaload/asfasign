@@ -44,6 +44,8 @@ pub struct SignersConfig {
     admin_keys: Option<Vec<SignerGroup>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     master_keys: Option<Vec<SignerGroup>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revocation_keys: Option<Vec<SignerGroup>>,
 }
 
 // Introduced to make fields of SignersConfig private while:
@@ -67,6 +69,7 @@ pub struct SignersConfigProposal {
     pub artifact_signers: Vec<SignerGroup>,
     pub admin_keys: Option<Vec<SignerGroup>>,
     pub master_keys: Option<Vec<SignerGroup>>,
+    pub revocation_keys: Option<Vec<SignerGroup>>,
 }
 
 impl SignersConfigProposal {
@@ -84,6 +87,7 @@ impl SignersConfig {
             artifact_signers: p.artifact_signers,
             master_keys: p.master_keys,
             admin_keys: p.admin_keys,
+            revocation_keys: p.revocation_keys,
         }
     }
 
@@ -111,6 +115,7 @@ impl SignersConfig {
             artifact_signers: self.artifact_signers.clone(),
             master_keys: self.master_keys.clone(),
             admin_keys: self.admin_keys.clone(),
+            revocation_keys: self.revocation_keys.clone(),
         }
     }
 
@@ -120,6 +125,7 @@ impl SignersConfig {
         (artifact_signers, artifact_threshold): (Vec<AsfaloadPublicKeys>, u32),
         admin_keys: Option<(Vec<AsfaloadPublicKeys>, u32)>,
         master_keys: Option<(Vec<AsfaloadPublicKeys>, u32)>,
+        revocation_keys: Option<(Vec<AsfaloadPublicKeys>, u32)>,
     ) -> Result<Self, SignersConfigError> {
         // Helper function to create a SignerGroup from a vector of public key strings
         // Create the artifact signers group
@@ -143,12 +149,19 @@ impl SignersConfig {
             None => None,
         };
 
+        let revocation_keys = match revocation_keys {
+            Some((keys, _threshold)) if keys.is_empty() => None,
+            Some((keys, threshold)) => Some(vec![Self::create_group(keys, threshold)?]),
+            None => None,
+        };
+
         Ok(Self::new(SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version,
             artifact_signers,
             admin_keys,
             master_keys,
+            revocation_keys,
         }))
     }
 
@@ -156,7 +169,7 @@ impl SignersConfig {
         version: u32,
         artifact_signers_and_threshold: (Vec<AsfaloadPublicKeys>, u32),
     ) -> Result<Self, SignersConfigError> {
-        Self::with_keys(version, artifact_signers_and_threshold, None, None)
+        Self::with_keys(version, artifact_signers_and_threshold, None, None, None)
     }
 
     pub fn artifact_signers(&self) -> &[SignerGroup] {
@@ -170,6 +183,15 @@ impl SignersConfig {
     }
     pub fn master_keys(&self) -> Option<Vec<SignerGroup>> {
         self.master_keys.clone()
+    }
+
+    // Revocation keys are either specified explicitly, or we fall back
+    // to admin_keys, which themselves fall back to artifact signers.
+    pub fn revocation_keys(&self) -> &[SignerGroup] {
+        match &self.revocation_keys {
+            Some(v) if !v.is_empty() => v,
+            _ => self.admin_keys(),
+        }
     }
 
     pub fn version(&self) -> u32 {
@@ -476,4 +498,98 @@ impl Default for HistoryFile {
 /// Helper function to parse a history file from JSON string
 pub fn parse_history_file(json_str: &str) -> Result<HistoryFile, serde_json::Error> {
     HistoryFile::from_json(json_str)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_helpers::TestKeys;
+
+    /// Build a SignersConfig with explicit control over all key groups.
+    /// Each group that is `Some` gets threshold=1.
+    fn build_config(
+        artifact_keys: Vec<AsfaloadPublicKeys>,
+        admin_keys: Option<Vec<AsfaloadPublicKeys>>,
+        revocation_keys: Option<Vec<AsfaloadPublicKeys>>,
+    ) -> SignersConfig {
+        SignersConfig::with_keys(
+            1,
+            (artifact_keys, 1),
+            admin_keys.map(|k| (k, 1)),
+            None,
+            revocation_keys.map(|k| (k, 1)),
+        )
+        .expect("failed to build SignersConfig")
+    }
+
+    /// Extract the public keys from the signer groups returned by an accessor.
+    fn pubkeys_from_groups(groups: &[SignerGroup]) -> Vec<AsfaloadPublicKeys> {
+        groups
+            .iter()
+            .flat_map(|g| g.signers.iter().map(|s| s.data.pubkey.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn revocation_keys_returns_explicit_revocation_keys_when_present() {
+        let keys = TestKeys::new(3);
+        let artifact = vec![keys.pub_key(0).unwrap().clone()];
+        let admin = vec![keys.pub_key(1).unwrap().clone()];
+        let revocation = vec![keys.pub_key(2).unwrap().clone()];
+
+        let config = build_config(artifact, Some(admin), Some(revocation.clone()));
+
+        let result = pubkeys_from_groups(config.revocation_keys());
+        assert_eq!(result, revocation);
+    }
+
+    #[test]
+    fn revocation_keys_falls_back_to_admin_keys_when_none() {
+        let keys = TestKeys::new(2);
+        let artifact = vec![keys.pub_key(0).unwrap().clone()];
+        let admin = vec![keys.pub_key(1).unwrap().clone()];
+
+        let config = build_config(artifact, Some(admin.clone()), None);
+
+        let result = pubkeys_from_groups(config.revocation_keys());
+        assert_eq!(result, admin);
+    }
+
+    #[test]
+    fn revocation_keys_falls_back_to_admin_keys_when_empty() {
+        let keys = TestKeys::new(2);
+        let artifact = vec![keys.pub_key(0).unwrap().clone()];
+        let admin = vec![keys.pub_key(1).unwrap().clone()];
+
+        // with_keys converts empty vec to None internally, so build via proposal
+        let config = build_config(artifact, Some(admin.clone()), Some(vec![]));
+
+        // Empty revocation list → falls back to admin_keys
+        let result = pubkeys_from_groups(config.revocation_keys());
+        assert_eq!(result, admin);
+    }
+
+    #[test]
+    fn revocation_keys_falls_back_to_artifact_signers_when_no_admin_or_revocation() {
+        let keys = TestKeys::new(1);
+        let artifact = vec![keys.pub_key(0).unwrap().clone()];
+
+        let config = build_config(artifact.clone(), None, None);
+
+        // No revocation → admin_keys() → no admin → artifact_signers
+        let result = pubkeys_from_groups(config.revocation_keys());
+        assert_eq!(result, artifact);
+    }
+
+    #[test]
+    fn revocation_keys_falls_back_to_artifact_signers_when_admin_empty_and_revocation_none() {
+        let keys = TestKeys::new(1);
+        let artifact = vec![keys.pub_key(0).unwrap().clone()];
+
+        let config = build_config(artifact.clone(), Some(vec![]), None);
+
+        // No revocation → admin_keys() → empty admin → artifact_signers
+        let result = pubkeys_from_groups(config.revocation_keys());
+        assert_eq!(result, artifact);
+    }
 }

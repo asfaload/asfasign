@@ -121,6 +121,9 @@ pub mod errors {
 
         #[error("Digest mismatch: {0}")]
         DigestMismatch(String),
+
+        #[error("File is revoked: {0}")]
+        FileRevoked(String),
     }
 
     #[derive(Error, Debug)]
@@ -216,6 +219,7 @@ pub mod errors {
                 ApiError::RevocationError(_) => StatusCode::BAD_REQUEST,
                 ApiError::FileNotFullySigned(_) => StatusCode::CONFLICT,
                 ApiError::DigestMismatch(_) => StatusCode::BAD_REQUEST,
+                ApiError::FileRevoked(_) => StatusCode::BAD_REQUEST,
             }
         }
     }

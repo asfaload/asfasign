@@ -15,6 +15,8 @@ pub struct NewSignersFileOutput {
     pub admin_threshold: Option<u32>,
     pub master_keys_count: usize,
     pub master_threshold: Option<u32>,
+    pub revocation_keys_count: usize,
+    pub revocation_threshold: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]

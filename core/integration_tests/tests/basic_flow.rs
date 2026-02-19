@@ -70,7 +70,7 @@ fn basic_flow() -> Result<()> {
     {
         // Signers2 scope for signing the signers file
         let signers_file = SignersFile::find_pending_in_dir(root_dir)?;
-        let signed_file = SignedFileLoader::load(&signers_file);
+        let signed_file = SignedFileLoader::load(&signers_file)?;
         // It computes the hash of the content
         let signers_file_hash_for_user2 = sha512_for_file(&signers_file)?;
         // Then it signs it
@@ -105,12 +105,12 @@ fn basic_flow() -> Result<()> {
         // User2 scope for signing the file
         let text_file_hash = sha512_for_file(&text_file)?;
         let signature2 = user2_sk.sign(&text_file_hash)?;
-        let signed_file = SignedFileLoader::load(&text_file);
+        let signed_file = SignedFileLoader::load(&text_file)?;
         signed_file.add_signature(signature2, user2_pk.clone())?;
     }
 
     // Check it left the signature as pending
-    let is_signed = SignedFileLoader::load(&text_file).is_signed()?;
+    let is_signed = SignedFileLoader::load(&text_file)?.is_signed()?;
     assert!(!is_signed);
     match SignatureWithState::load_for_file(&text_file)? {
         SignatureWithState::Pending(_) => Ok(()),
@@ -122,7 +122,7 @@ fn basic_flow() -> Result<()> {
         // User1 scope for signing the file
         let text_file_hash = sha512_for_file(&text_file)?;
         let signature1 = user1_sk.sign(&text_file_hash)?;
-        SignedFileLoader::load(&text_file).add_signature(signature1, user1_pk.clone())?;
+        SignedFileLoader::load(&text_file)?.add_signature(signature1, user1_pk.clone())?;
     }
 
     // As both signatures have been collected, the aggregate signature is now complete.

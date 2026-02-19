@@ -22,7 +22,7 @@ cleanup() {
     if [[ -n "$E2E_GIT_REPO_PATH" ]] && [[ -d "$E2E_GIT_REPO_PATH" ]]; then
         rm -rf "$E2E_GIT_REPO_PATH"
     fi
-    rm -f "${DOWNLOAD_V01:-}" "${DOWNLOAD_V01_HISTORICAL:-}" "${DOWNLOAD_V02:-}"
+    rm -f "${DOWNLOAD_V01:-}" "${DOWNLOAD_V01_HISTORICAL:-}" "${DOWNLOAD_V02:-}" "${DOWNLOAD_V01_bis:-}"
 }
 trap cleanup EXIT
 
@@ -50,7 +50,7 @@ else
 
     SERVER_PID=$!
 
-    printf '%sWaiting for backend at %s...%s ' "$DIM" "$backend" "$RESET"
+    printf '%sWaiting for backend at %s with repo %s ...%s ' "$DIM" "$backend" "$ASFALOAD_GIT_REPO_PATH" "$RESET"
     for i in $(seq 1 30); do
         if curl "$backend" --silent > /dev/null 2>&1; then
             printf '%s✓%s\n\n' "$GREEN" "$RESET"
@@ -248,13 +248,36 @@ run_step "Download artifact (v0.2)" \
 
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02"
 
+# --- Revoke release 0.1 ---
 
-run_step "Revoke index file for v0.1" \
+expect_fail "revoke index file for v0.1, not authorized" \
     cargo run -- revoke --secret-key "$KEY_3" -p $key_password -u "$backend" $(release_index 0.1)
+
+run_step "initiate revoke index file for v0.1" \
+    cargo run -- revoke --secret-key "$KEY_4" -p $key_password -u "$backend" $(release_index 0.1)
+
+expect_fail "revoke index file for v0.1 again (already pending)" \
+    cargo run -- revoke --secret-key "$KEY_5" -p $key_password -u "$backend" $(release_index 0.1)
+
+DOWNLOAD_V01_bis="$(mktemp)"
+run_step "Download artifact (v0.1), not yet revoked as need 2 signatures" \
+    cargo run --quiet -- download -o "$DOWNLOAD_V01_bis" -u "$backend" $(artifact_url 0.1)
+assert_artifact_hash_matches "0.1" "artifact.bin" "$DOWNLOAD_V01_bis"
+
+run_step_json "List pending for key1 (none expected, key1 cannot revoke)" \
+    '.file_paths | length == 0' \
+    cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
+
+run_step_json "List pending for key5 (one expected, key1 can revoke)" \
+    '.file_paths | length == 1' \
+    cargo run --quiet -- list-pending --secret-key "$KEY_5" -u "$backend" --password $key_password
+
+run_step "sign pending revocation for v0.1 (second signer via sign-pending)" \
+    cargo run -- sign-pending --secret-key "$KEY_5" -p $key_password -u "$backend" "$(release_index 0.1).$REVOCATION_SUFFIX.$PENDING_SUFFIX"
 
 # --- Backend: verify v0.1 revoked ---
 assert_release_index_revoked "0.1"
-assert_revocation_signers "0.1" "$KEY_0" "$KEY_1" "$KEY_2" "$KEY_3"
+assert_revocation_signers "0.1" "$KEY_4" "$KEY_5" "$KEY_6"
 assert_last_commit_contains "$REVOCATION_SUFFIX"
 
 expect_fail "Download artifact (v0.1, revoked)" \

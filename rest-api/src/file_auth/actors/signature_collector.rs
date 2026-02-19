@@ -147,7 +147,14 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                         error = %e,
                         "failed to get authorized signers"
                     );
-                    ApiError::InternalServerError("Failed to get authorized signers".to_string())
+                    match e {
+                        AggregateSignatureError::FileRevoked => {
+                            ApiError::FileRevoked("Cannot sign a revoked file".to_string())
+                        }
+                        _ => ApiError::InternalServerError(
+                            "Failed to get authorized signers".to_string(),
+                        ),
+                    }
                 })?;
 
         if !authorized_signers.contains(&msg.public_key) {
@@ -201,7 +208,15 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
         let is_complete = new_state.is_complete();
 
         let commit_msg = if let SignatureWithState::Complete(complete_agg_sig) = new_state {
-            let signed_file = SignedFileLoader::load(&msg.file_path);
+            let signed_file = SignedFileLoader::load(&msg.file_path).map_err(|e| {
+                tracing::error!(
+                    actor = ACTOR_NAME,
+                    request_id = %msg.request_id,
+                    error = %e,
+                    "failed to load signed file"
+                );
+                ApiError::InternalServerError(format!("Failed to load signed file: {}", e))
+            })?;
             // If signature is complete and this is a signers file, activate it
             // In that case, the dirname changes for a signers file, which influences
             // the git commit
@@ -877,6 +892,7 @@ mod tests {
             (vec![], 1),
             Some((vec![test_keys.pub_key(0).unwrap().clone()], 1)),
             Some((vec![test_keys.pub_key(1).unwrap().clone()], 1)),
+            None,
         )?;
 
         let signers_dir = temp_dir.path().join(SIGNERS_DIR);
@@ -892,6 +908,7 @@ mod tests {
             (vec![test_keys.pub_key(3).unwrap().clone()], 1),
             Some((vec![test_keys.pub_key(0).unwrap().clone()], 1)),
             Some((vec![test_keys.pub_key(1).unwrap().clone()], 1)),
+            None,
         )?;
         let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
         std::fs::create_dir_all(&pending_dir)?;

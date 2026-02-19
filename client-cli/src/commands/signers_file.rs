@@ -48,6 +48,9 @@ pub fn handle_new_signers_file_command(
     master_key: &[String],
     master_key_file: &[PathBuf],
     master_threshold: Option<u32>,
+    revocation_key: &[String],
+    revocation_key_file: &[PathBuf],
+    revocation_threshold: Option<u32>,
     output_file: &Path,
     json: bool,
 ) -> Result<()> {
@@ -95,13 +98,18 @@ pub fn handle_new_signers_file_command(
         combine_key_sources(master_key, master_key_file)?;
     let all_master_keys_count = all_master_keys.len();
     let master_group_info = get_group_info(all_master_keys, master_threshold)?;
-    //
+    // Revocation keys
+    let all_revocation_keys: Vec<AsfaloadPublicKeys> =
+        combine_key_sources(revocation_key, revocation_key_file)?;
+    let all_revocation_keys_count = all_revocation_keys.len();
+    let revocation_group_info = get_group_info(all_revocation_keys, revocation_threshold)?;
     // Create signers config using the with_keys method
     let signers_config = SignersConfig::with_keys(
         1, // version
         (all_artifact_signers, artifact_threshold),
         admin_group_info,
         master_group_info,
+        revocation_group_info,
     )
     .map_err(|e| {
         crate::error::ClientCliError::SignersFile(format!("Failed to create signers config: {}", e))
@@ -133,6 +141,8 @@ pub fn handle_new_signers_file_command(
             admin_threshold,
             master_keys_count: all_master_keys_count,
             master_threshold,
+            revocation_keys_count: all_revocation_keys_count,
+            revocation_threshold,
         };
         println!("{}", serde_json::to_string(&output)?);
     } else {
