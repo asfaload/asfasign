@@ -43,8 +43,24 @@ pub trait ReleaseAdder: std::fmt::Debug {
 
     fn signers_file_path(&self) -> PathBuf;
 
+    async fn index_path(&self) -> Result<NormalisedPaths, ApiError>;
     async fn index_content(&self) -> Result<String, ApiError>;
 
+    // Error if index already exists
+    async fn create_index(&self) -> Result<NormalisedPaths, ApiError> {
+        let index_path = self.index_path().await?.absolute_path();
+        if tokio::fs::try_exists(index_path).await? {
+            Err(ApiError::ReleaseAlreadyRegistered(
+                "Release already registered".to_string(),
+            ))
+        } else {
+            self.write_index().await
+        }
+    }
+
+    // This unconditionally writes the index.
+    // Ideally this should not be accessible to callers, but it appeared to be much more fuss than
+    // I thought, so leaving as is for now.
     async fn write_index(&self) -> Result<NormalisedPaths, ApiError>;
 
     fn release_info(&self) -> ReleaseInfos;

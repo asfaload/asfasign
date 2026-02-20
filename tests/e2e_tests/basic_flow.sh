@@ -97,11 +97,11 @@ run_step_json "List pending for key1 (none expected, key1 submitted)" \
     '.file_paths | length == 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
-run_step_json "List pending for key2" \
+run_step_json "List pending for key1" \
     '.file_paths | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password $key_password
 
-run_step_json "Sign signers file with key2" \
+run_step_json "Sign signers file with key1" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
 
@@ -142,6 +142,12 @@ run_step_json "Sign release index with key1" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
 
+assert_release_index_signature_count "0.1" 1
+
+expect_fail "Register release with key3 (fails as already registered)" \
+    cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_url 0.1)
+
+# Ensure a second release registration does not override the signatures already collected
 assert_release_index_signature_count "0.1" 1
 
 run_step_json "Sign release index with key2 (completes, threshold=2)" \

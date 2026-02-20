@@ -73,6 +73,13 @@ impl ReleaseAdder for ReleaseAdders {
         }
     }
 
+    async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
+        match self {
+            Self::Github(github) => github.as_ref().index_path().await,
+            Self::Gitlab(gitlab) => gitlab.as_ref().index_path().await,
+        }
+    }
+
     fn release_info(&self) -> ReleaseInfos {
         match self {
             Self::Github(github) => github.release_info(),

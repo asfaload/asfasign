@@ -94,7 +94,7 @@ pub mod tests {
                 .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
                 .header(HEADER_NONCE, auth_info.nonce())
                 .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
-                .header(HEADER_PUBLIC_KEY, public_key_b64)
+                .header(HEADER_PUBLIC_KEY, &public_key_b64)
                 .json(&payload)
                 .send(),
         )
@@ -145,6 +145,35 @@ pub mod tests {
             sig_content, "{}",
             "Signature file should contain empty object"
         );
+
+        // attempt re-registration
+        // -----------------------
+        let auth_info = rest_api_auth::AuthInfo::new(payload_str.clone());
+        let auth_signature = rest_api_auth::AuthSignature::new(&auth_info, test_secret_key)?;
+        let response = tokio::time::timeout(
+            Duration::from_secs(10),
+            client
+                .post(url_for("release", port))
+                .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
+                .header(HEADER_NONCE, auth_info.nonce())
+                .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
+                .header(HEADER_PUBLIC_KEY, &public_key_b64)
+                .json(&payload)
+                .send(),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Timeout: {}", e))??;
+
+        let status = response.status();
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "Expected 500 for release re-registration"
+        );
+
+        let response_text = response.text().await?;
+        assert!(response_text.contains("already registered"));
+
         server_handle.abort();
         Ok(())
     }

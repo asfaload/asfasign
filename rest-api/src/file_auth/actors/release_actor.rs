@@ -104,14 +104,14 @@ impl ReleaseActor {
             "Extracted release info"
         );
 
-        let index_file_path = adder.write_index().await.map_err(|e| {
+        let index_file_path = adder.create_index().await.inspect_err(|e| {
             tracing::error!(
-                request_id = %msg.request_id,
-                actor = %ACTOR_NAME,
-                error = %e,
-                "Could not write index file"
+            request_id = %msg.request_id,
+            actor = %ACTOR_NAME,
+            error = %e,
+            index_path = %release_info.release_path()
+
             );
-            e
         })?;
         info!(
             request_id = %msg.request_id,
