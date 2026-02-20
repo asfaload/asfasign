@@ -255,7 +255,7 @@ impl ReleaseAdder for GitlabReleaseAdder {
 
         let index_content = self.index_content().await?;
 
-        let full_index_path = self.release_info.release_path.join(INDEX_FILE).await?;
+        let full_index_path = self.index_path().await?;
         if let Some(parent) = full_index_path.absolute_path().parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
                 ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
@@ -276,6 +276,11 @@ impl ReleaseAdder for GitlabReleaseAdder {
 
     fn release_info(&self) -> ReleaseInfos {
         ReleaseInfos::Gitlab(self.release_info.clone())
+    }
+
+    async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
+        let full_index_path = self.release_info.release_path.join(INDEX_FILE).await?;
+        Ok(full_index_path)
     }
 }
 

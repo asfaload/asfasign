@@ -162,6 +162,10 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
             .join(SIGNERS_FILE)
     }
 
+    async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
+        let full_index_path = self.release_info.release_path.join(INDEX_FILE).await?;
+        Ok(full_index_path)
+    }
     async fn index_content(&self) -> Result<String, ApiError> {
         let release: Release = self
             .client
@@ -192,7 +196,7 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
 
         let index_content = self.index_content().await?;
 
-        let full_index_path = self.release_info.release_path.join(INDEX_FILE).await?;
+        let full_index_path = self.index_path().await?;
         if let Some(parent) = full_index_path.absolute_path().parent() {
             fs::create_dir_all(parent).await.map_err(|e| {
                 ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))

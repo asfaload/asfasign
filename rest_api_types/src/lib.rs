@@ -124,6 +124,9 @@ pub mod errors {
 
         #[error("File is revoked: {0}")]
         FileRevoked(String),
+
+        #[error("Release already registered: {0}")]
+        ReleaseAlreadyRegistered(String),
     }
 
     #[derive(Error, Debug)]
@@ -220,6 +223,7 @@ pub mod errors {
                 ApiError::FileNotFullySigned(_) => StatusCode::CONFLICT,
                 ApiError::DigestMismatch(_) => StatusCode::BAD_REQUEST,
                 ApiError::FileRevoked(_) => StatusCode::BAD_REQUEST,
+                ApiError::ReleaseAlreadyRegistered(_) => StatusCode::CONFLICT,
             }
         }
     }
