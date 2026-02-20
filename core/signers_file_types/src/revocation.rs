@@ -7,7 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use signatures::{keys::AsfaloadPublicKeyTrait, types::AsfaloadPublicKeys};
 
 #[derive(Debug, Clone)]
-pub struct RevocationFile {
+pub struct RevocationInfo {
     /// ISO8601 formatted UTC date and time when the revocation was created
     pub timestamp: DateTime<Utc>,
     /// digest of the file being revoked
@@ -15,7 +15,7 @@ pub struct RevocationFile {
     pub initiator: AsfaloadPublicKeys,
 }
 
-impl RevocationFile {
+impl RevocationInfo {
     pub fn from_json(json: &str) -> Result<Self, RevocationError> {
         Ok(serde_json::from_str(json)?)
     }
@@ -24,13 +24,13 @@ impl RevocationFile {
         Self::from_json(json.as_str())
     }
 }
-impl Serialize for RevocationFile {
+impl Serialize for RevocationInfo {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("RevocationFile", 3)?;
+        let mut state = serializer.serialize_struct("RevocationInfo", 3)?;
         state.serialize_field("timestamp", &self.timestamp)?;
         state.serialize_field("subject_digest", &self.subject_digest)?;
         // Convert public key to base64 string for serialization
@@ -39,23 +39,23 @@ impl Serialize for RevocationFile {
     }
 }
 
-impl<'de> Deserialize<'de> for RevocationFile {
+impl<'de> Deserialize<'de> for RevocationInfo {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
-        struct RevocationFileHelper {
+        struct RevocationInfoHelper {
             timestamp: DateTime<Utc>,
             subject_digest: AsfaloadHashes,
             initiator: String,
         }
 
-        let helper = RevocationFileHelper::deserialize(deserializer)?;
+        let helper = RevocationInfoHelper::deserialize(deserializer)?;
         // Parse public key from base64 string
         let initiator = AsfaloadPublicKeys::from_base64(&helper.initiator)
             .map_err(|e| serde::de::Error::custom(format!("Failed to parse public key: {}", e)))?;
-        Ok(RevocationFile {
+        Ok(RevocationInfo {
             timestamp: helper.timestamp,
             subject_digest: helper.subject_digest,
             initiator,
@@ -64,11 +64,11 @@ impl<'de> Deserialize<'de> for RevocationFile {
 }
 
 // Add a Display implementation for easier debugging
-impl fmt::Display for RevocationFile {
+impl fmt::Display for RevocationInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "RevocationFile(timestamp={}, subject_digest={}, initiator={})",
+            "RevocationInfo(timestamp={}, subject_digest={}, initiator={})",
             self.timestamp,
             self.subject_digest,
             self.initiator.to_base64()
@@ -86,12 +86,12 @@ mod tests {
     use signatures::keys::AsfaloadPublicKeyTrait;
     use test_helpers::TestKeys;
 
-    fn create_test_revocation_file(
+    fn create_test_revocation_info(
         timestamp: DateTime<Utc>,
         subject_digest: AsfaloadHashes,
         initiator: AsfaloadPublicKeys,
-    ) -> RevocationFile {
-        RevocationFile {
+    ) -> RevocationInfo {
+        RevocationInfo {
             timestamp,
             subject_digest,
             initiator,
@@ -106,14 +106,14 @@ mod tests {
         let timestamp = Utc::now();
         let subject_digest = AsfaloadHashes::Sha512([1u8; 64].into());
 
-        let revocation_file =
-            create_test_revocation_file(timestamp, subject_digest.clone(), pubkey.clone());
+        let revocation_info =
+            create_test_revocation_info(timestamp, subject_digest.clone(), pubkey.clone());
 
         // Serialize to JSON
-        let json = serde_json::to_string(&revocation_file).unwrap();
+        let json = serde_json::to_string(&revocation_info).unwrap();
 
         // Deserialize back
-        let deserialized: RevocationFile = serde_json::from_str(&json).unwrap();
+        let deserialized: RevocationInfo = serde_json::from_str(&json).unwrap();
 
         // Verify all fields match
         assert_eq!(&deserialized.timestamp, &timestamp);
@@ -129,9 +129,9 @@ mod tests {
         let timestamp = "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
         let subject_digest = AsfaloadHashes::Sha512([1u8; 64].into());
 
-        let revocation_file = create_test_revocation_file(timestamp, subject_digest, pubkey);
+        let revocation_info = create_test_revocation_info(timestamp, subject_digest, pubkey);
 
-        let json = serde_json::to_string_pretty(&revocation_file).unwrap();
+        let json = serde_json::to_string_pretty(&revocation_info).unwrap();
 
         // Verify JSON structure
         assert!(json.contains("\"timestamp\""));
@@ -166,15 +166,15 @@ mod tests {
         let hash = Sha512::digest(test_data);
         let subject_digest = AsfaloadHashes::Sha512(hash);
 
-        let revocation_file = create_test_revocation_file(timestamp, subject_digest, pubkey);
+        let revocation_info = create_test_revocation_info(timestamp, subject_digest, pubkey);
 
         // Serialize and deserialize
-        let json = serde_json::to_string(&revocation_file).unwrap();
-        let deserialized: RevocationFile = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&revocation_info).unwrap();
+        let deserialized: RevocationInfo = serde_json::from_str(&json).unwrap();
 
         // Verify the hash is preserved correctly
         match (
-            &revocation_file.subject_digest,
+            &revocation_info.subject_digest,
             &deserialized.subject_digest,
         ) {
             (AsfaloadHashes::Sha512(h1), AsfaloadHashes::Sha512(h2)) => {
@@ -193,7 +193,7 @@ mod tests {
         }
         "#;
 
-        let result: Result<RevocationFile, _> = serde_json::from_str(invalid_json);
+        let result: Result<RevocationInfo, _> = serde_json::from_str(invalid_json);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -216,7 +216,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile, _> = serde_json::from_str(&invalid_json);
+        let result: Result<RevocationInfo, _> = serde_json::from_str(&invalid_json);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -242,7 +242,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile, _> = serde_json::from_str(&invalid_json);
+        let result: Result<RevocationInfo, _> = serde_json::from_str(&invalid_json);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -269,7 +269,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile, _> = serde_json::from_str(&missing_timestamp);
+        let result: Result<RevocationInfo, _> = serde_json::from_str(&missing_timestamp);
         assert!(result.is_err());
 
         match result {
@@ -289,7 +289,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile, _> = serde_json::from_str(&missing_digest);
+        let result: Result<RevocationInfo, _> = serde_json::from_str(&missing_digest);
         match result {
             Err(ref e) => {
                 assert!(e.to_string().contains("missing field `subject_digest`"))
@@ -307,7 +307,7 @@ mod tests {
         }
         "#;
 
-        let result: Result<RevocationFile, _> = serde_json::from_str(missing_initiator);
+        let result: Result<RevocationInfo, _> = serde_json::from_str(missing_initiator);
         match result {
             Err(ref e) => {
                 assert!(e.to_string().contains("missing field `initiator`"))
@@ -327,7 +327,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile, _> = serde_json::from_str(&empty_timestamp);
+        let result: Result<RevocationInfo, _> = serde_json::from_str(&empty_timestamp);
         assert!(result.is_err());
 
         match result {
@@ -348,7 +348,7 @@ mod tests {
         }
         "#;
 
-        let result: Result<RevocationFile, _> = serde_json::from_str(empty_initiator);
+        let result: Result<RevocationInfo, _> = serde_json::from_str(empty_initiator);
         match result {
             Err(ref e) => {
                 dbg!(e.to_string());
@@ -367,7 +367,7 @@ mod tests {
     fn test_round_trip_multiple_revocation_files() {
         let test_keys = TestKeys::new(3);
 
-        let mut revocation_files = Vec::new();
+        let mut revocation_infos = Vec::new();
 
         for i in 0..3 {
             let pubkey = test_keys.pub_key(i).unwrap().clone();
@@ -376,14 +376,14 @@ mod tests {
             let hash = Sha512::digest(hash_data.as_bytes());
             let subject_digest = AsfaloadHashes::Sha512(hash);
 
-            let revocation = create_test_revocation_file(timestamp, subject_digest, pubkey);
-            revocation_files.push(revocation);
+            let revocation = create_test_revocation_info(timestamp, subject_digest, pubkey);
+            revocation_infos.push(revocation);
         }
 
         // Test each revocation file independently
-        for revocation in &revocation_files {
+        for revocation in &revocation_infos {
             let json = serde_json::to_string(revocation).unwrap();
-            let deserialized: RevocationFile = serde_json::from_str(&json).unwrap();
+            let deserialized: RevocationInfo = serde_json::from_str(&json).unwrap();
 
             assert_eq!(revocation.timestamp, deserialized.timestamp);
             assert_eq!(revocation.subject_digest, deserialized.subject_digest);
@@ -402,9 +402,9 @@ mod tests {
         let timestamp = "2023-01-01T12:34:56.789Z".parse::<DateTime<Utc>>().unwrap();
         let subject_digest = AsfaloadHashes::Sha512([0xFFu8; 64].into());
 
-        let revocation_file = create_test_revocation_file(timestamp, subject_digest, pubkey);
+        let revocation_info = create_test_revocation_info(timestamp, subject_digest, pubkey);
 
-        let json = serde_json::to_string(&revocation_file).unwrap();
+        let json = serde_json::to_string(&revocation_info).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         // Check the exact structure
@@ -440,7 +440,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile, _> = serde_json::from_str(&json_with_extra);
+        let result: Result<RevocationInfo, _> = serde_json::from_str(&json_with_extra);
 
         // Should succeed with extra fields being ignored
         assert!(result.is_ok());
@@ -462,7 +462,7 @@ mod tests {
             pubkey_b64
         );
 
-        let result: Result<RevocationFile, _> = serde_json::from_str(&json_wrong_algo);
+        let result: Result<RevocationInfo, _> = serde_json::from_str(&json_wrong_algo);
 
         assert!(result.is_err());
         let error = result.unwrap_err();
