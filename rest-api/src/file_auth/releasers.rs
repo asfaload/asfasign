@@ -2,7 +2,9 @@
 use crate::file_auth::github_release::ProductionGithubClient;
 use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
 use crate::file_auth::gitlab_release::{GitlabReleaseAdder, GitlabReleaseInfo};
-use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
+use crate::file_auth::release_types::{
+    ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
+};
 use crate::path_validation::NormalisedPaths;
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
@@ -20,6 +22,15 @@ pub enum ReleaseAdders {
     #[cfg(feature = "test-utils")]
     Github(Box<GithubReleaseAdder<MockGithubClient>>),
     Gitlab(Box<GitlabReleaseAdder>),
+}
+
+impl ReleaseIndexWriter for ReleaseAdders {
+    async fn write_index(&self) -> Result<NormalisedPaths, ApiError> {
+        match self {
+            Self::Github(github) => github.as_ref().write_index().await,
+            Self::Gitlab(gitlab) => gitlab.as_ref().write_index().await,
+        }
+    }
 }
 
 impl ReleaseAdder for ReleaseAdders {
@@ -66,10 +77,10 @@ impl ReleaseAdder for ReleaseAdders {
         }
     }
 
-    async fn write_index(&self) -> Result<NormalisedPaths, ApiError> {
+    async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
         match self {
-            Self::Github(github) => github.as_ref().write_index().await,
-            Self::Gitlab(gitlab) => gitlab.as_ref().write_index().await,
+            Self::Github(github) => github.as_ref().index_path().await,
+            Self::Gitlab(gitlab) => gitlab.as_ref().index_path().await,
         }
     }
 
@@ -226,6 +237,7 @@ mod tests {
             GitlabRelease, GitlabReleaseAdder, GitlabReleaseLink,
         };
         use crate::file_auth::release_types::ReleaseAdder;
+        use crate::file_auth::release_types::ReleaseIndexWriter;
         use constants::{SIGNERS_DIR, SIGNERS_FILE};
         use tempfile::TempDir;
         use tokio::fs;

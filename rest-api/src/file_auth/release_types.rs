@@ -32,7 +32,14 @@ pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
 }
 
 #[allow(async_fn_in_trait)]
-pub trait ReleaseAdder: std::fmt::Debug {
+pub(super) trait ReleaseIndexWriter: std::fmt::Debug {
+    /// Unconditionally writes the index file to disk.
+    /// This is an implementation detail — callers should use `ReleaseAdder::create_index` instead.
+    async fn write_index(&self) -> Result<NormalisedPaths, ApiError>;
+}
+
+#[allow(async_fn_in_trait, private_bounds)]
+pub trait ReleaseAdder: ReleaseIndexWriter {
     async fn new(
         release_url: &url::Url,
         git_repo_path: PathBuf,
@@ -43,9 +50,20 @@ pub trait ReleaseAdder: std::fmt::Debug {
 
     fn signers_file_path(&self) -> PathBuf;
 
+    async fn index_path(&self) -> Result<NormalisedPaths, ApiError>;
     async fn index_content(&self) -> Result<String, ApiError>;
 
-    async fn write_index(&self) -> Result<NormalisedPaths, ApiError>;
+    // Error if index already exists
+    async fn create_index(&self) -> Result<NormalisedPaths, ApiError> {
+        let index_path = self.index_path().await?.absolute_path();
+        if tokio::fs::try_exists(index_path).await? {
+            Err(ApiError::ReleaseAlreadyRegistered(
+                "Release already registered".to_string(),
+            ))
+        } else {
+            self.write_index().await
+        }
+    }
 
     fn release_info(&self) -> ReleaseInfos;
 }

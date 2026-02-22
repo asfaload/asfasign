@@ -1,5 +1,7 @@
 use crate::constants::INDEX_FILE;
-use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
+use crate::file_auth::release_types::{
+    ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
+};
 use crate::file_auth::releasers::ReleaseInfos;
 use crate::path_validation::NormalisedPaths;
 use constants::{SIGNERS_DIR, SIGNERS_FILE};
@@ -155,6 +157,35 @@ struct ReleaseAssetInfo {
     hash: Option<FileChecksum>,
 }
 
+impl ReleaseIndexWriter for GitlabReleaseAdder {
+    async fn write_index(&self) -> Result<NormalisedPaths, ApiError> {
+        let signers_file_path = self.signers_file_path();
+        if !signers_file_path.exists() {
+            return Err(ApiError::NoActiveSignersFile);
+        }
+
+        let index_content = self.index_content().await?;
+
+        let full_index_path = self.index_path().await?;
+        if let Some(parent) = full_index_path.absolute_path().parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
+            })?;
+        }
+
+        fs::write(&full_index_path, index_content)
+            .await
+            .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write index file: {}", e)))?;
+
+        info!(
+            "Successfully created index file at {}",
+            full_index_path.relative_path().display()
+        );
+
+        Ok(full_index_path)
+    }
+}
+
 impl ReleaseAdder for GitlabReleaseAdder {
     async fn new(
         release_url: &url::Url,
@@ -247,35 +278,13 @@ impl ReleaseAdder for GitlabReleaseAdder {
         self.generate_index_json(&assets)
     }
 
-    async fn write_index(&self) -> Result<NormalisedPaths, ApiError> {
-        let signers_file_path = self.signers_file_path();
-        if !signers_file_path.exists() {
-            return Err(ApiError::NoActiveSignersFile);
-        }
-
-        let index_content = self.index_content().await?;
-
-        let full_index_path = self.release_info.release_path.join(INDEX_FILE).await?;
-        if let Some(parent) = full_index_path.absolute_path().parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
-            })?;
-        }
-
-        fs::write(&full_index_path, index_content)
-            .await
-            .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write index file: {}", e)))?;
-
-        info!(
-            "Successfully created index file at {}",
-            full_index_path.relative_path().display()
-        );
-
-        Ok(full_index_path)
-    }
-
     fn release_info(&self) -> ReleaseInfos {
         ReleaseInfos::Gitlab(self.release_info.clone())
+    }
+
+    async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
+        let full_index_path = self.release_info.release_path.join(INDEX_FILE).await?;
+        Ok(full_index_path)
     }
 }
 
