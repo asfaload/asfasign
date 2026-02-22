@@ -2,6 +2,7 @@ use crate::{file_auth::releasers::ReleaseInfos, path_validation::NormalisedPaths
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
 use thiserror::Error;
+use tokio::fs::File;
 
 #[derive(Debug, Error)]
 pub enum ReleaseError {
@@ -35,7 +36,7 @@ pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
 pub(super) trait ReleaseIndexWriter: std::fmt::Debug {
     /// Unconditionally writes the index file to disk.
     /// This is an implementation detail — callers should use `ReleaseAdder::create_index` instead.
-    async fn write_index(&self) -> Result<NormalisedPaths, ApiError>;
+    async fn write_index(&self, f: &mut File) -> Result<(), ApiError>;
 }
 
 #[allow(async_fn_in_trait, private_bounds)]
@@ -55,13 +56,29 @@ pub trait ReleaseAdder: ReleaseIndexWriter {
 
     // Error if index already exists
     async fn create_index(&self) -> Result<NormalisedPaths, ApiError> {
-        let index_path = self.index_path().await?.absolute_path();
-        if tokio::fs::try_exists(index_path).await? {
-            Err(ApiError::ReleaseAlreadyRegistered(
-                "Release already registered".to_string(),
-            ))
-        } else {
-            self.write_index().await
+        let index_path = self.index_path().await?;
+        let abs_path = index_path.absolute_path();
+        if let Some(parent) = abs_path.parent() {
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
+            })?;
+        }
+        let mut oo = tokio::fs::OpenOptions::new();
+        match oo.write(true).create_new(true).open(&abs_path).await {
+            Ok(mut f) => {
+                self.write_index(&mut f).await?;
+                Ok(index_path)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                Err(ApiError::ReleaseAlreadyRegistered(format!(
+                    "Path: {}",
+                    index_path.relative_path().display()
+                )))
+            }
+            Err(e) => Err(ApiError::FileWriteFailed(format!(
+                "Failed to create index file: {}",
+                e
+            ))),
         }
     }
 

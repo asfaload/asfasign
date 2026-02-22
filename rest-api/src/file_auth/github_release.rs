@@ -10,7 +10,8 @@ use octocrab::models::repos::Release;
 use rest_api_types::errors::ApiError;
 use rest_api_types::github_helpers::validate_github_url;
 use std::path::{Path, PathBuf};
-use tokio::fs;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use tracing::info;
 
 #[cfg(not(feature = "test-utils"))]
@@ -131,31 +132,24 @@ struct ReleaseAssetInfo {
 }
 
 impl ReleaseIndexWriter for GithubReleaseAdder<GithubClient> {
-    async fn write_index(&self) -> Result<NormalisedPaths, ApiError> {
+    async fn write_index(&self, f: &mut File) -> Result<(), ApiError> {
         let signers_file_path = self.signers_file_path();
         if !signers_file_path.exists() {
             return Err(ApiError::NoActiveSignersFile);
         }
 
         let index_content = self.index_content().await?;
-
-        let full_index_path = self.index_path().await?;
-        if let Some(parent) = full_index_path.absolute_path().parent() {
-            fs::create_dir_all(parent).await.map_err(|e| {
-                ApiError::FileWriteFailed(format!("Failed to create directory: {}", e))
-            })?;
-        }
-
-        fs::write(&full_index_path, index_content)
+        let content_bytes = index_content.as_bytes();
+        f.write(content_bytes)
             .await
             .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write index file: {}", e)))?;
 
         info!(
             "Successfully created index file at {}",
-            full_index_path.relative_path().display()
+            self.index_path().await?
         );
 
-        Ok(full_index_path)
+        Ok(())
     }
 }
 

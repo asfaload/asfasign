@@ -168,7 +168,7 @@ pub mod tests {
         assert_eq!(
             status,
             StatusCode::CONFLICT,
-            "Expected 500 for release re-registration"
+            "Expected 409 Conflict for release re-registration"
         );
 
         let response_text = response.text().await?;

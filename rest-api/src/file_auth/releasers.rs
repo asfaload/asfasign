@@ -8,6 +8,7 @@ use crate::file_auth::release_types::{
 use crate::path_validation::NormalisedPaths;
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
+use tokio::fs::File;
 
 pub const GITHUB_RELEASE_HOSTS: &[&str] = &["github.com"];
 pub const GITLAB_RELEASE_HOSTS: &[&str] = &["gitlab.com"];
@@ -25,10 +26,10 @@ pub enum ReleaseAdders {
 }
 
 impl ReleaseIndexWriter for ReleaseAdders {
-    async fn write_index(&self) -> Result<NormalisedPaths, ApiError> {
+    async fn write_index(&self, f: &mut File) -> Result<(), ApiError> {
         match self {
-            Self::Github(github) => github.as_ref().write_index().await,
-            Self::Gitlab(gitlab) => gitlab.as_ref().write_index().await,
+            Self::Github(github) => github.as_ref().write_index(f).await,
+            Self::Gitlab(gitlab) => gitlab.as_ref().write_index(f).await,
         }
     }
 }
