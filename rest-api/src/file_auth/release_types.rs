@@ -32,7 +32,14 @@ pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
 }
 
 #[allow(async_fn_in_trait)]
-pub trait ReleaseAdder: std::fmt::Debug {
+pub(super) trait ReleaseIndexWriter: std::fmt::Debug {
+    /// Unconditionally writes the index file to disk.
+    /// This is an implementation detail — callers should use `ReleaseAdder::create_index` instead.
+    async fn write_index(&self) -> Result<NormalisedPaths, ApiError>;
+}
+
+#[allow(async_fn_in_trait, private_bounds)]
+pub trait ReleaseAdder: ReleaseIndexWriter {
     async fn new(
         release_url: &url::Url,
         git_repo_path: PathBuf,
@@ -57,11 +64,6 @@ pub trait ReleaseAdder: std::fmt::Debug {
             self.write_index().await
         }
     }
-
-    // This unconditionally writes the index.
-    // Ideally this should not be accessible to callers, but it appeared to be much more fuss than
-    // I thought, so leaving as is for now.
-    async fn write_index(&self) -> Result<NormalisedPaths, ApiError>;
 
     fn release_info(&self) -> ReleaseInfos;
 }
