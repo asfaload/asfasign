@@ -270,8 +270,11 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
         // Verify the signature
         let signed_data = common::sha512_for_file(signed_file_path)?;
         if pub_key.verify(self, &signed_data).is_ok() {
-            // Add the signature to the map
+            // Reject duplicate signatures from the same key
             let pubkey_b64 = pub_key.to_base64();
+            if signatures_map.contains_key(&pubkey_b64) {
+                return Err(SignatureError::DuplicateSignature);
+            }
             signatures_map.insert(pubkey_b64, self.to_base64());
 
             // Write the updated map back to the file
