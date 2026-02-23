@@ -111,6 +111,32 @@ assert_pending_signers_contain_keys() {
     done
 }
 
+assert_pending_signers_contain_master_keys() {
+    local project_dir signers_path
+    project_dir="$(_project_dir)"
+    signers_path="$project_dir/$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
+    for key_file in "$@"; do
+        local pk
+        pk="$(pubkey_of "$key_file")"
+        assert_json_field "$signers_path" \
+            "[.master_keys[].signers[].data.pubkey] | any(. == \"$pk\")" \
+            "Pending signers master_keys contains $(basename "$key_file")"
+    done
+}
+
+assert_signers_contain_master_keys() {
+    local project_dir signers_path
+    project_dir="$(_project_dir)"
+    signers_path="$project_dir/$SIGNERS_DIR/$SIGNERS_FILE"
+    for key_file in "$@"; do
+        local pk
+        pk="$(pubkey_of "$key_file")"
+        assert_json_field "$signers_path" \
+            "[.master_keys[].signers[].data.pubkey] | any(. == \"$pk\")" \
+            "Active signers master_keys contains $(basename "$key_file")"
+    done
+}
+
 assert_signers_history_entries() {
     local expected="$1"
     local project_dir history_file
