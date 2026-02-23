@@ -26,10 +26,10 @@ pub enum ReleaseAdders {
 }
 
 impl ReleaseIndexWriter for ReleaseAdders {
-    async fn write_index(&self, f: &mut File) -> Result<(), ApiError> {
+    async fn write_index(&self, f: &mut File, content: &[u8]) -> Result<(), ApiError> {
         match self {
-            Self::Github(github) => github.as_ref().write_index(f).await,
-            Self::Gitlab(gitlab) => gitlab.as_ref().write_index(f).await,
+            Self::Github(github) => github.as_ref().write_index(f, content).await,
+            Self::Gitlab(gitlab) => gitlab.as_ref().write_index(f, content).await,
         }
     }
 }
@@ -238,7 +238,6 @@ mod tests {
             GitlabRelease, GitlabReleaseAdder, GitlabReleaseLink,
         };
         use crate::file_auth::release_types::ReleaseAdder;
-        use crate::file_auth::release_types::ReleaseIndexWriter;
         use constants::{SIGNERS_DIR, SIGNERS_FILE};
         use tempfile::TempDir;
         use tokio::fs;

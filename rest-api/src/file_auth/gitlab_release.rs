@@ -13,9 +13,6 @@ use rest_api_types::errors::ApiError;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
-use tracing::info;
 
 #[cfg(not(feature = "test-utils"))]
 pub type GitLabClient = ProductionGitLabClient;
@@ -158,28 +155,7 @@ struct ReleaseAssetInfo {
     hash: Option<FileChecksum>,
 }
 
-impl ReleaseIndexWriter for GitlabReleaseAdder {
-    async fn write_index(&self, f: &mut File) -> Result<(), ApiError> {
-        let signers_file_path = self.signers_file_path();
-        if !signers_file_path.exists() {
-            return Err(ApiError::NoActiveSignersFile);
-        }
-
-        let index_content = self.index_content().await?;
-
-        let content_bytes = index_content.as_bytes();
-        f.write(content_bytes)
-            .await
-            .map_err(|e| ApiError::FileWriteFailed(format!("Failed to write index file: {}", e)))?;
-
-        info!(
-            "Successfully created index file at {}",
-            self.index_path().await?
-        );
-
-        Ok(())
-    }
-}
+impl ReleaseIndexWriter for GitlabReleaseAdder {}
 
 impl ReleaseAdder for GitlabReleaseAdder {
     async fn new(
