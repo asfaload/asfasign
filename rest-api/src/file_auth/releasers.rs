@@ -2,10 +2,13 @@
 use crate::file_auth::github_release::ProductionGithubClient;
 use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
 use crate::file_auth::gitlab_release::{GitlabReleaseAdder, GitlabReleaseInfo};
-use crate::file_auth::release_types::{ReleaseAdder, ReleaseError, ReleaseInfo, ReleaseUrlError};
+use crate::file_auth::release_types::{
+    ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
+};
 use crate::path_validation::NormalisedPaths;
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
+use tokio::fs::File;
 
 pub const GITHUB_RELEASE_HOSTS: &[&str] = &["github.com"];
 pub const GITLAB_RELEASE_HOSTS: &[&str] = &["gitlab.com"];
@@ -20,6 +23,15 @@ pub enum ReleaseAdders {
     #[cfg(feature = "test-utils")]
     Github(Box<GithubReleaseAdder<MockGithubClient>>),
     Gitlab(Box<GitlabReleaseAdder>),
+}
+
+impl ReleaseIndexWriter for ReleaseAdders {
+    async fn write_index(&self, f: &mut File, content: &[u8]) -> Result<(), ApiError> {
+        match self {
+            Self::Github(github) => github.as_ref().write_index(f, content).await,
+            Self::Gitlab(gitlab) => gitlab.as_ref().write_index(f, content).await,
+        }
+    }
 }
 
 impl ReleaseAdder for ReleaseAdders {
@@ -66,10 +78,10 @@ impl ReleaseAdder for ReleaseAdders {
         }
     }
 
-    async fn write_index(&self) -> Result<NormalisedPaths, ApiError> {
+    async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
         match self {
-            Self::Github(github) => github.as_ref().write_index().await,
-            Self::Gitlab(gitlab) => gitlab.as_ref().write_index().await,
+            Self::Github(github) => github.as_ref().index_path().await,
+            Self::Gitlab(gitlab) => gitlab.as_ref().index_path().await,
         }
     }
 
@@ -286,7 +298,7 @@ mod tests {
         let hash = files[0]["hash"].as_str().unwrap();
         assert_eq!(hash.len(), 64);
 
-        let index_path = adder.write_index().await.unwrap();
+        let index_path = adder.create_index().await.unwrap();
 
         use crate::constants::INDEX_FILE;
         let expected_relative_path = PathBuf::from("gitlab.com")
