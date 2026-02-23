@@ -45,11 +45,12 @@ else
 
     cargo build -p rest-api --quiet
     "${base_dir}/target/debug/rest-api" > $E2E_GIT_REPO_PATH/server.log &
+    SERVER_PID=$!
+
     if [[ -n $debug ]]; then
         tail -f  $E2E_GIT_REPO_PATH/server.log &
     fi
 
-    SERVER_PID=$!
 
     printf '%sWaiting for backend at %s with repo %s ...%s ' "$DIM" "$backend" "$ASFALOAD_GIT_REPO_PATH" "$RESET"
     for i in $(seq 1 30); do
