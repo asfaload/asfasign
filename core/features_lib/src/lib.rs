@@ -354,7 +354,7 @@ mod tests_signed_file_revocation {
         fs::create_dir_all(&sub_dir)?;
 
         // Create revocation JSON file
-        let revocation_file = signers_file_types::revocation::RevocationFile {
+        let revocation_info = signers_file_types::revocation::RevocationInfo {
             timestamp: Utc::now(),
             subject_digest: sha512_for_content(b"artifact content".to_vec())?,
             initiator: test_keys
@@ -362,7 +362,7 @@ mod tests_signed_file_revocation {
                 .unwrap()
                 .clone(),
         };
-        let revocation_json = serde_json::to_string_pretty(&revocation_file)?;
+        let revocation_json = serde_json::to_string_pretty(&revocation_info)?;
         let revocation_path = sub_dir.join(format!("artifact.bin.{}", PENDING_REVOCATION_SUFFIX));
         fs::write(&revocation_path, &revocation_json)?;
 

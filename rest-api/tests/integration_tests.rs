@@ -1586,7 +1586,7 @@ pub mod tests {
         // Step 2: Build and submit revocation
         let subject_digest = sha512_for_file(&artifact_file)?;
 
-        let revocation = signers_file_types::revocation::RevocationFile {
+        let revocation = signers_file_types::revocation::RevocationInfo {
             timestamp: chrono::Utc::now(),
             subject_digest,
             initiator: public_key.clone(),

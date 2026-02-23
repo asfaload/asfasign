@@ -462,7 +462,7 @@ pub mod models {
     pub struct RevokeFileRequest {
         /// Relative path to the signed file being revoked
         pub file_path: String,
-        /// JSON string of the revocation document (RevocationFile)
+        /// JSON string of the revocation document (RevocationInfo)
         pub revocation_json: String,
         /// Base64-encoded signature of the sha512 of revocation_json
         pub signature: String,

@@ -226,7 +226,7 @@ pub fn create_complete_signers_setup(
     Ok((signers_file, signatures_file))
 }
 
-/// Write a revocation file (RevocationFile JSON) for the given artifact path.
+/// Write a revocation file (RevocationInfo JSON) for the given artifact path.
 ///
 /// The revocation file is placed at `{artifact_path}.{REVOCATION_SUFFIX}`.
 /// Returns the path to the revocation file.
@@ -235,15 +235,15 @@ pub fn write_revocation_file(
     initiator: &signatures::types::AsfaloadPublicKeys,
 ) -> PathBuf {
     use common::fs::names::revocation_path_for;
-    use signers_file_types::revocation::RevocationFile;
+    use signers_file_types::revocation::RevocationInfo;
 
     let subject_digest = sha512_for_file(artifact_path).unwrap();
-    let revocation_file = RevocationFile {
+    let revocation_info = RevocationInfo {
         timestamp: chrono::Utc::now(),
         subject_digest,
         initiator: initiator.clone(),
     };
-    let json = serde_json::to_string_pretty(&revocation_file).unwrap();
+    let json = serde_json::to_string_pretty(&revocation_info).unwrap();
     let revocation_path = revocation_path_for(artifact_path).unwrap();
     fs::write(&revocation_path, json).unwrap();
     revocation_path

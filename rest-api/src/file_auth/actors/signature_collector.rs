@@ -12,7 +12,7 @@ use kameo::actor::ActorRef;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
-use signers_file_types::revocation::RevocationFile;
+use signers_file_types::revocation::RevocationInfo;
 use std::path::Path;
 
 /// Request to collect a signature for a specific file.
@@ -383,14 +383,14 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 
         // Spec check #4: Parse revocation JSON, compute sha512 of the file,
         // compare with subject_digest
-        let revocation_file = RevocationFile::from_json(&msg.revocation_json)
+        let revocation_info = RevocationInfo::from_json(&msg.revocation_json)
             .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid revocation JSON: {}", e)))?;
 
         let file_digest = sha512_for_file(&abs_path).map_err(|e| {
             ApiError::InternalServerError(format!("Failed to compute file digest: {}", e))
         })?;
 
-        if revocation_file.subject_digest != file_digest {
+        if revocation_info.subject_digest != file_digest {
             return Err(ApiError::DigestMismatch(format!(
                 "Revocation subject_digest does not match actual file digest for {}",
                 msg.file_path.relative_path().display()

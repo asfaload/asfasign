@@ -13,7 +13,7 @@ use rest_api_types::RevokeFileResponse;
 /// 1. Load secret key and derive public key
 /// 2. Fetch the file content from backend
 /// 3. Compute sha512 of the fetched content
-/// 4. Build RevocationFile JSON (timestamp, subject_digest, initiator)
+/// 4. Build RevocationInfo JSON (timestamp, subject_digest, initiator)
 /// 5. Sign the sha512 of the revocation JSON
 /// 6. Submit to backend via POST /v1/revoke
 /// 7. Display result
@@ -38,7 +38,7 @@ pub async fn handle_revoke_command(
     let subject_digest = sha512_for_content(file_content)?;
 
     // Build the revocation document
-    let revocation = signers_file_types::revocation::RevocationFile {
+    let revocation = signers_file_types::revocation::RevocationInfo {
         timestamp: chrono::Utc::now(),
         subject_digest,
         initiator: public_key.clone(),

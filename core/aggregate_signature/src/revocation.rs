@@ -73,7 +73,7 @@ where
     }
 
     //Validate the revocation JSON by parsing it
-    let _revocation_file: signers_file_types::revocation::RevocationFile =
+    let _revocation_info: signers_file_types::revocation::RevocationInfo =
         serde_json::from_str(json_content)?;
 
     // Compute hash and verify signature
@@ -379,13 +379,13 @@ mod tests {
         subject_digest: &AsfaloadHashes,
         initiator_pubkey: &AsfaloadPublicKeys,
     ) -> Result<String, Box<dyn std::error::Error>> {
-        let revocation_file = signers_file_types::revocation::RevocationFile {
+        let revocation_info = signers_file_types::revocation::RevocationInfo {
             timestamp,
             subject_digest: subject_digest.clone(),
             initiator: initiator_pubkey.clone(),
         };
 
-        Ok(serde_json::to_string_pretty(&revocation_file)?)
+        Ok(serde_json::to_string_pretty(&revocation_info)?)
     }
     #[test]
     fn test_revoke_signed_file_with_revocation_key() -> Result<(), Box<dyn std::error::Error>> {
@@ -457,7 +457,7 @@ mod tests {
 
         // Verify revocation file content
         let parsed_revocation =
-            signers_file_types::revocation::RevocationFile::from_file(revocation_file_path)?;
+            signers_file_types::revocation::RevocationInfo::from_file(revocation_file_path)?;
 
         assert_eq!(parsed_revocation.timestamp, timestamp);
         assert_eq!(parsed_revocation.subject_digest, subject_digest);
