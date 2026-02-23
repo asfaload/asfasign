@@ -11,12 +11,10 @@ use crate::keys::{
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
     KeyFormat,
 };
-use common::fs::names::{pending_signatures_path_for, signatures_path_for};
 use common::{
     AsfaloadHashes,
     errors::keys::{KeyError, SignError, SignatureError, VerifyError},
 };
-use std::fs::File;
 use std::path::Path;
 
 #[cfg(test)]
@@ -194,6 +192,7 @@ impl Clone for AsfaloadSignatures {
 }
 
 impl AsfaloadSignatureTrait for AsfaloadSignatures {
+    type PublicKeyType = AsfaloadPublicKeys;
     fn to_string(&self) -> String {
         match self {
             Self::Minisign(sig) => sig.to_string(),
@@ -230,62 +229,15 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
         }
     }
 
-    fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait<Signature = Self>>(
+    fn add_to_aggregate_for_file<P: AsRef<Path>>(
         &self,
         signed_file: P,
-        pub_key: &PK,
+        pub_key: &AsfaloadPublicKeys,
     ) -> Result<(), SignatureError> {
-        // Check if the path is a directory
-        if signed_file.as_ref().is_dir() {
-            return Err(SignatureError::IoError(std::io::Error::new(
-                std::io::ErrorKind::IsADirectory,
-                "Requires a file, cannot sign a directory",
-            )));
-        }
-
-        let signed_file_path = signed_file.as_ref();
-
-        // Check if aggregate signature is already complete
-        let signatures_path = signatures_path_for(signed_file_path)?;
-        if signatures_path.exists() && signatures_path.is_file() {
-            return Err(SignatureError::IoError(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "Aggregate signature is already complete",
-            )));
-        }
-
-        // Get the pending signatures file path
-        let pending_sig_file_path = pending_signatures_path_for(signed_file_path)?;
-
-        // Read existing signatures, or create a new map if the file doesn't exist
-        let mut signatures_map: std::collections::HashMap<String, String> =
-            match File::open(&pending_sig_file_path) {
-                Ok(file) => serde_json::from_reader(file)?,
-                Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    std::collections::HashMap::new()
-                }
-                Err(e) => return Err(e.into()),
-            };
-
-        // Verify the signature
-        let signed_data = common::sha512_for_file(signed_file_path)?;
-        if pub_key.verify(self, &signed_data).is_ok() {
-            // Reject duplicate signatures from the same key
-            let pubkey_b64 = pub_key.to_base64();
-            if signatures_map.contains_key(&pubkey_b64) {
-                return Err(SignatureError::DuplicateSignature);
-            }
-            signatures_map.insert(pubkey_b64, self.to_base64());
-
-            // Write the updated map back to the file
-            let file = File::create(&pending_sig_file_path)?;
-            serde_json::to_writer_pretty(file, &signatures_map)?;
-
-            Ok(())
-        } else {
-            Err(SignatureError::InvalidSignatureForAggregate(
-                signed_file_path.to_path_buf(),
-            ))
+        match self {
+            Self::Minisign(sig) => match pub_key {
+                AsfaloadPublicKeys::Minisign(pk) => sig.add_to_aggregate_for_file(signed_file, pk),
+            },
         }
     }
 }

@@ -188,6 +188,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
 }
 
 impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
+    type PublicKeyType = AsfaloadPublicKey<minisign::PublicKey>;
     fn to_string(&self) -> String {
         self.signature.to_string()
     }
@@ -217,10 +218,10 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         let s = self.signature.to_string();
         BASE64_STANDARD.encode(s)
     }
-    fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait<Signature = Self>>(
+    fn add_to_aggregate_for_file<P: AsRef<Path>>(
         &self,
         signed_file: P,
-        pub_key: &PK,
+        pub_key: &Self::PublicKeyType,
     ) -> Result<(), SignatureError> {
         if signed_file.as_ref().is_dir() {
             return Err(SignatureError::IoError(std::io::Error::new(

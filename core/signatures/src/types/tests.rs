@@ -4,7 +4,7 @@ use crate::keys::{
 use anyhow::{Context, Result};
 use common::errors::keys::{KeyError, SignatureError};
 use constants::PENDING_SIGNATURES_SUFFIX;
-use std::fs;
+use std::fs::{self, File};
 use std::path::PathBuf;
 use tempfile::TempDir;
 

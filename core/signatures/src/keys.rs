@@ -102,6 +102,7 @@ pub struct AsfaloadSignature<S> {
 }
 
 pub trait AsfaloadSignatureTrait: Sized {
+    type PublicKeyType: AsfaloadPublicKeyTrait<Signature = Self>;
     fn to_string(&self) -> String;
     fn from_string(s: &str) -> Result<Self, SignatureError>;
     fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<&Self, SignatureError>;
@@ -117,9 +118,9 @@ pub trait AsfaloadSignatureTrait: Sized {
     // calling AggregateSignature::add_individual_signature.
     // This method is useful for use on the client though, where the signers file used to
     // evaluate completeness is not available.
-    fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait<Signature = Self>>(
+    fn add_to_aggregate_for_file<P: AsRef<Path>>(
         &self,
         dir: P,
-        pub_key: &PK,
+        pub_key: &Self::PublicKeyType,
     ) -> Result<(), SignatureError>;
 }
