@@ -20,6 +20,16 @@ const FIXTURE_KEY_COUNT: usize = 10;
 /// Password used for all fixture keypairs.
 const FIXTURE_PASSWORD: &str = "password";
 
+pub fn fixtures_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures")
+}
+pub fn fixtures_keys_dir() -> PathBuf {
+    fixtures_dir().join("keys")
+}
+pub fn fixtures_pub_key(n: usize) -> PathBuf {
+    fixtures_keys_dir().join(format!("key_{}.pub", n))
+}
+
 pub struct TestKeys {
     key_pairs: Vec<AsfaloadKeyPairs>,
     pub_keys: Vec<AsfaloadPublicKeys>,
