@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use crate::error::{ClientCliError, Result};
 use crate::utils::{ensure_dir_exists, validate_threshold};
@@ -174,14 +175,20 @@ fn combine_key_sources<P: AsfaloadPublicKeyTrait>(
     // Collect public keys from base64 strings we got
     let mut combined: Vec<Result<P>> = string_keys
         .iter()
-        .enumerate()
-        .map(|(i, key_str)| {
+        .map(|key_str| {
             P::from_base64(key_str).map_err(|e| {
-                crate::error::ClientCliError::SignersFile(format!(
-                    "Failed to parse public key {}: {}",
-                    i + 1,
-                    e
-                ))
+                let path_buf = PathBuf::from_str(key_str).unwrap_or(PathBuf::new());
+                if path_buf.as_path().exists() {
+                    crate::error::ClientCliError::SignersFile(format!(
+                       "You passed a string as a public key, but it seems to be a path to a file: {}.\nUse the flag with -file suffix to pass a key stored on disk.\n{}",
+                        key_str, e
+                    ))
+                } else {
+                    crate::error::ClientCliError::SignersFile(format!(
+                        "Failed to parse public key from string \"{}\": {}",
+                        key_str, e
+                    ))
+                }
             })
         })
         .collect();
