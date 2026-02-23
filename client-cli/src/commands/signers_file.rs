@@ -207,3 +207,167 @@ fn combine_key_sources<P: AsfaloadPublicKeyTrait>(
 
     combined.into_iter().collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use test_helpers::fixtures_pub_key;
+
+    // A valid minisign public key base64 string (from fixtures key_0)
+    const VALID_PUBKEY_B64: &str = "RWS1kZJeKmeNOI0vl8hjI/YD7UQYxMq5uYkVWfHCHPtm7bOsbgZMovii";
+
+    #[test]
+    fn combine_key_sources_empty_inputs() {
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&[], &[]);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn combine_key_sources_valid_base64_string() {
+        let keys = vec![VALID_PUBKEY_B64.to_string()];
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&keys, &[]);
+        assert!(result.is_ok());
+        let parsed = result.unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].to_base64(), VALID_PUBKEY_B64);
+    }
+
+    #[test]
+    fn combine_key_sources_multiple_valid_base64_strings() {
+        let keys = vec![
+            "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3".to_string(),
+            "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv".to_string(),
+        ];
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&keys, &[]);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn combine_key_sources_invalid_base64_string_returns_error() {
+        let keys = vec!["not-a-valid-key".to_string()];
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&keys, &[]);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Failed to parse public key from string"),
+            "Expected parse error message, got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("not-a-valid-key"),
+            "Error should contain the invalid input, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn combine_key_sources_string_that_is_a_path_returns_path_hint() {
+        // Use a fixture key file — its path exists on disk, and passing the path
+        // string as a base64 key will fail, triggering the path-detection hint.
+        let file_path = fixtures_pub_key(0);
+
+        let keys = vec![file_path.to_string_lossy().to_string()];
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&keys, &[]);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("seems to be a path to a file"),
+            "Expected path hint in error message, got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("-file suffix"),
+            "Expected flag hint in error message, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn combine_key_sources_nonexistent_path_string_gives_parse_error_not_path_hint() {
+        // A path-like string that does NOT exist on disk should not trigger the path hint
+        let keys = vec!["/tmp/nonexistent_key_file_12345.pub".to_string()];
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&keys, &[]);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Failed to parse public key from string"),
+            "Non-existent path should get generic parse error, got: {}",
+            err_msg
+        );
+        assert!(
+            !err_msg.contains("seems to be a path to a file"),
+            "Non-existent path should NOT get path hint, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn combine_key_sources_valid_file_key() {
+        let key_file = fixtures_pub_key(0);
+
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&[], &[key_file]);
+        assert!(result.is_ok());
+        let parsed = result.unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].to_base64(), VALID_PUBKEY_B64);
+    }
+
+    #[test]
+    fn combine_key_sources_nonexistent_file_returns_error() {
+        let bad_path = PathBuf::from("/tmp/does_not_exist_key_12345.pub");
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&[], &[bad_path]);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Failed to read public key from file"),
+            "Expected file read error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn combine_key_sources_invalid_file_content_returns_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let key_file = temp_dir.path().join("bad.pub");
+        std::fs::write(&key_file, "this is not a valid key file").unwrap();
+
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&[], &[key_file]);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Failed to read public key from file"),
+            "Expected file parse error, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn combine_key_sources_mix_of_string_and_file_keys() {
+        let key_file = fixtures_pub_key(1);
+        let file_key_b64 = "RWSoOcwiDsEPTQKBOIiRduc7RiyThzsfYoWREeD5vGVlvCvix6pZiYPw";
+
+        let string_keys = vec![VALID_PUBKEY_B64.to_string()];
+        let file_keys = vec![key_file];
+
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&string_keys, &file_keys);
+        match result {
+            Ok(parsed) => {
+                assert_eq!(parsed.len(), 2);
+                assert_eq!(parsed[0].to_base64(), VALID_PUBKEY_B64);
+                assert_eq!(parsed[1].to_base64(), file_key_b64);
+            }
+            Err(e) => panic!("Expected Ok, but got error: {}", e),
+        }
+    }
+
+    #[test]
+    fn combine_key_sources_first_invalid_string_fails_entire_call() {
+        // One valid + one invalid string key: should fail
+        let keys = vec![VALID_PUBKEY_B64.to_string(), "garbage".to_string()];
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&keys, &[]);
+        assert!(result.is_err());
+    }
+}

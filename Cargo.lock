@@ -788,6 +788,7 @@ dependencies = [
  "signatures",
  "signers_file_types",
  "tempfile",
+ "test_helpers",
  "thiserror 2.0.17",
  "tokio",
  "url",
