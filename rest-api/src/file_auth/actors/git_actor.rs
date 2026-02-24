@@ -1,11 +1,11 @@
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::path_validation::NormalisedPaths;
-use git2::{Repository, Signature};
+
+use super::git_backend::GitBackendKind;
 
 #[derive(Debug, Clone)]
 pub struct CommitFile {
@@ -16,78 +16,27 @@ pub struct CommitFile {
 }
 
 const ACTOR_NAME: &str = "git-actor";
-const GIT_USER_EMAIL: &str = "git-actor@rest-api.asfaload.com";
 
 pub struct GitActor {
     repo_path: PathBuf,
+    backend: GitBackendKind,
 }
-fn add_path_recursively<P1: AsRef<Path>, P2: AsRef<Path>>(
-    index: &mut git2::Index,
-    repo_workdir_in: P1,
-    target_path_in: P2,
-) -> Result<(), git2::Error> {
-    let repo_workdir = repo_workdir_in.as_ref();
-    let mut paths_to_visit = vec![target_path_in.as_ref().to_path_buf()];
 
-    while let Some(current_path) = paths_to_visit.pop() {
-        let metadata = match fs::symlink_metadata(&current_path) {
-            Ok(meta) => {
-                if meta.file_type().is_symlink() {
-                    tracing::error!(
-                        file_path = %current_path.display(),
-                        "Encountered symlink in git repo!"
-                    );
-                    return Err(git2::Error::from_str(&format!(
-                        "Encountered a symlink!{}",
-                        current_path.display()
-                    )));
-                }
-                meta
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // This can happen with broken symlinks, for example. We just skip them.
-                continue;
-            }
-            Err(e) => {
-                return Err(git2::Error::from_str(&format!(
-                    "Failed to read path {:?}: {}",
-                    current_path, e
-                )));
-            }
-        };
-
-        if metadata.is_file() {
-            let rel_path = current_path
-                .strip_prefix(repo_workdir)
-                .map_err(|_| git2::Error::from_str("Target path is outside repository"))?;
-            index.add_path(rel_path)?;
-        } else if metadata.is_dir() {
-            if let Some(name) = current_path.file_name()
-                && (name == ".git" || name == ".app_cache")
-            {
-                tracing::debug!("Skipping ignored directory: {}", current_path.display());
-                continue;
-            }
-            for entry in fs::read_dir(&current_path).map_err(|e| {
-                git2::Error::from_str(&format!(
-                    "Failed to read directory {:?}: {}",
-                    current_path, e
-                ))
-            })? {
-                let entry =
-                    entry.map_err(|e| git2::Error::from_str(&format!("Dir entry error: {}", e)))?;
-                paths_to_visit.push(entry.path());
-            }
-        }
-        // Symlinks and other file types are implicitly ignored.
-    }
-    Ok(())
-}
 impl GitActor {
     pub fn new(repo_path: PathBuf) -> Self {
         tracing::info!(repo_path = %repo_path.display(), "GitActor created");
-        Self { repo_path }
+        Self {
+            repo_path,
+            backend: GitBackendKind::Sha1,
+        }
     }
+
+    /// Create a GitActor with a specific backend kind.
+    pub fn with_backend(repo_path: PathBuf, backend: GitBackendKind) -> Self {
+        tracing::info!(repo_path = %repo_path.display(), backend = ?backend, "GitActor created");
+        Self { repo_path, backend }
+    }
+
     async fn commit_files(
         &self,
         file_paths: Vec<NormalisedPaths>,
@@ -126,51 +75,16 @@ impl GitActor {
         let file_paths: Vec<PathBuf> = file_paths.iter().map(|p| p.absolute_path()).collect();
         let commit_message = commit_message.to_string();
         let request_id = request_id.to_string();
+        let backend = self.backend; // Copy! No Arc needed.
 
         tokio::task::spawn_blocking(move || {
-            // Open the repository
-            let repo = Repository::open(&repo_path)?;
-
-            // Create a signature for the commit
-            let signature = Signature::now(ACTOR_NAME, GIT_USER_EMAIL)?;
-
-            // Add all files to the index
-            let mut index = repo.index()?;
-            for file_path in &file_paths {
-                add_path_recursively(&mut index, &repo_path, file_path)?;
-            }
-
-            // Get the tree from the index
-            let tree_oid = index.write_tree()?;
-
-            // Write the index to disk so the files remain tracked
-            index.write()?;
-
-            let tree = repo.find_tree(tree_oid)?;
-
-            // Try to get the current HEAD for parent commit, or use empty parents for initial commit
-            let parent_commit = repo
-                .head()
-                .and_then(|head| head.peel_to_commit()) // Peel to commit if HEAD exists
-                .ok(); // Convert Result<Commit> to Option<Commit>
-
-            // Collect an optional reference into a Vec<&Commit> (empty if None)
-            let parents: Vec<&git2::Commit> = parent_commit.as_ref().into_iter().collect();
-
-            // Create the commit
-            repo.commit(
-                Some("HEAD"),
-                &signature,
-                &signature,
-                &commit_message,
-                &tree,
-                &parents,
-            )?;
-
-            tracing::info!(request_id = %request_id, file_paths = ?file_paths, "Successfully committed files");
-            Ok(())
+            backend.commit_files(&repo_path, &file_paths, &commit_message)
         })
         .await?
+        .map_err(ApiError::GitOperationFailed)?;
+
+        tracing::info!(request_id = %request_id, "Successfully committed files");
+        Ok(())
     }
 }
 // GitActor implements Message<CommitFile> - the actor handles CommitFile messages
@@ -213,93 +127,16 @@ impl Actor for GitActor {
 mod tests {
     use super::*;
     use anyhow::Result;
+    use git2::{Repository, Signature};
     use std::path::{Path, PathBuf};
     use tempfile::TempDir;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
 
-    #[test]
-    fn test_add_path_recursively_rejects_symlink() -> Result<()> {
-        let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let repo_path = temp_dir.path();
-
-        let repo = Repository::init(repo_path)?;
-        let mut index = repo.index()?;
-
-        let target_file = repo_path.join("target.txt");
-        fs::write(&target_file, "target content")?;
-
-        let symlink_path = repo_path.join("link.txt");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink("target.txt", &symlink_path)?;
-        #[cfg(windows)]
-        std::os::windows::fs::symlink_file("target.txt", &symlink_path)?;
-
-        let result = add_path_recursively(&mut index, repo_path, &symlink_path);
-
-        match result {
-            Err(e) => {
-                let error_msg = e.to_string();
-                assert!(
-                    error_msg.contains("symlink"),
-                    "Error message should mention symlink: {}",
-                    error_msg
-                );
-                assert!(
-                    error_msg.contains("link.txt"),
-                    "Error message should mention path: {}",
-                    error_msg
-                );
-            }
-            Ok(_) => panic!("Expected error when encountering symlink but got Ok"),
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn test_add_path_recursively_skips_git_directory() -> Result<()> {
-        let temp_dir = TempDir::new().expect("Failed to create temp directory");
-        let repo_path = temp_dir.path();
-
-        let repo = Repository::init(repo_path)?;
-        let mut index = repo.index()?;
-
-        // Create some test files
-        let test_file = repo_path.join("test.txt");
-        fs::write(&test_file, "test content")?;
-
-        let test_dir = repo_path.join("subdir");
-        fs::create_dir(&test_dir)?;
-        let test_file_in_dir = test_dir.join("nested.txt");
-        fs::write(&test_file_in_dir, "nested content")?;
-
-        // Add the repo root recursively
-        let result = add_path_recursively(&mut index, repo_path, repo_path);
-        assert!(result.is_ok(), "Should successfully add repo root");
-
-        // Verify no files from .git directory were added
-        for entry in index.iter() {
-            let path_str = String::from_utf8_lossy(&entry.path);
-            assert!(
-                !path_str.starts_with(".git/"),
-                "File from .git directory found in index: {}",
-                path_str
-            );
-        }
-
-        Ok(())
-    }
-
     // Helper to initialise a git repo for these tests
     fn initialise_git_actor_repo<P: AsRef<Path>>(repo_path: P) -> Result<Repository> {
-        // Initialize a git repository
         let repo = Repository::init(repo_path)?;
-
-        // Define specific scope because repo.find_tree borrows the repo. Without this scope,
-        // it would be impossible to return the repo, as tree, which borrows repo, would still be
-        // in scope.
         {
-            // Configure git user (required for commits)
             let signature = Signature::now("Test User", "test@example.com")?;
             let tree_oid = repo.index()?.write_tree()?;
             let tree = repo.find_tree(tree_oid)?;
@@ -312,7 +149,6 @@ mod tests {
                 &[],
             )?;
         }
-
         Ok(repo)
     }
 
