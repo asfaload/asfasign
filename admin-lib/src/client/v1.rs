@@ -7,8 +7,9 @@ use features_lib::{
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
-    ListPendingResponse, RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse,
-    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    ListPendingResponse, RegisterDirectoryResponse, RegisterReleaseResponse, RegisterRepoRequest,
+    RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest,
+    SubmitSignatureResponse,
 };
 use serde::de::DeserializeOwned;
 
@@ -25,6 +26,12 @@ pub struct Client {
 #[derive(serde::Serialize)]
 struct RegisterReleasePayload {
     release_url: String,
+}
+
+/// Typed payload for register-directory requests.
+#[derive(serde::Serialize)]
+struct RegisterDirectoryPayload {
+    urls: Vec<String>,
 }
 
 impl Client {
@@ -149,6 +156,39 @@ impl Client {
 
         let payload = RegisterReleasePayload {
             release_url: release_url.to_string(),
+        };
+
+        // Serialize once: same bytes for auth and body
+        let payload_string = serde_json::to_string(&payload)?;
+        let headers = create_auth_headers(&payload_string, secret_key)?;
+
+        let response = self
+            .client
+            .post(&url)
+            .headers(headers)
+            .header(CONTENT_TYPE, "application/json")
+            .body(payload_string)
+            .send()
+            .await?;
+
+        let response = Self::check_response_status(response).await?;
+        Self::parse_json_response(response).await
+    }
+
+    /// Register a directory of files from a static file server.
+    ///
+    /// Makes an authenticated POST request to `/v1/register_directory`.
+    /// Serializes the payload once and uses the same string for both
+    /// auth headers and the request body (avoids signature mismatch).
+    pub async fn register_directory(
+        &self,
+        urls: &[String],
+        secret_key: &AsfaloadSecretKeys,
+    ) -> AdminLibResult<RegisterDirectoryResponse> {
+        let url = format!("{}/v1/register_directory", self.base_url);
+
+        let payload = RegisterDirectoryPayload {
+            urls: urls.to_vec(),
         };
 
         // Serialize once: same bytes for auth and body
