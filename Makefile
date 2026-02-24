@@ -13,8 +13,9 @@ test:
 	$(MAKE) test-with-test-utils
 
 ## Run tests with test-utils feature enabled (for integration tests)
+# Note that if test-utils is added to other packages, they need to be added here.
 test-with-test-utils:
-	cargo nextest run --features test-utils
+	cargo nextest run --features test-utils  --package rest-api --package forge-url
 
 ## Fix rust code formatting
 format:

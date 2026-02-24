@@ -380,7 +380,7 @@ impl Message<CleanupSignersRequest> for SignersInitialiser {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use crate::file_auth::github::get_project_normalised_paths;
 

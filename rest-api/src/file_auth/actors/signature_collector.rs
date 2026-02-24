@@ -435,7 +435,7 @@ impl Message<RevokeFileMessage> for SignatureCollector {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
     use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};

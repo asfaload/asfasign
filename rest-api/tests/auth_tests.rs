@@ -1,5 +1,5 @@
 // Comprehensive authentication tests
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 pub mod auth_tests {
     use std::collections::HashMap;
 

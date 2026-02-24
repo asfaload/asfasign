@@ -72,7 +72,7 @@ pub fn build_config_from_defaults(
     Ok(app_config)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
 

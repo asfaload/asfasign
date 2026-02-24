@@ -267,7 +267,7 @@ impl Default for ForgeProjectValidator {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use std::path::PathBuf;
 
@@ -316,7 +316,34 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "test-utils")]
+    #[tokio::test]
+    async fn test_fetch_network_error_propagates() {
+        // Use a port that is unlikely to have a server
+        let unreachable_url = url::Url::parse("http://127.0.0.1:1").unwrap();
+
+        let authenticator = ForgeProjectValidator::new();
+
+        let err = authenticator
+            .fetch_with_retry(&unreachable_url, "req-6")
+            .await
+            .unwrap_err();
+
+        match err {
+            ApiError::ActorOperationFailed(msg) => {
+                assert!(msg.contains("Failed to fetch"))
+            }
+            e => panic!("Expected ActorOperationFailed, got {}", e),
+        }
+    }
+}
+
+#[cfg(all(test, feature = "test-utils"))]
+mod test_utils_tests {
+    use super::*;
+    use httpmock::{Method::GET, MockServer};
+    use std::time::Duration;
+    use std::time::Instant;
+
     #[tokio::test]
     async fn test_retries_on_rate_limiting() {
         let mock_server = httpmock::MockServer::start();
@@ -388,7 +415,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "test-utils")]
     #[tokio::test]
     async fn test_authenticate_with_localhost_url() {
         let mock_server = httpmock::MockServer::start();
@@ -432,16 +458,7 @@ mod tests {
         mock.assert();
     }
 
-    #[cfg(feature = "test-utils")]
-    use httpmock::{Method::GET, MockServer};
-    #[cfg(feature = "test-utils")]
-    use std::time::Duration;
-    #[cfg(feature = "test-utils")]
-    use std::time::Instant;
-    use tokio;
-
     #[tokio::test]
-    #[cfg(feature = "test-utils")]
     async fn test_fetch_success_on_first_try() {
         let server = MockServer::start_async().await;
         let mock = server.mock(|when, then| {
@@ -461,7 +478,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(feature = "test-utils")]
     async fn test_fetch_non_429_error_status_fails_immediately() {
         let server = MockServer::start_async().await;
         let mock = server.mock(|when, then| {
@@ -481,7 +497,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(feature = "test-utils")]
     async fn test_fetch_429_without_retry_after_uses_backoff_and_retries() {
         let server = MockServer::start_async().await;
         let mock = server.mock(|when, then| {
@@ -514,7 +529,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(feature = "test-utils")]
     async fn test_fetch_429_with_retry_after_header_uses_it_instead_of_backoff() {
         let server = MockServer::start_async().await;
         let mock = server.mock(|when, then| {
@@ -546,7 +560,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(feature = "test-utils")]
     async fn test_fetch_succeeds_on_second_attempt_after_429() {
         let server = MockServer::start_async().await;
 
@@ -605,25 +618,5 @@ mod tests {
             elapsed >= Duration::from_secs(1),
             "Should have waited at least 1s"
         );
-    }
-
-    #[tokio::test]
-    async fn test_fetch_network_error_propagates() {
-        // Use a port that is unlikely to have a server
-        let unreachable_url = url::Url::parse("http://127.0.0.1:1").unwrap();
-
-        let authenticator = ForgeProjectValidator::new();
-
-        let err = authenticator
-            .fetch_with_retry(&unreachable_url, "req-6")
-            .await
-            .unwrap_err();
-
-        match err {
-            ApiError::ActorOperationFailed(msg) => {
-                assert!(msg.contains("Failed to fetch"))
-            }
-            e => panic!("Expected ActorOperationFailed, got {}", e),
-        }
     }
 }

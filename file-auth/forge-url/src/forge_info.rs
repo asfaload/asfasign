@@ -69,7 +69,7 @@ impl ForgeTrait for ForgeInfo {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
     use std::path::PathBuf;

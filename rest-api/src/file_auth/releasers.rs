@@ -135,7 +135,7 @@ impl ReleaseInfo for ReleaseInfos {
         }
     }
 }
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
 
@@ -166,11 +166,14 @@ mod tests {
         assert!(!GITHUB_RELEASE_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
         assert!(!GITLAB_RELEASE_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
     }
+}
 
-    #[cfg(feature = "test-utils")]
+#[cfg(all(test, feature = "test-utils"))]
+mod test_utils_tests {
+    use super::*;
     use rest_api_test_helpers::get_random_port;
+
     #[tokio::test]
-    #[cfg(feature = "test-utils")]
     async fn test_release_adders_github_release() {
         use crate::file_auth::release_types::ReleaseAdder;
         use constants::{SIGNERS_DIR, SIGNERS_FILE};
@@ -231,7 +234,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(feature = "test-utils")]
     async fn test_release_adders_gitlab_release() {
         use crate::file_auth::gitlab_release::test_utils::MockGitLabClient;
         use crate::file_auth::gitlab_release::{

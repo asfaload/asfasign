@@ -404,7 +404,7 @@ pub mod test_utils {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
     use tempfile::TempDir;

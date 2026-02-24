@@ -146,7 +146,7 @@ impl ForgeTrait for GitHubRepoInfo {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
 
@@ -208,9 +208,13 @@ mod tests {
         let result = GitHubRepoInfo::new(&url);
         assert!(result.is_err());
     }
+}
+
+#[cfg(all(test, feature = "test-utils"))]
+mod test_utils_tests {
+    use super::*;
 
     #[test]
-    #[cfg(feature = "test-utils")]
     fn test_parse_localhost_url() {
         let url = url::Url::parse("http://localhost:8080/owner/repo/main/signers.json").unwrap();
         let result = GitHubRepoInfo::new(&url).unwrap();
@@ -222,7 +226,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test-utils")]
     fn test_parse_127_0_0_1_url() {
         let url = url::Url::parse("http://127.0.0.1:8080/owner/repo/main/signers.json").unwrap();
         let result = GitHubRepoInfo::new(&url).unwrap();
@@ -234,7 +237,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test-utils")]
     fn test_parse_localhost_without_port() {
         let url = url::Url::parse("http://localhost/owner/repo/main/signers.json").unwrap();
         let result = GitHubRepoInfo::new(&url).unwrap();
@@ -246,7 +248,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "test-utils")]
     fn test_parse_127_0_0_1_without_port() {
         let url = url::Url::parse("http://127.0.0.1/owner/repo/main/signers.json").unwrap();
         let result = GitHubRepoInfo::new(&url).unwrap();
