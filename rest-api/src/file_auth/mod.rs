@@ -1,4 +1,5 @@
 pub mod actors;
+pub(crate) mod download_hash;
 pub mod fileserver_directory;
 pub mod forges;
 pub mod github;

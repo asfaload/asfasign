@@ -1,4 +1,5 @@
 use crate::constants::INDEX_FILE;
+use crate::file_auth::download_hash::download_and_hash;
 use crate::file_auth::release_types::{
     ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
 };
@@ -6,12 +7,10 @@ use crate::file_auth::releasers::ReleaseInfos;
 use crate::path_validation::NormalisedPaths;
 use constants::{SIGNERS_DIR, SIGNERS_FILE};
 use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
-use futures_util::StreamExt;
 use gitlab::GitlabBuilder;
 use gitlab::api::{AsyncQuery, projects};
 use rest_api_types::errors::ApiError;
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
 #[cfg(not(feature = "test-utils"))]
@@ -360,60 +359,14 @@ impl GitlabReleaseAdder {
     }
 
     async fn download_and_hash_file(&self, url: &str, max_size: u64) -> Result<String, ApiError> {
-        let response = self.reqwest_client.get(url).send().await.map_err(|e| {
-            ApiError::ReleaseApiError(
-                "GitLab".to_string(),
-                format!("Failed to download file: {}", e),
-            )
-        })?;
-
-        if response.status() != reqwest::StatusCode::OK {
-            return Err(ApiError::ReleaseApiError(
-                "GitLab".to_string(),
-                format!("HTTP error downloading file: {}", response.status()),
-            ));
-        }
-
-        let content_length = response.content_length().ok_or_else(|| {
-            ApiError::ReleaseApiError(
-                "GitLab".to_string(),
-                "Missing Content-Length header".to_string(),
-            )
-        })?;
-
-        if content_length > max_size {
-            return Err(ApiError::ReleaseApiError(
-                "GitLab".to_string(),
-                format!("File size {} exceeds limit {}", content_length, max_size),
-            ));
-        }
-
-        let mut hasher = Sha256::new();
-        let mut stream = response.bytes_stream();
-        let mut total_bytes = 0u64;
-
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result.map_err(|e| {
-                ApiError::ReleaseApiError(
-                    "GitLab".to_string(),
-                    format!("Error reading download stream: {}", e),
-                )
-            })?;
-
-            total_bytes += chunk.len() as u64;
-
-            if total_bytes > max_size {
-                return Err(ApiError::ReleaseApiError(
-                    "GitLab".to_string(),
-                    format!("File size exceeded limit during download: {}", max_size),
-                ));
-            }
-
-            hasher.update(&chunk);
-        }
-
-        let hash_bytes = hasher.finalize();
-        Ok(hex::encode(hash_bytes))
+        download_and_hash(
+            &self.reqwest_client,
+            url,
+            max_size,
+            "GitLab",
+            true, // GitLab API guarantees Content-Length
+        )
+        .await
     }
 
     fn generate_index_json(&self, assets: &[ReleaseAssetInfo]) -> Result<String, ApiError> {
