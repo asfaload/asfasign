@@ -33,6 +33,7 @@ let result = download_file_with_verification(
     file_url,
     output,
     backend_url,
+    None, // Auto-detect forge from URL; or Some("github"), Some("gitlab"), Some("fileserver")
     &callbacks,
 ).await?;
 ```

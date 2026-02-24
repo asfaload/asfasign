@@ -4,9 +4,9 @@ use predicates::prelude::*;
 fn test_register_release_cli_help() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
     cmd.arg("register-release").arg("--help");
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Register a GitHub release"));
+    cmd.assert().success().stdout(predicate::str::contains(
+        "Register a release with the backend",
+    ));
 }
 
 #[test]

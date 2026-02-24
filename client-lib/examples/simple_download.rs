@@ -20,6 +20,7 @@ async fn main() -> Result<(), ClientLibError> {
         "https://github.com/user/repo/releases/download/v1.0.0/file.tar.gz",
         None, // Auto-generate filename
         "https://asfaload.backend.com",
+        None, // Auto-detect forge from URL
         &callbacks,
     )
     .await?;

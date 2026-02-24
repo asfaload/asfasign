@@ -17,6 +17,7 @@ pub mod verify_sig;
 use anyhow::Result;
 
 pub mod download;
+pub mod register_directory;
 pub mod register_release;
 pub mod register_repo;
 pub mod revoke;
@@ -254,7 +255,17 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            forge_type_args,
         } => {
+            // RegisterRelease rejects --type fileserver
+            if matches!(
+                forge_type_args.forge_type,
+                Some(crate::cli::ForgeType::Fileserver)
+            ) {
+                anyhow::bail!(
+                    "--type fileserver is not valid for register-release. Use register-directory instead."
+                );
+            }
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
@@ -283,7 +294,9 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            forge_type_args,
         } => {
+            let _ = forge_type_args; // Will be used when REST API accepts type override
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
@@ -301,6 +314,35 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             runtime.block_on(register_repo::handle_register_repo_command(
                 &url,
                 signers_file_url,
+                &secret_key_args.secret_key,
+                password.as_str(),
+                json_args.json,
+            ))?;
+        }
+        Commands::RegisterDirectory {
+            url,
+            secret_key_args,
+            password_args,
+            backend_url_args,
+            json_args,
+        } => {
+            let password = get_password(
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
+                WithoutConfirmation,
+                true,
+            )?;
+            let backend = backend_url_args
+                .backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(register_directory::handle_register_directory_command(
+                &backend,
+                url,
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
@@ -368,16 +410,19 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             file_url,
             output,
             backend_url_args,
+            forge_type_args,
         } => {
             let url = backend_url_args
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let forge_type_str = forge_type_args.forge_type.as_ref().map(|ft| ft.as_str());
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(download::handle_download_command(
                 file_url,
                 output.as_ref(),
                 &url,
+                forge_type_str,
             ))?;
         }
     }

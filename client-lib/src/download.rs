@@ -1,4 +1,6 @@
+mod fileserver;
 mod github;
+mod gitlab;
 mod revocation;
 mod v1;
 
@@ -37,14 +39,29 @@ trait ForgeTrait {
 
 enum Forges {
     Github(GithubForge),
+    Gitlab(GitlabForge),
+    FileServer(FileServerForge),
 }
 
 impl Forges {
     pub fn from_host(host: &str) -> AsfaloadLibResult<Self> {
+        use forge_url::gitlab::GITLAB_HOSTS;
+
         if host.contains("github.com") {
             Ok(Self::Github(GithubForge))
+        } else if GITLAB_HOSTS.contains(&host) {
+            Ok(Self::Gitlab(GitlabForge))
         } else {
             Err(ClientLibError::UnsupportedForge(host.to_string()))
+        }
+    }
+
+    pub fn from_type_str(type_str: &str) -> AsfaloadLibResult<Self> {
+        match type_str {
+            "github" => Ok(Self::Github(GithubForge)),
+            "gitlab" => Ok(Self::Gitlab(GitlabForge)),
+            "fileserver" => Ok(Self::FileServer(FileServerForge)),
+            other => Err(ClientLibError::UnsupportedForge(other.to_string())),
         }
     }
 }
@@ -52,12 +69,16 @@ impl Forges {
 impl ForgeTrait for Forges {
     fn translate_download_to_release_path(&self, path: &str) -> String {
         match self {
-            Self::Github(github_forge) => github_forge.translate_download_to_release_path(path),
+            Self::Github(f) => f.translate_download_to_release_path(path),
+            Self::Gitlab(f) => f.translate_download_to_release_path(path),
+            Self::FileServer(f) => f.translate_download_to_release_path(path),
         }
     }
 }
 
+use fileserver::FileServerForge;
 use github::GithubForge;
+use gitlab::GitlabForge;
 
 fn get_forge(file_url: &Url) -> AsfaloadLibResult<Forges> {
     let host = file_url
@@ -68,6 +89,8 @@ fn get_forge(file_url: &Url) -> AsfaloadLibResult<Forges> {
 
 #[cfg(test)]
 mod tests {
+    use super::fileserver;
+    use super::gitlab;
     use super::*;
     use reqwest::Url;
 
@@ -114,10 +137,10 @@ mod tests {
     }
 
     #[test]
-    fn forges_from_host_gitlab_unsupported() {
+    fn forges_from_host_gitlab() {
         assert!(matches!(
             Forges::from_host("gitlab.com"),
-            Err(ClientLibError::UnsupportedForge(_))
+            Ok(Forges::Gitlab(_))
         ));
     }
 
@@ -169,7 +192,7 @@ mod tests {
 
     #[test]
     fn construct_index_file_path_unsupported_forge() {
-        let url = Url::parse("https://gitlab.com/owner/repo/-/releases/file.tar.gz").unwrap();
+        let url = Url::parse("https://example.com/owner/repo/-/releases/file.tar.gz").unwrap();
         let result = get_forge(&url);
         assert!(matches!(result, Err(ClientLibError::UnsupportedForge(_))));
     }
@@ -192,7 +215,7 @@ mod tests {
             },
             TestCase {
                 url: "https://gitlab.com/owner/repo/-/releases/file.tar.gz",
-                expected: "err_unsupported",
+                expected: "ok_gitlab",
             },
             TestCase {
                 url: "https://example.com/some/file.tar.gz",
@@ -211,6 +234,11 @@ mod tests {
                 "ok_github" => assert!(
                     matches!(result, Ok(Forges::Github(_))),
                     "Expected Ok(Forges::Github(_)) for URL: {}",
+                    case.url
+                ),
+                "ok_gitlab" => assert!(
+                    matches!(result, Ok(Forges::Gitlab(_))),
+                    "Expected Ok(Forges::Gitlab(_)) for URL: {}",
                     case.url
                 ),
                 "err_unsupported" => assert!(
@@ -242,6 +270,107 @@ mod tests {
         assert_eq!(
             result,
             "github.com/owner/repo/releases/tag/v1.0/asfaload.index.json.signers.json"
+        );
+    }
+
+    // --- FileServerForge ---
+
+    fn translate_fileserver_path(path: &str) -> String {
+        fileserver::FileServerForge.translate_download_to_release_path(path)
+    }
+
+    #[test]
+    fn translate_fileserver_path_identity() {
+        let result = translate_fileserver_path("some/path/to/files");
+        assert_eq!(result, "some/path/to/files");
+    }
+
+    #[test]
+    fn translate_fileserver_path_empty() {
+        let result = translate_fileserver_path("");
+        assert_eq!(result, "");
+    }
+
+    // --- GitlabForge ---
+
+    fn translate_gitlab_release_path_via_forge(path: &str) -> String {
+        gitlab::GitlabForge.translate_download_to_release_path(path)
+    }
+
+    #[test]
+    fn translate_gitlab_release_path_standard() {
+        let result =
+            translate_gitlab_release_path_via_forge("namespace/project/-/releases/v1.0/downloads");
+        assert_eq!(result, "namespace/project/-/releases/v1.0/downloads");
+    }
+
+    #[test]
+    fn translate_gitlab_release_path_empty() {
+        let result = translate_gitlab_release_path_via_forge("");
+        assert_eq!(result, "");
+    }
+
+    // --- Forges::from_type_str ---
+
+    #[test]
+    fn forges_from_type_str_github() {
+        assert!(matches!(
+            Forges::from_type_str("github"),
+            Ok(Forges::Github(_))
+        ));
+    }
+
+    #[test]
+    fn forges_from_type_str_gitlab() {
+        assert!(matches!(
+            Forges::from_type_str("gitlab"),
+            Ok(Forges::Gitlab(_))
+        ));
+    }
+
+    #[test]
+    fn forges_from_type_str_fileserver() {
+        assert!(matches!(
+            Forges::from_type_str("fileserver"),
+            Ok(Forges::FileServer(_))
+        ));
+    }
+
+    #[test]
+    fn forges_from_type_str_unknown() {
+        assert!(matches!(
+            Forges::from_type_str("bitbucket"),
+            Err(ClientLibError::UnsupportedForge(_))
+        ));
+    }
+
+    // --- construct_file_repo_path for new forges ---
+
+    #[test]
+    fn construct_file_repo_path_fileserver_url() {
+        let url =
+            Url::parse("https://files.example.com/public/releases/v1.0/installer.tar.gz").unwrap();
+        let forge = Forges::from_type_str("fileserver").unwrap();
+        let result = forge
+            .construct_file_repo_path(&url, "asfaload.index.json")
+            .unwrap();
+        assert_eq!(
+            result,
+            "files.example.com/public/releases/v1.0/asfaload.index.json"
+        );
+    }
+
+    #[test]
+    fn construct_file_repo_path_gitlab_url() {
+        let url = Url::parse("https://gitlab.com/ns/project/-/releases/v1.0/downloads/file.tar.gz")
+            .unwrap();
+        let forge = Forges::from_type_str("gitlab").unwrap();
+        let result = forge
+            .construct_file_repo_path(&url, "asfaload.index.json")
+            .unwrap();
+        assert_eq!(
+            result,
+            "gitlab.com/ns/project/-/releases/v1.0/downloads/asfaload.index.json"
         );
     }
 }

@@ -36,6 +36,30 @@ pub struct JsonArgs {
     pub json: bool,
 }
 
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum ForgeType {
+    Github,
+    Gitlab,
+    Fileserver,
+}
+
+impl ForgeType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ForgeType::Github => "github",
+            ForgeType::Gitlab => "gitlab",
+            ForgeType::Fileserver => "fileserver",
+        }
+    }
+}
+
+#[derive(clap::Args, Debug)]
+pub struct ForgeTypeArgs {
+    /// Override forge type detection (github, gitlab, fileserver)
+    #[arg(long = "type")]
+    pub forge_type: Option<ForgeType>,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "client-cli")]
 #[command(about = "A CLI client for Asfaload operations")]
@@ -224,9 +248,9 @@ pub enum Commands {
         json_args: JsonArgs,
     },
 
-    /// Register a GitHub release with the backend
+    /// Register a release with the backend
     RegisterRelease {
-        /// URL of the GitHub release to register
+        /// URL of the release to register
         release_url: String,
 
         #[command(flatten)]
@@ -240,12 +264,37 @@ pub enum Commands {
 
         #[command(flatten)]
         json_args: JsonArgs,
+
+        #[command(flatten)]
+        forge_type_args: ForgeTypeArgs,
     },
 
     /// Register a repository with the backend
     RegisterRepo {
         /// URL to the signers file (e.g., https://raw.githubusercontent.com/owner/repo/branch/asfaload.signers/index.json)
         signers_file_url: String,
+
+        #[command(flatten)]
+        secret_key_args: SecretKeyArgs,
+
+        #[command(flatten)]
+        password_args: PasswordArgs,
+
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+
+        #[command(flatten)]
+        forge_type_args: ForgeTypeArgs,
+    },
+
+    /// Register a directory of files from a file server with the backend
+    RegisterDirectory {
+        /// URL of a file in the directory (repeatable)
+        #[arg(long)]
+        url: Vec<String>,
 
         #[command(flatten)]
         secret_key_args: SecretKeyArgs,
@@ -307,6 +356,9 @@ pub enum Commands {
 
         #[command(flatten)]
         backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        forge_type_args: ForgeTypeArgs,
     },
 }
 
@@ -339,6 +391,7 @@ impl Commands {
             Self::SignPending { .. } => "SIGN_PENDING",
             Self::RegisterRelease { .. } => "REGISTER_RELEASE",
             Self::RegisterRepo { .. } => "REGISTER_REPO",
+            Self::RegisterDirectory { .. } => "REGISTER_DIRECTORY",
             Self::UpdateSigners { .. } => "UPDATE_SIGNERS",
             Self::Revoke { .. } => "REVOKE",
             Self::Download { .. } => "DOWNLOAD",
@@ -370,6 +423,7 @@ impl Commands {
             | Self::SignPending { json_args, .. }
             | Self::RegisterRelease { json_args, .. }
             | Self::RegisterRepo { json_args, .. }
+            | Self::RegisterDirectory { json_args, .. }
             | Self::UpdateSigners { json_args, .. }
             | Self::Revoke { json_args, .. } => json_args.json,
             Self::SignFile { .. } | Self::AddToAggregate { .. } | Self::Download { .. } => false,
