@@ -45,9 +45,10 @@ enum Forges {
 
 impl Forges {
     pub fn from_host(host: &str) -> AsfaloadLibResult<Self> {
+        use forge_url::github::GITHUB_HOSTS;
         use forge_url::gitlab::GITLAB_HOSTS;
 
-        if host.contains("github.com") {
+        if GITHUB_HOSTS.contains(&host) {
             Ok(Self::Github(GithubForge))
         } else if GITLAB_HOSTS.contains(&host) {
             Ok(Self::Gitlab(GitlabForge))
@@ -129,14 +130,6 @@ mod tests {
     }
 
     #[test]
-    fn forges_from_host_api_github() {
-        assert!(matches!(
-            Forges::from_host("api.github.com"),
-            Ok(Forges::Github(_))
-        ));
-    }
-
-    #[test]
     fn forges_from_host_gitlab() {
         assert!(matches!(
             Forges::from_host("gitlab.com"),
@@ -207,10 +200,6 @@ mod tests {
         let cases = vec![
             TestCase {
                 url: "https://github.com/owner/repo/releases/download/v1.0/file.tar.gz",
-                expected: "ok_github",
-            },
-            TestCase {
-                url: "https://api.github.com/repos/owner/repo",
                 expected: "ok_github",
             },
             TestCase {
