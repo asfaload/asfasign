@@ -57,6 +57,8 @@ pub enum AggregateSignatureError {
     LogicError(String),
     #[error("File is revoked")]
     FileRevoked,
+    #[error("Duplicate signature: this key has already signed")]
+    DuplicateSignature,
     #[error("Revocation error: {0}")]
     RevocationError(#[from] RevocationError),
 }
@@ -136,6 +138,8 @@ pub mod keys {
         JsonError(#[from] serde_json::Error),
         #[error("Attempting to add wrong signature to aggregate for file: {0}")]
         InvalidSignatureForAggregate(PathBuf),
+        #[error("Duplicate signature: this key has already signed")]
+        DuplicateSignature,
     }
 
     impl From<minisign::PError> for KeyError {

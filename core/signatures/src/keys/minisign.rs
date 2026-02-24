@@ -188,6 +188,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
 }
 
 impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
+    type PublicKeyType = AsfaloadPublicKey<minisign::PublicKey>;
     fn to_string(&self) -> String {
         self.signature.to_string()
     }
@@ -217,10 +218,10 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         let s = self.signature.to_string();
         BASE64_STANDARD.encode(s)
     }
-    fn add_to_aggregate_for_file<P: AsRef<Path>, PK: AsfaloadPublicKeyTrait<Signature = Self>>(
+    fn add_to_aggregate_for_file<P: AsRef<Path>>(
         &self,
         signed_file: P,
-        pub_key: &PK,
+        pub_key: &Self::PublicKeyType,
     ) -> Result<(), SignatureError> {
         if signed_file.as_ref().is_dir() {
             return Err(SignatureError::IoError(std::io::Error::new(
@@ -254,8 +255,11 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
 
         let signed_data = common::sha512_for_file(signed_file_path)?;
         if pub_key.verify(self, &signed_data).is_ok() {
-            // Add the signature to the map
+            // Reject duplicate signatures from the same key
             let pubkey_b64 = pub_key.to_base64();
+            if signatures_map.contains_key(&pubkey_b64) {
+                return Err(SignatureError::DuplicateSignature);
+            }
             signatures_map.insert(pubkey_b64, self.to_base64());
 
             // Write the updated map back to the file
@@ -579,7 +583,7 @@ mod asfaload_index_tests {
         );
 
         // Add second signature to aggregate
-        signature2.add_to_aggregate_for_file(signed_file_path, &pubkey2)?;
+        signature2.add_to_aggregate_for_file(&signed_file_path, &pubkey2)?;
 
         // Re-read the signatures file as it should have been modified
         let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
@@ -605,6 +609,16 @@ mod asfaload_index_tests {
             &signature2.to_base64(),
             "Signatures file should contain the correct second signature"
         );
+
+        // Adding a duplicate signature (same key) should fail
+        let result = signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+        match result {
+            Err(SignatureError::DuplicateSignature) => {
+                // Expected
+            }
+            Ok(_) => panic!("Expected DuplicateSignature error, but got Ok"),
+            Err(e) => panic!("Expected DuplicateSignature error, got: {:?}", e),
+        }
         Ok(())
     }
     #[test]

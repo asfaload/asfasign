@@ -177,6 +177,9 @@ run_step_json "Update signers file with key1" \
     '.success == true' \
     cargo run -- update-signers --secret-key "$KEY_0" -u "$backend" -p $key_password $(signers_file 2)
 
+expect_fail "Attempts to re-sign pending signers with key0 (should fail)" \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
+
 # --- Backend: verify pending signers updated ---
 assert_pending_signers_exist
 assert_pending_signers_signature_count 1

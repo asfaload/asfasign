@@ -716,7 +716,21 @@ impl AggregateSignature<PendingSignature> {
     ) -> Result<SignatureWithState, AggregateSignatureError> {
         // Add the signature to the aggregate
         sig.add_to_aggregate_for_file(self.subject.location().clone(), pubkey)
-            .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
+            .map_err(|e| match e {
+                common::errors::keys::SignatureError::DuplicateSignature => {
+                    AggregateSignatureError::DuplicateSignature
+                }
+                common::errors::keys::SignatureError::IoError(io_err) => {
+                    AggregateSignatureError::Io(io_err)
+                }
+                common::errors::keys::SignatureError::JsonError(json_err) => {
+                    AggregateSignatureError::JsonError(json_err)
+                }
+                common::errors::keys::SignatureError::Base64DecodeFailed(err) => {
+                    AggregateSignatureError::Base64Decode(err)
+                }
+                other => AggregateSignatureError::Signature(other.to_string()),
+            })?;
         let agg_sig_with_state = SignatureWithState::load_for_file(self.subject.location().clone());
         match agg_sig_with_state {
             Ok(SignatureWithState::Pending(pending_agg_sig)) => {
@@ -3299,8 +3313,8 @@ mod tests {
         // Verify the result is an IO error
         assert!(result.is_err());
         match result.err().unwrap() {
-            AggregateSignatureError::Signature(e) => {
-                assert_eq!(e, "IO error: Permission denied (os error 13)");
+            AggregateSignatureError::Io(e) => {
+                assert_eq!(e.to_string(), "Permission denied (os error 13)");
             }
             other => panic!("Expected IO error, got {:?}", other),
         }
@@ -3357,6 +3371,54 @@ mod tests {
     }
 
     #[test]
+    fn test_add_individual_signature_duplicate_signature() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Generate keypairs (2 for artifact + 1 for signers file)
+        let test_keys = TestKeys::new(3);
+        let artifact_pubkey1 = test_keys.pub_key(0).unwrap().clone();
+        let artifact_seckey1 = test_keys.sec_key(0).unwrap();
+        let artifact_pubkey2 = test_keys.pub_key(1).unwrap().clone();
+        let signers_pubkey = test_keys.pub_key(2).unwrap();
+        let signers_seckey = test_keys.sec_key(2).unwrap();
+
+        // Create a signers configuration with threshold 2 (so first sig stays pending)
+        let signers_config =
+            create_signers_config(vec![artifact_pubkey1.clone(), artifact_pubkey2.clone()], 2);
+
+        // Setup the test hierarchy
+        let (test_file, _signers_file) =
+            setup_test_hierarchy(&temp_dir, &signers_config, signers_pubkey, signers_seckey)?;
+
+        // Create a signature for the file content
+        let hash_for_content = common::sha512_for_content(fs::read(&test_file)?)?;
+        let signature1 = artifact_seckey1.sign(&hash_for_content).unwrap();
+
+        // Create a pending signatures file
+        let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
+        fs::write(&pending_sig_path, "{}").unwrap();
+
+        // Load the pending aggregate signature
+        let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
+        let agg_sig = agg_sig_with_state.get_pending().unwrap();
+
+        // First signature should succeed and stay pending (threshold is 2)
+        let result = agg_sig.add_individual_signature(&signature1, &artifact_pubkey1)?;
+        assert!(result.is_pending());
+
+        // Second signature with same key should fail with DuplicateSignature
+        let agg_sig = result.get_pending().unwrap();
+        let result = agg_sig.add_individual_signature(&signature1, &artifact_pubkey1);
+        match result {
+            Err(AggregateSignatureError::DuplicateSignature) => {}
+            Ok(_) => panic!("Expected DuplicateSignature error, but got Ok"),
+            Err(e) => panic!("Expected DuplicateSignature error, got: {:?}", e),
+        }
+
+        Ok(())
+    }
+
+    #[test]
     fn test_add_individual_signature_load_error() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
 
@@ -3395,8 +3457,8 @@ mod tests {
         // Verify the result is a JsonError
         assert!(result.is_err());
         match result.err().unwrap() {
-            AggregateSignatureError::Signature(msg) => {
-                assert_eq!(msg, "JSON error: expected value at line 1 column 1")
+            AggregateSignatureError::JsonError(e) => {
+                assert_eq!(e.to_string(), "expected value at line 1 column 1")
             }
             other => panic!("Expected JsonError, got {:?}", other),
         }

@@ -4,7 +4,7 @@ use crate::keys::{
 use anyhow::{Context, Result};
 use common::errors::keys::{KeyError, SignatureError};
 use constants::PENDING_SIGNATURES_SUFFIX;
-use std::fs;
+use std::fs::{self, File};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -317,6 +317,34 @@ fn test_add_to_aggregate() -> Result<()> {
         &signature2.to_base64(),
         "Signatures file should contain the correct second signature"
     );
+    Ok(())
+}
+
+#[test]
+fn test_add_to_aggregate_duplicate_signature() -> Result<()> {
+    // Create a temporary directory
+    let temp_dir = tempfile::tempdir()?;
+    let dir_path = temp_dir.path();
+    let signed_file_path = create_file_to_sign(dir_path.to_path_buf())?;
+    std::fs::write(&signed_file_path, "test data")?;
+
+    // Load keypair from fixtures
+    let (pubkey, seckey) = get_key_pair()?;
+
+    let data = common::sha512_for_content(b"test data".to_vec())?;
+    let signature = seckey.sign(&data)?;
+
+    // First signature should succeed
+    signature.add_to_aggregate_for_file(&signed_file_path, &pubkey)?;
+
+    // Attempting to sign again with the same key should fail with DuplicateSignature
+    let result = signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+    match result {
+        Err(SignatureError::DuplicateSignature) => {}
+        Ok(_) => panic!("Expected DuplicateSignature error, but got Ok"),
+        Err(e) => panic!("Expected DuplicateSignature error, got: {:?}", e),
+    }
+
     Ok(())
 }
 

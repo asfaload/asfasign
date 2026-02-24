@@ -188,6 +188,9 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                     "failed to add individual signature"
                 );
                 match e {
+                    AggregateSignatureError::DuplicateSignature => ApiError::InvalidRequestBody(
+                        "Signature already collected for this key".to_string(),
+                    ),
                     AggregateSignatureError::Signature(msg) => {
                         if msg.contains("signature verification failed") {
                             ApiError::SignatureVerificationFailed
