@@ -6,12 +6,11 @@ use crate::file_auth::release_types::{
     ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
 };
 use crate::path_validation::NormalisedPaths;
+use forge_url::github::GITHUB_HOSTS;
+use forge_url::gitlab::GITLAB_HOSTS;
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
 use tokio::fs::File;
-
-pub const GITHUB_RELEASE_HOSTS: &[&str] = &["github.com"];
-pub const GITLAB_RELEASE_HOSTS: &[&str] = &["gitlab.com"];
 
 #[cfg(feature = "test-utils")]
 use crate::file_auth::github_release::test_utils::MockGithubClient;
@@ -39,26 +38,51 @@ impl ReleaseAdder for ReleaseAdders {
         release_url: &url::Url,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
+        forge_type: Option<&str>,
     ) -> Result<Self, ReleaseError>
     where
         Self: Sized,
     {
+        // If forge_type is explicitly provided, use it to select the adder
+        if let Some(ft) = forge_type {
+            return match ft {
+                "github" => {
+                    let github_adder =
+                        GithubReleaseAdder::new(release_url, git_repo_path, config, None).await?;
+                    Ok(Self::Github(Box::new(github_adder)))
+                }
+                "gitlab" => {
+                    let gitlab_adder =
+                        GitlabReleaseAdder::new(release_url, git_repo_path, config, None).await?;
+                    Ok(Self::Gitlab(Box::new(gitlab_adder)))
+                }
+                other => Err(ReleaseUrlError::UnsupportedPlatform(format!(
+                    "{}. Supported for register-release: github, gitlab",
+                    other
+                ))
+                .into()),
+            };
+        }
+
+        // Fall back to host-based detection
         let host = release_url
             .host_str()
             .ok_or_else(|| ReleaseUrlError::InvalidFormat("Missing host".to_string()))?;
 
-        if GITHUB_RELEASE_HOSTS.contains(&host) {
-            let github_adder = GithubReleaseAdder::new(release_url, git_repo_path, config).await?;
+        if GITHUB_HOSTS.contains(&host) {
+            let github_adder =
+                GithubReleaseAdder::new(release_url, git_repo_path, config, None).await?;
             Ok(Self::Github(Box::new(github_adder)))
-        } else if GITLAB_RELEASE_HOSTS.contains(&host) {
-            let gitlab_adder = GitlabReleaseAdder::new(release_url, git_repo_path, config).await?;
+        } else if GITLAB_HOSTS.contains(&host) {
+            let gitlab_adder =
+                GitlabReleaseAdder::new(release_url, git_repo_path, config, None).await?;
             Ok(Self::Gitlab(Box::new(gitlab_adder)))
         } else {
             Err(ReleaseUrlError::UnsupportedPlatform(format!(
                 "{}. Supported: GitHub ({}), GitLab ({})",
                 host,
-                GITHUB_RELEASE_HOSTS.join(", "),
-                GITLAB_RELEASE_HOSTS.join(", ")
+                GITHUB_HOSTS.join(", "),
+                GITLAB_HOSTS.join(", ")
             ))
             .into())
         }
@@ -140,31 +164,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_gitlab_release_hosts_constant() {
-        assert_eq!(GITLAB_RELEASE_HOSTS, &["gitlab.com"]);
+    fn test_gitlab_hosts_contains_gitlab_com() {
+        assert!(GITLAB_HOSTS.contains(&"gitlab.com"));
     }
 
     #[test]
     fn test_github_release_host_detection() {
         let github_url =
             url::Url::parse("https://github.com/owner/repo/releases/tag/v1.0.0").unwrap();
-        assert!(GITHUB_RELEASE_HOSTS.contains(&github_url.host_str().unwrap()));
-        assert!(!GITLAB_RELEASE_HOSTS.contains(&github_url.host_str().unwrap()));
+        assert!(GITHUB_HOSTS.contains(&github_url.host_str().unwrap()));
+        assert!(!GITLAB_HOSTS.contains(&github_url.host_str().unwrap()));
     }
 
     #[test]
     fn test_gitlab_release_host_detection() {
         let gitlab_url =
             url::Url::parse("https://gitlab.com/group/project/-/releases/v1.0.0").unwrap();
-        assert!(GITLAB_RELEASE_HOSTS.contains(&gitlab_url.host_str().unwrap()));
-        assert!(!GITHUB_RELEASE_HOSTS.contains(&gitlab_url.host_str().unwrap()));
+        assert!(GITLAB_HOSTS.contains(&gitlab_url.host_str().unwrap()));
+        assert!(!GITHUB_HOSTS.contains(&gitlab_url.host_str().unwrap()));
     }
 
     #[test]
     fn test_unsupported_host() {
         let bitbucket_url = url::Url::parse("https://bitbucket.org/owner/repo/v1.0.0").unwrap();
-        assert!(!GITHUB_RELEASE_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
-        assert!(!GITLAB_RELEASE_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
+        assert!(!GITHUB_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
+        assert!(!GITLAB_HOSTS.contains(&bitbucket_url.host_str().unwrap()));
     }
 }
 
@@ -214,7 +238,7 @@ mod test_utils_tests {
             gitlab_api_key: None,
         };
 
-        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
+        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config, None)
             .await
             .unwrap();
 

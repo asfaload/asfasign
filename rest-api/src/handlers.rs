@@ -735,6 +735,7 @@ pub async fn register_release_handler(
         .ask(crate::file_auth::actors::release_actor::ProcessRelease {
             request_id: request_id.to_string(),
             release_url: request.release_url,
+            forge_type: request.forge_type,
         })
         .await
         .map_err(|e| match e {
@@ -748,6 +749,98 @@ pub async fn register_release_handler(
         index_file_path: Some(
             result
                 .index_file_path
+                .relative_path()
+                .to_string_lossy()
+                .to_string(),
+        ),
+    }))
+}
+
+/// Handle directory registration from a static file server.
+///
+/// Accepts a list of URLs, validates they share the same host and parent
+/// directory, downloads each file to compute its SHA-256 hash, and creates
+/// an index file in the git backend.
+///
+/// # Arguments
+/// * `state` - Application state containing git repo path and actor references
+/// * `headers` - HTTP headers (must include x-request-id for tracing)
+/// * `request` - Directory registration request with a list of file URLs
+///
+/// # Returns
+/// Returns a response indicating success and the index file path
+///
+/// # Errors
+/// Returns `ApiError` if:
+/// - URLs are invalid, have different hosts, or different parent directories
+/// - No signers file is found for the directory
+/// - File download or hashing fails
+/// - Index file already exists
+/// - Git commit fails
+pub async fn register_directory_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<rest_api_types::RegisterDirectoryRequest>,
+) -> Result<Json<rest_api_types::RegisterDirectoryResponse>, ApiError> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        url_count = %request.urls.len(),
+        "Received register-directory request"
+    );
+
+    // Parse all URLs
+    let urls: Vec<url::Url> = request
+        .urls
+        .iter()
+        .map(|s| {
+            url::Url::parse(s)
+                .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid URL '{}': {}", s, e)))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Create registrar (validates URLs share same host and directory)
+    let registrar = crate::file_auth::fileserver_directory::FileServerDirectoryRegistrar::new(
+        state.git_repo_path.clone(),
+        urls,
+    )?;
+
+    // Create the index
+    let index_file_path = registrar.create_index().await?;
+
+    // Create empty aggregate signature for the index file
+    let signature_file_path =
+        crate::helpers::create_empty_aggregate_signature(&index_file_path).await?;
+
+    // Commit via git actor
+    let commit_msg = CommitFile {
+        file_paths: vec![index_file_path.clone(), signature_file_path],
+        commit_message: format!(
+            "Add index and signature for directory {}",
+            index_file_path
+                .relative_path()
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+        ),
+        request_id: uuid::Uuid::new_v4().to_string(),
+    };
+
+    state
+        .git_actor
+        .ask(commit_msg)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Failed to commit: {}", e)))?;
+
+    Ok(Json(rest_api_types::RegisterDirectoryResponse {
+        success: true,
+        message: "Directory registered successfully".to_string(),
+        index_file_path: Some(
+            index_file_path
                 .relative_path()
                 .to_string_lossy()
                 .to_string(),

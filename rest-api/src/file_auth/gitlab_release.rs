@@ -162,6 +162,7 @@ impl ReleaseAdder for GitlabReleaseAdder {
         release_url: &url::Url,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
+        _forge_type: Option<&str>,
     ) -> Result<Self, ReleaseError>
     where
         Self: Sized,

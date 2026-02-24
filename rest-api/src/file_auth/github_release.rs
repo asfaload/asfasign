@@ -135,6 +135,7 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
         release_url: &url::Url,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
+        _forge_type: Option<&str>,
     ) -> Result<Self, crate::file_auth::release_types::ReleaseError>
     where
         Self: Sized,

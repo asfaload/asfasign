@@ -50,6 +50,7 @@ pub trait ReleaseAdder: ReleaseIndexWriter {
         release_url: &url::Url,
         git_repo_path: PathBuf,
         config: &crate::config::AppConfig,
+        forge_type: Option<&str>,
     ) -> Result<Self, ReleaseError>
     where
         Self: Sized;

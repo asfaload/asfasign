@@ -347,6 +347,8 @@ pub mod models {
     #[derive(Debug, Clone, Serialize)]
     pub struct RegisterReleaseRequest {
         pub release_url: url::Url,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub forge_type: Option<String>,
     }
 
     impl<'de> serde::Deserialize<'de> for RegisterReleaseRequest {
@@ -358,6 +360,7 @@ pub mod models {
 
             enum Field {
                 ReleaseUrl,
+                ForgeType,
             }
 
             impl<'de> serde::Deserialize<'de> for Field {
@@ -373,7 +376,7 @@ pub mod models {
                             &self,
                             formatter: &mut std::fmt::Formatter,
                         ) -> std::fmt::Result {
-                            formatter.write_str("`release_url`")
+                            formatter.write_str("`release_url` or `forge_type`")
                         }
 
                         fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
@@ -382,7 +385,11 @@ pub mod models {
                         {
                             match value {
                                 "release_url" => Ok(Field::ReleaseUrl),
-                                _ => Err(serde::de::Error::unknown_field(value, &["release_url"])),
+                                "forge_type" => Ok(Field::ForgeType),
+                                _ => Err(serde::de::Error::unknown_field(
+                                    value,
+                                    &["release_url", "forge_type"],
+                                )),
                             }
                         }
                     }
@@ -404,6 +411,7 @@ pub mod models {
                     A: MapAccess<'de>,
                 {
                     let mut url_string: Option<String> = None;
+                    let mut forge_type: Option<String> = None;
 
                     while let Some(field) = map.next_key()? {
                         match field {
@@ -412,6 +420,13 @@ pub mod models {
                                     url_string = Some(map.next_value()?);
                                 } else {
                                     return Err(serde::de::Error::duplicate_field("release_url"));
+                                }
+                            }
+                            Field::ForgeType => {
+                                if forge_type.is_none() {
+                                    forge_type = Some(map.next_value()?);
+                                } else {
+                                    return Err(serde::de::Error::duplicate_field("forge_type"));
                                 }
                             }
                         }
@@ -424,16 +439,22 @@ pub mod models {
                     let release_url = url::Url::parse(&url_string)
                         .map_err(|e| serde::de::Error::custom(format!("Invalid URL: {}", e)))?;
 
-                    validate_github_url(&release_url)
-                        .map_err(|e| serde::de::Error::custom(e.to_string()))?;
+                    // Only validate as GitHub URL if no forge_type was provided
+                    if forge_type.is_none() {
+                        validate_github_url(&release_url)
+                            .map_err(|e| serde::de::Error::custom(e.to_string()))?;
+                    }
 
-                    Ok(RegisterReleaseRequest { release_url })
+                    Ok(RegisterReleaseRequest {
+                        release_url,
+                        forge_type,
+                    })
                 }
             }
 
             deserializer.deserialize_struct(
                 "RegisterReleaseRequest",
-                &["release_url"],
+                &["release_url", "forge_type"],
                 RegisterReleaseVisitor,
             )
         }
@@ -447,7 +468,10 @@ pub mod models {
 
             validate_github_url(&release_url)?;
 
-            Ok(Self { release_url })
+            Ok(Self {
+                release_url,
+                forge_type: None,
+            })
         }
     }
 
@@ -474,6 +498,22 @@ pub mod models {
     pub struct RevokeFileResponse {
         pub success: bool,
         pub message: String,
+    }
+
+    /// Request to register files from a static file server directory.
+    ///
+    /// All URLs must share the same host and parent directory path.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RegisterDirectoryRequest {
+        pub urls: Vec<String>,
+    }
+
+    /// Response to a directory registration request.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RegisterDirectoryResponse {
+        pub success: bool,
+        pub message: String,
+        pub index_file_path: Option<String>,
     }
 }
 
@@ -537,7 +577,8 @@ pub mod rustls {
 
 // Re-export commonly used types at the module level
 pub use models::{
-    GetSignatureStatusResponse, ListPendingResponse, RegisterReleaseRequest,
-    RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest,
-    RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    GetSignatureStatusResponse, ListPendingResponse, RegisterDirectoryRequest,
+    RegisterDirectoryResponse, RegisterReleaseRequest, RegisterReleaseResponse,
+    RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
+    SubmitSignatureRequest, SubmitSignatureResponse,
 };

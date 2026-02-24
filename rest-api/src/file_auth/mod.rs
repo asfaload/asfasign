@@ -1,4 +1,5 @@
 pub mod actors;
+pub mod fileserver_directory;
 pub mod forges;
 pub mod github;
 pub mod github_release;
