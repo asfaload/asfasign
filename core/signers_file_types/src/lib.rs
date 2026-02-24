@@ -224,6 +224,7 @@ impl SignersConfig {
 pub enum Forge {
     Github,
     Gitlab,
+    FileServer,
 }
 // Metadata about the signers file retrieved from a forge
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
