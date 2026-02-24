@@ -1,9 +1,8 @@
 use crate::constants::INDEX_FILE;
+use crate::file_auth::download_hash::download_and_hash;
 use crate::path_validation::NormalisedPaths;
 use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
-use futures_util::StreamExt;
 use rest_api_types::errors::ApiError;
-use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
 const MAX_FILE_SIZE_FOR_HASHING: u64 = 500 * 1024 * 1024; // 500MB
@@ -36,28 +35,25 @@ impl FileServerDirectoryRegistrar {
             .ok_or_else(|| ApiError::InvalidRequestBody("URL missing host".to_string()))?
             .to_string();
 
-        for url in &urls[1..] {
-            let host = url
-                .host_str()
-                .ok_or_else(|| ApiError::InvalidRequestBody("URL missing host".to_string()))?;
-            if host != first_host {
-                return Err(ApiError::InvalidRequestBody(format!(
-                    "All URLs must have the same host. Found '{}' and '{}'",
-                    first_host, host
-                )));
-            }
+        if let Some(url) = urls[1..].iter().find(|u| u.host_str() != Some(&first_host)) {
+            let other = url.host_str().unwrap_or("<missing>");
+            return Err(ApiError::InvalidRequestBody(format!(
+                "All URLs must have the same host. Found '{}' and '{}'",
+                first_host, other
+            )));
         }
 
         // All URLs must share the same parent directory
         let first_parent = parent_path(urls[0].path());
-        for url in &urls[1..] {
-            let parent = parent_path(url.path());
-            if parent != first_parent {
-                return Err(ApiError::InvalidRequestBody(format!(
-                    "All URLs must be in the same directory. Found '{}' and '{}'",
-                    first_parent, parent
-                )));
-            }
+        if let Some(url) = urls[1..]
+            .iter()
+            .find(|u| parent_path(u.path()) != first_parent)
+        {
+            return Err(ApiError::InvalidRequestBody(format!(
+                "All URLs must be in the same directory. Found '{}' and '{}'",
+                first_parent,
+                parent_path(url.path())
+            )));
         }
 
         Ok(Self {
@@ -101,6 +97,7 @@ impl FileServerDirectoryRegistrar {
             })?;
         }
 
+        // Downloads are sequential to avoid overwhelming the file server.
         let mut published_files = Vec::new();
         for url in &self.urls {
             let file_name = url
@@ -153,61 +150,15 @@ impl FileServerDirectoryRegistrar {
         }
     }
 
-    /// Downloads a file from the given URL and computes its SHA-256 hash via streaming.
-    /// Content-Length is optional for file servers (unlike forge APIs).
     async fn download_and_hash_file(&self, url: &str) -> Result<String, ApiError> {
-        let response = self.reqwest_client.get(url).send().await.map_err(|e| {
-            ApiError::ReleaseApiError(
-                "FileServer".to_string(),
-                format!("Failed to download file: {}", e),
-            )
-        })?;
-
-        if response.status() != reqwest::StatusCode::OK {
-            return Err(ApiError::ReleaseApiError(
-                "FileServer".to_string(),
-                format!("HTTP error downloading file {}: {}", url, response.status()),
-            ));
-        }
-
-        // Content-Length is optional for file servers
-        if let Some(content_length) = response.content_length()
-            && content_length > MAX_FILE_SIZE_FOR_HASHING
-        {
-            return Err(ApiError::ReleaseApiError(
-                "FileServer".to_string(),
-                format!(
-                    "File size {} exceeds limit {}",
-                    content_length, MAX_FILE_SIZE_FOR_HASHING
-                ),
-            ));
-        }
-
-        let mut hasher = Sha256::new();
-        let mut stream = response.bytes_stream();
-        let mut total_bytes = 0u64;
-
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result.map_err(|e| {
-                ApiError::ReleaseApiError(
-                    "FileServer".to_string(),
-                    format!("Error reading stream: {}", e),
-                )
-            })?;
-            total_bytes += chunk.len() as u64;
-            if total_bytes > MAX_FILE_SIZE_FOR_HASHING {
-                return Err(ApiError::ReleaseApiError(
-                    "FileServer".to_string(),
-                    format!(
-                        "File size exceeded limit during download: {}",
-                        MAX_FILE_SIZE_FOR_HASHING
-                    ),
-                ));
-            }
-            hasher.update(&chunk);
-        }
-
-        Ok(hex::encode(hasher.finalize()))
+        download_and_hash(
+            &self.reqwest_client,
+            url,
+            MAX_FILE_SIZE_FOR_HASHING,
+            "FileServer",
+            false, // Content-Length is optional for file servers
+        )
+        .await
     }
 }
 
