@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use forge_url::{ForgeTrait, github::GitHubRepoInfo, gitlab::GitLabRepoInfo};
 

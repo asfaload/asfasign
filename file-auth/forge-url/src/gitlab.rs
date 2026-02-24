@@ -139,7 +139,7 @@ impl ForgeTrait for GitLabRepoInfo {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
 

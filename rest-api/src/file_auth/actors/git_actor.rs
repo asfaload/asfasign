@@ -209,7 +209,7 @@ impl Actor for GitActor {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
     use anyhow::Result;

@@ -133,7 +133,7 @@ impl Actor for NonceCleanupActor {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
     use anyhow::Result;

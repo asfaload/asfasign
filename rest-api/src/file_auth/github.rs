@@ -27,7 +27,7 @@ pub async fn get_project_normalised_paths<P: AsRef<Path>>(
     Ok(normalised_paths)
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use std::fs;
 

@@ -7,7 +7,7 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use common::{
     AsfaloadHashes,
     errors::keys::*,
-    fs::names::{pending_signatures_path_for, signatures_path_for},
+    fs::names::{pending_signatures_path_for, revocation_path_for, signatures_path_for},
 };
 pub use minisign::{KeyPair, PublicKey, SecretKey, SignatureBox};
 use serde_json;
@@ -238,6 +238,12 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
                 std::io::ErrorKind::AlreadyExists,
                 "Aggregate signature is already complete",
             )));
+        }
+
+        // Check if the file has been revoked
+        let revocation_path = revocation_path_for(signed_file_path)?;
+        if revocation_path.exists() && revocation_path.is_file() {
+            return Err(SignatureError::FileRevoked(signed_file_path.to_path_buf()));
         }
 
         // The path to the signatures JSON file

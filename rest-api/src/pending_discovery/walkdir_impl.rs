@@ -93,7 +93,7 @@ impl super::PendingSignaturesDiscovery for WalkdirPendingDiscovery {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
     use crate::path_validation::build_normalised_absolute_path;

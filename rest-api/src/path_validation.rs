@@ -183,7 +183,7 @@ pub fn build_normalised_absolute_path<P1: AsRef<Path>, P2: AsRef<Path>>(
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
     use std::fs;

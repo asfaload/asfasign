@@ -126,7 +126,7 @@ pub enum Commands {
         #[arg(long, short)]
         revocation_key: Vec<String>,
 
-        /// Revocation public key file (can be repeated, combines with --master-key)
+        /// Revocation public key file (can be repeated, combines with --revocation-key)
         #[arg(long)]
         revocation_key_file: Vec<PathBuf>,
 

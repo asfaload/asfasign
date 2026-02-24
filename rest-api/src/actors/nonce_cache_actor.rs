@@ -91,7 +91,7 @@ impl Actor for NonceCacheActor {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
     use anyhow::Result;

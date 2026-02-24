@@ -542,9 +542,10 @@ pub mod test_utils {
 #[cfg(feature = "test-utils")]
 pub use test_utils::MockGitLabClient;
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
+
     #[test]
     fn test_parse_gitlab_releases_url() {
         let url = url::Url::parse("https://gitlab.com/group/project/-/releases/v1.0.0").unwrap();
@@ -606,8 +607,54 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[test]
+    fn test_path_on_disk_basic() {
+        let result = path_on_disk("gitlab.com", "/group/project/-/releases/v1.0.0");
+        assert_eq!(result, "gitlab.com/group/project/-/releases/v1.0.0");
+    }
+
+    #[test]
+    fn test_path_on_disk_empty_path() {
+        let result = path_on_disk("gitlab.com", "");
+        assert_eq!(result, "gitlab.com/");
+    }
+
+    #[test]
+    fn test_path_on_disk_nested_namespace() {
+        let result = path_on_disk(
+            "gitlab.com",
+            "/group/subgroup1/subgroup2/project/-/releases/v1.0.0",
+        );
+        assert_eq!(
+            result,
+            "gitlab.com/group/subgroup1/subgroup2/project/-/releases/v1.0.0"
+        );
+    }
+
+    #[test]
+    fn test_path_on_disk_with_port() {
+        let result = path_on_disk(
+            "gitlab.example.com:8080",
+            "/group/project/-/releases/v1.0.0",
+        );
+        assert_eq!(
+            result,
+            "gitlab.example.com:8080/group/project/-/releases/v1.0.0"
+        );
+    }
+
+    #[test]
+    fn test_path_on_disk_path_without_leading_slash() {
+        let result = path_on_disk("gitlab.com", "group/project/-/releases/v1.0.0");
+        assert_eq!(result, "gitlab.com/group/project/-/releases/v1.0.0");
+    }
+}
+
+#[cfg(all(test, feature = "test-utils"))]
+mod test_utils_tests {
+    use super::*;
+
     #[tokio::test]
-    #[cfg(feature = "test-utils")]
     async fn test_gitlab_release_hash_computation() {
         use crate::file_auth::gitlab_release::test_utils::MockGitLabClient;
         use crate::file_auth::release_types::ReleaseAdder;
@@ -675,7 +722,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(feature = "test-utils")]
     async fn test_download_and_hash_file_size_limit() {
         let temp_dir = tempfile::tempdir().expect("Could not create temp dir");
         let mock_client = MockGitLabClient::new();
@@ -705,47 +751,5 @@ mod tests {
         if !e.to_string().contains("exceeds limit") {
             panic!("got unexpected {}", e)
         }
-    }
-
-    #[test]
-    fn test_path_on_disk_basic() {
-        let result = path_on_disk("gitlab.com", "/group/project/-/releases/v1.0.0");
-        assert_eq!(result, "gitlab.com/group/project/-/releases/v1.0.0");
-    }
-
-    #[test]
-    fn test_path_on_disk_empty_path() {
-        let result = path_on_disk("gitlab.com", "");
-        assert_eq!(result, "gitlab.com/");
-    }
-
-    #[test]
-    fn test_path_on_disk_nested_namespace() {
-        let result = path_on_disk(
-            "gitlab.com",
-            "/group/subgroup1/subgroup2/project/-/releases/v1.0.0",
-        );
-        assert_eq!(
-            result,
-            "gitlab.com/group/subgroup1/subgroup2/project/-/releases/v1.0.0"
-        );
-    }
-
-    #[test]
-    fn test_path_on_disk_with_port() {
-        let result = path_on_disk(
-            "gitlab.example.com:8080",
-            "/group/project/-/releases/v1.0.0",
-        );
-        assert_eq!(
-            result,
-            "gitlab.example.com:8080/group/project/-/releases/v1.0.0"
-        );
-    }
-
-    #[test]
-    fn test_path_on_disk_path_without_leading_slash() {
-        let result = path_on_disk("gitlab.com", "group/project/-/releases/v1.0.0");
-        assert_eq!(result, "gitlab.com/group/project/-/releases/v1.0.0");
     }
 }
