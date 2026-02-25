@@ -632,7 +632,10 @@ pub mod tests {
         let git_dir = git_repo_path.join(".git");
         fs::remove_dir_all(&git_dir)?;
 
-        let git_actor = GitActor::spawn(git_repo_path_clone.clone());
+        let git_actor = GitActor::spawn((
+            git_repo_path_clone.clone(),
+            crate::file_auth::actors::git_backend::GitBackendKind::Sha1,
+        ));
 
         let write_commit_request = rest_api::file_auth::actors::git_actor::CommitFile {
             file_paths: vec![init_result.project_path.clone()],

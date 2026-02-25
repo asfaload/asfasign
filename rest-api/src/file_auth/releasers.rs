@@ -176,6 +176,7 @@ mod test_utils_tests {
             server_port: port,
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
+            git_backend: crate::config::GitBackendConfig::Sha1,
             github_api_key: None,
             gitlab_api_key: None,
         };

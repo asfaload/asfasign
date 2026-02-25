@@ -7,12 +7,22 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum GitBackendConfig {
+    #[default]
+    Sha1,
+    Sha256,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct AppConfig {
     pub server_port: u16,
     pub git_repo_path: PathBuf,
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    #[serde(default)]
+    pub git_backend: GitBackendConfig,
     pub github_api_key: Option<String>,
     pub gitlab_api_key: Option<String>,
 }
@@ -22,6 +32,7 @@ pub struct AppConfigOptions {
     pub server_port: Option<u16>,
     pub git_repo_path: Option<PathBuf>,
     pub log_level: Option<String>,
+    pub git_backend: Option<GitBackendConfig>,
     pub github_api_key: Option<String>,
     pub gitlab_api_key: Option<String>,
 }
@@ -32,6 +43,7 @@ impl Default for AppConfigOptions {
             server_port: Some(3000),
             git_repo_path: None,
             log_level: Some("info".to_string()),
+            git_backend: Some(GitBackendConfig::Sha1),
             github_api_key: None,
             gitlab_api_key: None,
         }
@@ -68,6 +80,12 @@ pub fn build_config_from_defaults(
             "git_repo_path cannot be empty".to_string(),
         ));
     }
+    #[cfg(not(feature = "sha256"))]
+    if app_config.git_backend == GitBackendConfig::Sha256 {
+        return Err(ServerConfigError::InvalidConfig(
+            "git_backend=sha256 requires building rest-api with the 'sha256' feature".to_string(),
+        ));
+    }
 
     Ok(app_config)
 }
@@ -84,6 +102,7 @@ mod tests {
             server_port: Some(3000),
             git_repo_path: None,
             log_level: None,
+            git_backend: None,
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -119,6 +138,7 @@ mod tests {
             server_port: Some(8080),
             git_repo_path: Some(git_path.clone()),
             log_level: Some("info".to_string()),
+            git_backend: Some(GitBackendConfig::Sha1),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -133,6 +153,7 @@ mod tests {
         assert_eq!(config.server_port, 8080);
         assert_eq!(config.git_repo_path, git_path);
         assert_eq!(config.log_level, "info");
+        assert_eq!(config.git_backend, GitBackendConfig::Sha1);
     }
 
     #[test]
@@ -145,6 +166,7 @@ mod tests {
             server_port: Some(3000),
             git_repo_path: Some(git_path.clone()),
             log_level: None,
+            git_backend: None,
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -163,6 +185,46 @@ mod tests {
             Err(e) => {
                 panic!("Expected BuildError, got: {:?}", e);
             }
+            Ok(_) => panic!("Expected error but got success"),
+        }
+    }
+
+    #[test]
+    fn test_build_config_from_defaults_git_backend_defaults_to_sha1() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let defaults = AppConfigOptions {
+            server_port: Some(3000),
+            git_repo_path: Some(temp_dir.path().to_path_buf()),
+            log_level: Some("info".to_string()),
+            git_backend: None,
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let config = build_config_from_defaults(defaults).expect("Could not build config");
+        assert_eq!(config.git_backend, GitBackendConfig::Sha1);
+    }
+
+    #[cfg(not(feature = "sha256"))]
+    #[test]
+    fn test_build_config_from_defaults_rejects_sha256_without_feature() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let defaults = AppConfigOptions {
+            server_port: Some(3000),
+            git_repo_path: Some(temp_dir.path().to_path_buf()),
+            log_level: Some("info".to_string()),
+            git_backend: Some(GitBackendConfig::Sha256),
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let result = build_config_from_defaults(defaults);
+        assert!(result.is_err());
+        match result {
+            Err(ServerConfigError::InvalidConfig(message)) => {
+                assert!(message.contains("git_backend=sha256 requires building rest-api"));
+            }
+            Err(other) => panic!("Expected InvalidConfig, got {:?}", other),
             Ok(_) => panic!("Expected error but got success"),
         }
     }

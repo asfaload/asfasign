@@ -7,10 +7,12 @@ use crate::{
         nonce_cache_actor::{NONCE_CACHE_DB, NonceCacheActor},
         nonce_cleanup_actor::NonceCleanupActor,
     },
+    config::GitBackendConfig,
     file_auth::actors::forge_signers_validator::ForgeProjectValidator,
     file_auth::actors::{
-        checksums_actor::ChecksumsActor, git_actor::GitActor, release_actor::ReleaseActor,
-        signature_collector::SignatureCollector, signers_initialiser::SignersInitialiser,
+        checksums_actor::ChecksumsActor, git_actor::GitActor, git_backend::GitBackendKind,
+        release_actor::ReleaseActor, signature_collector::SignatureCollector,
+        signers_initialiser::SignersInitialiser,
     },
 };
 
@@ -27,8 +29,21 @@ pub struct AppState {
     pub checksums_actor: ActorRef<ChecksumsActor>,
 }
 
+fn backend_kind_from_config(config: GitBackendConfig) -> GitBackendKind {
+    match config {
+        GitBackendConfig::Sha1 => GitBackendKind::Sha1,
+        #[cfg(feature = "sha256")]
+        GitBackendConfig::Sha256 => GitBackendKind::Sha256,
+        #[cfg(not(feature = "sha256"))]
+        GitBackendConfig::Sha256 => {
+            panic!("git_backend=sha256 selected without 'sha256' feature")
+        }
+    }
+}
+
 pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppConfig) -> AppState {
-    let git_actor = GitActor::spawn(git_repo_path.clone());
+    let git_backend = backend_kind_from_config(config.git_backend);
+    let git_actor = GitActor::spawn((git_repo_path.clone(), git_backend));
 
     // Initialize nonce cache with database path
     // FIXME: support taking the dir for the nonce db from env var

@@ -106,15 +106,15 @@ impl Message<CommitFile> for GitActor {
 
 // Implement Actor trait with required associated types and methods
 impl Actor for GitActor {
-    type Args = PathBuf;
+    type Args = (PathBuf, GitBackendKind);
     type Error = String;
 
     async fn on_start(
         args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        tracing::info!(repo_path = %args.display(), "GitActor starting");
-        Ok(Self::new(args))
+        tracing::info!(repo_path = %args.0.display(), backend = ?args.1, "GitActor starting");
+        Ok(Self::with_backend(args.0, args.1))
     }
 }
 
