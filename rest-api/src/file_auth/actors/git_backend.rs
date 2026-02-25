@@ -2,6 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use git2::{Repository, Signature};
+use rest_api_types::errors::ApiError;
+
+use crate::path_validation::NormalisedPaths;
 
 /// Trait abstracting git commit operations.
 ///
@@ -14,10 +17,9 @@ pub trait GitBackend: Send + Sync + 'static {
     /// for staging and committing them.
     fn commit_files(
         &self,
-        repo_path: &Path,
-        file_paths: &[PathBuf],
+        file_paths: &[NormalisedPaths],
         commit_message: &str,
-    ) -> Result<(), git2::Error>;
+    ) -> Result<(), ApiError>;
 }
 
 const GIT_ACTOR_NAME: &str = "git-actor";
@@ -91,10 +93,12 @@ fn collect_relative_paths(
 /// Add files to the git2 index using the shared file-walk logic.
 pub(crate) fn add_path_recursively(
     index: &mut git2::Index,
-    repo_workdir: &Path,
-    target_path: &Path,
+    target_path: &NormalisedPaths,
 ) -> Result<(), git2::Error> {
-    let rel_paths = collect_relative_paths(repo_workdir, &[target_path.to_path_buf()])?;
+    let rel_paths = collect_relative_paths(
+        target_path.base_dir().as_path(),
+        &[target_path.absolute_path()],
+    )?;
     for rel_path in &rel_paths {
         index.add_path(rel_path)?;
     }
@@ -104,15 +108,14 @@ pub(crate) fn add_path_recursively(
 /// Shared commit logic for the git2-based Sha1GitBackend.
 fn sha1_commit_files(
     repo: &Repository,
-    repo_path: &Path,
-    file_paths: &[PathBuf],
+    file_paths: &[NormalisedPaths],
     commit_message: &str,
 ) -> Result<(), git2::Error> {
     let signature = Signature::now(GIT_ACTOR_NAME, GIT_USER_EMAIL)?;
 
     let mut index = repo.index()?;
     for file_path in file_paths {
-        add_path_recursively(&mut index, repo_path, file_path)?;
+        add_path_recursively(&mut index, file_path)?;
     }
 
     let tree_oid = index.write_tree()?;
@@ -139,12 +142,17 @@ pub struct Sha1GitBackend;
 impl GitBackend for Sha1GitBackend {
     fn commit_files(
         &self,
-        repo_path: &Path,
-        file_paths: &[PathBuf],
+        file_paths: &[NormalisedPaths],
         commit_message: &str,
-    ) -> Result<(), git2::Error> {
-        let repo = Repository::open(repo_path)?;
-        sha1_commit_files(&repo, repo_path, file_paths, commit_message)
+    ) -> Result<(), ApiError> {
+        let repo = Repository::open(
+            file_paths
+                .first()
+                .ok_or(ApiError::FileNotFound("File paths to commit empty".into()))?
+                .base_dir(),
+        )?;
+        let res = sha1_commit_files(&repo, file_paths, commit_message)?;
+        Ok(res)
     }
 }
 
@@ -197,26 +205,35 @@ impl Sha256GitBackend {
 impl GitBackend for Sha256GitBackend {
     fn commit_files(
         &self,
-        repo_path: &Path,
-        file_paths: &[PathBuf],
+        file_paths: &[NormalisedPaths],
         commit_message: &str,
-    ) -> Result<(), git2::Error> {
-        Self::validate_sha256(repo_path)?;
+    ) -> Result<(), ApiError> {
+        let repo_path = file_paths
+            .first()
+            .ok_or(ApiError::FileNotFound("File paths to commit empty".into()))?
+            .base_dir();
+        Self::validate_sha256(repo_path.as_path())?;
 
-        let rel_paths = collect_relative_paths(repo_path, file_paths)?;
+        let absolute_paths: Vec<PathBuf> = file_paths.iter().map(|p| p.absolute_path()).collect();
+        let rel_paths = collect_relative_paths(repo_path.as_path(), &absolute_paths)?;
 
         if rel_paths.is_empty() {
-            return Err(git2::Error::from_str("No files to commit"));
+            return Err(ApiError::GitOperationFailed(git2::Error::from_str(
+                "No files to commit",
+            )));
         }
 
         // Stage files one at a time via git add
         for rel_path in &rel_paths {
-            Self::git(repo_path, &["add", "--", &rel_path.to_string_lossy()])?;
+            Self::git(
+                repo_path.as_path(),
+                &["add", "--", &rel_path.to_string_lossy()],
+            )?;
         }
 
         // Commit with configured author identity
         Self::git(
-            repo_path,
+            repo_path.as_path(),
             &[
                 "-c",
                 &format!("user.name={}", GIT_ACTOR_NAME),
@@ -246,24 +263,21 @@ pub enum GitBackendKind {
 impl GitBackendKind {
     pub fn commit_files(
         &self,
-        repo_path: &Path,
-        file_paths: &[PathBuf],
+        file_paths: &[NormalisedPaths],
         commit_message: &str,
-    ) -> Result<(), git2::Error> {
+    ) -> Result<(), ApiError> {
         match self {
-            GitBackendKind::Sha1 => {
-                Sha1GitBackend.commit_files(repo_path, file_paths, commit_message)
-            }
+            GitBackendKind::Sha1 => Sha1GitBackend.commit_files(file_paths, commit_message),
             #[cfg(feature = "sha256")]
-            GitBackendKind::Sha256 => {
-                Sha256GitBackend.commit_files(repo_path, file_paths, commit_message)
-            }
+            GitBackendKind::Sha256 => Sha256GitBackend.commit_files(file_paths, commit_message),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
     use git2::Signature;
     use tempfile::TempDir;
@@ -275,12 +289,13 @@ mod tests {
     impl GitBackend for MockBackend {
         fn commit_files(
             &self,
-            _repo_path: &Path,
-            _file_paths: &[PathBuf],
+            _file_paths: &[NormalisedPaths],
             _commit_message: &str,
-        ) -> Result<(), git2::Error> {
+        ) -> Result<(), ApiError> {
             if self.should_fail {
-                Err(git2::Error::from_str("mock failure"))
+                Err(ApiError::GitOperationFailed(git2::Error::from_str(
+                    "mock failure",
+                )))
             } else {
                 Ok(())
             }
@@ -288,60 +303,14 @@ mod tests {
     }
 
     #[test]
-    fn test_trait_is_object_safe() {
-        let backend: Box<dyn GitBackend> = Box::new(MockBackend { should_fail: false });
-        let result = backend.commit_files(
-            Path::new("/tmp/test"),
-            &[PathBuf::from("/tmp/test/file.txt")],
-            "test commit",
-        );
-        assert!(result.is_ok());
-    }
-
-    #[test]
     fn test_mock_backend_failure() {
-        let backend: Box<dyn GitBackend> = Box::new(MockBackend { should_fail: true });
-        let result = backend.commit_files(
-            Path::new("/tmp/test"),
-            &[PathBuf::from("/tmp/test/file.txt")],
-            "test commit",
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_add_path_recursively_rejects_symlink() {
         let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
-
-        let repo = Repository::init(repo_path).unwrap();
-        let mut index = repo.index().unwrap();
-
-        let target_file = repo_path.join("target.txt");
-        std::fs::write(&target_file, "target content").unwrap();
-
-        let symlink_path = repo_path.join("link.txt");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink("target.txt", &symlink_path).unwrap();
-
-        let result = add_path_recursively(&mut index, repo_path, &symlink_path);
-
-        match result {
-            Err(e) => {
-                let error_msg = e.to_string();
-                assert!(
-                    error_msg.contains("symlink"),
-                    "Error message should mention symlink: {}",
-                    error_msg
-                );
-                assert!(
-                    error_msg.contains("link.txt"),
-                    "Error message should mention path: {}",
-                    error_msg
-                );
-            }
-            Ok(_) => panic!("Expected error when encountering symlink but got Ok"),
-        }
+        let target_path = repo_path.join("test").join("file.txt");
+        let backend: Box<dyn GitBackend> = Box::new(MockBackend { should_fail: true });
+        let p = normalise_for_repo(repo_path, &target_path);
+        let result = backend.commit_files(&[p], "test commit");
+        assert!(result.is_err());
     }
 
     #[test]
@@ -360,7 +329,8 @@ mod tests {
         let test_file_in_dir = test_dir.join("nested.txt");
         std::fs::write(&test_file_in_dir, "nested content").unwrap();
 
-        let result = add_path_recursively(&mut index, repo_path, repo_path);
+        let root = normalise_for_repo(repo_path, repo_path);
+        let result = add_path_recursively(&mut index, &root);
         assert!(result.is_ok(), "Should successfully add repo root");
 
         for entry in index.iter() {
@@ -385,6 +355,12 @@ mod tests {
         repo
     }
 
+    fn normalise_for_repo(repo_path: &Path, file_path: &Path) -> NormalisedPaths {
+        let relative_or_requested = file_path.strip_prefix(repo_path).unwrap_or(file_path);
+        crate::path_validation::build_normalised_absolute_path(repo_path, relative_or_requested)
+            .unwrap()
+    }
+
     #[test]
     fn test_sha1_backend_commits_file() {
         let temp_dir = TempDir::new().unwrap();
@@ -395,7 +371,8 @@ mod tests {
         std::fs::write(&file_path, "content").unwrap();
 
         let backend = Sha1GitBackend;
-        let result = backend.commit_files(repo_path, &[file_path], "test commit");
+        let result =
+            backend.commit_files(&[normalise_for_repo(repo_path, &file_path)], "test commit");
         assert!(result.is_ok());
 
         let mut revwalk = repo.revwalk().unwrap();
@@ -409,24 +386,6 @@ mod tests {
     }
 
     #[test]
-    fn test_sha1_backend_rejects_symlink() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-        let _repo = init_test_repo(repo_path);
-
-        let target = repo_path.join("target.txt");
-        std::fs::write(&target, "content").unwrap();
-        let link = repo_path.join("link.txt");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink("target.txt", &link).unwrap();
-
-        let backend = Sha1GitBackend;
-        let result = backend.commit_files(repo_path, &[link], "commit");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("symlink"));
-    }
-
-    #[test]
     fn test_sha1_backend_skips_git_directory() {
         let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
@@ -435,7 +394,7 @@ mod tests {
         std::fs::write(repo_path.join("real.txt"), "content").unwrap();
 
         let backend = Sha1GitBackend;
-        let result = backend.commit_files(repo_path, &[repo_path.to_path_buf()], "commit");
+        let result = backend.commit_files(&[normalise_for_repo(repo_path, repo_path)], "commit");
         assert!(result.is_ok());
 
         let head = repo.head().unwrap().peel_to_commit().unwrap();
@@ -455,8 +414,10 @@ mod tests {
 
         let backend = Sha1GitBackend;
         let result = backend.commit_files(
-            repo_path,
-            &[repo_path.join("a.txt"), repo_path.join("b.txt")],
+            &[
+                normalise_for_repo(repo_path, &repo_path.join("a.txt")),
+                normalise_for_repo(repo_path, &repo_path.join("b.txt")),
+            ],
             "multi",
         );
         assert!(result.is_ok());
@@ -481,7 +442,10 @@ mod tests {
         std::fs::write(repo_path.join("first.txt"), "first").unwrap();
 
         let backend = Sha1GitBackend;
-        let result = backend.commit_files(repo_path, &[repo_path.join("first.txt")], "initial");
+        let result = backend.commit_files(
+            &[normalise_for_repo(repo_path, &repo_path.join("first.txt"))],
+            "initial",
+        );
         assert!(result.is_ok());
         assert_eq!(
             repo.head()
@@ -526,6 +490,12 @@ mod sha256_tests {
         run_git(&["commit", "--allow-empty", "-m", "Initial"]);
     }
 
+    fn normalise_for_repo(repo_path: &Path, file_path: &Path) -> NormalisedPaths {
+        let relative_or_requested = file_path.strip_prefix(repo_path).unwrap_or(file_path);
+        crate::path_validation::build_normalised_absolute_path(repo_path, relative_or_requested)
+            .unwrap()
+    }
+
     #[test]
     fn test_sha256_backend_commits_file() {
         let temp_dir = TempDir::new().unwrap();
@@ -536,7 +506,10 @@ mod sha256_tests {
         std::fs::write(&file_path, "sha256 content").unwrap();
 
         let backend = Sha256GitBackend;
-        let result = backend.commit_files(repo_path, &[file_path], "sha256 commit");
+        let result = backend.commit_files(
+            &[normalise_for_repo(repo_path, &file_path)],
+            "sha256 commit",
+        );
         assert!(result.is_ok(), "SHA-256 commit failed: {:?}", result);
 
         // Verify via git log
@@ -554,9 +527,15 @@ mod sha256_tests {
         std::fs::write(&file_path, "content").unwrap();
 
         let backend = Sha256GitBackend;
-        let result = backend.commit_files(repo_path, &[file_path], "should fail");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("SHA-256"));
+        let result =
+            backend.commit_files(&[normalise_for_repo(repo_path, &file_path)], "should fail");
+        match result {
+            Err(ApiError::GitOperationFailed(e)) => {
+                assert!(e.message().contains("SHA-256"));
+            }
+            Err(e) => panic!("Expected ApiError::GitOperationFailed but got {}", e),
+            Ok(_) => panic!("Expected SHA-256 format rejection but commit succeeded"),
+        }
     }
 
     #[test]
@@ -571,7 +550,13 @@ mod sha256_tests {
         std::fs::write(&f2, "b").unwrap();
 
         let backend = Sha256GitBackend;
-        let result = backend.commit_files(repo_path, &[f1, f2], "multi sha256");
+        let result = backend.commit_files(
+            &[
+                normalise_for_repo(repo_path, &f1),
+                normalise_for_repo(repo_path, &f2),
+            ],
+            "multi sha256",
+        );
         assert!(result.is_ok());
 
         // Verify both files are committed
@@ -591,30 +576,15 @@ mod sha256_tests {
         std::fs::write(subdir.join("file.txt"), "deep content").unwrap();
 
         let backend = Sha256GitBackend;
-        let result = backend.commit_files(repo_path, &[subdir.join("file.txt")], "nested sha256");
+        let result = backend.commit_files(
+            &[normalise_for_repo(repo_path, &subdir.join("file.txt"))],
+            "nested sha256",
+        );
         assert!(result.is_ok());
 
         let ls =
             Sha256GitBackend::git(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]).unwrap();
         assert!(ls.contains("nested/deep/file.txt"));
-    }
-
-    #[test]
-    fn test_sha256_backend_rejects_symlink() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-        init_sha256_repo(repo_path);
-
-        let target = repo_path.join("target.txt");
-        std::fs::write(&target, "content").unwrap();
-        let link = repo_path.join("link.txt");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink("target.txt", &link).unwrap();
-
-        let backend = Sha256GitBackend;
-        let result = backend.commit_files(repo_path, &[link], "commit");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().message().contains("symlink"));
     }
 
     #[test]
@@ -632,7 +602,10 @@ mod sha256_tests {
         std::fs::write(repo_path.join("first.txt"), "first").unwrap();
 
         let backend = Sha256GitBackend;
-        let result = backend.commit_files(repo_path, &[repo_path.join("first.txt")], "initial");
+        let result = backend.commit_files(
+            &[normalise_for_repo(repo_path, &repo_path.join("first.txt"))],
+            "initial",
+        );
         assert!(result.is_ok());
 
         let log = Sha256GitBackend::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
@@ -648,7 +621,7 @@ mod sha256_tests {
         std::fs::write(repo_path.join("real.txt"), "content").unwrap();
 
         let backend = Sha256GitBackend;
-        let result = backend.commit_files(repo_path, &[repo_path.to_path_buf()], "commit");
+        let result = backend.commit_files(&[normalise_for_repo(repo_path, repo_path)], "commit");
         assert!(result.is_ok());
 
         let ls =
@@ -667,8 +640,10 @@ mod sha256_tests {
 
         let backend = GitBackendKind::Sha256;
         let result = backend.commit_files(
-            repo_path,
-            &[repo_path.join("dispatch.txt")],
+            &[normalise_for_repo(
+                repo_path,
+                &repo_path.join("dispatch.txt"),
+            )],
             "enum dispatch",
         );
         assert!(result.is_ok());

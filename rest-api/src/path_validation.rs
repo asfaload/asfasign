@@ -1,4 +1,5 @@
 use std::{
+    ffi::OsStr,
     fmt::{Display, Formatter},
     fs,
     path::{Component, Path, PathBuf},
@@ -65,6 +66,12 @@ impl NormalisedPaths {
             absolute_path,
             relative_path: parent_relative,
         }
+    }
+
+    pub fn file_name(&self) -> Option<&OsStr> {
+        // Calling `self.absolute_path()` would require the creation of an unnecessary clone of the path.
+        // This implementation borrows the `absolute_path` field directly for better performance.
+        self.absolute_path.file_name()
     }
 }
 

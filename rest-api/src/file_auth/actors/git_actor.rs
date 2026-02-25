@@ -71,17 +71,12 @@ impl GitActor {
             "Attempting to commit files"
         );
 
-        let repo_path = self.repo_path.clone();
-        let file_paths: Vec<PathBuf> = file_paths.iter().map(|p| p.absolute_path()).collect();
         let commit_message = commit_message.to_string();
         let request_id = request_id.to_string();
         let backend = self.backend; // Copy! No Arc needed.
 
-        tokio::task::spawn_blocking(move || {
-            backend.commit_files(&repo_path, &file_paths, &commit_message)
-        })
-        .await?
-        .map_err(ApiError::GitOperationFailed)?;
+        tokio::task::spawn_blocking(move || backend.commit_files(&file_paths, &commit_message))
+            .await??;
 
         tracing::info!(request_id = %request_id, "Successfully committed files");
         Ok(())
