@@ -9,8 +9,8 @@ use crate::{
     },
     file_auth::actors::forge_signers_validator::ForgeProjectValidator,
     file_auth::actors::{
-        git_actor::GitActor, release_actor::ReleaseActor, signature_collector::SignatureCollector,
-        signers_initialiser::SignersInitialiser,
+        checksums_actor::ChecksumsActor, git_actor::GitActor, release_actor::ReleaseActor,
+        signature_collector::SignatureCollector, signers_initialiser::SignersInitialiser,
     },
 };
 
@@ -24,6 +24,7 @@ pub struct AppState {
     pub signers_initialiser: ActorRef<SignersInitialiser>,
     pub signature_collector: ActorRef<SignatureCollector>,
     pub release_actor: ActorRef<ReleaseActor>,
+    pub checksums_actor: ActorRef<ChecksumsActor>,
 }
 
 pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppConfig) -> AppState {
@@ -47,7 +48,8 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
     let signers_initialiser = SignersInitialiser::spawn(());
     let signature_collector = SignatureCollector::spawn(git_actor.clone());
 
-    let release_actor = ReleaseActor::spawn((git_actor.clone(), config));
+    let release_actor = ReleaseActor::spawn((git_actor.clone(), config.clone()));
+    let checksums_actor = ChecksumsActor::spawn((git_actor.clone(), config));
 
     AppState {
         git_repo_path,
@@ -58,5 +60,6 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
         signers_initialiser,
         signature_collector,
         release_actor,
+        checksums_actor,
     }
 }

@@ -1,3 +1,4 @@
+pub mod checksums_actor;
 pub mod forge_signers_validator;
 pub mod git_actor;
 pub mod release_actor;
