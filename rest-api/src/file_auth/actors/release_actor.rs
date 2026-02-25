@@ -18,7 +18,6 @@ pub struct ReleaseActor {
 pub struct ProcessRelease {
     pub release_url: url::Url,
     pub request_id: String,
-    pub forge_type: Option<String>,
 }
 
 pub struct RegisterResult {
@@ -70,7 +69,6 @@ impl ReleaseActor {
             &msg.release_url,
             self.config.git_repo_path.clone(),
             &self.config,
-            msg.forge_type.as_deref(),
         )
         .await
         .map_err(|e| {

@@ -17,8 +17,7 @@ pub mod verify_sig;
 use anyhow::Result;
 
 pub mod download;
-pub mod register_directory;
-pub mod register_release;
+pub mod register_assets;
 pub mod register_repo;
 pub mod revoke;
 pub mod update_signers;
@@ -249,54 +248,13 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 json_args.json,
             ))?;
         }
-        Commands::RegisterRelease {
-            release_url,
-            secret_key_args,
-            password_args,
-            backend_url_args,
-            json_args,
-            forge_type_args,
-        } => {
-            // RegisterRelease rejects --type fileserver
-            if matches!(
-                forge_type_args.forge_type,
-                Some(crate::cli::ForgeType::Fileserver)
-            ) {
-                anyhow::bail!(
-                    "--type fileserver is not valid for register-release. Use register-directory instead."
-                );
-            }
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                WithoutConfirmation,
-                true,
-            )?;
-            let url = backend_url_args
-                .backend_url
-                .clone()
-                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
-            let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(register_release::handle_register_release_command(
-                &url,
-                release_url,
-                &secret_key_args.secret_key,
-                password.as_str(),
-                json_args.json,
-            ))?
-        }
         Commands::RegisterRepo {
             signers_file_url,
             secret_key_args,
             password_args,
             backend_url_args,
             json_args,
-            forge_type_args,
         } => {
-            let _ = forge_type_args; // Will be used when REST API accepts type override
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
@@ -319,8 +277,9 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 json_args.json,
             ))?;
         }
-        Commands::RegisterDirectory {
-            url,
+        Commands::RegisterAssets {
+            github_release_url,
+            csum_file,
             secret_key_args,
             password_args,
             backend_url_args,
@@ -339,10 +298,50 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+
+            use forge_url::github::GITHUB_HOSTS;
+
+            let mode = match (github_release_url.as_ref(), csum_file.is_empty()) {
+                (Some(url), true) => {
+                    let parsed = url::Url::parse(url)
+                        .map_err(|e| anyhow::anyhow!("Invalid release URL: {}", e))?;
+                    let host = parsed
+                        .host_str()
+                        .ok_or_else(|| anyhow::anyhow!("Release URL missing host"))?;
+                    if !GITHUB_HOSTS.contains(&host) {
+                        anyhow::bail!(
+                            "--github-release-url must be a GitHub URL. Host '{}' is not a known GitHub host",
+                            host
+                        );
+                    }
+                    admin_lib::v1::RegistrationMode::GithubRelease { url: url.clone() }
+                }
+                (None, false) => {
+                    let parsed_urls: Vec<url::Url> = csum_file
+                        .iter()
+                        .map(|s| {
+                            url::Url::parse(s)
+                                .map_err(|e| anyhow::anyhow!("Invalid URL '{}': {}", s, e))
+                        })
+                        .collect::<std::result::Result<Vec<_>, _>>()?;
+                    rest_api_helpers::validate_common_parent(&parsed_urls)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+                    admin_lib::v1::RegistrationMode::ChecksumFiles {
+                        urls: csum_file.clone(),
+                    }
+                }
+                (Some(_), false) => {
+                    anyhow::bail!("--github-release-url and --csum-file are mutually exclusive");
+                }
+                (None, true) => {
+                    anyhow::bail!("Either --github-release-url or --csum-file must be provided");
+                }
+            };
+
             let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(register_directory::handle_register_directory_command(
+            runtime.block_on(register_assets::handle_register_assets_command(
                 &backend,
-                url,
+                mode,
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,

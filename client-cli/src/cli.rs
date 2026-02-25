@@ -248,27 +248,6 @@ pub enum Commands {
         json_args: JsonArgs,
     },
 
-    /// Register a release with the backend
-    RegisterRelease {
-        /// URL of the release to register
-        release_url: String,
-
-        #[command(flatten)]
-        secret_key_args: SecretKeyArgs,
-
-        #[command(flatten)]
-        password_args: PasswordArgs,
-
-        #[command(flatten)]
-        backend_url_args: BackendUrlArgs,
-
-        #[command(flatten)]
-        json_args: JsonArgs,
-
-        #[command(flatten)]
-        forge_type_args: ForgeTypeArgs,
-    },
-
     /// Register a repository with the backend
     RegisterRepo {
         /// URL to the signers file (e.g., https://raw.githubusercontent.com/owner/repo/branch/asfaload.signers/index.json)
@@ -285,16 +264,17 @@ pub enum Commands {
 
         #[command(flatten)]
         json_args: JsonArgs,
-
-        #[command(flatten)]
-        forge_type_args: ForgeTypeArgs,
     },
 
-    /// Register a directory of files from a file server with the backend
-    RegisterDirectory {
-        /// URL of a file in the directory (repeatable)
-        #[arg(long)]
-        url: Vec<String>,
+    /// Register assets with the backend (GitHub release or checksums files)
+    RegisterAssets {
+        /// GitHub release URL (mutually exclusive with --csum-file)
+        #[arg(long, conflicts_with = "csum_file")]
+        github_release_url: Option<String>,
+
+        /// Checksums file URL (repeatable, mutually exclusive with --github-release-url)
+        #[arg(long, conflicts_with = "github_release_url")]
+        csum_file: Vec<String>,
 
         #[command(flatten)]
         secret_key_args: SecretKeyArgs,
@@ -389,9 +369,8 @@ impl Commands {
             Self::IsAggComplete { .. } => "IS_AGG_COMPLETE",
             Self::ListPending { .. } => "LIST_PENDING",
             Self::SignPending { .. } => "SIGN_PENDING",
-            Self::RegisterRelease { .. } => "REGISTER_RELEASE",
             Self::RegisterRepo { .. } => "REGISTER_REPO",
-            Self::RegisterDirectory { .. } => "REGISTER_DIRECTORY",
+            Self::RegisterAssets { .. } => "REGISTER_ASSETS",
             Self::UpdateSigners { .. } => "UPDATE_SIGNERS",
             Self::Revoke { .. } => "REVOKE",
             Self::Download { .. } => "DOWNLOAD",
@@ -421,9 +400,8 @@ impl Commands {
             | Self::IsAggComplete { json_args, .. }
             | Self::ListPending { json_args, .. }
             | Self::SignPending { json_args, .. }
-            | Self::RegisterRelease { json_args, .. }
             | Self::RegisterRepo { json_args, .. }
-            | Self::RegisterDirectory { json_args, .. }
+            | Self::RegisterAssets { json_args, .. }
             | Self::UpdateSigners { json_args, .. }
             | Self::Revoke { json_args, .. } => json_args.json,
             Self::SignFile { .. } | Self::AddToAggregate { .. } | Self::Download { .. } => false,

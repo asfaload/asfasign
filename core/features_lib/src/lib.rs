@@ -295,8 +295,7 @@ pub mod constants {
 }
 pub mod rest_api {
     pub use rest_api_types::{
-        ListPendingResponse, RegisterReleaseResponse, SubmitSignatureRequest,
-        SubmitSignatureResponse,
+        ListPendingResponse, SubmitSignatureRequest, SubmitSignatureResponse,
     };
 }
 

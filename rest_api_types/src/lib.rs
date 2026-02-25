@@ -258,8 +258,6 @@ pub mod environment {
 pub mod models {
     use serde::{Deserialize, Serialize};
 
-    use crate::github_helpers::validate_github_url;
-
     #[derive(Debug, Deserialize)]
     pub struct AddFileRequest {
         pub file_path: String,
@@ -344,144 +342,6 @@ pub mod models {
         pub file_paths: Vec<String>,
     }
 
-    #[derive(Debug, Clone, Serialize)]
-    pub struct RegisterReleaseRequest {
-        pub release_url: url::Url,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub forge_type: Option<String>,
-    }
-
-    impl<'de> serde::Deserialize<'de> for RegisterReleaseRequest {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            use serde::de::MapAccess;
-
-            enum Field {
-                ReleaseUrl,
-                ForgeType,
-            }
-
-            impl<'de> serde::Deserialize<'de> for Field {
-                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                where
-                    D: serde::Deserializer<'de>,
-                {
-                    struct FieldVisitor;
-                    impl<'de> serde::de::Visitor<'de> for FieldVisitor {
-                        type Value = Field;
-
-                        fn expecting(
-                            &self,
-                            formatter: &mut std::fmt::Formatter,
-                        ) -> std::fmt::Result {
-                            formatter.write_str("`release_url` or `forge_type`")
-                        }
-
-                        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-                        where
-                            E: serde::de::Error,
-                        {
-                            match value {
-                                "release_url" => Ok(Field::ReleaseUrl),
-                                "forge_type" => Ok(Field::ForgeType),
-                                _ => Err(serde::de::Error::unknown_field(
-                                    value,
-                                    &["release_url", "forge_type"],
-                                )),
-                            }
-                        }
-                    }
-
-                    deserializer.deserialize_identifier(FieldVisitor)
-                }
-            }
-
-            struct RegisterReleaseVisitor;
-            impl<'de> serde::de::Visitor<'de> for RegisterReleaseVisitor {
-                type Value = RegisterReleaseRequest;
-
-                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                    formatter.write_str("struct RegisterReleaseRequest")
-                }
-
-                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-                where
-                    A: MapAccess<'de>,
-                {
-                    let mut url_string: Option<String> = None;
-                    let mut forge_type: Option<String> = None;
-
-                    while let Some(field) = map.next_key()? {
-                        match field {
-                            Field::ReleaseUrl => {
-                                if url_string.is_none() {
-                                    url_string = Some(map.next_value()?);
-                                } else {
-                                    return Err(serde::de::Error::duplicate_field("release_url"));
-                                }
-                            }
-                            Field::ForgeType => {
-                                if forge_type.is_none() {
-                                    forge_type = Some(map.next_value()?);
-                                } else {
-                                    return Err(serde::de::Error::duplicate_field("forge_type"));
-                                }
-                            }
-                        }
-                    }
-
-                    let url_string = url_string
-                        .map(|s| s.to_string())
-                        .ok_or_else(|| serde::de::Error::missing_field("release_url"))?;
-
-                    let release_url = url::Url::parse(&url_string)
-                        .map_err(|e| serde::de::Error::custom(format!("Invalid URL: {}", e)))?;
-
-                    // Only validate as GitHub URL if no forge_type was provided
-                    if forge_type.is_none() {
-                        validate_github_url(&release_url)
-                            .map_err(|e| serde::de::Error::custom(e.to_string()))?;
-                    }
-
-                    Ok(RegisterReleaseRequest {
-                        release_url,
-                        forge_type,
-                    })
-                }
-            }
-
-            deserializer.deserialize_struct(
-                "RegisterReleaseRequest",
-                &["release_url", "forge_type"],
-                RegisterReleaseVisitor,
-            )
-        }
-    }
-
-    impl RegisterReleaseRequest {
-        pub fn new(url_string: String) -> Result<Self, crate::errors::ApiError> {
-            let release_url = url::Url::parse(&url_string).map_err(|e| {
-                crate::errors::ApiError::InvalidReleaseUrl(format!("Invalid URL: {}", e))
-            })?;
-
-            validate_github_url(&release_url)?;
-
-            Ok(Self {
-                release_url,
-                forge_type: None,
-            })
-        }
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RegisterReleaseResponse {
-        pub success: bool,
-        pub message: String,
-        pub index_file_path: Option<String>,
-    }
-
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RevokeFileRequest {
         /// Relative path to the signed file being revoked
@@ -500,17 +360,21 @@ pub mod models {
         pub message: String,
     }
 
-    /// Request to register files from a static file server directory.
-    ///
-    /// All URLs must share the same host and parent directory path.
+    /// Request to register assets — either a GitHub release URL or checksums file URLs.
+    /// Exactly one of `github_release_url` or `csum_files` must be provided.
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RegisterDirectoryRequest {
-        pub urls: Vec<String>,
+    pub struct RegisterAssetsRequest {
+        /// GitHub release URL (mutually exclusive with csum_files)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub github_release_url: Option<String>,
+        /// Checksums file URLs (mutually exclusive with github_release_url)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub csum_files: Option<Vec<String>>,
     }
 
-    /// Response to a directory registration request.
+    /// Response to an assets registration request.
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RegisterDirectoryResponse {
+    pub struct RegisterAssetsResponse {
         pub success: bool,
         pub message: String,
         pub index_file_path: Option<String>,
@@ -577,8 +441,7 @@ pub mod rustls {
 
 // Re-export commonly used types at the module level
 pub use models::{
-    GetSignatureStatusResponse, ListPendingResponse, RegisterDirectoryRequest,
-    RegisterDirectoryResponse, RegisterReleaseRequest, RegisterReleaseResponse,
+    GetSignatureStatusResponse, ListPendingResponse, RegisterAssetsRequest, RegisterAssetsResponse,
     RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
     SubmitSignatureRequest, SubmitSignatureResponse,
 };
