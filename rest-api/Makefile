@@ -7,15 +7,25 @@ test:
 	$(MAKE) check-format
 
 	cargo nextest run
+	$(MAKE) test-sha256
 	# Some integration tests require the rest-api to accept registrations of
 	# signers files served on localhost, which should not happen in production.
 	# This behaviour is enabled with the test-utils features, and tests requiring
 	# this localhost acceptance only run with this feature.
 	$(MAKE) test-with-test-utils
+	$(MAKE) test-with-test-utils-sha256
 
 ## Run tests with test-utils feature enabled (for integration tests)
 test-with-test-utils:
 	cargo nextest run --features test-utils
+
+## Run tests with sha256 backend feature enabled
+test-sha256:
+	cargo nextest run --features sha256
+
+## Run tests with test-utils and sha256 features enabled
+test-with-test-utils-sha256:
+	cargo nextest run --features test-utils,sha256
 
 ## Fix rust code formatting
 format:
