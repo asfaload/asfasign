@@ -135,7 +135,11 @@ pub mod auth_tests {
         // Nonce reuse
         // -----------
         // Reuse the same nonce to simulate replay
-        let response = send_repeated_add_file_request(&client, port, &payload).await;
+        let nonce_payload = json!({
+            "file_path": "nonce_reuse_file.txt",
+            "content": "Nonce reuse request should be rejected on second try"
+        });
+        let response = send_repeated_add_file_request(&client, port, &nonce_payload).await;
         // Check the response status - should be 401 Unauthorized
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
