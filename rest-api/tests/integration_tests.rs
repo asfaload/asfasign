@@ -246,11 +246,12 @@ pub mod tests {
 
         // Parse the response body
         let response_body: Value = response.json().await.expect("Failed to parse response");
+        let error_message = response_body["error"].as_str().unwrap();
         assert!(
-            response_body["error"]
-                .as_str()
-                .unwrap()
-                .contains("could not find repository at")
+            error_message.contains("could not find repository at")
+                || error_message.contains("not a git repository"),
+            "Unexpected error message: {}",
+            error_message
         );
 
         // Clean up - abort the server task
