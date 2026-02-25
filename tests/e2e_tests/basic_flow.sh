@@ -127,7 +127,7 @@ section "Release Registration and Signing"
 
 run_step_json "Register release with key3 (does not sign it)" \
     '.success == true' \
-    cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_url 0.1)
+    cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)
 
 # --- Backend: verify release index created ---
 assert_release_index_exists "0.1"
@@ -145,7 +145,7 @@ run_step_json "Sign release index with key1" \
 assert_release_index_signature_count "0.1" 1
 
 expect_fail "Register release with key3 (fails as already registered)" \
-    cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_url 0.1)
+    cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)
 
 # Ensure a second release registration does not override the signatures already collected
 assert_release_index_signature_count "0.1" 1
@@ -221,7 +221,7 @@ section "Registering Release with New Signers File"
 
 run_step_json "Register second release with key3" \
     '.success == true' \
-    cargo run --quiet -- register-release --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_url 0.2)
+    cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.2)
 
 # --- Backend: verify second release index created ---
 assert_release_index_exists "0.2"
