@@ -9,7 +9,7 @@ pub mod tests {
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
-    use rest_api_types::{RegisterReleaseRequest, rustls::setup_crypto_provider};
+    use rest_api_types::rustls::setup_crypto_provider;
     use std::fs;
     use tempfile::TempDir;
     use tokio::time::Duration;
@@ -23,12 +23,7 @@ pub mod tests {
 
     #[tokio::test]
     #[cfg(feature = "test-utils")]
-    async fn test_register_github_release_endpoint() -> Result<()> {
-        // Upgrading octocrab to version 0.49.5 from 0.39 caused an error for this test:
-        //    Could not automatically determine the process-level CryptoProvider from Rustls crate features.
-        //    Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
-        //    See the documentation of the CryptoProvider type for more information.
-        // The only solution that worked was to define and call this function.
+    async fn test_register_github_release_via_assets_endpoint() -> Result<()> {
         setup_crypto_provider();
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let git_repo_path = temp_dir.path().to_path_buf();
@@ -73,14 +68,8 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        // Validate the URL through RegisterReleaseRequest::new()
-        let _ = RegisterReleaseRequest::new(
-            "https://github.com/testowner/testrepo/releases/tag/v1.0.0".to_string(),
-        )?;
-
-        // Manually construct JSON to ensure proper serialization
         let payload = serde_json::json!({
-            "release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
+            "github_release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
         });
         let payload_str = payload.to_string();
 
@@ -90,7 +79,7 @@ pub mod tests {
         let response = tokio::time::timeout(
             Duration::from_secs(10),
             client
-                .post(url_for("release", port))
+                .post(url_for("assets", port))
                 .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
                 .header(HEADER_NONCE, auth_info.nonce())
                 .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
@@ -153,7 +142,7 @@ pub mod tests {
         let response = tokio::time::timeout(
             Duration::from_secs(10),
             client
-                .post(url_for("release", port))
+                .post(url_for("assets", port))
                 .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
                 .header(HEADER_NONCE, auth_info.nonce())
                 .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
@@ -199,14 +188,8 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        // Validate the URL through RegisterReleaseRequest::new()
-        let _ = RegisterReleaseRequest::new(
-            "https://github.com/testowner/testrepo/releases/tag/v1.0.0".to_string(),
-        )?;
-
-        // Manually construct JSON to ensure proper serialization
         let json_body = serde_json::json!({
-            "release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
+            "github_release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
         });
         let payload_str = json_body.to_string();
 
@@ -216,7 +199,7 @@ pub mod tests {
         let response = tokio::time::timeout(
             Duration::from_secs(5),
             client
-                .post(url_for("release", port))
+                .post(url_for("assets", port))
                 .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
                 .header(HEADER_NONCE, auth_info.nonce())
                 .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
@@ -276,7 +259,7 @@ pub mod tests {
         let client = reqwest::Client::new();
 
         let json_body = serde_json::json!({
-            "release_url": "invalid"
+            "github_release_url": "invalid"
         });
         let payload_str = json_body.to_string();
 
@@ -286,7 +269,7 @@ pub mod tests {
         let response = tokio::time::timeout(
             Duration::from_secs(5),
             client
-                .post(url_for("release", port))
+                .post(url_for("assets", port))
                 .header(HEADER_TIMESTAMP, auth_info.timestamp().to_rfc3339())
                 .header(HEADER_NONCE, auth_info.nonce())
                 .header(HEADER_SIGNATURE, auth_signature.signature().to_base64())
@@ -297,7 +280,7 @@ pub mod tests {
         .await
         .map_err(|e| anyhow::anyhow!("Timeout: {}", e))??;
 
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
         server_handle.abort();
         Ok(())
@@ -332,13 +315,13 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        // Send invalid URL directly as JSON to test validation
+        // Send without auth headers
         let response = tokio::time::timeout(
             Duration::from_secs(5),
             client
-                .post(url_for("release", port))
+                .post(url_for("assets", port))
                 .json(&serde_json::json!({
-                    "release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
+                    "github_release_url": "https://github.com/testowner/testrepo/releases/tag/v1.0.0"
                 }))
                 .send(),
         )

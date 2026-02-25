@@ -1,3 +1,4 @@
+use url::Url;
 pub mod errors {
 
     use axum::{Json, http::StatusCode, response::IntoResponse};
@@ -258,8 +259,6 @@ pub mod environment {
 pub mod models {
     use serde::{Deserialize, Serialize};
 
-    use crate::github_helpers::validate_github_url;
-
     #[derive(Debug, Deserialize)]
     pub struct AddFileRequest {
         pub file_path: String,
@@ -344,120 +343,6 @@ pub mod models {
         pub file_paths: Vec<String>,
     }
 
-    #[derive(Debug, Clone, Serialize)]
-    pub struct RegisterReleaseRequest {
-        pub release_url: url::Url,
-    }
-
-    impl<'de> serde::Deserialize<'de> for RegisterReleaseRequest {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            use serde::de::MapAccess;
-
-            enum Field {
-                ReleaseUrl,
-            }
-
-            impl<'de> serde::Deserialize<'de> for Field {
-                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                where
-                    D: serde::Deserializer<'de>,
-                {
-                    struct FieldVisitor;
-                    impl<'de> serde::de::Visitor<'de> for FieldVisitor {
-                        type Value = Field;
-
-                        fn expecting(
-                            &self,
-                            formatter: &mut std::fmt::Formatter,
-                        ) -> std::fmt::Result {
-                            formatter.write_str("`release_url`")
-                        }
-
-                        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-                        where
-                            E: serde::de::Error,
-                        {
-                            match value {
-                                "release_url" => Ok(Field::ReleaseUrl),
-                                _ => Err(serde::de::Error::unknown_field(value, &["release_url"])),
-                            }
-                        }
-                    }
-
-                    deserializer.deserialize_identifier(FieldVisitor)
-                }
-            }
-
-            struct RegisterReleaseVisitor;
-            impl<'de> serde::de::Visitor<'de> for RegisterReleaseVisitor {
-                type Value = RegisterReleaseRequest;
-
-                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                    formatter.write_str("struct RegisterReleaseRequest")
-                }
-
-                fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-                where
-                    A: MapAccess<'de>,
-                {
-                    let mut url_string: Option<String> = None;
-
-                    while let Some(field) = map.next_key()? {
-                        match field {
-                            Field::ReleaseUrl => {
-                                if url_string.is_none() {
-                                    url_string = Some(map.next_value()?);
-                                } else {
-                                    return Err(serde::de::Error::duplicate_field("release_url"));
-                                }
-                            }
-                        }
-                    }
-
-                    let url_string = url_string
-                        .map(|s| s.to_string())
-                        .ok_or_else(|| serde::de::Error::missing_field("release_url"))?;
-
-                    let release_url = url::Url::parse(&url_string)
-                        .map_err(|e| serde::de::Error::custom(format!("Invalid URL: {}", e)))?;
-
-                    validate_github_url(&release_url)
-                        .map_err(|e| serde::de::Error::custom(e.to_string()))?;
-
-                    Ok(RegisterReleaseRequest { release_url })
-                }
-            }
-
-            deserializer.deserialize_struct(
-                "RegisterReleaseRequest",
-                &["release_url"],
-                RegisterReleaseVisitor,
-            )
-        }
-    }
-
-    impl RegisterReleaseRequest {
-        pub fn new(url_string: String) -> Result<Self, crate::errors::ApiError> {
-            let release_url = url::Url::parse(&url_string).map_err(|e| {
-                crate::errors::ApiError::InvalidReleaseUrl(format!("Invalid URL: {}", e))
-            })?;
-
-            validate_github_url(&release_url)?;
-
-            Ok(Self { release_url })
-        }
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RegisterReleaseResponse {
-        pub success: bool,
-        pub message: String,
-        pub index_file_path: Option<String>,
-    }
-
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RevokeFileRequest {
         /// Relative path to the signed file being revoked
@@ -474,6 +359,26 @@ pub mod models {
     pub struct RevokeFileResponse {
         pub success: bool,
         pub message: String,
+    }
+
+    /// Request to register assets — either a GitHub release URL or checksums file URLs.
+    /// Exactly one of `github_release_url` or `csum_files` must be provided.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RegisterAssetsRequest {
+        /// GitHub release URL (mutually exclusive with csum_files)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub github_release_url: Option<String>,
+        /// Checksums file URLs (mutually exclusive with github_release_url)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub csum_files: Option<Vec<String>>,
+    }
+
+    /// Response to an assets registration request.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RegisterAssetsResponse {
+        pub success: bool,
+        pub message: String,
+        pub index_file_path: Option<String>,
     }
 }
 
@@ -537,7 +442,180 @@ pub mod rustls {
 
 // Re-export commonly used types at the module level
 pub use models::{
-    GetSignatureStatusResponse, ListPendingResponse, RegisterReleaseRequest,
-    RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest,
-    RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    GetSignatureStatusResponse, ListPendingResponse, RegisterAssetsRequest, RegisterAssetsResponse,
+    RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
+    SubmitSignatureRequest, SubmitSignatureResponse,
 };
+
+// ********************
+// Assets registration
+// ********************
+/// Represents a validated common base path shared by a set of URLs.
+pub struct CommonBasePath {
+    pub host: String,
+    pub parent_path: String,
+}
+
+/// Errors that can occur during URL validation.
+#[derive(Debug, thiserror::Error)]
+pub enum UrlValidationError {
+    #[error("At least one URL must be provided")]
+    EmptyUrls,
+    #[error("URL missing host: {0}")]
+    MissingHost(String),
+    #[error("All URLs must have the same host. Found '{0}' and '{1}'")]
+    DifferentHosts(String, String),
+    #[error("All URLs must be in the same directory. Found '{0}' and '{1}'")]
+    DifferentParents(String, String),
+}
+
+/// Extracts the parent directory from a URL path.
+///
+/// For example, "/releases/v1.0/SHA256SUMS" yields "/releases/v1.0/".
+/// Falls back to "/" when no slash is found.
+pub fn parent_path(path: &str) -> String {
+    match path.rfind('/') {
+        Some(pos) => path[..=pos].to_string(),
+        None => "/".to_string(),
+    }
+}
+
+/// Validates that all URLs share the same host and parent directory.
+///
+/// Returns the common host and parent path on success.
+pub fn validate_common_parent(urls: &[Url]) -> Result<CommonBasePath, UrlValidationError> {
+    let first = urls.first().ok_or(UrlValidationError::EmptyUrls)?;
+
+    let first_host = first
+        .host_str()
+        .ok_or_else(|| UrlValidationError::MissingHost(first.to_string()))?
+        .to_string();
+
+    let first_parent = parent_path(first.path());
+
+    for url in &urls[1..] {
+        let host = url
+            .host_str()
+            .ok_or_else(|| UrlValidationError::MissingHost(url.to_string()))?
+            .to_string();
+
+        if host != first_host {
+            return Err(UrlValidationError::DifferentHosts(first_host, host));
+        }
+
+        let parent = parent_path(url.path());
+        if parent != first_parent {
+            return Err(UrlValidationError::DifferentParents(first_parent, parent));
+        }
+    }
+
+    Ok(CommonBasePath {
+        host: first_host,
+        parent_path: first_parent,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // parent_path tests
+    // -----------------
+
+    #[test]
+    fn test_parent_path_with_file() {
+        assert_eq!(parent_path("/releases/v1.0/SHA256SUMS"), "/releases/v1.0/");
+    }
+
+    #[test]
+    fn test_parent_path_root_file() {
+        assert_eq!(parent_path("/SHA256SUMS"), "/");
+    }
+
+    #[test]
+    fn test_parent_path_no_slash() {
+        assert_eq!(parent_path("SHA256SUMS"), "/");
+    }
+
+    // validate_common_parent tests
+    // ----------------------------
+
+    #[test]
+    fn test_validate_single_url() -> anyhow::Result<()> {
+        let urls = vec![Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?];
+        let result = validate_common_parent(&urls)?;
+        assert_eq!(result.host, "example.com");
+        assert_eq!(result.parent_path, "/releases/v1.0/");
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_multiple_same_parent() -> anyhow::Result<()> {
+        let urls = vec![
+            Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?,
+            Url::parse("https://example.com/releases/v1.0/archive.tar.gz")?,
+        ];
+        let result = validate_common_parent(&urls)?;
+        assert_eq!(result.host, "example.com");
+        assert_eq!(result.parent_path, "/releases/v1.0/");
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_different_hosts() -> anyhow::Result<()> {
+        let urls = vec![
+            Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?,
+            Url::parse("https://other.com/releases/v1.0/archive.tar.gz")?,
+        ];
+        match validate_common_parent(&urls) {
+            Err(UrlValidationError::DifferentHosts(a, b)) => {
+                assert_eq!(a, "example.com");
+                assert_eq!(b, "other.com");
+            }
+            Err(e) => panic!("Expected DifferentHosts error, got: {e}"),
+            Ok(_) => panic!("Expected DifferentHosts error, got Ok"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_different_parents() -> anyhow::Result<()> {
+        let urls = vec![
+            Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?,
+            Url::parse("https://example.com/releases/v2.0/archive.tar.gz")?,
+        ];
+        match validate_common_parent(&urls) {
+            Err(UrlValidationError::DifferentParents(a, b)) => {
+                assert_eq!(a, "/releases/v1.0/");
+                assert_eq!(b, "/releases/v2.0/");
+            }
+            Err(e) => panic!("Expected DifferentParents error, got: {e}"),
+            Ok(_) => panic!("Expected DifferentParents error, got Ok"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_empty_urls() {
+        let urls: Vec<Url> = vec![];
+        match validate_common_parent(&urls) {
+            Err(UrlValidationError::EmptyUrls) => {}
+            Err(e) => panic!("Expected EmptyUrls error, got: {e}"),
+            Ok(_) => panic!("Expected EmptyUrls error, got Ok"),
+        }
+    }
+
+    #[test]
+    fn test_validate_missing_host() -> anyhow::Result<()> {
+        // file:// URLs have no host
+        let urls = vec![Url::parse("file:///tmp/test.txt")?];
+        match validate_common_parent(&urls) {
+            Err(UrlValidationError::MissingHost(url_str)) => {
+                assert!(url_str.starts_with("file:///"));
+            }
+            Err(e) => panic!("Expected MissingHost error, got: {e}"),
+            Ok(_) => panic!("Expected MissingHost error, got Ok"),
+        }
+        Ok(())
+    }
+}

@@ -7,8 +7,8 @@ use features_lib::{
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
-    ListPendingResponse, RegisterReleaseResponse, RegisterRepoRequest, RegisterRepoResponse,
-    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest,
+    RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use serde::de::DeserializeOwned;
 
@@ -21,10 +21,20 @@ pub struct Client {
     base_url: String,
 }
 
-/// Typed payload for register-release requests.
+/// Typed payload for register-assets requests.
+/// Uses untagged serialization so each variant produces a flat JSON object
+/// with only the relevant field.
 #[derive(serde::Serialize)]
-struct RegisterReleasePayload {
-    release_url: String,
+#[serde(untagged)]
+enum RegisterAssetsPayload {
+    GithubRelease { github_release_url: String },
+    ChecksumFiles { csum_files: Vec<String> },
+}
+
+/// Registration mode for the register-assets command.
+pub enum RegistrationMode {
+    GithubRelease { url: String },
+    ChecksumFiles { urls: Vec<String> },
 }
 
 impl Client {
@@ -135,20 +145,25 @@ impl Client {
         Self::parse_json_response(response).await
     }
 
-    /// Register a GitHub release with the backend.
+    /// Register assets with the backend.
     ///
-    /// Makes an authenticated POST request to `/v1/release`.
+    /// Makes an authenticated POST request to `/v1/assets`.
     /// Serializes the payload once and uses the same string for both
     /// auth headers and the request body (avoids signature mismatch).
-    pub async fn register_release(
+    pub async fn register_assets(
         &self,
-        release_url: &str,
+        mode: &RegistrationMode,
         secret_key: &AsfaloadSecretKeys,
-    ) -> AdminLibResult<RegisterReleaseResponse> {
-        let url = format!("{}/v1/release", self.base_url);
+    ) -> AdminLibResult<rest_api_types::RegisterAssetsResponse> {
+        let url = format!("{}/v1/assets", self.base_url);
 
-        let payload = RegisterReleasePayload {
-            release_url: release_url.to_string(),
+        let payload = match mode {
+            RegistrationMode::GithubRelease { url } => RegisterAssetsPayload::GithubRelease {
+                github_release_url: url.clone(),
+            },
+            RegistrationMode::ChecksumFiles { urls } => RegisterAssetsPayload::ChecksumFiles {
+                csum_files: urls.clone(),
+            },
         };
 
         // Serialize once: same bytes for auth and body

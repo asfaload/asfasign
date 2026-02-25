@@ -17,7 +17,7 @@ pub mod verify_sig;
 use anyhow::Result;
 
 pub mod download;
-pub mod register_release;
+pub mod register_assets;
 pub mod register_repo;
 pub mod revoke;
 pub mod update_signers;
@@ -248,35 +248,6 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 json_args.json,
             ))?;
         }
-        Commands::RegisterRelease {
-            release_url,
-            secret_key_args,
-            password_args,
-            backend_url_args,
-            json_args,
-        } => {
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                WithoutConfirmation,
-                true,
-            )?;
-            let url = backend_url_args
-                .backend_url
-                .clone()
-                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
-            let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(register_release::handle_register_release_command(
-                &url,
-                release_url,
-                &secret_key_args.secret_key,
-                password.as_str(),
-                json_args.json,
-            ))?
-        }
         Commands::RegisterRepo {
             signers_file_url,
             secret_key_args,
@@ -301,6 +272,39 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             runtime.block_on(register_repo::handle_register_repo_command(
                 &url,
                 signers_file_url,
+                &secret_key_args.secret_key,
+                password.as_str(),
+                json_args.json,
+            ))?;
+        }
+        Commands::RegisterAssets {
+            github_release_url,
+            csum_file,
+            secret_key_args,
+            password_args,
+            backend_url_args,
+            json_args,
+        } => {
+            let password = get_password(
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
+                WithoutConfirmation,
+                true,
+            )?;
+            let backend = backend_url_args
+                .backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+
+            let mode = register_assets::determine_registration_mode(github_release_url, csum_file)?;
+
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(register_assets::handle_register_assets_command(
+                &backend,
+                mode,
                 &secret_key_args.secret_key,
                 password.as_str(),
                 json_args.json,
@@ -368,16 +372,19 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             file_url,
             output,
             backend_url_args,
+            forge_type_args,
         } => {
             let url = backend_url_args
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let forge_type_str = forge_type_args.forge_type.as_ref().map(|ft| ft.as_str());
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(download::handle_download_command(
                 file_url,
                 output.as_ref(),
                 &url,
+                forge_type_str,
             ))?;
         }
     }

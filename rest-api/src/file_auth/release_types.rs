@@ -18,7 +18,7 @@ pub enum ReleaseUrlError {
     InvalidFormat(String),
     #[error("Missing tag in release URL")]
     MissingTag,
-    #[error("Unsupported release platform: {0}. Supported platforms: GitHub, GitLab")]
+    #[error("Unsupported release platform: {0}. Supported platforms: GitHub")]
     UnsupportedPlatform(String),
     #[error("Missing {0} in URL")]
     MissingComponent(String),

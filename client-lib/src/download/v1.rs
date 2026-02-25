@@ -9,13 +9,14 @@ use features_lib::{
 use reqwest::{Client, Url};
 use std::path::PathBuf;
 
-use super::{ForgeTrait, get_forge};
+use super::{ForgeTrait, Forges, get_forge};
 
 /// Handle the download command
 pub async fn download_file_with_verification(
     file_url: &str,
     output: Option<&PathBuf>,
     backend_url: &str,
+    forge_type: Option<&str>,
     callbacks: &DownloadCallbacks,
 ) -> AsfaloadLibResult<DownloadResult> {
     callbacks.emit_starting(file_url);
@@ -31,7 +32,10 @@ pub async fn download_file_with_verification(
             ClientLibError::InvalidUrl("Could not extract filename from URL".to_string())
         })?;
 
-    let forge = get_forge(&url)?;
+    let forge = match forge_type {
+        Some(ft) => Forges::from_type_str(ft)?,
+        None => get_forge(&url)?,
+    };
     let index_file_path = forge.construct_index_file_path(&url)?;
 
     let signers_filename = local_signers_path_for(INDEX_FILE)?;

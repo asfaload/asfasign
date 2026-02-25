@@ -17,6 +17,7 @@ use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
 use axum::{Json, extract::State, http::HeaderMap};
 use constants::PENDING_SIGNERS_DIR;
+use forge_url::github::GITHUB_HOSTS;
 use rest_api_auth::HEADER_PUBLIC_KEY;
 use rest_api_types::{
     errors::ApiError,
@@ -714,47 +715,6 @@ fn extract_public_key_from_headers(
         .map_err(|_| ApiError::InvalidAuthenticationHeaders)
 }
 
-pub async fn register_release_handler(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<rest_api_types::RegisterReleaseRequest>,
-) -> Result<Json<rest_api_types::RegisterReleaseResponse>, ApiError> {
-    let request_id = headers
-        .get("x-request-id")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("unknown");
-
-    tracing::info!(
-        request_id = %request_id,
-        release_url = %request.release_url,
-        "Received release registration request"
-    );
-
-    let result = state
-        .release_actor
-        .ask(crate::file_auth::actors::release_actor::ProcessRelease {
-            request_id: request_id.to_string(),
-            release_url: request.release_url,
-        })
-        .await
-        .map_err(|e| match e {
-            kameo::error::SendError::HandlerError(api_error) => api_error,
-            other => ApiError::InternalServerError(format!("Actor message failed: {}", other)),
-        })?;
-
-    Ok(Json(rest_api_types::RegisterReleaseResponse {
-        success: true,
-        message: "Release registered successfully".to_string(),
-        index_file_path: Some(
-            result
-                .index_file_path
-                .relative_path()
-                .to_string_lossy()
-                .to_string(),
-        ),
-    }))
-}
-
 /// Handler to fetch a file's raw content from the repository.
 ///
 /// Returns the raw file content as bytes. Used by client CLI to fetch files
@@ -1043,5 +1003,122 @@ pub async fn revoke_handler(
         // If we get here we are successful
         success: true,
         message: "File revoked successfully".to_string(),
+    }))
+}
+
+/// Handle asset registration — either a GitHub release or checksums files.
+///
+/// Validates the request (exactly one of `github_release_url` or `csum_files` must be set),
+/// then dispatches to the appropriate actor:
+/// - `github_release_url`: delegates to the release actor (existing GitHub flow)
+/// - `csum_files`: delegates to the checksums actor
+pub async fn register_assets_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<rest_api_types::RegisterAssetsRequest>,
+) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    match (&request.github_release_url, &request.csum_files) {
+        (Some(url), None) => register_github_release(&state, request_id, url).await,
+        (None, Some(csum_urls)) => register_checksums(&state, request_id, csum_urls).await,
+        (Some(_), Some(_)) => Err(ApiError::InvalidRequestBody(
+            "github_release_url and csum_files are mutually exclusive".to_string(),
+        )),
+        (None, None) => Err(ApiError::InvalidRequestBody(
+            "Either github_release_url or csum_files must be provided".to_string(),
+        )),
+    }
+}
+
+async fn register_github_release(
+    state: &AppState,
+    request_id: &str,
+    github_release_url: &str,
+) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
+    tracing::info!(
+        request_id = %request_id,
+        github_release_url = %github_release_url,
+        "Received register-assets request (GitHub mode)"
+    );
+
+    let parsed_url = url::Url::parse(github_release_url)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid release URL: {}", e)))?;
+
+    let host = parsed_url
+        .host_str()
+        .ok_or_else(|| ApiError::InvalidRequestBody("Release URL missing host".to_string()))?;
+    if !GITHUB_HOSTS.contains(&host) {
+        return Err(ApiError::InvalidRequestBody(format!(
+            "github_release_url must be a GitHub URL. Host '{}' is not a known GitHub host",
+            host
+        )));
+    }
+
+    let result = state
+        .release_actor
+        .ask(crate::file_auth::actors::release_actor::ProcessRelease {
+            request_id: request_id.to_string(),
+            release_url: parsed_url,
+        })
+        .await
+        .map_err(|e| map_to_user_error(e, "Release registration failed"))?;
+
+    Ok(Json(rest_api_types::RegisterAssetsResponse {
+        success: true,
+        message: "Release registered successfully".to_string(),
+        index_file_path: Some(
+            result
+                .index_file_path
+                .relative_path()
+                .to_string_lossy()
+                .to_string(),
+        ),
+    }))
+}
+
+async fn register_checksums(
+    state: &AppState,
+    request_id: &str,
+    csum_urls: &[String],
+) -> Result<Json<rest_api_types::RegisterAssetsResponse>, ApiError> {
+    tracing::info!(
+        request_id = %request_id,
+        url_count = %csum_urls.len(),
+        "Received register-assets request (checksums mode)"
+    );
+
+    let urls: Vec<url::Url> = csum_urls
+        .iter()
+        .map(|s| {
+            url::Url::parse(s)
+                .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid URL '{}': {}", s, e)))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let result = state
+        .checksums_actor
+        .ask(
+            crate::file_auth::actors::checksums_actor::ProcessChecksums {
+                request_id: request_id.to_string(),
+                urls,
+            },
+        )
+        .await
+        .map_err(|e| map_to_user_error(e, "Checksums registration failed"))?;
+
+    Ok(Json(rest_api_types::RegisterAssetsResponse {
+        success: true,
+        message: "Assets registered successfully".to_string(),
+        index_file_path: Some(
+            result
+                .index_file_path
+                .relative_path()
+                .to_string_lossy()
+                .to_string(),
+        ),
     }))
 }

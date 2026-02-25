@@ -36,6 +36,30 @@ pub struct JsonArgs {
     pub json: bool,
 }
 
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum ForgeType {
+    Github,
+    Gitlab,
+    Fileserver,
+}
+
+impl ForgeType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ForgeType::Github => "github",
+            ForgeType::Gitlab => "gitlab",
+            ForgeType::Fileserver => "fileserver",
+        }
+    }
+}
+
+#[derive(clap::Args, Debug)]
+pub struct ForgeTypeArgs {
+    /// Override forge type detection (github, gitlab, fileserver)
+    #[arg(long = "type")]
+    pub forge_type: Option<ForgeType>,
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "client-cli")]
 #[command(about = "A CLI client for Asfaload operations")]
@@ -224,10 +248,10 @@ pub enum Commands {
         json_args: JsonArgs,
     },
 
-    /// Register a GitHub release with the backend
-    RegisterRelease {
-        /// URL of the GitHub release to register
-        release_url: String,
+    /// Register a repository with the backend
+    RegisterRepo {
+        /// URL to the signers file (e.g., https://raw.githubusercontent.com/owner/repo/branch/asfaload.signers/index.json)
+        signers_file_url: String,
 
         #[command(flatten)]
         secret_key_args: SecretKeyArgs,
@@ -242,10 +266,15 @@ pub enum Commands {
         json_args: JsonArgs,
     },
 
-    /// Register a repository with the backend
-    RegisterRepo {
-        /// URL to the signers file (e.g., https://raw.githubusercontent.com/owner/repo/branch/asfaload.signers/index.json)
-        signers_file_url: String,
+    /// Register assets with the backend (GitHub release or checksums files)
+    RegisterAssets {
+        /// GitHub release URL (mutually exclusive with --csum-file)
+        #[arg(long, conflicts_with = "csum_file")]
+        github_release_url: Option<String>,
+
+        /// Checksums file URL (repeatable, mutually exclusive with --github-release-url)
+        #[arg(long, conflicts_with = "github_release_url")]
+        csum_file: Vec<String>,
 
         #[command(flatten)]
         secret_key_args: SecretKeyArgs,
@@ -307,6 +336,9 @@ pub enum Commands {
 
         #[command(flatten)]
         backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        forge_type_args: ForgeTypeArgs,
     },
 }
 
@@ -337,8 +369,8 @@ impl Commands {
             Self::IsAggComplete { .. } => "IS_AGG_COMPLETE",
             Self::ListPending { .. } => "LIST_PENDING",
             Self::SignPending { .. } => "SIGN_PENDING",
-            Self::RegisterRelease { .. } => "REGISTER_RELEASE",
             Self::RegisterRepo { .. } => "REGISTER_REPO",
+            Self::RegisterAssets { .. } => "REGISTER_ASSETS",
             Self::UpdateSigners { .. } => "UPDATE_SIGNERS",
             Self::Revoke { .. } => "REVOKE",
             Self::Download { .. } => "DOWNLOAD",
@@ -368,8 +400,8 @@ impl Commands {
             | Self::IsAggComplete { json_args, .. }
             | Self::ListPending { json_args, .. }
             | Self::SignPending { json_args, .. }
-            | Self::RegisterRelease { json_args, .. }
             | Self::RegisterRepo { json_args, .. }
+            | Self::RegisterAssets { json_args, .. }
             | Self::UpdateSigners { json_args, .. }
             | Self::Revoke { json_args, .. } => json_args.json,
             Self::SignFile { .. } | Self::AddToAggregate { .. } | Self::Download { .. } => false,
