@@ -49,7 +49,6 @@ aggregate_signature = { path = "../core/aggregate_signature/" }
 constants = { path = "../core/constants/" }
 uuid = "1.19.0"
 futures = "0.3.31"
-rest_api_helpers = { path = "../rest_api_helpers/" }
 url = "2.5"
 forge-url = { path = "../file-auth/forge-url" }
 walkdir = "2.5"

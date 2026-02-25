@@ -324,7 +324,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                                 .map_err(|e| anyhow::anyhow!("Invalid URL '{}': {}", s, e))
                         })
                         .collect::<std::result::Result<Vec<_>, _>>()?;
-                    rest_api_helpers::validate_common_parent(&parsed_urls)
+                    rest_api_types::validate_common_parent(&parsed_urls)
                         .map_err(|e| anyhow::anyhow!("{}", e))?;
                     admin_lib::v1::RegistrationMode::ChecksumFiles {
                         urls: csum_file.clone(),

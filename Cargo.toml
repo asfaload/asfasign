@@ -13,10 +13,10 @@ members = [
   "admin-lib",
   "rest-api",
   "rest_api_test_helpers",
-  "rest_api_helpers",
   "rest_api_types",
   "rest_api_auth",
-  "core/constants", "client-lib",
+  "core/constants",
+  "client-lib",
   "tests/client-server-integration-tests",
   "file-auth/forge-url",
 ]

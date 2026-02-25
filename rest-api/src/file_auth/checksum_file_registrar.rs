@@ -3,8 +3,8 @@ use crate::path_validation::NormalisedPaths;
 use common::checksums_parser::parse_checksums;
 use features_lib::{AsfaloadIndex, FileChecksum};
 use futures::stream::{self, StreamExt};
-use rest_api_helpers::validate_common_parent;
 use rest_api_types::errors::ApiError;
+use rest_api_types::validate_common_parent;
 use std::path::PathBuf;
 
 /// Handles registration of files from checksums files (e.g. SHA256SUMS, SHA512SUMS).
