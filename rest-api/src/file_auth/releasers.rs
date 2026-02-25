@@ -172,11 +172,16 @@ mod test_utils_tests {
             url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
 
         let port = get_random_port().await.unwrap();
+        let git_backend = if crate::file_auth::actors::git_backend::sha256_backend_enabled() {
+            crate::config::GitBackendConfig::Sha256
+        } else {
+            crate::config::GitBackendConfig::Sha1
+        };
         let mock_config = crate::config::AppConfig {
             server_port: port,
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
-            git_backend: crate::config::GitBackendConfig::Sha1,
+            git_backend,
             github_api_key: None,
             gitlab_api_key: None,
         };

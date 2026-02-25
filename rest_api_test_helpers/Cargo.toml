@@ -3,6 +3,9 @@ name = "rest_api_test_helpers"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+sha256 = ["rest-api/sha256"]
+
 [dependencies]
 anyhow = "1.0.100"
 tokio = { version = "1.48.0", features = ["full"] }
@@ -18,6 +21,9 @@ test_helpers = { path = "../core/test_helpers/" }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tracing = "0.1.44"
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

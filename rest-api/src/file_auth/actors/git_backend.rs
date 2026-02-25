@@ -110,7 +110,7 @@ fn sha1_commit_files(
     repo: &Repository,
     file_paths: &[NormalisedPaths],
     commit_message: &str,
-) -> Result<(), git2::Error> {
+) -> Result<(), ApiError> {
     let signature = Signature::now(GIT_ACTOR_NAME, GIT_USER_EMAIL)?;
 
     let mut index = repo.index()?;
@@ -123,6 +123,13 @@ fn sha1_commit_files(
     let tree = repo.find_tree(tree_oid)?;
 
     let parent_commit = repo.head().and_then(|head| head.peel_to_commit()).ok();
+    if let Some(parent) = &parent_commit
+        && parent.tree_id() == tree_oid
+    {
+        return Err(ApiError::InvalidRequestBody(
+            "No changes to commit".to_string(),
+        ));
+    }
     let parents: Vec<&git2::Commit> = parent_commit.as_ref().into_iter().collect();
 
     repo.commit(
@@ -151,8 +158,7 @@ impl GitBackend for Sha1GitBackend {
                 .ok_or(ApiError::FileNotFound("File paths to commit empty".into()))?
                 .base_dir(),
         )?;
-        let res = sha1_commit_files(&repo, file_paths, commit_message)?;
-        Ok(res)
+        sha1_commit_files(&repo, file_paths, commit_message)
     }
 }
 
@@ -231,6 +237,13 @@ impl GitBackend for Sha256GitBackend {
             )?;
         }
 
+        let staged = Self::git(repo_path.as_path(), &["status", "--porcelain"])?;
+        if staged.is_empty() {
+            return Err(ApiError::InvalidRequestBody(
+                "No changes to commit".to_string(),
+            ));
+        }
+
         // Commit with configured author identity
         Self::git(
             repo_path.as_path(),
@@ -260,6 +273,21 @@ pub enum GitBackendKind {
     Sha256,
 }
 
+pub const fn backend_for_current_build() -> GitBackendKind {
+    #[cfg(feature = "sha256")]
+    {
+        GitBackendKind::Sha256
+    }
+    #[cfg(not(feature = "sha256"))]
+    {
+        GitBackendKind::Sha1
+    }
+}
+
+pub const fn sha256_backend_enabled() -> bool {
+    cfg!(feature = "sha256")
+}
+
 impl GitBackendKind {
     pub fn commit_files(
         &self,
@@ -276,8 +304,6 @@ impl GitBackendKind {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
     use git2::Signature;
     use tempfile::TempDir;
@@ -311,6 +337,15 @@ mod tests {
         let p = normalise_for_repo(repo_path, &target_path);
         let result = backend.commit_files(&[p], "test commit");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_backend_for_current_build_feature_mapping() {
+        let backend = backend_for_current_build();
+        #[cfg(feature = "sha256")]
+        assert!(matches!(backend, GitBackendKind::Sha256));
+        #[cfg(not(feature = "sha256"))]
+        assert!(matches!(backend, GitBackendKind::Sha1));
     }
 
     #[test]
@@ -456,6 +491,30 @@ mod tests {
                 .unwrap(),
             "initial"
         );
+    }
+
+    #[test]
+    fn test_sha1_backend_rejects_empty_commit_when_file_is_unchanged() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        let file = repo_path.join("same.txt");
+        std::fs::write(&file, "same content").unwrap();
+
+        let backend = Sha1GitBackend;
+        let first = backend.commit_files(&[normalise_for_repo(repo_path, &file)], "first");
+        assert!(first.is_ok(), "First commit should succeed: {:?}", first);
+
+        std::fs::write(&file, "same content").unwrap();
+        let second = backend.commit_files(&[normalise_for_repo(repo_path, &file)], "second");
+        match second {
+            Err(ApiError::InvalidRequestBody(msg)) => {
+                assert!(msg.contains("No changes to commit"));
+            }
+            Err(e) => panic!("Expected InvalidRequestBody, got {}", e),
+            Ok(_) => panic!("Expected rejection for unchanged tree commit"),
+        }
     }
 }
 
@@ -650,5 +709,30 @@ mod sha256_tests {
 
         let log = Sha256GitBackend::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
         assert!(log.contains("enum dispatch"));
+    }
+
+    #[test]
+    fn test_sha256_backend_rejects_empty_commit_when_file_is_unchanged() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_sha256_repo(repo_path);
+
+        let file = repo_path.join("same.txt");
+        std::fs::write(&file, "same content").unwrap();
+
+        let backend = Sha256GitBackend;
+        let first = backend.commit_files(&[normalise_for_repo(repo_path, &file)], "first");
+        assert!(first.is_ok(), "First commit should succeed: {:?}", first);
+
+        // Rewriting identical content should reject commit because the tree is unchanged.
+        std::fs::write(&file, "same content").unwrap();
+        let second = backend.commit_files(&[normalise_for_repo(repo_path, &file)], "second");
+        match second {
+            Err(ApiError::InvalidRequestBody(msg)) => {
+                assert!(msg.contains("No changes to commit"));
+            }
+            Err(e) => panic!("Expected InvalidRequestBody, got {}", e),
+            Ok(_) => panic!("Expected rejection for unchanged tree commit"),
+        }
     }
 }

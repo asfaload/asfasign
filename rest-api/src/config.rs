@@ -32,6 +32,7 @@ pub struct AppConfigOptions {
     pub server_port: Option<u16>,
     pub git_repo_path: Option<PathBuf>,
     pub log_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub git_backend: Option<GitBackendConfig>,
     pub github_api_key: Option<String>,
     pub gitlab_api_key: Option<String>,

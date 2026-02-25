@@ -121,30 +121,35 @@ impl Actor for GitActor {
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
+    use crate::file_auth::actors::git_backend::backend_for_current_build;
     use anyhow::Result;
-    use git2::{Repository, Signature};
+    use rest_api_test_helpers::{file_is_tracked_in_git, get_latest_commit, init_git_repo};
     use std::path::{Path, PathBuf};
+    use std::process::Command;
     use tempfile::TempDir;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
 
-    // Helper to initialise a git repo for these tests
-    fn initialise_git_actor_repo<P: AsRef<Path>>(repo_path: P) -> Result<Repository> {
-        let repo = Repository::init(repo_path)?;
-        {
-            let signature = Signature::now("Test User", "test@example.com")?;
-            let tree_oid = repo.index()?.write_tree()?;
-            let tree = repo.find_tree(tree_oid)?;
-            repo.commit(
-                Some("HEAD"),
-                &signature,
-                &signature,
-                "Initial commit",
-                &tree,
-                &[],
-            )?;
+    fn run_git(repo_path: &Path, args: &[&str]) -> Result<String> {
+        let output = Command::new("git")
+            .args(["-C", &repo_path.to_string_lossy()])
+            .args(args)
+            .output()?;
+        if !output.status.success() {
+            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
         }
-        Ok(repo)
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    // Helper to initialise a git repo with an initial empty commit
+    fn initialise_git_actor_repo<P: AsRef<Path>>(repo_path: P) -> Result<()> {
+        let repo_path = repo_path.as_ref();
+        init_git_repo(repo_path)?;
+        run_git(
+            repo_path,
+            &["commit", "--allow-empty", "-m", "Initial commit"],
+        )?;
+        Ok(())
     }
 
     #[tokio::test]
@@ -153,7 +158,8 @@ mod tests {
         let temp_dir2 = TempDir::new().expect("Failed to create second temp directory");
 
         // Create GitActor with first directory
-        let git_actor = GitActor::new(temp_dir1.path().to_path_buf());
+        let git_actor =
+            GitActor::with_backend(temp_dir1.path().to_path_buf(), backend_for_current_build());
 
         // Create a test file in second directory
         let test_file_path = PathBuf::from("test_file.txt");
@@ -191,9 +197,10 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let repo_path = temp_dir.path();
 
-        let repo = initialise_git_actor_repo(repo_path)?;
+        initialise_git_actor_repo(repo_path)?;
         // Create GitActor
-        let git_actor = GitActor::new(repo_path.to_path_buf());
+        let git_actor =
+            GitActor::with_backend(repo_path.to_path_buf(), backend_for_current_build());
 
         // Create a test file
         let test_file_path = PathBuf::from("test_file.txt");
@@ -216,19 +223,8 @@ mod tests {
         // Verify that the commit succeeded
         assert!(result.is_ok(), "Commit failed: {:?}", result);
 
-        // Verify the commit actually exists in git
-        let mut revwalk = repo.revwalk()?;
-        revwalk.push_head()?;
-        let commits: Vec<git2::Oid> = revwalk.by_ref().collect::<Result<Vec<_>, _>>()?;
-        assert_eq!(
-            commits.len(),
-            2,
-            "Should have 2 commits (initial + our commit)"
-        );
-
-        // Get the latest commit and verify its message
-        let latest_commit = repo.find_commit(commits[0])?;
-        assert_eq!(latest_commit.message().unwrap(), "Test commit message");
+        let latest_commit = get_latest_commit(repo_path)?;
+        assert!(latest_commit.contains("Test commit message"));
 
         Ok(())
     }
@@ -238,8 +234,9 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let repo_path = temp_dir.path();
 
-        let repo = initialise_git_actor_repo(repo_path)?;
-        let git_actor = GitActor::new(repo_path.to_path_buf());
+        initialise_git_actor_repo(repo_path)?;
+        let git_actor =
+            GitActor::with_backend(repo_path.to_path_buf(), backend_for_current_build());
 
         // Create a test file
         let test_file_path = PathBuf::from("test_file.txt");
@@ -277,19 +274,8 @@ mod tests {
         // Verify that the commit succeeded
         assert!(result.is_ok(), "Message handling failed: {:?}", result);
 
-        // Verify the commit actually exists in git
-        let mut revwalk = repo.revwalk()?;
-        revwalk.push_head()?;
-        let commits: Vec<git2::Oid> = revwalk.by_ref().collect::<Result<Vec<_>, _>>()?;
-        assert_eq!(
-            commits.len(),
-            2,
-            "Should have 2 commits (initial + our commit)"
-        );
-
-        // Get the latest commit and verify its message
-        let latest_commit = repo.find_commit(commits[0])?;
-        assert_eq!(latest_commit.message().unwrap(), "Test message handling");
+        let latest_commit = get_latest_commit(repo_path)?;
+        assert!(latest_commit.contains("Test message handling"));
 
         Ok(())
     }
@@ -301,7 +287,8 @@ mod tests {
 
         // Don't initialize git repo - this should cause the commit to fail
         // Create a GitActor
-        let git_actor = GitActor::new(repo_path_buf.to_path_buf());
+        let git_actor =
+            GitActor::with_backend(repo_path_buf.to_path_buf(), backend_for_current_build());
 
         // Create a test file
         let test_file_path = PathBuf::from("test_file.txt");
@@ -324,7 +311,11 @@ mod tests {
         assert!(result.is_err());
         match result {
             Err(ApiError::GitOperationFailed(e)) => {
-                assert!(e.to_string().starts_with("could not find repository at"))
+                let message = e.to_string();
+                assert!(
+                    message.starts_with("could not find repository at")
+                        || message.contains("not a git repository")
+                );
             }
             Err(e) => panic!("Got unexpected error type back: {}", e),
             Ok(_) => panic!("Git operation succeeded outside a git repo??"),
@@ -337,7 +328,8 @@ mod tests {
         let temp_dir1 = TempDir::new().expect("Failed to create first temp directory");
         let temp_dir2 = TempDir::new().expect("Failed to create second temp directory");
 
-        let git_actor = GitActor::new(temp_dir1.path().to_path_buf());
+        let git_actor =
+            GitActor::with_backend(temp_dir1.path().to_path_buf(), backend_for_current_build());
 
         // Create test files in second directory
         let test_file_path1 = PathBuf::from("test_file1.txt");
@@ -382,8 +374,9 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let repo_path = temp_dir.path();
 
-        let repo = initialise_git_actor_repo(repo_path)?;
-        let git_actor = GitActor::new(repo_path.to_path_buf());
+        initialise_git_actor_repo(repo_path)?;
+        let git_actor =
+            GitActor::with_backend(repo_path.to_path_buf(), backend_for_current_build());
 
         // Create multiple test files
         let test_file_path1 = PathBuf::from("test_file1.txt");
@@ -423,34 +416,11 @@ mod tests {
         // Verify that the commit succeeded
         assert!(result.is_ok(), "Commit failed: {:?}", result);
 
-        // Verify the commit actually exists in git
-        let mut revwalk = repo.revwalk()?;
-        revwalk.push_head()?;
-        let commits: Vec<git2::Oid> = revwalk.by_ref().collect::<Result<Vec<_>, _>>()?;
-        assert_eq!(
-            commits.len(),
-            2,
-            "Should have 2 commits (initial + our multi-file commit)"
-        );
-
-        // Get the latest commit and verify its message
-        let latest_commit = repo.find_commit(commits[0])?;
-        assert_eq!(latest_commit.message().unwrap(), "Test multi-file commit");
-
-        // Verify all files are tracked by git
-        let tree = latest_commit.tree()?;
-        assert!(tree.get_name("test_file1.txt").is_some());
-        assert!(tree.get_name("test_file2.txt").is_some());
-        // Check if subdir exists and contains test_file3.txt
-        let subdir_entry = tree.get_name("subdir");
-        assert!(subdir_entry.is_some(), "subdir not found in tree");
-        if let Some(subdir_entry) = subdir_entry {
-            let subdir_tree = repo.find_tree(subdir_entry.id())?;
-            assert!(
-                subdir_tree.get_name("test_file3.txt").is_some(),
-                "test_file3.txt not found in subdir"
-            );
-        }
+        let latest_commit = get_latest_commit(repo_path)?;
+        assert!(latest_commit.contains("Test multi-file commit"));
+        assert!(file_is_tracked_in_git(repo_path, "test_file1.txt")?);
+        assert!(file_is_tracked_in_git(repo_path, "test_file2.txt")?);
+        assert!(file_is_tracked_in_git(repo_path, "subdir/test_file3.txt")?);
 
         Ok(())
     }

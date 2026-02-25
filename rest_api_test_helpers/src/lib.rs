@@ -2,12 +2,12 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
+    process::Command,
     time::Duration,
 };
 
 use anyhow::Result;
 use features_lib::{AsfaloadSecretKeys, AsfaloadSignatureTrait};
-use git2::Repository;
 use rest_api_auth::{
     AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP,
 };
@@ -25,57 +25,48 @@ use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
 //
 // Helper function to initialize a git repository in a temporary directory
 pub fn init_git_repo(repo_path: &Path) -> Result<(), ApiError> {
-    // Initialize git repo using git2
-    let repo = Repository::init(repo_path)?;
+    fs::create_dir_all(repo_path).map_err(ApiError::ServerSetupError)?;
 
-    // Set user name and email for commits using git2
-    let mut config = repo.config()?;
-    config.set_str("user.name", "Test User")?;
-    config.set_str("user.email", "test@example.com")?;
+    if rest_api::file_auth::actors::git_backend::sha256_backend_enabled() {
+        run_git(repo_path, &["init", "--object-format=sha256"])?;
+    } else {
+        run_git(repo_path, &["init"])?;
+    }
+    run_git(repo_path, &["config", "user.name", "Test User"])?;
+    run_git(repo_path, &["config", "user.email", "test@example.com"])?;
 
     Ok(())
 }
 
 // Helper function to get the latest commit message
 pub fn get_latest_commit(repo_path: &Path) -> Result<String, ApiError> {
-    let repo = Repository::open(repo_path)?;
-    let head = repo.head()?;
-    let commit = head.peel_to_commit()?;
-
-    // Get the commit message and shorten the commit hash
-    let commit_id = commit.id();
-    let short_id = format!("{}", commit_id).chars().take(7).collect::<String>();
-    let message = commit
-        .message()
-        .unwrap_or("")
-        .split('\n')
-        .next()
-        .unwrap_or("");
-
-    Ok(format!("{} {}", short_id, message.trim()))
+    run_git(repo_path, &["log", "--oneline", "-1"])
 }
 
 /// Check if a file exists in the latest git commit
 pub fn file_exists_in_latest_commit(repo_path: &Path, file_path: &str) -> Result<bool, ApiError> {
-    let repo = Repository::open(repo_path)?;
-    let head = repo.head()?;
-    let commit = head.peel_to_commit()?;
-    let tree = commit.tree()?;
-
-    // Check if the file exists in the commit's tree
-    match tree.get_path(Path::new(file_path)) {
-        Ok(_) => Ok(true),
-        Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
-        Err(e) => Err(ApiError::GitOperationFailed(e)),
-    }
+    let output = Command::new("git")
+        .args(["-C", &repo_path.to_string_lossy(), "cat-file", "-e"])
+        .arg(format!("HEAD:{}", file_path))
+        .output()
+        .map_err(ApiError::ServerSetupError)?;
+    Ok(output.status.success())
 }
 
 /// Check if a file is tracked in git (in the index)
 pub fn file_is_tracked_in_git(repo_path: &Path, file_path: &str) -> Result<bool, ApiError> {
-    let repo = Repository::open(repo_path)?;
-    let index = repo.index()?;
-
-    Ok(index.get_path(Path::new(file_path), 0).is_some())
+    let output = Command::new("git")
+        .args([
+            "-C",
+            &repo_path.to_string_lossy(),
+            "ls-files",
+            "--error-unmatch",
+            "--",
+            file_path,
+        ])
+        .output()
+        .map_err(ApiError::ServerSetupError)?;
+    Ok(output.status.success())
 }
 
 // Helper function to check if a file exists in the repo
@@ -104,14 +95,36 @@ pub fn url_for(action: &str, port: u16) -> String {
 
 /// Helper function to build a test config
 pub fn build_test_config(git_repo_path: &Path, server_port: u16) -> rest_api::config::AppConfig {
+    let git_backend = if rest_api::file_auth::actors::git_backend::sha256_backend_enabled() {
+        rest_api::config::GitBackendConfig::Sha256
+    } else {
+        rest_api::config::GitBackendConfig::Sha1
+    };
     rest_api::config::AppConfig {
         git_repo_path: git_repo_path.to_path_buf(),
         server_port,
         log_level: "info".to_string(),
-        git_backend: rest_api::config::GitBackendConfig::Sha1,
+        git_backend,
         github_api_key: None,
         gitlab_api_key: None,
     }
+}
+
+fn run_git(repo_path: &Path, args: &[&str]) -> Result<String, ApiError> {
+    let output = Command::new("git")
+        .args(["-C", &repo_path.to_string_lossy()])
+        .args(args)
+        .output()
+        .map_err(ApiError::ServerSetupError)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(ApiError::GitOperationFailed(git2::Error::from_str(
+            &format!("git {:?} failed: {}", args, stderr.trim()),
+        )));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 pub async fn wait_for_server(
@@ -234,6 +247,54 @@ pub async fn write_git_hook(
         fs::set_permissions(&hook_path, perms)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_init_git_repo_creates_repo() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        init_git_repo(temp_dir.path()).unwrap();
+
+        let inside = run_git(temp_dir.path(), &["rev-parse", "--is-inside-work-tree"]).unwrap();
+        assert_eq!(inside, "true");
+    }
+
+    #[test]
+    fn test_init_git_repo_creates_missing_directory() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_path = temp_dir.path().join("git_repo");
+
+        init_git_repo(&repo_path).unwrap();
+
+        assert!(repo_path.exists());
+        let inside = run_git(&repo_path, &["rev-parse", "--is-inside-work-tree"]).unwrap();
+        assert_eq!(inside, "true");
+    }
+
+    #[cfg(feature = "sha256")]
+    #[test]
+    fn test_init_git_repo_uses_sha256_object_format() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        init_git_repo(temp_dir.path()).unwrap();
+
+        let fmt = run_git(temp_dir.path(), &["rev-parse", "--show-object-format"]).unwrap();
+        assert_eq!(fmt, "sha256");
+    }
+
+    #[test]
+    fn test_build_test_config_matches_enabled_backend() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let cfg = build_test_config(temp_dir.path(), 3000);
+
+        if rest_api::file_auth::actors::git_backend::sha256_backend_enabled() {
+            assert_eq!(cfg.git_backend, rest_api::config::GitBackendConfig::Sha256);
+        } else {
+            assert_eq!(cfg.git_backend, rest_api::config::GitBackendConfig::Sha1);
+        }
+    }
 }
 
 pub async fn make_git_commit_fail(repo_path_buf: PathBuf) -> Result<(), ApiError> {

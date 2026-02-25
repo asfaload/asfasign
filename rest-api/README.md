@@ -122,6 +122,12 @@ make test
 # With integration tests
 make test-with-test-utils
 
+# SHA-256 backend mode
+make test-sha256
+
+# SHA-256 + test-utils mode
+make test-with-test-utils-sha256
+
 # Client-server integration tests
 make client-server-tests
 ```
