@@ -1,3 +1,4 @@
+pub mod checksums_parser;
 pub mod errors;
 pub mod fs;
 pub mod index_types;
