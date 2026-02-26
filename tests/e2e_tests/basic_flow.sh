@@ -17,7 +17,7 @@ E2E_GIT_REPO_PATH=""
 cleanup() {
     if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
         kill "$SERVER_PID" 2>/dev/null
-        wait "$SERVER_PID" 2>/dev/null
+        wait "$SERVER_PID" 2>/dev/null || true
     fi
     if [[ -n "$E2E_GIT_REPO_PATH" ]] && [[ -d "$E2E_GIT_REPO_PATH" ]]; then
         rm -rf "$E2E_GIT_REPO_PATH"
