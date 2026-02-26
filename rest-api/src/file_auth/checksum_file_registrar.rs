@@ -1,9 +1,9 @@
 use crate::constants::{INDEX_FILE, MAX_CHECKSUM_FILE_SIZE, MAX_PARALLEL_CSUMS};
-use crate::path_validation::NormalisedPaths;
 use common::checksums_parser::parse_checksums;
 use features_lib::{AsfaloadIndex, FileChecksum};
 use futures::stream::{self, StreamExt};
 use rest_api_types::errors::ApiError;
+use rest_api_types::path_validation::NormalisedPaths;
 use rest_api_types::validate_common_parent;
 use std::path::PathBuf;
 

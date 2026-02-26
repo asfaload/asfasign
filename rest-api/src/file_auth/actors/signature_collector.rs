@@ -1,6 +1,5 @@
 use crate::file_auth::actors::git_actor::{CommitFile, GitActor};
 use crate::handlers::map_to_user_error;
-use crate::path_validation::NormalisedPaths;
 use common::errors::AggregateSignatureError;
 use common::fs::names::signatures_path_for;
 use constants::SIGNERS_DIR;
@@ -12,6 +11,7 @@ use kameo::actor::ActorRef;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
+use rest_api_types::path_validation::NormalisedPaths;
 use signers_file_types::revocation::RevocationInfo;
 use std::path::Path;
 
@@ -437,17 +437,29 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
+    use rest_api_types::git_backend::GitBackendKind;
+
     use super::*;
     use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{AsfaloadSecretKeyTrait, sha512_for_file};
-    use git2::{Repository, Signature};
     use kameo::actor::Spawn;
+    use rest_api_test_helpers::init_git_repo;
     use signers_file_types::SignersConfig;
     use std::{
         path::{Path, PathBuf},
         str::FromStr,
     };
     use tempfile::TempDir;
+
+    /// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
+    /// Duplicated in tests module that need it. Moving it to a test helpers crate implies
+    /// too much code to move due to its return type GitBackendType
+    pub fn backend_kind_from_env() -> GitBackendKind {
+        match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => GitBackendKind::Sha256,
+            _ => GitBackendKind::Sha1,
+        }
+    }
 
     // Helper function to create NormalisedPaths for testing
     async fn make_normalised_paths<P: AsRef<Path>>(
@@ -457,29 +469,10 @@ mod tests {
         NormalisedPaths::new(base.path(), relative).await.unwrap()
     }
 
-    // Helper to initialise a git repo for these tests
-    fn initialise_git_repo<P: AsRef<Path>>(repo_path: P) -> anyhow::Result<Repository> {
-        let repo = Repository::init(repo_path)?;
-        {
-            let signature = Signature::now("Test User", "test@example.com")?;
-            let tree_oid = repo.index()?.write_tree()?;
-            let tree = repo.find_tree(tree_oid)?;
-            repo.commit(
-                Some("HEAD"),
-                &signature,
-                &signature,
-                "Initial commit",
-                &tree,
-                &[],
-            )?;
-        }
-        Ok(repo)
-    }
-
     #[tokio::test]
     async fn test_collect_signature_for_signers_file() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
-        initialise_git_repo(temp_dir.path())?;
+        init_git_repo(temp_dir.path())?;
 
         let project_dir = temp_dir.path().join("github.com/test/repo");
         let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
@@ -509,8 +502,10 @@ mod tests {
             make_normalised_paths(&temp_dir, &pending_signers_path.strip_prefix(&temp_dir)?).await;
 
         // Spawn git actor and signature collector
-        let git_actor =
-            crate::file_auth::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
+            temp_dir.path().to_path_buf(),
+            backend_kind_from_env(),
+        ));
 
         let actor_ref = SignatureCollector::spawn(git_actor);
         let request = CollectSignatureRequest {
@@ -551,7 +546,7 @@ mod tests {
     #[tokio::test]
     async fn test_collect_signature_for_artifact_file() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
-        initialise_git_repo(temp_dir.path())?;
+        init_git_repo(temp_dir.path())?;
 
         let signers_dir = temp_dir.path().join(SIGNERS_DIR);
         std::fs::create_dir_all(&signers_dir)?;
@@ -584,8 +579,10 @@ mod tests {
         let file_path = make_normalised_paths(&temp_dir, &artifact_path).await;
 
         // Spawn git actor and signature collector
-        let git_actor =
-            crate::file_auth::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
+            temp_dir.path().to_path_buf(),
+            backend_kind_from_env(),
+        ));
 
         let actor_ref = SignatureCollector::spawn(git_actor);
         let request = CollectSignatureRequest {
@@ -608,7 +605,7 @@ mod tests {
     #[tokio::test]
     async fn test_collect_signature_second_attempt_after_complete() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
-        initialise_git_repo(temp_dir.path())?;
+        init_git_repo(temp_dir.path())?;
 
         let project_dir = temp_dir.path().join("github.com/test/repo");
         let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
@@ -634,8 +631,10 @@ mod tests {
         let file_path =
             make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
 
-        let git_actor =
-            crate::file_auth::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
+            temp_dir.path().to_path_buf(),
+            backend_kind_from_env(),
+        ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         // Add the signature first time - should succeed and complete
@@ -689,7 +688,7 @@ mod tests {
     #[tokio::test]
     async fn test_collect_signature_partial_completion() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
-        initialise_git_repo(temp_dir.path())?;
+        init_git_repo(temp_dir.path())?;
 
         let project_dir = temp_dir.path().join("github.com/test/repo");
         let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
@@ -724,8 +723,10 @@ mod tests {
         let file_path =
             make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
 
-        let git_actor =
-            crate::file_auth::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
+            temp_dir.path().to_path_buf(),
+            backend_kind_from_env(),
+        ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         // Add first signature - should return is_complete: false
@@ -765,7 +766,7 @@ mod tests {
     #[tokio::test]
     async fn test_collect_signature_rejects_root_level_file() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
-        initialise_git_repo(temp_dir.path())?;
+        init_git_repo(temp_dir.path())?;
 
         // Create signers config
         let test_keys = test_helpers::TestKeys::new(1);
@@ -793,8 +794,10 @@ mod tests {
 
         let file_path = make_normalised_paths(&temp_dir, Path::new("release.txt")).await;
 
-        let git_actor =
-            crate::file_auth::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
+            temp_dir.path().to_path_buf(),
+            backend_kind_from_env(),
+        ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         let result = actor_ref
@@ -822,7 +825,7 @@ mod tests {
     #[tokio::test]
     async fn test_collect_signature_rejects_first_unauthorized_signature() -> anyhow::Result<()> {
         let temp_dir = TempDir::new()?;
-        initialise_git_repo(temp_dir.path())?;
+        init_git_repo(temp_dir.path())?;
 
         let test_keys = test_helpers::TestKeys::new(3);
 
@@ -850,8 +853,10 @@ mod tests {
         let digest = sha512_for_file(&artifact_full_path)?;
         let signature = test_keys.sec_key(2).unwrap().sign(&digest)?;
 
-        let git_actor =
-            crate::file_auth::actors::git_actor::GitActor::spawn(artifact_full_path.clone());
+        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
+            artifact_full_path.clone(),
+            backend_kind_from_env(),
+        ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         let result = actor_ref
@@ -883,7 +888,7 @@ mod tests {
     async fn test_collect_signature_rejects_unauthorized_for_signers_update() -> anyhow::Result<()>
     {
         let temp_dir = TempDir::new()?;
-        initialise_git_repo(temp_dir.path())?;
+        init_git_repo(temp_dir.path())?;
 
         // Create old signers config with admin (key 0) and master (key 1)
         let test_keys = test_helpers::TestKeys::new(4);
@@ -928,8 +933,10 @@ mod tests {
         let digest = sha512_for_file(pending_dir.join(SIGNERS_FILE))?;
         let signature = test_keys.sec_key(2).unwrap().sign(&digest)?;
 
-        let git_actor =
-            crate::file_auth::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
+            temp_dir.path().to_path_buf(),
+            backend_kind_from_env(),
+        ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         let result = actor_ref
@@ -956,7 +963,7 @@ mod tests {
     async fn test_collect_signature_rejects_unauthorized_for_initial_signers() -> anyhow::Result<()>
     {
         let temp_dir = TempDir::new()?;
-        initialise_git_repo(temp_dir.path())?;
+        init_git_repo(temp_dir.path())?;
 
         // Create initial signers config
         let test_keys = test_helpers::TestKeys::new(3);
@@ -986,8 +993,10 @@ mod tests {
         let digest = sha512_for_file(pending_dir.join(SIGNERS_FILE))?;
         let signature = test_keys.sec_key(2).unwrap().sign(&digest)?;
 
-        let git_actor =
-            crate::file_auth::actors::git_actor::GitActor::spawn(temp_dir.path().to_path_buf());
+        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
+            temp_dir.path().to_path_buf(),
+            backend_kind_from_env(),
+        ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         let result = actor_ref

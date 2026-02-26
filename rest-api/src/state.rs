@@ -2,11 +2,14 @@ use std::path::PathBuf;
 
 use kameo::actor::{ActorRef, Spawn};
 
+use rest_api_types::git_backend::GitBackendKind;
+
 use crate::{
     actors::{
         nonce_cache_actor::{NONCE_CACHE_DB, NonceCacheActor},
         nonce_cleanup_actor::NonceCleanupActor,
     },
+    config::GitBackendConfig,
     file_auth::actors::forge_signers_validator::ForgeProjectValidator,
     file_auth::actors::{
         checksums_actor::ChecksumsActor, git_actor::GitActor, release_actor::ReleaseActor,
@@ -27,8 +30,16 @@ pub struct AppState {
     pub checksums_actor: ActorRef<ChecksumsActor>,
 }
 
+fn backend_kind_from_config(config: GitBackendConfig) -> GitBackendKind {
+    match config {
+        GitBackendConfig::Sha1 => GitBackendKind::Sha1,
+        GitBackendConfig::Sha256 => GitBackendKind::Sha256,
+    }
+}
+
 pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppConfig) -> AppState {
-    let git_actor = GitActor::spawn(git_repo_path.clone());
+    let git_backend = backend_kind_from_config(config.git_backend);
+    let git_actor = GitActor::spawn((git_repo_path.clone(), git_backend));
 
     // Initialize nonce cache with database path
     // FIXME: support taking the dir for the nonce db from env var

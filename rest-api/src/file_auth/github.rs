@@ -2,7 +2,7 @@ use std::path::Path;
 
 use rest_api_types::errors::ApiError;
 
-use crate::path_validation::NormalisedPaths;
+use rest_api_types::path_validation::NormalisedPaths;
 
 /// Get the project's normalised paths in the repo
 pub async fn get_project_normalised_paths<P: AsRef<Path>>(

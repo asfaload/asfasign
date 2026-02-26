@@ -4,9 +4,9 @@ use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
 use crate::file_auth::release_types::{
     ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
 };
-use crate::path_validation::NormalisedPaths;
 use forge_url::github::GITHUB_HOSTS;
 use rest_api_types::errors::ApiError;
+use rest_api_types::path_validation::NormalisedPaths;
 use std::path::PathBuf;
 use tokio::fs::File;
 
@@ -172,10 +172,15 @@ mod test_utils_tests {
             url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
 
         let port = get_random_port().await.unwrap();
+        let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => crate::config::GitBackendConfig::Sha256,
+            _ => crate::config::GitBackendConfig::Sha1,
+        };
         let mock_config = crate::config::AppConfig {
             server_port: port,
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
+            git_backend,
             github_api_key: None,
             gitlab_api_key: None,
         };

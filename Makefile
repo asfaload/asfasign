@@ -11,6 +11,9 @@ test:
 	# This behaviour is enabled with the test-utils features, and tests requiring
 	# this localhost acceptance only run with this feature.
 	$(MAKE) test-with-test-utils
+	# Re-run rest-api tests with sha256 backend
+	$(MAKE) -C rest-api test-sha256
+	$(MAKE) -C rest-api test-with-test-utils-sha256
 
 ## Run tests with test-utils feature enabled (for integration tests)
 # Note that if test-utils is added to other packages, they need to be added here.

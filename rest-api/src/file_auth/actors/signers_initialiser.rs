@@ -8,7 +8,7 @@ use signers_file_types::{HistoryFile, SignersConfigMetadata};
 use std::path::PathBuf;
 
 use crate::file_auth::actors::forge_signers_validator::SignersInfo;
-use crate::path_validation::NormalisedPaths;
+use rest_api_types::path_validation::NormalisedPaths;
 
 const ACTOR_NAME: &str = "signers_initialiser";
 #[derive(Debug)]

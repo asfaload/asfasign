@@ -13,12 +13,12 @@ use crate::file_auth::actors::git_actor::CommitFile;
 use crate::file_auth::forges::ForgeInfo;
 use crate::file_auth::forges::ForgeTrait;
 use crate::file_auth::github::get_project_normalised_paths;
-use crate::path_validation::NormalisedPaths;
 use crate::state::AppState;
 use axum::{Json, extract::State, http::HeaderMap};
 use constants::PENDING_SIGNERS_DIR;
 use forge_url::github::GITHUB_HOSTS;
 use rest_api_auth::HEADER_PUBLIC_KEY;
+use rest_api_types::path_validation::NormalisedPaths;
 use rest_api_types::{
     errors::ApiError,
     models::{AddFileRequest, AddFileResponse},
@@ -649,8 +649,8 @@ pub async fn get_pending_signatures_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<ListPendingResponse>, ApiError> {
-    use crate::path_validation::build_normalised_absolute_path;
     use crate::pending_discovery;
+    use rest_api_types::path_validation::build_normalised_absolute_path;
 
     let request_id = headers
         .get("x-request-id")

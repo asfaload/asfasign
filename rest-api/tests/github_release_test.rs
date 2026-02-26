@@ -8,7 +8,9 @@ pub mod tests {
     use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
-    use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
+    use rest_api_test_helpers::{
+        build_test_config, get_random_port, init_git_repo, url_for, wait_for_server,
+    };
     use rest_api_types::rustls::setup_crypto_provider;
     use std::fs;
     use tempfile::TempDir;
@@ -30,7 +32,7 @@ pub mod tests {
         print_logs();
 
         // Initialize a git repository for the test
-        git2::Repository::init(&git_repo_path).expect("Failed to initialize git repository");
+        init_git_repo(&git_repo_path).expect("Failed to initialize git repository");
 
         let port = get_random_port().await?;
 

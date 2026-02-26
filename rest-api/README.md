@@ -9,6 +9,7 @@ The Asfaload REST API server handles artifact signing workflows and provides end
 ```bash
 # Set required environment variable
 export ASFALOAD_GIT_REPO_PATH=/path/to/git/repo
+export ASFALOAD_GIT_BACKEND=sha1
 
 # Start server in debug mode
 cargo run --package rest-api
@@ -24,6 +25,7 @@ cargo run --release --package rest-api
 export ASFALOAD_GIT_REPO_PATH=/path/to/git/repo
 export ASFALOAD_SERVER_PORT=8080
 export ASFALOAD_LOG_LEVEL=info
+export ASFALOAD_GIT_BACKEND=sha1
 
 # Build and start
 cargo build --release --package rest-api
@@ -49,6 +51,7 @@ make help
 | `ASFALOAD_GIT_REPO_PATH` | ✅ Yes | *none* | Path to git repository for storing signed artifacts |
 | `ASFALOAD_SERVER_PORT` | ❌ No | `3000` | Port for the server to listen on |
 | `ASFALOAD_LOG_LEVEL` | ❌ No | `info` | Logging level: `debug`, `info`, `warn`, or `error` |
+| `ASFALOAD_GIT_BACKEND` | ❌ No | `sha1` | Git backend: `sha1` or `sha256` (`sha256` requires `git` CLI >= 2.42) |
 | `ASFALOAD_GITHUB_API_KEY` | ❌ No | *none* | GitHub API token for fetching signers files |
 | `ASFALOAD_GITLAB_API_KEY` | ❌ No | *none* | GitLab API token for fetching signers files |
 
@@ -67,6 +70,7 @@ git -C /tmp/asfaload-repo config user.email "dev@example.com"
 export ASFALOAD_GIT_REPO_PATH=/tmp/asfaload-repo
 export ASFALOAD_SERVER_PORT=3000
 export ASFALOAD_LOG_LEVEL=debug
+export ASFALOAD_GIT_BACKEND=sha1
 cargo run --package rest-api
 ```
 
@@ -81,6 +85,7 @@ docker run -d \
   -p 3000:3000 \
   -e ASFALOAD_GIT_REPO_PATH=/data/repo \
   -e ASFALOAD_LOG_LEVEL=info \
+  -e ASFALOAD_GIT_BACKEND=sha1 \
   -v /path/to/repo:/data/repo \
   asfaload/rest-api
 ```
@@ -116,6 +121,12 @@ make test
 
 # With integration tests
 make test-with-test-utils
+
+# SHA-256 backend mode
+make test-sha256
+
+# SHA-256 + test-utils mode
+make test-with-test-utils-sha256
 
 # Client-server integration tests
 make client-server-tests

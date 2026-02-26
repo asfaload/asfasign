@@ -18,10 +18,21 @@ pub mod tests {
         file_exists_in_repo, get_latest_commit, get_random_port, init_git_repo, read_file_content,
         send_add_file_request, url_for, wait_for_commit, wait_for_server,
     };
+    use rest_api_types::git_backend::GitBackendKind;
     use serde_json::{Value, json};
     use std::fs;
     use tempfile::TempDir;
     use tokio::time::Duration;
+
+    /// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
+    /// Duplicated in tests module that need it. Moving it to a test helpers crate implies
+    /// too much code to move due to its return type GitBackendType
+    pub fn backend_kind_from_env() -> GitBackendKind {
+        match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => GitBackendKind::Sha256,
+            _ => GitBackendKind::Sha1,
+        }
+    }
 
     // Test case: Successfully add a file to the repository
     #[tokio::test]
@@ -246,11 +257,12 @@ pub mod tests {
 
         // Parse the response body
         let response_body: Value = response.json().await.expect("Failed to parse response");
+        let error_message = response_body["error"].as_str().unwrap();
         assert!(
-            response_body["error"]
-                .as_str()
-                .unwrap()
-                .contains("could not find repository at")
+            error_message.contains("could not find repository at")
+                || error_message.contains("not a git repository"),
+            "Unexpected error message: {}",
+            error_message
         );
 
         // Clean up - abort the server task
@@ -552,7 +564,6 @@ pub mod tests {
     async fn test_register_repo_cleans_up_on_repo_handler_failure() -> Result<(), anyhow::Error> {
         use constants::PENDING_SIGNERS_DIR;
         use features_lib::{AsfaloadSecretKeyTrait, sha512_for_content};
-        use git2::Repository;
         use kameo::actor::Spawn;
         use rest_api::file_auth::actors::git_actor::GitActor;
         use rest_api::file_auth::actors::signers_initialiser::{
@@ -565,7 +576,7 @@ pub mod tests {
         let git_repo_path = temp_dir.path().join("git_repo");
         let git_repo_path_clone = git_repo_path.clone();
 
-        Repository::init(&git_repo_path)?;
+        init_git_repo(&git_repo_path)?;
 
         // Use 2 signers so the signature stays pending after init (only key_pair1 signs).
         // With 1 signer, initialize_signers_file completes immediately and renames pending -> active.
@@ -632,7 +643,7 @@ pub mod tests {
         let git_dir = git_repo_path.join(".git");
         fs::remove_dir_all(&git_dir)?;
 
-        let git_actor = GitActor::spawn(git_repo_path_clone.clone());
+        let git_actor = GitActor::spawn((git_repo_path_clone.clone(), backend_kind_from_env()));
 
         let write_commit_request = rest_api::file_auth::actors::git_actor::CommitFile {
             file_paths: vec![init_result.project_path.clone()],
@@ -684,12 +695,11 @@ pub mod tests {
             AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
             sha512_for_content,
         };
-        use git2::Repository;
         use rest_api_types::RegisterRepoRequest;
 
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
-        Repository::init(&git_repo_path)?;
+        init_git_repo(&git_repo_path)?;
 
         let port = get_random_port().await?;
         let config = build_test_config(&git_repo_path, port);
@@ -764,7 +774,7 @@ pub mod tests {
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
 
-        git2::Repository::init(&git_repo_path)?;
+        init_git_repo(&git_repo_path)?;
 
         // Create signers config
         let test_keys = test_helpers::TestKeys::new(1);
@@ -842,7 +852,6 @@ pub mod test_utils_tests {
             AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
             sha512_for_content,
         };
-        use git2::Repository;
         use httpmock::Method;
         use rest_api_types::RegisterRepoRequest;
         use rest_api_types::RegisterRepoResponse;
@@ -850,7 +859,7 @@ pub mod test_utils_tests {
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
 
-        Repository::init(&git_repo_path)?;
+        init_git_repo(&git_repo_path)?;
 
         let mock_server = httpmock::MockServer::start();
 
@@ -937,7 +946,6 @@ pub mod test_utils_tests {
             AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
             sha512_for_content,
         };
-        use git2::Repository;
         use httpmock::Method;
         use rest_api_types::RegisterRepoRequest;
         use rest_api_types::RegisterRepoResponse;
@@ -945,7 +953,7 @@ pub mod test_utils_tests {
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
 
-        Repository::init(&git_repo_path)?;
+        init_git_repo(&git_repo_path)?;
 
         let mock_server = httpmock::MockServer::start();
 
@@ -1034,14 +1042,13 @@ pub mod test_utils_tests {
             AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
             sha512_for_content,
         };
-        use git2::Repository;
         use httpmock::Method;
         use rest_api_types::RegisterRepoRequest;
 
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
 
-        Repository::init(&git_repo_path)?;
+        init_git_repo(&git_repo_path)?;
 
         let project_dir = git_repo_path.join("github.com/owner/repo");
         tokio::fs::create_dir_all(&project_dir).await?;
@@ -1131,7 +1138,7 @@ pub mod test_utils_tests {
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
 
-        git2::Repository::init(&git_repo_path)?;
+        init_git_repo(&git_repo_path)?;
 
         // Create signers config
         let test_keys = test_helpers::TestKeys::new(1);
@@ -1351,7 +1358,7 @@ pub mod test_utils_tests {
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
 
-        git2::Repository::init(&git_repo_path)?;
+        init_git_repo(&git_repo_path)?;
 
         // Create signers config with 2 signers, threshold 2
         let test_keys = test_helpers::TestKeys::new(2);
@@ -1477,7 +1484,7 @@ pub mod test_utils_tests {
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
 
-        git2::Repository::init(&git_repo_path)?;
+        init_git_repo(&git_repo_path)?;
 
         let test_keys = test_helpers::TestKeys::new(1);
         let public_key = test_keys.pub_key(0).unwrap();
@@ -1531,7 +1538,7 @@ pub mod test_utils_tests {
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
 
-        git2::Repository::init(&git_repo_path)?;
+        init_git_repo(&git_repo_path)?;
 
         // Create signers config
         let test_keys = test_helpers::TestKeys::new(1);

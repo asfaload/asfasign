@@ -1,11 +1,13 @@
 use std::{
+    ffi::OsStr,
     fmt::{Display, Formatter},
     fs,
     path::{Component, Path, PathBuf},
 };
 
 use normalize_path::NormalizePath;
-use rest_api_types::errors::ApiError;
+
+use crate::errors::ApiError;
 
 #[derive(Debug, Clone)]
 pub struct NormalisedPaths {
@@ -65,6 +67,12 @@ impl NormalisedPaths {
             absolute_path,
             relative_path: parent_relative,
         }
+    }
+
+    pub fn file_name(&self) -> Option<&OsStr> {
+        // Calling `self.absolute_path()` would require the creation of an unnecessary clone of the path.
+        // This implementation borrows the `absolute_path` field directly for better performance.
+        self.absolute_path.file_name()
     }
 }
 
@@ -183,7 +191,7 @@ pub fn build_normalised_absolute_path<P1: AsRef<Path>, P2: AsRef<Path>>(
     })
 }
 
-#[cfg(all(test, not(feature = "test-utils")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;

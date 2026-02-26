@@ -39,10 +39,10 @@ else
     backend="http://localhost:$port"
 
     E2E_GIT_REPO_PATH=$(mktemp -d)
-    git init "$E2E_GIT_REPO_PATH" --quiet
+    init_backend_repo "$E2E_GIT_REPO_PATH"
     export ASFALOAD_GIT_REPO_PATH="$E2E_GIT_REPO_PATH"
 
-    cargo build -p rest-api --quiet
+    build_rest_api
     "${base_dir}/target/debug/rest-api" > $E2E_GIT_REPO_PATH/server.log &
     SERVER_PID=$!
     if [[ -n $debug ]]; then

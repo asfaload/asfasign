@@ -15,6 +15,24 @@ KEY_7="$KEYS_DIR/key_7"
 KEY_8="$KEYS_DIR/key_8"
 KEY_9="$KEYS_DIR/key_9"
 
+# --- Git OID-aware helpers ---
+
+# Initialize a git repo, respecting ASFALOAD_GIT_BACKEND for object format.
+# Usage: init_backend_repo "$path"
+init_backend_repo() {
+    local repo_path="$1"
+    if [[ "${ASFALOAD_GIT_BACKEND:-}" == "sha256" ]]; then
+        git init --object-format=sha256 "$repo_path" --quiet
+    else
+        git init "$repo_path" --quiet
+    fi
+}
+
+# Build the rest-api binary.
+build_rest_api() {
+    cargo build -p rest-api --quiet
+}
+
 # --- Terminal color support ---
 if [ -t 1 ]; then
     BOLD=$'\033[1m'
