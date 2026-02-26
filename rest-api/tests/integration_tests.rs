@@ -7,7 +7,6 @@ pub mod tests {
     use constants::SIGNERS_FILE;
     use constants::SIGNERS_HISTORY_FILE;
     use rest_api::file_auth::actors::forge_signers_validator::SignersInfo;
-    use rest_api::file_auth::actors::git_backend::GitBackendKind;
     use rest_api::file_auth::github::get_project_normalised_paths;
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
@@ -19,6 +18,7 @@ pub mod tests {
         file_exists_in_repo, get_latest_commit, get_random_port, init_git_repo, read_file_content,
         send_add_file_request, url_for, wait_for_commit, wait_for_server,
     };
+    use rest_api_types::git_backend::GitBackendKind;
     use serde_json::{Value, json};
     use std::fs;
     use tempfile::TempDir;

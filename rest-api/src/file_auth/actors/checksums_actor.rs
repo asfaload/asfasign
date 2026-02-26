@@ -1,10 +1,10 @@
 use super::git_actor::{CommitFile, GitActor};
 use crate::file_auth::checksum_file_registrar::ChecksumFileRegistrar;
 use crate::helpers::create_empty_aggregate_signature;
-use crate::path_validation::NormalisedPaths;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
+use rest_api_types::path_validation::NormalisedPaths;
 use tracing::info;
 use uuid::Uuid;
 

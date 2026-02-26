@@ -4,9 +4,9 @@ use crate::file_auth::github_release::{GithubReleaseAdder, GithubReleaseInfo};
 use crate::file_auth::release_types::{
     ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
 };
-use crate::path_validation::NormalisedPaths;
 use forge_url::github::GITHUB_HOSTS;
 use rest_api_types::errors::ApiError;
+use rest_api_types::path_validation::NormalisedPaths;
 use std::path::PathBuf;
 use tokio::fs::File;
 

@@ -1,6 +1,5 @@
 use crate::file_auth::actors::git_actor::{CommitFile, GitActor};
 use crate::handlers::map_to_user_error;
-use crate::path_validation::NormalisedPaths;
 use common::errors::AggregateSignatureError;
 use common::fs::names::signatures_path_for;
 use constants::SIGNERS_DIR;
@@ -12,6 +11,7 @@ use kameo::actor::ActorRef;
 use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
+use rest_api_types::path_validation::NormalisedPaths;
 use signers_file_types::revocation::RevocationInfo;
 use std::path::Path;
 
@@ -437,7 +437,7 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
-    use crate::file_auth::actors::git_backend::GitBackendKind;
+    use rest_api_types::git_backend::GitBackendKind;
 
     use super::*;
     use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};

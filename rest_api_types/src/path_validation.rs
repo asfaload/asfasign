@@ -6,7 +6,8 @@ use std::{
 };
 
 use normalize_path::NormalizePath;
-use rest_api_types::errors::ApiError;
+
+use crate::errors::ApiError;
 
 #[derive(Debug, Clone)]
 pub struct NormalisedPaths {
@@ -190,7 +191,7 @@ pub fn build_normalised_absolute_path<P1: AsRef<Path>, P2: AsRef<Path>>(
     })
 }
 
-#[cfg(all(test, not(feature = "test-utils")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;

@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use kameo::actor::{ActorRef, Spawn};
 
+use rest_api_types::git_backend::GitBackendKind;
+
 use crate::{
     actors::{
         nonce_cache_actor::{NONCE_CACHE_DB, NonceCacheActor},
@@ -10,9 +12,8 @@ use crate::{
     config::GitBackendConfig,
     file_auth::actors::forge_signers_validator::ForgeProjectValidator,
     file_auth::actors::{
-        checksums_actor::ChecksumsActor, git_actor::GitActor, git_backend::GitBackendKind,
-        release_actor::ReleaseActor, signature_collector::SignatureCollector,
-        signers_initialiser::SignersInitialiser,
+        checksums_actor::ChecksumsActor, git_actor::GitActor, release_actor::ReleaseActor,
+        signature_collector::SignatureCollector, signers_initialiser::SignersInitialiser,
     },
 };
 

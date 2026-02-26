@@ -1,6 +1,6 @@
-use crate::path_validation::NormalisedPaths;
 use common::fs::names::pending_signatures_path_for;
 use rest_api_types::errors::ApiError;
+use rest_api_types::path_validation::NormalisedPaths;
 
 /// Creates an empty aggregate signature file for a given file path.
 ///

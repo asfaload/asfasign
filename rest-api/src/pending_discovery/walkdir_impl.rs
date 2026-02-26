@@ -1,8 +1,8 @@
-use crate::path_validation::NormalisedPaths;
-use crate::path_validation::build_normalised_absolute_path;
 use common::errors::SignedFileError;
 use constants::PENDING_SIGNATURES_SUFFIX;
 use features_lib::can_signer_add_signature;
+use rest_api_types::path_validation::NormalisedPaths;
+use rest_api_types::path_validation::build_normalised_absolute_path;
 
 pub struct WalkdirPendingDiscovery;
 
@@ -96,7 +96,6 @@ impl super::PendingSignaturesDiscovery for WalkdirPendingDiscovery {
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
-    use crate::path_validation::build_normalised_absolute_path;
     use crate::pending_discovery::PendingSignaturesDiscovery;
     use common::determine_file_type;
     use common::fs::names::{find_global_signers_for, pending_signatures_path_for};
@@ -104,6 +103,7 @@ mod tests {
     use features_lib::{
         AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file,
     };
+    use rest_api_types::path_validation::build_normalised_absolute_path;
     use signers_file_types::{SignersConfig, parse_signers_config};
     use std::fs;
     use std::path::PathBuf;

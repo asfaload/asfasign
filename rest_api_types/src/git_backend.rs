@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::errors::ApiError;
 use git2::{Repository, Signature};
-use rest_api_types::errors::ApiError;
 
 use crate::path_validation::NormalisedPaths;
 
@@ -41,10 +41,6 @@ fn collect_relative_paths(
         let metadata = match fs::symlink_metadata(&current_path) {
             Ok(meta) => {
                 if meta.file_type().is_symlink() {
-                    tracing::error!(
-                        file_path = %current_path.display(),
-                        "Encountered symlink in git repo!"
-                    );
                     return Err(git2::Error::from_str(&format!(
                         "Encountered a symlink!{}",
                         current_path.display()

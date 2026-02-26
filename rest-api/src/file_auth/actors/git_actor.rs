@@ -3,9 +3,8 @@ use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
 
-use crate::path_validation::NormalisedPaths;
-
-use super::git_backend::GitBackendKind;
+use rest_api_types::git_backend::GitBackendKind;
+use rest_api_types::path_validation::NormalisedPaths;
 
 #[derive(Debug, Clone)]
 pub struct CommitFile {

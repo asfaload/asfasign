@@ -1,6 +1,6 @@
-use crate::path_validation::NormalisedPaths;
 use common::errors::SignedFileError;
 use features_lib::AsfaloadPublicKeys;
+use rest_api_types::path_validation::NormalisedPaths;
 
 pub mod walkdir_impl;
 
