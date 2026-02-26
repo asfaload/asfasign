@@ -356,10 +356,10 @@ pub async fn create_auth_headers(payload: &str) -> TestAuthHeaders {
     let secret_key = test_keys.sec_key(0).unwrap();
     create_auth_headers_with_key(secret_key, payload).await
 }
-pub async fn send_add_file_request_with_key_and_overwrite(
+pub async fn send_authenticated_request_with_overwrite(
     client: &reqwest::Client,
     port: u16,
-    secret_key: &AsfaloadSecretKeys, // Replace with correct SecretKey type
+    secret_key: &AsfaloadSecretKeys,
     payload: &serde_json::Value,
     overwrite: HashMap<String, String>,
 ) -> reqwest::Response {
@@ -373,7 +373,7 @@ pub async fn send_add_file_request_with_key_and_overwrite(
     } = create_auth_headers_with_key(secret_key, &payload_string).await;
 
     client
-        .post(url_for("add-file", port))
+        .post(url_for("revoke", port))
         .header(
             HEADER_TIMESTAMP,
             overwrite.get(HEADER_TIMESTAMP).unwrap_or(&timestamp),
@@ -392,27 +392,27 @@ pub async fn send_add_file_request_with_key_and_overwrite(
         .await
         .expect("Failed to send request")
 }
-pub async fn send_add_file_request_with_key(
+pub async fn send_authenticated_request_with_key(
     client: &reqwest::Client,
     port: u16,
-    secret_key: &AsfaloadSecretKeys, // Replace with correct SecretKey type
+    secret_key: &AsfaloadSecretKeys,
     payload: &serde_json::Value,
 ) -> reqwest::Response {
-    send_add_file_request_with_key_and_overwrite(client, port, secret_key, payload, HashMap::new())
+    send_authenticated_request_with_overwrite(client, port, secret_key, payload, HashMap::new())
         .await
 }
 
-pub async fn send_add_file_request(
+pub async fn send_authenticated_request(
     client: &reqwest::Client,
     port: u16,
     payload: &serde_json::Value,
 ) -> reqwest::Response {
     let test_keys = test_helpers::TestKeys::new(1);
     let secret_key = test_keys.sec_key(0).unwrap();
-    send_add_file_request_with_key(client, port, secret_key, payload).await
+    send_authenticated_request_with_key(client, port, secret_key, payload).await
 }
 
-pub async fn send_repeated_add_file_request(
+pub async fn send_repeated_authenticated_request(
     client: &reqwest::Client,
     port: u16,
     payload: &serde_json::Value,
@@ -426,7 +426,7 @@ pub async fn send_repeated_add_file_request(
     } = create_auth_headers(&payload_string).await;
 
     let first_response = client
-        .post(url_for("add-file", port))
+        .post(url_for("revoke", port))
         .header(HEADER_TIMESTAMP, &timestamp)
         .header(HEADER_NONCE, &nonce)
         .header(HEADER_SIGNATURE, &signature)
@@ -436,13 +436,13 @@ pub async fn send_repeated_add_file_request(
         .await
         .expect("Failed to send request");
     assert!(
-        first_response.status().is_success(),
-        "The first request in the nonce reuse test must be successful. Status: {}",
+        first_response.status() != reqwest::StatusCode::UNAUTHORIZED,
+        "The first request in the nonce reuse test must pass auth. Status: {}",
         first_response.status()
     );
 
     client
-        .post(url_for("add-file", port))
+        .post(url_for("revoke", port))
         .header(HEADER_TIMESTAMP, timestamp)
         .header(HEADER_NONCE, nonce)
         .header(HEADER_SIGNATURE, signature)

@@ -20,16 +20,6 @@ pub struct NewSignersFileOutput {
 }
 
 #[derive(Debug, Serialize)]
-pub struct VerifySigOutput {
-    pub verified: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub struct IsAggCompleteOutput {
-    pub is_complete: bool,
-}
-
-#[derive(Debug, Serialize)]
 pub struct JsonError {
     pub error: String,
 }

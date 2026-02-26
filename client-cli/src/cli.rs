@@ -91,23 +91,6 @@ pub enum Commands {
         json_args: JsonArgs,
     },
 
-    /// Sign a file with your private key
-    SignFile {
-        /// Path to the file to be signed
-        #[arg(long, short)]
-        file_to_sign: PathBuf,
-
-        #[command(flatten)]
-        secret_key_args: SecretKeyArgs,
-
-        /// Path where the signature file has to be written
-        #[arg(long, short)]
-        output_file: PathBuf,
-
-        #[command(flatten)]
-        password_args: PasswordArgs,
-    },
-
     /// Operations related to signers files
     NewSignersFile {
         /// Artifact signer public key as base64 string (can be repeated)
@@ -165,56 +148,6 @@ pub enum Commands {
         #[command(flatten)]
         json_args: JsonArgs,
     },
-    /// Verify a signature for a file
-    VerifySig {
-        /// Path to the signed file
-        #[arg(long, short = 'f')]
-        signed_file: PathBuf,
-
-        /// Path to the signature file
-        #[arg(long, short = 'x')]
-        signature: PathBuf,
-
-        /// Path to the public key file
-        #[arg(long, short = 'k')]
-        public_key: PathBuf,
-
-        #[command(flatten)]
-        json_args: JsonArgs,
-    },
-    /// Add a signature to the aggregate signature for a file.
-    /// If you add your signature to an existing aggregate signature,
-    /// its file name must be identitical to the signed file, but with
-    /// added suffix .signatures.json.pending.
-    AddToAggregate {
-        /// Path to the signed file
-        #[arg(long, short = 'f')]
-        signed_file: PathBuf,
-
-        #[command(flatten)]
-        secret_key_args: SecretKeyArgs,
-
-        #[command(flatten)]
-        password_args: PasswordArgs,
-    },
-    /// Check if the aggregate signature for a file is complete
-    IsAggComplete {
-        /// Path to the signed file
-        #[arg(long, short = 'f')]
-        signed_file: PathBuf,
-
-        /// Path to the signatures file
-        #[arg(long, short = 'x')]
-        signatures_file: PathBuf,
-
-        /// Path to the signers file
-        #[arg(long, short = 's')]
-        signers_file: PathBuf,
-
-        #[command(flatten)]
-        json_args: JsonArgs,
-    },
-
     /// List files requiring your signature from the backend
     ListPending {
         #[command(flatten)]
@@ -361,12 +294,8 @@ impl Commands {
     // Fucntions to build environment variables for commands in a standard way
     fn env_var_base(&self) -> &str {
         match self {
-            Self::SignFile { .. } => "SIGN_FILE",
             Self::NewSignersFile { .. } => "NEW_SIGNERS_FILE",
             Self::NewKeys { .. } => "NEW_KEYS",
-            Self::VerifySig { .. } => "VERIFY_SIG",
-            Self::AddToAggregate { .. } => "ADD_TO_AGGREGATE",
-            Self::IsAggComplete { .. } => "IS_AGG_COMPLETE",
             Self::ListPending { .. } => "LIST_PENDING",
             Self::SignPending { .. } => "SIGN_PENDING",
             Self::RegisterRepo { .. } => "REGISTER_REPO",
@@ -396,15 +325,13 @@ impl Commands {
         match self {
             Self::NewKeys { json_args, .. }
             | Self::NewSignersFile { json_args, .. }
-            | Self::VerifySig { json_args, .. }
-            | Self::IsAggComplete { json_args, .. }
             | Self::ListPending { json_args, .. }
             | Self::SignPending { json_args, .. }
             | Self::RegisterRepo { json_args, .. }
             | Self::RegisterAssets { json_args, .. }
             | Self::UpdateSigners { json_args, .. }
             | Self::Revoke { json_args, .. } => json_args.json,
-            Self::SignFile { .. } | Self::AddToAggregate { .. } | Self::Download { .. } => false,
+            Self::Download { .. } => false,
         }
     }
 }

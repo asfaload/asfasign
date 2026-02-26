@@ -6,14 +6,10 @@ use crate::{
     },
 };
 
-pub mod add_to_aggregate;
-pub mod is_agg_complete;
 pub mod keys;
 pub mod list_pending;
-pub mod sign_file;
 pub mod sign_pending;
 pub mod signers_file;
-pub mod verify_sig;
 use anyhow::Result;
 
 pub mod download;
@@ -87,32 +83,6 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             )?;
             keys::handle_new_keys_command(name, output_dir, password, json_args.json)?;
         }
-        Commands::SignFile {
-            file_to_sign,
-            secret_key_args,
-            output_file,
-            password_args,
-        } => {
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                // As this is the use of a password, and not the setup,
-                // we don't ask for a confirmation
-                WithoutConfirmation,
-                // We accept weak password because this the use of a
-                // password, makes no sense to prevent use of weak password here
-                true,
-            )?;
-            sign_file::handle_sign_file_command(
-                file_to_sign,
-                &secret_key_args.secret_key,
-                password.as_str(),
-                output_file,
-            )?
-        }
         Commands::NewSignersFile {
             artifact_signer,
             artifact_signer_file,
@@ -143,52 +113,6 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 revocation_key_file,
                 revocation_threshold.as_ref().copied(),
                 output_file,
-                json_args.json,
-            )?;
-        }
-        Commands::VerifySig {
-            signed_file,
-            signature,
-            public_key,
-            json_args,
-        } => {
-            verify_sig::handle_verify_sig_command(
-                signed_file,
-                signature,
-                public_key,
-                json_args.json,
-            )?;
-        }
-        Commands::AddToAggregate {
-            signed_file,
-            secret_key_args,
-            password_args,
-        } => {
-            let password = get_password(
-                password_args.password.clone(),
-                password_args.password_file.as_deref(),
-                &cli.command.password_env_var(),
-                &cli.command.password_file_env_var(),
-                "Enter password: ",
-                WithoutConfirmation,
-                true,
-            )?;
-            add_to_aggregate::handle_add_to_aggregate_command(
-                signed_file,
-                &secret_key_args.secret_key,
-                password.as_str(),
-            )?;
-        }
-        Commands::IsAggComplete {
-            signed_file,
-            signatures_file,
-            signers_file,
-            json_args,
-        } => {
-            is_agg_complete::handle_is_agg_complete_command(
-                signed_file,
-                signatures_file,
-                signers_file,
                 json_args.json,
             )?;
         }
