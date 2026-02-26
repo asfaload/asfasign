@@ -132,6 +132,16 @@ pub fn build_config_from_defaults(
 mod tests {
     use super::*;
 
+    fn git_backend_from_env() -> GitBackendConfig {
+        match std::env::var("ASFALOAD_GIT_BACKEND")
+            .unwrap_or("sha1".to_string())
+            .as_str()
+        {
+            "sha1" => GitBackendConfig::Sha1,
+            "sha256" => GitBackendConfig::Sha256,
+            other => panic!("Unkown value for ASFALOAD_GIT_BACKEND: {}", other),
+        }
+    }
     #[test]
     fn test_build_config_from_defaults_no_env_vars() {
         // Test that build_config_from_defaults fails when no git_repo_path is provided
@@ -168,9 +178,9 @@ mod tests {
 
     #[test]
     fn test_build_config_from_defaults_with_git_path() {
-        // Clear env var so it doesn't override the defaults under test.
-        // Safety: acceptable in single-threaded test context.
-        unsafe { std::env::remove_var("ASFALOAD_GIT_BACKEND") };
+        // We run the tests with and without ASFALOAD_GIT_BACKEND set, so this will return once the
+        // value from the env, and once the default value sha1
+        let expected_git_backend = git_backend_from_env();
         // Test that build_config_from_defaults succeeds when required values are provided
         let temp_dir = tempfile::tempdir().unwrap();
         let git_path = temp_dir.path().to_path_buf();
@@ -194,7 +204,7 @@ mod tests {
         assert_eq!(config.server_port, 8080);
         assert_eq!(config.git_repo_path, git_path);
         assert_eq!(config.log_level, "info");
-        assert_eq!(config.git_backend, GitBackendConfig::Sha1);
+        assert_eq!(config.git_backend, expected_git_backend);
     }
 
     #[test]
@@ -232,9 +242,9 @@ mod tests {
 
     #[test]
     fn test_build_config_from_defaults_git_backend_defaults_to_sha1() {
-        // Clear env var so it doesn't override the default under test.
-        // Safety: acceptable in single-threaded test context.
-        unsafe { std::env::remove_var("ASFALOAD_GIT_BACKEND") };
+        // We run the tests with and without ASFALOAD_GIT_BACKEND set, so this will return once the
+        // value from the env, and once the default value sha1
+        let expected_git_backend = git_backend_from_env();
         let temp_dir = tempfile::tempdir().unwrap();
         let defaults = AppConfigOptions {
             server_port: Some(3000),
@@ -246,7 +256,7 @@ mod tests {
         };
 
         let config = build_config_from_defaults(defaults).expect("Could not build config");
-        assert_eq!(config.git_backend, GitBackendConfig::Sha1);
+        assert_eq!(config.git_backend, expected_git_backend);
     }
 
     #[test]
