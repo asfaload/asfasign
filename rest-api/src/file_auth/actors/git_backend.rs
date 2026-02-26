@@ -269,16 +269,6 @@ pub enum GitBackendKind {
     Sha256,
 }
 
-/// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
-/// Returns `Sha1` if unset or unrecognised. Used by test code to match
-/// the backend to the repository format initialised by test helpers.
-pub fn backend_kind_from_env() -> GitBackendKind {
-    match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
-        Ok("sha256") => GitBackendKind::Sha256,
-        _ => GitBackendKind::Sha1,
-    }
-}
-
 impl GitBackendKind {
     pub fn commit_files(
         &self,
@@ -297,6 +287,16 @@ mod tests {
     use super::*;
     use git2::Signature;
     use tempfile::TempDir;
+
+    /// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
+    /// Duplicated in tests module that need it. Moving it to a test helpers crate implies
+    /// too much code to move due to its return type GitBackendType
+    pub fn backend_kind_from_env() -> GitBackendKind {
+        match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => GitBackendKind::Sha256,
+            _ => GitBackendKind::Sha1,
+        }
+    }
 
     struct MockBackend {
         should_fail: bool,

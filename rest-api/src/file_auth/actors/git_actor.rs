@@ -121,7 +121,6 @@ impl Actor for GitActor {
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
-    use crate::file_auth::actors::git_backend::backend_kind_from_env;
     use anyhow::Result;
     use rest_api_test_helpers::{file_is_tracked_in_git, get_latest_commit, init_git_repo};
     use std::path::{Path, PathBuf};
@@ -129,6 +128,16 @@ mod tests {
     use tempfile::TempDir;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
+
+    /// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
+    /// Duplicated in tests module that need it. Moving it to a test helpers crate implies
+    /// too much code to move due to its return type GitBackendType
+    pub fn backend_kind_from_env() -> GitBackendKind {
+        match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => GitBackendKind::Sha256,
+            _ => GitBackendKind::Sha1,
+        }
+    }
 
     fn run_git(repo_path: &Path, args: &[&str]) -> Result<String> {
         let output = Command::new("git")

@@ -7,6 +7,7 @@ pub mod tests {
     use constants::SIGNERS_FILE;
     use constants::SIGNERS_HISTORY_FILE;
     use rest_api::file_auth::actors::forge_signers_validator::SignersInfo;
+    use rest_api::file_auth::actors::git_backend::GitBackendKind;
     use rest_api::file_auth::github::get_project_normalised_paths;
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
@@ -22,6 +23,16 @@ pub mod tests {
     use std::fs;
     use tempfile::TempDir;
     use tokio::time::Duration;
+
+    /// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
+    /// Duplicated in tests module that need it. Moving it to a test helpers crate implies
+    /// too much code to move due to its return type GitBackendType
+    pub fn backend_kind_from_env() -> GitBackendKind {
+        match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => GitBackendKind::Sha256,
+            _ => GitBackendKind::Sha1,
+        }
+    }
 
     // Test case: Successfully add a file to the repository
     #[tokio::test]
@@ -632,10 +643,7 @@ pub mod tests {
         let git_dir = git_repo_path.join(".git");
         fs::remove_dir_all(&git_dir)?;
 
-        let git_actor = GitActor::spawn((
-            git_repo_path_clone.clone(),
-            rest_api::file_auth::actors::git_backend::backend_kind_from_env(),
-        ));
+        let git_actor = GitActor::spawn((git_repo_path_clone.clone(), backend_kind_from_env()));
 
         let write_commit_request = rest_api::file_auth::actors::git_actor::CommitFile {
             file_paths: vec![init_result.project_path.clone()],

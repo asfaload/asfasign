@@ -437,8 +437,9 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
+    use crate::file_auth::actors::git_backend::GitBackendKind;
+
     use super::*;
-    use crate::file_auth::actors::git_backend::backend_kind_from_env;
     use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{AsfaloadSecretKeyTrait, sha512_for_file};
     use kameo::actor::Spawn;
@@ -449,6 +450,16 @@ mod tests {
         str::FromStr,
     };
     use tempfile::TempDir;
+
+    /// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
+    /// Duplicated in tests module that need it. Moving it to a test helpers crate implies
+    /// too much code to move due to its return type GitBackendType
+    pub fn backend_kind_from_env() -> GitBackendKind {
+        match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => GitBackendKind::Sha256,
+            _ => GitBackendKind::Sha1,
+        }
+    }
 
     // Helper function to create NormalisedPaths for testing
     async fn make_normalised_paths<P: AsRef<Path>>(
