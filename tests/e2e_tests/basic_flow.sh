@@ -17,12 +17,12 @@ E2E_GIT_REPO_PATH=""
 cleanup() {
     if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
         kill "$SERVER_PID" 2>/dev/null
-        wait "$SERVER_PID" 2>/dev/null
+        wait "$SERVER_PID" 2>/dev/null || true
     fi
     if [[ -n "$E2E_GIT_REPO_PATH" ]] && [[ -d "$E2E_GIT_REPO_PATH" ]]; then
         rm -rf "$E2E_GIT_REPO_PATH"
     fi
-    rm -f "${DOWNLOAD_V01:-}" "${DOWNLOAD_V01_HISTORICAL:-}" "${DOWNLOAD_V02:-}" "${DOWNLOAD_V01_bis:-}"
+    rm -f "${DOWNLOAD_V01:-}" "${DOWNLOAD_V01_HISTORICAL:-}" "${DOWNLOAD_V02:-}" "${DOWNLOAD_V01_bis:-}" "${DOWNLOAD_V02_bis:-}"
 }
 trap cleanup EXIT
 
@@ -291,6 +291,12 @@ assert_last_commit_contains "$REVOCATION_SUFFIX"
 
 expect_fail "Download artifact (v0.1, revoked)" \
     cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $(artifact_url 0.1)
+
+# --- v0.2 is unaffected --
+DOWNLOAD_V02_bis="$(mktemp)"
+run_step "Download artifact (v0.2), not revoked" \
+    cargo run --quiet -- download -o "$DOWNLOAD_V02_bis" -u "$backend" $(artifact_url 0.2)
+assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_bis"
 
 ################################################################################
 print_summary

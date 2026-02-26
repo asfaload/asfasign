@@ -8,8 +8,8 @@ pub mod auth_tests {
     use rest_api::{auth_middleware::MAX_BODY_SIZE, server::run_server};
     use rest_api_auth::{HEADER_NONCE, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::{
-        build_test_config, get_random_port, init_git_repo, send_add_file_request_with_key,
-        send_add_file_request_with_key_and_overwrite, send_repeated_add_file_request,
+        build_test_config, get_random_port, init_git_repo, send_authenticated_request_with_key,
+        send_authenticated_request_with_overwrite, send_repeated_authenticated_request,
         wait_for_server,
     };
     use serde_json::{Value, json};
@@ -48,22 +48,15 @@ pub mod auth_tests {
         let test_keys = TestKeys::new(1);
         let secret_key = test_keys.sec_key(0).unwrap();
 
-        let response = send_add_file_request_with_key(&client, port, secret_key, &payload).await;
+        let response =
+            send_authenticated_request_with_key(&client, port, secret_key, &payload).await;
 
-        // Check the response status - should be 200 OK
-        let status = response.status();
-        if status != StatusCode::OK {
-            let response_text = response.text().await?;
-            panic!(
-                "Expected response code Ok, go {}. Response was:\n{}",
-                status, response_text
-            )
-        }
-
-        // Parse the response body
-        let response_body: Value = response.json().await.expect("Failed to parse response");
-        assert_eq!(response_body["success"], true);
-        assert_eq!(response_body["message"], "File added successfully");
+        // Auth should pass with valid credentials (handler may reject the payload)
+        assert_ne!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "Auth should pass with valid credentials"
+        );
 
         // Invalid signature
         // -----------------
@@ -73,7 +66,7 @@ pub mod auth_tests {
             HEADER_SIGNATURE.to_string(),
             "invalid_signature".to_string(),
         );
-        let response = send_add_file_request_with_key_and_overwrite(
+        let response = send_authenticated_request_with_overwrite(
             &client, port, secret_key, &payload, overwrite,
         )
         .await;
@@ -94,7 +87,7 @@ pub mod auth_tests {
         let old_timestamp = chrono::Utc::now() - chrono::Duration::minutes(10);
         let mut overwrite: HashMap<String, String> = HashMap::new();
         overwrite.insert(HEADER_TIMESTAMP.to_string(), old_timestamp.to_rfc3339());
-        let response = send_add_file_request_with_key_and_overwrite(
+        let response = send_authenticated_request_with_overwrite(
             &client, port, secret_key, &payload, overwrite,
         )
         .await;
@@ -117,7 +110,7 @@ pub mod auth_tests {
         //
         let mut overwrite: HashMap<String, String> = HashMap::new();
         overwrite.insert(HEADER_NONCE.to_string(), "invalid_nonce".to_string());
-        let response = send_add_file_request_with_key_and_overwrite(
+        let response = send_authenticated_request_with_overwrite(
             &client, port, secret_key, &payload, overwrite,
         )
         .await;
@@ -139,7 +132,7 @@ pub mod auth_tests {
             "file_path": "nonce_reuse_file.txt",
             "content": "Nonce reuse request should be rejected on second try"
         });
-        let response = send_repeated_add_file_request(&client, port, &nonce_payload).await;
+        let response = send_repeated_authenticated_request(&client, port, &nonce_payload).await;
         // Check the response status - should be 401 Unauthorized
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
@@ -179,26 +172,30 @@ pub mod auth_tests {
         let test_keys = TestKeys::new(1);
         let secret_key = test_keys.sec_key(0).unwrap();
 
-        // Test 1: Normal sized file (should succeed)
+        // Test 1: Normal sized request (should not be rejected for size)
         let normal_content = "This is a normal sized file content".to_string();
         let payload = json!({
             "file_path": "normal_file.txt",
             "content": normal_content
         });
-        let response = send_add_file_request_with_key(&client, port, secret_key, &payload).await;
+        let response =
+            send_authenticated_request_with_key(&client, port, secret_key, &payload).await;
 
-        assert_eq!(response.status(), StatusCode::OK);
-        let response_body: Value = response.json().await.expect("Failed to parse response");
-        assert_eq!(response_body["success"], true);
+        assert_ne!(
+            response.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "Normal-sized request should not be rejected for size"
+        );
 
-        // Test 2: Oversized file (should fail)
+        // Test 2: Oversized request (should fail with PAYLOAD_TOO_LARGE)
         let oversized_content = "x".repeat(MAX_BODY_SIZE + 1);
         let payload = json!({
             "file_path": "oversized_file.txt",
             "content": oversized_content
         });
 
-        let response = send_add_file_request_with_key(&client, port, secret_key, &payload).await;
+        let response =
+            send_authenticated_request_with_key(&client, port, secret_key, &payload).await;
 
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
         let response_body: Value = response.json().await.expect("Failed to parse response");
@@ -207,7 +204,7 @@ pub mod auth_tests {
             "Request too big: length limit exceeded"
         );
 
-        // Test 3: Accepted size should be successful
+        // Test 3: Accepted size should not be rejected for size
         let file_path = "max_size_file.txt";
         let overhead = json!({
             "file_path": file_path,
@@ -220,10 +217,13 @@ pub mod auth_tests {
             "file_path": file_path,
             "content": max_content
         });
-        let response = send_add_file_request_with_key(&client, port, secret_key, &payload).await;
-        assert_eq!(response.status(), StatusCode::OK);
-        let response_body: Value = response.json().await.expect("Failed to parse response");
-        assert_eq!(response_body["success"], true);
+        let response =
+            send_authenticated_request_with_key(&client, port, secret_key, &payload).await;
+        assert_ne!(
+            response.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "Max-sized request should not be rejected for size"
+        );
 
         // Clean up - abort the server task
         server_handle.abort();

@@ -94,7 +94,6 @@ docker run -d \
 
 The server provides RESTful endpoints for:
 
-- `POST /add-file` - Add a file to be signed
 - `GET /pending-signatures` - List files pending signatures
 - `POST /submit-signature` - Submit a signature for a file
 - `POST /register-repo` - Register a repository for signature collection

@@ -22,9 +22,6 @@ pub enum ClientCliError {
     #[error("AggregateSignature error: {0}")]
     AggregateSignatureError(#[from] AggregateSignatureError),
 
-    #[error("AggregateSignatureIncomplete")]
-    AggregateSignatureIncompleteError,
-
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
