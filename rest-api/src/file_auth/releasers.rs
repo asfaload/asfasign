@@ -172,10 +172,9 @@ mod test_utils_tests {
             url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
 
         let port = get_random_port().await.unwrap();
-        let git_backend = if crate::file_auth::actors::git_backend::sha256_backend_enabled() {
-            crate::config::GitBackendConfig::Sha256
-        } else {
-            crate::config::GitBackendConfig::Sha1
+        let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => crate::config::GitBackendConfig::Sha256,
+            _ => crate::config::GitBackendConfig::Sha1,
         };
         let mock_config = crate::config::AppConfig {
             server_port: port,

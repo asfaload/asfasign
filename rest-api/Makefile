@@ -19,13 +19,13 @@ test:
 test-with-test-utils:
 	cargo nextest run --features test-utils
 
-## Run tests with sha256 backend feature enabled
+## Run tests with sha256 backend
 test-sha256:
-	cargo nextest run --features sha256
+	ASFALOAD_GIT_BACKEND=sha256 cargo nextest run
 
-## Run tests with test-utils and sha256 features enabled
+## Run tests with test-utils and sha256 backend
 test-with-test-utils-sha256:
-	cargo nextest run --features test-utils,sha256
+	ASFALOAD_GIT_BACKEND=sha256 cargo nextest run --features test-utils
 
 ## Fix rust code formatting
 format:

@@ -168,10 +168,8 @@ impl GitBackend for Sha1GitBackend {
 /// published release, so this backend shells out to `git` (>= 2.42) for
 /// staging and committing. It validates the repository uses SHA-256 via
 /// `git rev-parse --show-object-format` before every commit.
-#[cfg(feature = "sha256")]
 pub struct Sha256GitBackend;
 
-#[cfg(feature = "sha256")]
 impl Sha256GitBackend {
     /// Run a git command in the given repo directory. Returns stdout on
     /// success, or a `git2::Error` with combined stderr/stdout on failure.
@@ -207,7 +205,6 @@ impl Sha256GitBackend {
     }
 }
 
-#[cfg(feature = "sha256")]
 impl GitBackend for Sha256GitBackend {
     fn commit_files(
         &self,
@@ -269,23 +266,17 @@ impl GitBackend for Sha256GitBackend {
 #[derive(Debug, Clone, Copy)]
 pub enum GitBackendKind {
     Sha1,
-    #[cfg(feature = "sha256")]
     Sha256,
 }
 
-pub const fn backend_for_current_build() -> GitBackendKind {
-    #[cfg(feature = "sha256")]
-    {
-        GitBackendKind::Sha256
+/// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
+/// Returns `Sha1` if unset or unrecognised. Used by test code to match
+/// the backend to the repository format initialised by test helpers.
+pub fn backend_kind_from_env() -> GitBackendKind {
+    match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+        Ok("sha256") => GitBackendKind::Sha256,
+        _ => GitBackendKind::Sha1,
     }
-    #[cfg(not(feature = "sha256"))]
-    {
-        GitBackendKind::Sha1
-    }
-}
-
-pub const fn sha256_backend_enabled() -> bool {
-    cfg!(feature = "sha256")
 }
 
 impl GitBackendKind {
@@ -296,7 +287,6 @@ impl GitBackendKind {
     ) -> Result<(), ApiError> {
         match self {
             GitBackendKind::Sha1 => Sha1GitBackend.commit_files(file_paths, commit_message),
-            #[cfg(feature = "sha256")]
             GitBackendKind::Sha256 => Sha256GitBackend.commit_files(file_paths, commit_message),
         }
     }
@@ -337,15 +327,6 @@ mod tests {
         let p = normalise_for_repo(repo_path, &target_path);
         let result = backend.commit_files(&[p], "test commit");
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_backend_for_current_build_feature_mapping() {
-        let backend = backend_for_current_build();
-        #[cfg(feature = "sha256")]
-        assert!(matches!(backend, GitBackendKind::Sha256));
-        #[cfg(not(feature = "sha256"))]
-        assert!(matches!(backend, GitBackendKind::Sha1));
     }
 
     #[test]
@@ -518,7 +499,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "sha256"))]
+#[cfg(test)]
 mod sha256_tests {
     use super::*;
     use std::process::Command;

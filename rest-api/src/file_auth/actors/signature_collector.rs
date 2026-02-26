@@ -438,7 +438,7 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
     use super::*;
-    use crate::file_auth::actors::git_backend::backend_for_current_build;
+    use crate::file_auth::actors::git_backend::backend_kind_from_env;
     use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::{AsfaloadSecretKeyTrait, sha512_for_file};
     use kameo::actor::Spawn;
@@ -493,7 +493,7 @@ mod tests {
         // Spawn git actor and signature collector
         let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
             temp_dir.path().to_path_buf(),
-            backend_for_current_build(),
+            backend_kind_from_env(),
         ));
 
         let actor_ref = SignatureCollector::spawn(git_actor);
@@ -570,7 +570,7 @@ mod tests {
         // Spawn git actor and signature collector
         let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
             temp_dir.path().to_path_buf(),
-            backend_for_current_build(),
+            backend_kind_from_env(),
         ));
 
         let actor_ref = SignatureCollector::spawn(git_actor);
@@ -622,7 +622,7 @@ mod tests {
 
         let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
             temp_dir.path().to_path_buf(),
-            backend_for_current_build(),
+            backend_kind_from_env(),
         ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
@@ -714,7 +714,7 @@ mod tests {
 
         let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
             temp_dir.path().to_path_buf(),
-            backend_for_current_build(),
+            backend_kind_from_env(),
         ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
@@ -785,7 +785,7 @@ mod tests {
 
         let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
             temp_dir.path().to_path_buf(),
-            backend_for_current_build(),
+            backend_kind_from_env(),
         ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
@@ -844,7 +844,7 @@ mod tests {
 
         let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
             artifact_full_path.clone(),
-            backend_for_current_build(),
+            backend_kind_from_env(),
         ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
@@ -924,7 +924,7 @@ mod tests {
 
         let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
             temp_dir.path().to_path_buf(),
-            backend_for_current_build(),
+            backend_kind_from_env(),
         ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
@@ -984,7 +984,7 @@ mod tests {
 
         let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
             temp_dir.path().to_path_buf(),
-            backend_for_current_build(),
+            backend_kind_from_env(),
         ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 

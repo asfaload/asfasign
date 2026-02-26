@@ -32,12 +32,7 @@ pub struct AppState {
 fn backend_kind_from_config(config: GitBackendConfig) -> GitBackendKind {
     match config {
         GitBackendConfig::Sha1 => GitBackendKind::Sha1,
-        #[cfg(feature = "sha256")]
         GitBackendConfig::Sha256 => GitBackendKind::Sha256,
-        #[cfg(not(feature = "sha256"))]
-        GitBackendConfig::Sha256 => {
-            panic!("git_backend=sha256 selected without 'sha256' feature")
-        }
     }
 }
 

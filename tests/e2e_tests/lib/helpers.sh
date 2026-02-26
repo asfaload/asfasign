@@ -28,13 +28,9 @@ init_backend_repo() {
     fi
 }
 
-# Build the rest-api binary, adding --features sha256 when ASFALOAD_GIT_BACKEND=sha256.
+# Build the rest-api binary.
 build_rest_api() {
-    if [[ "${ASFALOAD_GIT_BACKEND:-}" == "sha256" ]]; then
-        cargo build -p rest-api --features sha256 --quiet
-    else
-        cargo build -p rest-api --quiet
-    fi
+    cargo build -p rest-api --quiet
 }
 
 # --- Terminal color support ---

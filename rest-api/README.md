@@ -51,7 +51,7 @@ make help
 | `ASFALOAD_GIT_REPO_PATH` | ✅ Yes | *none* | Path to git repository for storing signed artifacts |
 | `ASFALOAD_SERVER_PORT` | ❌ No | `3000` | Port for the server to listen on |
 | `ASFALOAD_LOG_LEVEL` | ❌ No | `info` | Logging level: `debug`, `info`, `warn`, or `error` |
-| `ASFALOAD_GIT_BACKEND` | ❌ No | `sha1` | Git backend: `sha1` or `sha256` (requires `sha256` feature build and `git` CLI >=2.42)) |
+| `ASFALOAD_GIT_BACKEND` | ❌ No | `sha1` | Git backend: `sha1` or `sha256` (`sha256` requires `git` CLI >= 2.42) |
 | `ASFALOAD_GITHUB_API_KEY` | ❌ No | *none* | GitHub API token for fetching signers files |
 | `ASFALOAD_GITLAB_API_KEY` | ❌ No | *none* | GitLab API token for fetching signers files |
 

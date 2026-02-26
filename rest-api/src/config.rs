@@ -51,6 +51,46 @@ impl Default for AppConfigOptions {
     }
 }
 
+/// Minimum git version required for SHA-256 object format support.
+const MIN_GIT_VERSION_FOR_SHA256: (u32, u32) = (2, 42);
+
+/// Validate that the system's git binary supports SHA-256 repositories.
+fn validate_git_for_sha256() -> Result<(), ServerConfigError> {
+    let output = std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .map_err(|e| {
+            ServerConfigError::InvalidConfig(format!(
+                "git_backend=sha256 requires git >= {}.{}, but git could not be executed: {}",
+                MIN_GIT_VERSION_FOR_SHA256.0, MIN_GIT_VERSION_FOR_SHA256.1, e
+            ))
+        })?;
+
+    let version_str = String::from_utf8_lossy(&output.stdout);
+    let version_part = version_str
+        .trim()
+        .strip_prefix("git version ")
+        .ok_or_else(|| {
+            ServerConfigError::InvalidConfig(format!(
+                "git_backend=sha256 requires git >= {}.{}, but could not parse git version output: '{}'",
+                MIN_GIT_VERSION_FOR_SHA256.0, MIN_GIT_VERSION_FOR_SHA256.1, version_str.trim()
+            ))
+        })?;
+
+    let parts: Vec<&str> = version_part.split('.').collect();
+    let major: u32 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let minor: u32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+    if (major, minor) < MIN_GIT_VERSION_FOR_SHA256 {
+        return Err(ServerConfigError::InvalidConfig(format!(
+            "git_backend=sha256 requires git >= {}.{}, but found {}.{}",
+            MIN_GIT_VERSION_FOR_SHA256.0, MIN_GIT_VERSION_FOR_SHA256.1, major, minor
+        )));
+    }
+
+    Ok(())
+}
+
 pub fn get_config() -> Result<AppConfig, ServerConfigError> {
     build_config_from_defaults(AppConfigOptions::default())
 }
@@ -81,11 +121,8 @@ pub fn build_config_from_defaults(
             "git_repo_path cannot be empty".to_string(),
         ));
     }
-    #[cfg(not(feature = "sha256"))]
     if app_config.git_backend == GitBackendConfig::Sha256 {
-        return Err(ServerConfigError::InvalidConfig(
-            "git_backend=sha256 requires building rest-api with the 'sha256' feature".to_string(),
-        ));
+        validate_git_for_sha256()?;
     }
 
     Ok(app_config)
@@ -131,6 +168,9 @@ mod tests {
 
     #[test]
     fn test_build_config_from_defaults_with_git_path() {
+        // Clear env var so it doesn't override the defaults under test.
+        // Safety: acceptable in single-threaded test context.
+        unsafe { std::env::remove_var("ASFALOAD_GIT_BACKEND") };
         // Test that build_config_from_defaults succeeds when required values are provided
         let temp_dir = tempfile::tempdir().unwrap();
         let git_path = temp_dir.path().to_path_buf();
@@ -192,6 +232,9 @@ mod tests {
 
     #[test]
     fn test_build_config_from_defaults_git_backend_defaults_to_sha1() {
+        // Clear env var so it doesn't override the default under test.
+        // Safety: acceptable in single-threaded test context.
+        unsafe { std::env::remove_var("ASFALOAD_GIT_BACKEND") };
         let temp_dir = tempfile::tempdir().unwrap();
         let defaults = AppConfigOptions {
             server_port: Some(3000),
@@ -206,9 +249,8 @@ mod tests {
         assert_eq!(config.git_backend, GitBackendConfig::Sha1);
     }
 
-    #[cfg(not(feature = "sha256"))]
     #[test]
-    fn test_build_config_from_defaults_rejects_sha256_without_feature() {
+    fn test_build_config_from_defaults_accepts_sha256_with_valid_git() {
         let temp_dir = tempfile::tempdir().unwrap();
         let defaults = AppConfigOptions {
             server_port: Some(3000),
@@ -219,14 +261,12 @@ mod tests {
             gitlab_api_key: None,
         };
 
+        // This test assumes git >= 2.42 is available (per project requirement)
         let result = build_config_from_defaults(defaults);
-        assert!(result.is_err());
-        match result {
-            Err(ServerConfigError::InvalidConfig(message)) => {
-                assert!(message.contains("git_backend=sha256 requires building rest-api"));
-            }
-            Err(other) => panic!("Expected InvalidConfig, got {:?}", other),
-            Ok(_) => panic!("Expected error but got success"),
-        }
+        assert!(
+            result.is_ok(),
+            "sha256 config should be accepted: {:?}",
+            result
+        );
     }
 }

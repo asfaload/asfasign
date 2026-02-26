@@ -634,7 +634,7 @@ pub mod tests {
 
         let git_actor = GitActor::spawn((
             git_repo_path_clone.clone(),
-            rest_api::file_auth::actors::git_backend::backend_for_current_build(),
+            rest_api::file_auth::actors::git_backend::backend_kind_from_env(),
         ));
 
         let write_commit_request = rest_api::file_auth::actors::git_actor::CommitFile {
