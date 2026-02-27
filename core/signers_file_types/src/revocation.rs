@@ -147,11 +147,11 @@ mod tests {
         // Verify initiator is base64
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         let initiator = parsed.get("initiator").unwrap().as_str().unwrap();
-        assert!(
-            initiator
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '+' || c == '/' || c == '=')
-        );
+        assert!(initiator.chars().all(|c| c.is_alphanumeric()
+            || c == '+'
+            || c == '/'
+            || c == '='
+            || c == ':'));
     }
 
     #[test]
@@ -352,13 +352,10 @@ mod tests {
         match result {
             Err(ref e) => {
                 dbg!(e.to_string());
-                assert!(
-                    e.to_string()
-                        .contains("Failed to parse public key: Keypair fs io error")
-                )
+                assert!(e.to_string().contains("Failed to parse public key"))
             }
             Ok(_) => {
-                panic!("Failed to parse public key: Keypair fs io error")
+                panic!("Expected error for empty initiator")
             }
         }
     }
