@@ -215,7 +215,8 @@ mod tests {
     use test_helpers::fixtures_pub_key;
 
     // A valid minisign public key base64 string (from fixtures key_0)
-    const VALID_PUBKEY_B64: &str = "RWS1kZJeKmeNOI0vl8hjI/YD7UQYxMq5uYkVWfHCHPtm7bOsbgZMovii";
+    const VALID_PUBKEY_B64: &str =
+        "minisign:RWS1kZJeKmeNOI0vl8hjI/YD7UQYxMq5uYkVWfHCHPtm7bOsbgZMovii";
 
     #[test]
     fn combine_key_sources_empty_inputs() {
@@ -237,8 +238,8 @@ mod tests {
     #[test]
     fn combine_key_sources_multiple_valid_base64_strings() {
         let keys = vec![
-            "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3".to_string(),
-            "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv".to_string(),
+            "minisign:RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3".to_string(),
+            "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv".to_string(),
         ];
         let result = combine_key_sources::<AsfaloadPublicKeys>(&keys, &[]);
         assert!(result.is_ok());
@@ -347,7 +348,7 @@ mod tests {
     #[test]
     fn combine_key_sources_mix_of_string_and_file_keys() {
         let key_file = fixtures_pub_key(1);
-        let file_key_b64 = "RWSoOcwiDsEPTQKBOIiRduc7RiyThzsfYoWREeD5vGVlvCvix6pZiYPw";
+        let file_key_b64 = "minisign:RWSoOcwiDsEPTQKBOIiRduc7RiyThzsfYoWREeD5vGVlvCvix6pZiYPw";
 
         let string_keys = vec![VALID_PUBKEY_B64.to_string()];
         let file_keys = vec![key_file];
