@@ -7,6 +7,7 @@ use common::fs::names::{
 };
 use common::{AsfaloadHashes, FileType, SignedFileLoader, SignedFileWithKind};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signatures::signatures_file::{SignaturesFile, TaggedSignature};
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::{HashMap, HashSet};
@@ -176,13 +177,13 @@ where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    let signatures_map: HashMap<String, String> = match std::fs::File::open(&sig_file_path) {
+    let sig_file: SignaturesFile = match std::fs::File::open(&sig_file_path) {
         Ok(file) => serde_json::from_reader(file)?,
-        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => SignaturesFile::new(),
         Err(e) => return Err(e.into()),
     };
 
-    parse_individual_signatures_from_map(signatures_map)
+    parse_tagged_signatures(&sig_file.entries)
 }
 
 pub fn get_individual_signatures_from_bytes<P, S, T: std::borrow::Borrow<[u8]>>(
@@ -195,13 +196,14 @@ where
     let signature_content = signatures_content_in.borrow();
     if signature_content.is_empty() {
         return Ok(HashMap::new());
-    };
-    let signatures_map: HashMap<String, String> = serde_json::from_slice(signature_content)?;
+    }
+    let sig_file: SignaturesFile = serde_json::from_slice(signature_content)?;
 
-    parse_individual_signatures_from_map(signatures_map)
+    parse_tagged_signatures(&sig_file.entries)
 }
-pub fn parse_individual_signatures_from_map<P, S>(
-    signatures_map: HashMap<String, String>,
+
+pub fn parse_tagged_signatures<P, S>(
+    entries: &HashMap<String, TaggedSignature>,
 ) -> Result<HashMap<P, S>, AggregateSignatureError>
 where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
@@ -209,10 +211,10 @@ where
 {
     let mut signatures: HashMap<P, S> = HashMap::new();
 
-    for (pubkey_b64, sig_b64) in signatures_map {
-        let pubkey = P::from_base64(&pubkey_b64)
+    for (pubkey_b64, tagged) in entries {
+        let pubkey = P::from_base64_with_format(pubkey_b64, &tagged.format)
             .map_err(|e| AggregateSignatureError::PublicKey(format!("{}", e)))?;
-        let signature = S::from_base64(&sig_b64)
+        let signature = S::from_base64_with_format(&tagged.signature, &tagged.format)
             .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
         signatures.insert(pubkey, signature);
     }
@@ -617,17 +619,22 @@ where
         let file_path = PathBuf::from(&self.origin);
         let sig_file_path = SS::signature_path_for(&file_path)?;
 
-        // Convert signatures to a HashMap of base64-encoded public keys and signatures
-        let signatures_map: HashMap<String, String> = self
+        let entries = self
             .signatures
             .iter()
-            .map(|(pubkey, sig)| (pubkey.to_base64(), sig.to_base64()))
+            .map(|(pubkey, sig)| {
+                (
+                    pubkey.to_base64(),
+                    TaggedSignature {
+                        format: pubkey.key_format(),
+                        signature: sig.to_base64(),
+                    },
+                )
+            })
             .collect();
 
-        // Serialize the HashMap to JSON
-        let json_content = serde_json::to_string_pretty(&signatures_map)?;
-
-        // Write the JSON content to the signature file
+        let sig_file = SignaturesFile { entries };
+        let json_content = serde_json::to_string_pretty(&sig_file)?;
         std::fs::write(&sig_file_path, json_content)?;
 
         Ok(())
@@ -1620,9 +1627,15 @@ mod tests {
             SIGNATURES_SUFFIX
         ));
 
-        let mut incomplete_sigs = HashMap::new();
-        incomplete_sigs.insert(pubkey1.clone().to_base64(), sig1.to_base64());
-        let incomplete_json = serde_json::to_string_pretty(&incomplete_sigs).unwrap();
+        let mut incomplete_sig_file = SignaturesFile::new();
+        incomplete_sig_file.entries.insert(
+            pubkey1.clone().to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        let incomplete_json = serde_json::to_string_pretty(&incomplete_sig_file).unwrap();
         fs::write(&sig_file_path, incomplete_json).unwrap();
 
         let result = is_aggregate_signature_complete(&test_file, false);
@@ -1633,10 +1646,22 @@ mod tests {
         );
 
         // Test complete signature (both signatures)
-        let mut complete_sigs = HashMap::new();
-        complete_sigs.insert(pubkey1.to_base64(), sig1.to_base64());
-        complete_sigs.insert(pubkey2.to_base64(), sig2.to_base64());
-        let complete_json = serde_json::to_string_pretty(&complete_sigs).unwrap();
+        let mut complete_sig_file = SignaturesFile::new();
+        complete_sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        complete_sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
+        let complete_json = serde_json::to_string_pretty(&complete_sig_file).unwrap();
         fs::write(&sig_file_path, complete_json).unwrap();
 
         assert!(is_aggregate_signature_complete(&test_file, false).unwrap());
@@ -1651,16 +1676,25 @@ mod tests {
         );
 
         // Test invalid signature (wrong content)
-        let mut invalid_sigs = HashMap::new();
-        invalid_sigs.insert(
+        let mut invalid_sig_file = SignaturesFile::new();
+        invalid_sig_file.entries.insert(
             pubkey1.to_base64(),
-            seckey1
-                .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
-                .unwrap()
-                .to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: seckey1
+                    .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
+                    .unwrap()
+                    .to_base64(),
+            },
         );
-        invalid_sigs.insert(pubkey2.to_base64(), sig2.to_base64());
-        let invalid_json = serde_json::to_string_pretty(&invalid_sigs).unwrap();
+        invalid_sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
+        let invalid_json = serde_json::to_string_pretty(&invalid_sig_file).unwrap();
         fs::write(&sig_file_path, invalid_json).unwrap();
 
         let res = is_aggregate_signature_complete(&test_file, false);
@@ -1924,9 +1958,15 @@ mod tests {
 
         // Create a pending signatures file with the signature
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
-        let mut signatures_map = HashMap::new();
-        signatures_map.insert(pubkey.to_base64(), signature.to_base64());
-        let signatures_json = serde_json::to_string_pretty(&signatures_map).unwrap();
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            pubkey.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: signature.to_base64(),
+            },
+        );
+        let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&pending_sig_path, signatures_json).unwrap();
 
         // Create an AggregateSignature in Pending state
@@ -1950,10 +1990,13 @@ mod tests {
 
         // Verify the content is preserved
         let content = fs::read_to_string(&complete_sig_path).unwrap();
-        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed_content.len(), 1);
-        assert!(parsed_content.contains_key(&pubkey.to_base64()));
-        assert_eq!(parsed_content[&pubkey.to_base64()], signature.to_base64());
+        let parsed_content: SignaturesFile = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.entries.len(), 1);
+        assert!(parsed_content.entries.contains_key(&pubkey.to_base64()));
+        assert_eq!(
+            parsed_content.entries[&pubkey.to_base64()].signature,
+            signature.to_base64()
+        );
 
         // Verify the returned signature is in Complete state
         assert_eq!(complete_sig.signatures.len(), 1);
@@ -2127,9 +2170,15 @@ mod tests {
         ));
 
         // Test incomplete signature (only one signature)
-        let mut incomplete_sigs = HashMap::new();
-        incomplete_sigs.insert(pubkey1.clone().to_base64(), sig1.to_base64());
-        let incomplete_json = serde_json::to_string_pretty(&incomplete_sigs).unwrap();
+        let mut incomplete_sig_file = SignaturesFile::new();
+        incomplete_sig_file.entries.insert(
+            pubkey1.clone().to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        let incomplete_json = serde_json::to_string_pretty(&incomplete_sig_file).unwrap();
         fs::write(&pending_sig_file_path, &incomplete_json).unwrap();
 
         let res = is_aggregate_signature_complete(&test_file, true);
@@ -2137,25 +2186,46 @@ mod tests {
         assert!(!res.unwrap()); // Should be incomplete with only one signature
 
         // Test complete signature (both signatures)
-        let mut complete_sigs = HashMap::new();
-        complete_sigs.insert(pubkey1.to_base64(), sig1.to_base64());
-        complete_sigs.insert(pubkey2.to_base64(), sig2.to_base64());
-        let complete_json = serde_json::to_string_pretty(&complete_sigs).unwrap();
+        let mut complete_sig_file = SignaturesFile::new();
+        complete_sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        complete_sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
+        let complete_json = serde_json::to_string_pretty(&complete_sig_file).unwrap();
         fs::write(&pending_sig_file_path, complete_json).unwrap();
 
         assert!(is_aggregate_signature_complete(&test_file, true).unwrap()); // Should be complete with both signatures
 
         // Test invalid signature (wrong content)
-        let mut invalid_sigs = HashMap::new();
-        invalid_sigs.insert(
+        let mut invalid_sig_file = SignaturesFile::new();
+        invalid_sig_file.entries.insert(
             pubkey1.to_base64(),
-            seckey1
-                .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
-                .unwrap()
-                .to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: seckey1
+                    .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
+                    .unwrap()
+                    .to_base64(),
+            },
         );
-        invalid_sigs.insert(pubkey2.to_base64(), sig2.to_base64());
-        let invalid_json = serde_json::to_string_pretty(&invalid_sigs).unwrap();
+        invalid_sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
+        let invalid_json = serde_json::to_string_pretty(&invalid_sig_file).unwrap();
         fs::write(&pending_sig_file_path, invalid_json).unwrap();
 
         let res = is_aggregate_signature_complete(&test_file, true);
@@ -2179,7 +2249,7 @@ mod tests {
         assert!(res.unwrap()); // Should be complete with threshold 1 and one valid signature
 
         // Test with empty signatures file
-        let empty_sigs: HashMap<String, String> = HashMap::new();
+        let empty_sigs = SignaturesFile::new();
         let empty_json = serde_json::to_string_pretty(&empty_sigs).unwrap();
         fs::write(&pending_sig_file_path, empty_json).unwrap();
 
@@ -2306,10 +2376,22 @@ mod tests {
         let sig_file_path = signatures_path_for(&new_signers_file).unwrap();
 
         // Only old signatures is not sufficient
-        let mut signatures = HashMap::new();
-        signatures.insert(pubkey1.to_base64(), sig1.to_base64());
-        signatures.insert(pubkey2.to_base64(), sig2.to_base64());
-        let signatures_json = serde_json::to_string_pretty(&signatures).unwrap();
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
+        let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
         // With the current code, this will fail because it checks the same config twice
@@ -2322,10 +2404,22 @@ mod tests {
         );
 
         // Only new signatures is not sufficient
-        let mut signatures = HashMap::new();
-        signatures.insert(pubkey3.to_base64(), sig3.to_base64());
-        signatures.insert(pubkey4.to_base64(), sig4.to_base64());
-        let signatures_json = serde_json::to_string_pretty(&signatures).unwrap();
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            pubkey3.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig3.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey4.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig4.to_base64(),
+            },
+        );
+        let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
         let result = is_aggregate_signature_complete(&new_signers_file, false);
@@ -2336,10 +2430,22 @@ mod tests {
         );
 
         // only one of new signers is not sufficient
-        let mut signatures = HashMap::new();
-        signatures.insert(pubkey1.to_base64(), sig1.to_base64());
-        signatures.insert(pubkey3.to_base64(), sig3.to_base64());
-        let signatures_json = serde_json::to_string_pretty(&signatures).unwrap();
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey3.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig3.to_base64(),
+            },
+        );
+        let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
         // With the current code, this will fail because it checks the same config twice
@@ -2352,21 +2458,57 @@ mod tests {
         );
 
         // only master of old and all new is ok
-        let mut signatures = HashMap::new();
-        signatures.insert(pubkey1.to_base64(), sig1.to_base64());
-        signatures.insert(pubkey3.to_base64(), sig3.to_base64());
-        signatures.insert(pubkey4.to_base64(), sig4.to_base64());
-        let signatures_json = serde_json::to_string_pretty(&signatures).unwrap();
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey3.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig3.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey4.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig4.to_base64(),
+            },
+        );
+        let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
         let result = is_aggregate_signature_complete(&new_signers_file, false);
         assert!(result.is_ok());
         // only admin of old and all new is ok
-        let mut signatures = HashMap::new();
-        signatures.insert(pubkey2.to_base64(), sig2.to_base64());
-        signatures.insert(pubkey3.to_base64(), sig3.to_base64());
-        signatures.insert(pubkey4.to_base64(), sig4.to_base64());
-        let signatures_json = serde_json::to_string_pretty(&signatures).unwrap();
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey3.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig3.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey4.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig4.to_base64(),
+            },
+        );
+        let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
         // With the current code, this will fail because it checks the same config twice
@@ -2485,9 +2627,15 @@ mod tests {
 
         // Only old admin signature is not sufficient, the new one also has to sign
         // even though it is not a new signer
-        let mut signatures = HashMap::new();
-        signatures.insert(pubkey2.to_base64(), sig2.to_base64());
-        let signatures_json = serde_json::to_string_pretty(&signatures).unwrap();
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
+        let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
         let result = is_aggregate_signature_complete(&new_signers_file, false);
@@ -2818,10 +2966,13 @@ mod tests {
 
         // Verify the content
         let content = fs::read_to_string(&pending_sig_path)?;
-        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed_content.len(), 1);
-        assert!(parsed_content.contains_key(&pubkey.to_base64()));
-        assert_eq!(parsed_content[&pubkey.to_base64()], signature.to_base64());
+        let parsed_content: SignaturesFile = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.entries.len(), 1);
+        assert!(parsed_content.entries.contains_key(&pubkey.to_base64()));
+        assert_eq!(
+            parsed_content.entries[&pubkey.to_base64()].signature,
+            signature.to_base64()
+        );
 
         Ok(())
     }
@@ -2868,10 +3019,13 @@ mod tests {
 
         // Verify the content
         let content = fs::read_to_string(&complete_sig_path)?;
-        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed_content.len(), 1);
-        assert!(parsed_content.contains_key(&pubkey.to_base64()));
-        assert_eq!(parsed_content[&pubkey.to_base64()], signature.to_base64());
+        let parsed_content: SignaturesFile = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.entries.len(), 1);
+        assert!(parsed_content.entries.contains_key(&pubkey.to_base64()));
+        assert_eq!(
+            parsed_content.entries[&pubkey.to_base64()].signature,
+            signature.to_base64()
+        );
 
         Ok(())
     }
@@ -2922,12 +3076,18 @@ mod tests {
 
         // Verify the content contains both signatures
         let content = fs::read_to_string(&pending_sig_path)?;
-        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed_content.len(), 2);
-        assert!(parsed_content.contains_key(&pubkey1.to_base64()));
-        assert!(parsed_content.contains_key(&pubkey2.to_base64()));
-        assert_eq!(parsed_content[&pubkey1.to_base64()], signature1.to_base64());
-        assert_eq!(parsed_content[&pubkey2.to_base64()], signature2.to_base64());
+        let parsed_content: SignaturesFile = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.entries.len(), 2);
+        assert!(parsed_content.entries.contains_key(&pubkey1.to_base64()));
+        assert!(parsed_content.entries.contains_key(&pubkey2.to_base64()));
+        assert_eq!(
+            parsed_content.entries[&pubkey1.to_base64()].signature,
+            signature1.to_base64()
+        );
+        assert_eq!(
+            parsed_content.entries[&pubkey2.to_base64()].signature,
+            signature2.to_base64()
+        );
 
         Ok(())
     }
@@ -2960,10 +3120,10 @@ mod tests {
         ));
         assert!(pending_sig_path.exists());
 
-        // Verify the content is an empty JSON object
+        // Verify the content is an empty signatures file
         let content = fs::read_to_string(&pending_sig_path)?;
-        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed_content.len(), 0);
+        let parsed_content: SignaturesFile = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.entries.len(), 0);
 
         Ok(())
     }
@@ -3010,10 +3170,13 @@ mod tests {
 
         // Verify the content was overwritten
         let content = fs::read_to_string(&pending_sig_path)?;
-        let parsed_content: HashMap<String, String> = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed_content.len(), 1);
-        assert!(parsed_content.contains_key(&pubkey.to_base64()));
-        assert_eq!(parsed_content[&pubkey.to_base64()], signature.to_base64());
+        let parsed_content: SignaturesFile = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed_content.entries.len(), 1);
+        assert!(parsed_content.entries.contains_key(&pubkey.to_base64()));
+        assert_eq!(
+            parsed_content.entries[&pubkey.to_base64()].signature,
+            signature.to_base64()
+        );
 
         Ok(())
     }
@@ -3132,7 +3295,8 @@ mod tests {
 
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
-        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_sig_path, &empty_sig_file).unwrap();
 
         // Load the pending aggregate signature
         let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
@@ -3185,7 +3349,8 @@ mod tests {
 
         // Create empty pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
-        fs::write(&pending_sig_path, "{}").unwrap();
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_sig_path, &empty_sig_file).unwrap();
 
         // Load the initial empty aggregate signature
         let mut agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
@@ -3258,7 +3423,8 @@ mod tests {
 
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
-        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_sig_path, &empty_sig_file).unwrap();
 
         // Load the pending aggregate signature
         let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
@@ -3302,7 +3468,8 @@ mod tests {
 
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
-        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_sig_path, &empty_sig_file).unwrap();
 
         // Load the pending aggregate signature
         let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
@@ -3357,7 +3524,8 @@ mod tests {
 
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
-        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_sig_path, &empty_sig_file).unwrap();
 
         // Load the pending aggregate signature
         let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
@@ -3402,7 +3570,8 @@ mod tests {
 
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
-        fs::write(&pending_sig_path, "{}").unwrap();
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_sig_path, &empty_sig_file).unwrap();
 
         // Load the pending aggregate signature
         let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
@@ -3448,7 +3617,8 @@ mod tests {
 
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
-        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_sig_path, &empty_sig_file).unwrap();
 
         // Load the pending aggregate signature
         let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
@@ -3496,7 +3666,8 @@ mod tests {
 
         // Create a pending signatures file
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
-        fs::write(&pending_sig_path, "{}").unwrap(); // Empty signatures file
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_sig_path, &empty_sig_file).unwrap();
 
         // Load the pending aggregate signature
         let agg_sig_with_state = SignatureWithState::load_for_file(&test_file)?;
@@ -4149,7 +4320,8 @@ mod tests {
 
         // Write a complete signatures file (not pending)
         let complete_sig_path = signatures_path_for(&artifact_path).unwrap();
-        fs::write(&complete_sig_path, "{}").unwrap();
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&complete_sig_path, &empty_sig_file).unwrap();
 
         let missing = get_missing_signers(&artifact_path).expect("Should succeed");
         assert!(missing.is_empty());
@@ -4849,8 +5021,8 @@ mod tests {
         fs::write(signers_dir.join(SIGNERS_FILE), signers_json).unwrap();
 
         let pending_sig_path = pending_signatures_path_for(&artifact_path).unwrap();
-        let pending_content = serde_json::json!({});
-        fs::write(&pending_sig_path, pending_content.to_string()).unwrap();
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_sig_path, &empty_sig_file).unwrap();
 
         let result = can_signer_add_signature(&pending_sig_path, &public_key);
         assert!(result.is_ok());
@@ -4879,7 +5051,8 @@ mod tests {
         fs::write(signers_dir.join(SIGNERS_FILE), signers_json).unwrap();
 
         let pending_sig_path = pending_signatures_path_for(&artifact_path).unwrap();
-        fs::write(&pending_sig_path, "{}").unwrap();
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_sig_path, &empty_sig_file).unwrap();
 
         let result = can_signer_add_signature(&pending_sig_path, &public_key2);
         assert!(result.is_ok());
@@ -4910,10 +5083,15 @@ mod tests {
         let pending_sig_path = pending_signatures_path_for(&artifact_path).unwrap();
         let hash = sha512_for_file(&artifact_path).unwrap();
         let signature = secret_key.sign(&hash).unwrap();
-        let pending_content = serde_json::json!({
-            public_key.to_base64(): signature.to_base64()
-        });
-        fs::write(&pending_sig_path, pending_content.to_string()).unwrap();
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            public_key.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: signature.to_base64(),
+            },
+        );
+        fs::write(&pending_sig_path, serde_json::to_string(&sig_file).unwrap()).unwrap();
 
         let result = can_signer_add_signature(pending_sig_path, &public_key);
         assert!(result.is_ok());
@@ -4949,12 +5127,23 @@ mod tests {
         let sig1 = seckey1.sign(&data)?;
         let sig2 = seckey2.sign(&data)?;
 
-        let sig_map: HashMap<String, String> =
-            std::iter::once((pubkey1.to_base64(), sig1.to_base64()))
-                .chain(std::iter::once((pubkey2.to_base64(), sig2.to_base64())))
-                .collect();
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
 
-        let json_content = serde_json::to_string_pretty(&sig_map)?;
+        let json_content = serde_json::to_string_pretty(&sig_file)?;
         fs::write(&sig_file_path, json_content)?;
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
@@ -4993,10 +5182,16 @@ mod tests {
         let data = common::sha512_for_content(b"test data".to_vec())?;
         let sig = seckey.sign(&data)?;
 
-        let mut sig_map: HashMap<String, String> = HashMap::new();
-        sig_map.insert("invalid_base64_pubkey".to_string(), sig.to_base64());
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            "invalid_base64_pubkey".to_string(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig.to_base64(),
+            },
+        );
 
-        let json_content = serde_json::to_string_pretty(&sig_map)?;
+        let json_content = serde_json::to_string_pretty(&sig_file)?;
         fs::write(&sig_file_path, json_content)?;
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
@@ -5018,10 +5213,16 @@ mod tests {
         let test_keys = TestKeys::new(1);
         let pubkey = test_keys.pub_key(0).unwrap().clone();
 
-        let mut sig_map: HashMap<String, String> = HashMap::new();
-        sig_map.insert(pubkey.to_base64(), "invalid_base64_signature".to_string());
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            pubkey.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: "invalid_base64_signature".to_string(),
+            },
+        );
 
-        let json_content = serde_json::to_string_pretty(&sig_map)?;
+        let json_content = serde_json::to_string_pretty(&sig_file)?;
         fs::write(&sig_file_path, json_content)?;
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
@@ -5040,8 +5241,8 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let sig_file_path = temp_dir.path().join("test.signatures.json");
 
-        let empty_map: HashMap<String, String> = HashMap::new();
-        let json_content = serde_json::to_string_pretty(&empty_map)?;
+        let empty_sig_file = SignaturesFile::new();
+        let json_content = serde_json::to_string_pretty(&empty_sig_file)?;
         fs::write(&sig_file_path, json_content)?;
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
@@ -5054,7 +5255,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_individual_signatures_from_map_valid() -> Result<()> {
+    fn test_parse_tagged_signatures_valid() -> Result<()> {
         let test_keys = TestKeys::new(2);
         let pubkey1 = test_keys.pub_key(0).unwrap().clone();
         let seckey1 = test_keys.sec_key(0).unwrap();
@@ -5065,13 +5266,24 @@ mod tests {
         let sig1 = seckey1.sign(&data)?;
         let sig2 = seckey2.sign(&data)?;
 
-        let sig_map: HashMap<String, String> =
-            std::iter::once((pubkey1.to_base64(), sig1.to_base64()))
-                .chain(std::iter::once((pubkey2.to_base64(), sig2.to_base64())))
-                .collect();
+        let mut entries = HashMap::new();
+        entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
-            parse_individual_signatures_from_map(sig_map);
+            parse_tagged_signatures(&entries);
 
         assert!(result.is_ok());
         let signatures = result.unwrap();
@@ -5082,11 +5294,11 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_individual_signatures_from_map_empty() -> Result<()> {
-        let empty_map: HashMap<String, String> = HashMap::new();
+    fn test_parse_tagged_signatures_empty() -> Result<()> {
+        let entries = HashMap::new();
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
-            parse_individual_signatures_from_map(empty_map);
+            parse_tagged_signatures(&entries);
 
         assert!(result.is_ok());
         let signatures = result.unwrap();
@@ -5095,18 +5307,24 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_individual_signatures_from_map_invalid_pubkey() -> Result<()> {
+    fn test_parse_tagged_signatures_invalid_pubkey() -> Result<()> {
         let test_keys = TestKeys::new(1);
         let seckey = test_keys.sec_key(0).unwrap();
 
         let data = common::sha512_for_content(b"test data".to_vec())?;
         let sig = seckey.sign(&data)?;
 
-        let mut sig_map: HashMap<String, String> = HashMap::new();
-        sig_map.insert("invalid_base64_pubkey!!!".to_string(), sig.to_base64());
+        let mut entries = HashMap::new();
+        entries.insert(
+            "invalid_base64_pubkey!!!".to_string(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig.to_base64(),
+            },
+        );
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
-            parse_individual_signatures_from_map(sig_map);
+            parse_tagged_signatures(&entries);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -5117,18 +5335,21 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_individual_signatures_from_map_invalid_signature() -> Result<()> {
+    fn test_parse_tagged_signatures_invalid_signature() -> Result<()> {
         let test_keys = TestKeys::new(1);
         let pubkey = test_keys.pub_key(0).unwrap().clone();
 
-        let mut sig_map: HashMap<String, String> = HashMap::new();
-        sig_map.insert(
+        let mut entries = HashMap::new();
+        entries.insert(
             pubkey.to_base64(),
-            "invalid_base64_signature!!!".to_string(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: "invalid_base64_signature!!!".to_string(),
+            },
         );
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
-            parse_individual_signatures_from_map(sig_map);
+            parse_tagged_signatures(&entries);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -5139,7 +5360,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_individual_signatures_from_map_first_entry_invalid() -> Result<()> {
+    fn test_parse_tagged_signatures_first_entry_invalid() -> Result<()> {
         let test_keys = TestKeys::new(2);
         let pubkey2 = test_keys.pub_key(1).unwrap().clone();
         let seckey2 = test_keys.sec_key(1).unwrap();
@@ -5147,15 +5368,24 @@ mod tests {
         let data = common::sha512_for_content(b"test data".to_vec())?;
         let sig2 = seckey2.sign(&data)?;
 
-        let mut sig_map: HashMap<String, String> = HashMap::new();
-        sig_map.insert(
+        let mut entries = HashMap::new();
+        entries.insert(
             "invalid_base64_pubkey".to_string(),
-            "any_signature".to_string(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: "any_signature".to_string(),
+            },
         );
-        sig_map.insert(pubkey2.to_base64(), sig2.to_base64());
+        entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
-            parse_individual_signatures_from_map(sig_map);
+            parse_tagged_signatures(&entries);
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -5166,7 +5396,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_individual_signatures_from_map_single_entry() -> Result<()> {
+    fn test_parse_tagged_signatures_single_entry() -> Result<()> {
         let test_keys = TestKeys::new(1);
         let pubkey = test_keys.pub_key(0).unwrap().clone();
         let seckey = test_keys.sec_key(0).unwrap();
@@ -5174,11 +5404,17 @@ mod tests {
         let data = common::sha512_for_content(b"test data".to_vec())?;
         let sig = seckey.sign(&data)?;
 
-        let sig_map: HashMap<String, String> =
-            std::iter::once((pubkey.to_base64(), sig.to_base64())).collect();
+        let mut entries = HashMap::new();
+        entries.insert(
+            pubkey.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig.to_base64(),
+            },
+        );
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
-            parse_individual_signatures_from_map(sig_map);
+            parse_tagged_signatures(&entries);
 
         assert!(result.is_ok());
         let signatures = result.unwrap();
@@ -5199,12 +5435,23 @@ mod tests {
         let sig1 = seckey1.sign(&data)?;
         let sig2 = seckey2.sign(&data)?;
 
-        let sig_map: HashMap<String, String> =
-            std::iter::once((pubkey1.to_base64(), sig1.to_base64()))
-                .chain(std::iter::once((pubkey2.to_base64(), sig2.to_base64())))
-                .collect();
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
 
-        let json_bytes = serde_json::to_vec(&sig_map)?;
+        let json_bytes = serde_json::to_vec(&sig_file)?;
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
             get_individual_signatures_from_bytes(json_bytes);

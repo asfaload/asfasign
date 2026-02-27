@@ -3,6 +3,7 @@ use crate::keys::{
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
     KeyFormat,
 };
+use crate::signatures_file::{SignaturesFile, TaggedSignature};
 use base64::{Engine, prelude::BASE64_STANDARD};
 use common::{
     AsfaloadHashes,
@@ -249,28 +250,31 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         // The path to the signatures JSON file
         let pending_sig_file_path = pending_signatures_path_for(signed_file_path)?;
 
-        // Read existing signatures, or create a new map if the file doesn't exist.
-        let mut signatures_map: std::collections::HashMap<String, String> =
-            match File::open(&pending_sig_file_path) {
-                Ok(file) => serde_json::from_reader(file)?,
-                Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    std::collections::HashMap::new()
-                }
-                Err(e) => return Err(e.into()),
-            };
+        // Read existing signatures, or create a new SignaturesFile if the file doesn't exist.
+        let mut sig_file: SignaturesFile = match File::open(&pending_sig_file_path) {
+            Ok(file) => serde_json::from_reader(file)?,
+            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => SignaturesFile::new(),
+            Err(e) => return Err(e.into()),
+        };
 
         let signed_data = common::sha512_for_file(signed_file_path)?;
         if pub_key.verify(self, &signed_data).is_ok() {
             // Reject duplicate signatures from the same key
             let pubkey_b64 = pub_key.to_base64();
-            if signatures_map.contains_key(&pubkey_b64) {
+            if sig_file.entries.contains_key(&pubkey_b64) {
                 return Err(SignatureError::DuplicateSignature);
             }
-            signatures_map.insert(pubkey_b64, self.to_base64());
+            sig_file.entries.insert(
+                pubkey_b64,
+                TaggedSignature {
+                    format: KeyFormat::Minisign,
+                    signature: self.to_base64(),
+                },
+            );
 
-            // Write the updated map back to the file
+            // Write the updated file back
             let file = File::create(&pending_sig_file_path)?;
-            serde_json::to_writer_pretty(file, &signatures_map)?;
+            serde_json::to_writer_pretty(file, &sig_file)?;
 
             Ok(())
         } else {
@@ -570,21 +574,21 @@ mod asfaload_index_tests {
 
         // Verify the content of the signatures file
         let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
-        let sig_file: std::collections::HashMap<String, String> =
+        let sig_file: crate::signatures_file::SignaturesFile =
             serde_json::from_str(&sig_file_content)?;
         let pubkey_b64 = pubkey.to_base64();
         let pubkey2_b64 = pubkey2.to_base64();
         assert!(
-            sig_file.contains_key(&pubkey_b64),
+            sig_file.entries.contains_key(&pubkey_b64),
             "Signatures file should contain an entry for the public key"
         );
         assert!(
-            !sig_file.contains_key(&pubkey2_b64),
+            !sig_file.entries.contains_key(&pubkey2_b64),
             "Signatures file should NOT contain an entry for the second public key"
         );
         assert_eq!(
-            sig_file.get(&pubkey_b64).unwrap(),
-            &signature.to_base64(),
+            sig_file.entries.get(&pubkey_b64).unwrap().signature,
+            signature.to_base64(),
             "Signatures file should contain the correct signature"
         );
 
@@ -593,26 +597,26 @@ mod asfaload_index_tests {
 
         // Re-read the signatures file as it should have been modified
         let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
-        let sig_file: std::collections::HashMap<String, String> =
+        let sig_file: crate::signatures_file::SignaturesFile =
             serde_json::from_str(&sig_file_content)?;
         // First signature is still there
         assert!(
-            sig_file.contains_key(&pubkey_b64),
+            sig_file.entries.contains_key(&pubkey_b64),
             "Signatures file should contain an entry for the public key"
         );
         assert_eq!(
-            sig_file.get(&pubkey_b64).unwrap(),
-            &signature.to_base64(),
+            sig_file.entries.get(&pubkey_b64).unwrap().signature,
+            signature.to_base64(),
             "Signatures file should contain the correct signature"
         );
         // Second signature is added
         assert!(
-            sig_file.contains_key(&pubkey2_b64),
+            sig_file.entries.contains_key(&pubkey2_b64),
             "Signatures file should contain an entry for the second public key"
         );
         assert_eq!(
-            sig_file.get(&pubkey2_b64).unwrap(),
-            &signature2.to_base64(),
+            sig_file.entries.get(&pubkey2_b64).unwrap().signature,
+            signature2.to_base64(),
             "Signatures file should contain the correct second signature"
         );
 

@@ -5,7 +5,7 @@ pub mod tests {
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
     #[cfg(feature = "test-utils")]
     use features_lib::AsfaloadKeyPairTrait;
-    use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+    use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignaturesFile};
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::{
@@ -132,9 +132,10 @@ pub mod tests {
         );
 
         let sig_content = tokio::fs::read_to_string(&sig_path).await?;
-        assert_eq!(
-            sig_content, "{}",
-            "Signature file should contain empty object"
+        let sig_file: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert!(
+            sig_file.entries.is_empty(),
+            "Signature file should contain empty entries"
         );
 
         // attempt re-registration

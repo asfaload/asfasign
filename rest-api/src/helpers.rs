@@ -1,6 +1,7 @@
 use common::fs::names::pending_signatures_path_for;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
+use signatures::signatures_file::SignaturesFile;
 
 /// Creates an empty aggregate signature file for a given file path.
 ///
@@ -15,7 +16,11 @@ pub async fn create_empty_aggregate_signature(
 ) -> Result<NormalisedPaths, ApiError> {
     let pending_sig_path = pending_signatures_path_for(file_path)?;
 
-    tokio::fs::write(&pending_sig_path, "{}")
+    let sig_file = SignaturesFile::new();
+    let json = serde_json::to_string_pretty(&sig_file).map_err(|e| {
+        ApiError::FileWriteFailed(format!("Failed to serialize empty signatures file: {}", e))
+    })?;
+    tokio::fs::write(&pending_sig_path, json)
         .await
         .map_err(|e| {
             ApiError::FileWriteFailed(format!(

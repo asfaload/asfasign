@@ -2,7 +2,8 @@ use anyhow::Result;
 use common::fs::names::pending_signatures_path_for;
 use constants::{SIGNERS_DIR, SIGNERS_FILE};
 use features_lib::{
-    AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_content,
+    AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, SignaturesFile,
+    sha512_for_content,
 };
 use rest_api::server::run_server;
 use rest_api_auth::{
@@ -63,7 +64,10 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
 
     // Create empty pending signatures file to indicate this file needs signatures
     let pending_sig_path = pending_signatures_path_for(&artifact_path)?;
-    fs::write(&pending_sig_path, "{}")?;
+    fs::write(
+        &pending_sig_path,
+        serde_json::to_string(&SignaturesFile::new())?,
+    )?;
 
     // Start server
     let config_clone = config.clone();

@@ -22,6 +22,7 @@ pub use signatures::keys::AsfaloadSecretKeyTrait;
 pub use signatures::keys::AsfaloadSignatureTrait;
 
 // Re-export the types directly
+pub use signatures::signatures_file::{SignaturesFile, TaggedSignature};
 pub use signatures::types::AsfaloadKeyPairs;
 pub use signatures::types::AsfaloadPublicKeys;
 pub use signatures::types::AsfaloadSecretKeys;
@@ -249,10 +250,11 @@ pub mod aggregate_signature_helpers {
     use aggregate_signature::{
         get_individual_signatures_from_bytes as get_individual_signatures_from_bytes_ori,
         get_individual_signatures_from_file as get_individual_signatures_ori,
-        parse_individual_signatures_from_map as parse_individual_signatures_from_map_ori,
+        parse_tagged_signatures as parse_tagged_signatures_ori,
     };
     use common::errors::AggregateSignatureError;
     use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+    use signatures::signatures_file::TaggedSignature;
     use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 
     pub fn get_individual_signatures<P: AsRef<Path>>(
@@ -277,16 +279,14 @@ pub mod aggregate_signature_helpers {
         )
     }
 
-    pub fn parse_individual_signatures_from_map(
-        signatures_map: HashMap<String, String>,
+    pub fn parse_tagged_signatures(
+        entries: &HashMap<String, TaggedSignature>,
     ) -> Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, AggregateSignatureError>
     where
         AsfaloadPublicKeys: AsfaloadPublicKeyTrait<Signature = AsfaloadSignatures>,
         AsfaloadSignatures: AsfaloadSignatureTrait,
     {
-        parse_individual_signatures_from_map_ori::<AsfaloadPublicKeys, AsfaloadSignatures>(
-            signatures_map,
-        )
+        parse_tagged_signatures_ori::<AsfaloadPublicKeys, AsfaloadSignatures>(entries)
     }
 }
 

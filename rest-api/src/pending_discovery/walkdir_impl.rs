@@ -104,7 +104,8 @@ mod tests {
         AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file,
     };
     use rest_api_types::path_validation::build_normalised_absolute_path;
-    use signers_file_types::{SignersConfig, parse_signers_config};
+    use signatures::signatures_file::{SignaturesFile, TaggedSignature};
+    use signers_file_types::{KeyFormat, SignersConfig, parse_signers_config};
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -179,7 +180,8 @@ mod tests {
         let artifact1 = artifact1_dir.join("file1.txt");
         fs::write(&artifact1, "content1").unwrap();
         let pending1 = pending_signatures_path_for(&artifact1).unwrap();
-        fs::write(&pending1, "{}").unwrap();
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending1, &empty_sig_file).unwrap();
 
         // dir2/file2.txt is signed
         let artifact2_dir = temp_dir.path().join("dir2");
@@ -189,10 +191,19 @@ mod tests {
         let hash = sha512_for_file(&artifact2).unwrap();
         let sig = test_keys.sec_key(0).unwrap().sign(&hash).unwrap();
         let pending2 = pending_signatures_path_for(&artifact2).unwrap();
-        let pending2_content = serde_json::json!({
-            test_keys.pub_key(0).unwrap().to_base64(): sig.to_base64()
-        });
-        fs::write(&pending2, pending2_content.to_string()).unwrap();
+        let mut pending2_sig_file = SignaturesFile::new();
+        pending2_sig_file.entries.insert(
+            test_keys.pub_key(0).unwrap().to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig.to_base64(),
+            },
+        );
+        fs::write(
+            &pending2,
+            serde_json::to_string(&pending2_sig_file).unwrap(),
+        )
+        .unwrap();
 
         // dir3/file3.txt is considered complete because the pending file is not present.
         let artifact3_dir = temp_dir.path().join("dir3");
@@ -200,7 +211,7 @@ mod tests {
         let artifact3 = artifact3_dir.join("file3.txt");
         fs::write(&artifact3, "content3").unwrap();
         let complete3 = artifact3.with_extension("signatures.json");
-        fs::write(&complete3, "{}").unwrap();
+        fs::write(&complete3, &empty_sig_file).unwrap();
 
         let discovery = WalkdirPendingDiscovery::new();
         let result = discovery
@@ -289,7 +300,8 @@ mod tests {
         fs::write(&signers_file, signers_json).unwrap();
 
         let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
-        fs::write(&pending_signers_sig, "{}").unwrap();
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_signers_sig, &empty_sig_file).unwrap();
 
         let discovery = WalkdirPendingDiscovery::new();
         let result = discovery.find_all_pending(&normalised).unwrap();
@@ -326,12 +338,13 @@ mod tests {
         fs::write(&signers_file, signers_json).unwrap();
 
         let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
-        fs::write(&pending_signers_sig, "{}").unwrap();
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_signers_sig, &empty_sig_file).unwrap();
 
         let artifact = project_dir.join("artifact.txt");
         fs::write(&artifact, "content").unwrap();
         let pending_artifact_sig = pending_signatures_path_for(&artifact).unwrap();
-        fs::write(&pending_artifact_sig, "{}").unwrap();
+        fs::write(&pending_artifact_sig, &empty_sig_file).unwrap();
 
         let discovery = WalkdirPendingDiscovery::new();
         let result = discovery.find_all_pending(&normalised).unwrap();
@@ -458,10 +471,19 @@ mod tests {
 
         let hash = sha512_for_file(&signers_file).unwrap();
         let sig = test_keys.sec_key(0).unwrap().sign(&hash).unwrap();
-        let signed_content = serde_json::json!({
-            test_keys.pub_key(0).unwrap().to_base64(): sig.to_base64()
-        });
-        fs::write(&pending_signers_sig, signed_content.to_string()).unwrap();
+        let mut signed_sig_file = SignaturesFile::new();
+        signed_sig_file.entries.insert(
+            test_keys.pub_key(0).unwrap().to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig.to_base64(),
+            },
+        );
+        fs::write(
+            &pending_signers_sig,
+            serde_json::to_string(&signed_sig_file).unwrap(),
+        )
+        .unwrap();
 
         let global_signers_dir = temp_dir.path().join(SIGNERS_DIR);
         fs::create_dir_all(&global_signers_dir).unwrap();
@@ -509,7 +531,8 @@ mod tests {
         fs::write(&signers_file, signers_json.clone()).unwrap();
 
         let pending_signers_sig = pending_signatures_path_for(&signers_file).unwrap();
-        fs::write(&pending_signers_sig, "{}").unwrap();
+        let empty_sig_file = serde_json::to_string(&SignaturesFile::new()).unwrap();
+        fs::write(&pending_signers_sig, &empty_sig_file).unwrap();
 
         let global_signers_dir = temp_dir.path().join(SIGNERS_DIR);
         fs::create_dir_all(&global_signers_dir).unwrap();

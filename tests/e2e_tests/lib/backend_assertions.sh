@@ -55,7 +55,7 @@ assert_pending_signers_signature_count() {
     local project_dir sig_file
     project_dir="$(_project_dir)"
     sig_file="$project_dir/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$PENDING_SIGNATURES_SUFFIX"
-    assert_json_field "$sig_file" "keys | length == $expected" \
+    assert_json_field "$sig_file" ".entries | keys | length == $expected" \
         "Pending signers has $expected signature(s)"
 }
 
@@ -93,7 +93,7 @@ assert_pending_signers_signatures_contain_keys() {
         local pk
         pk="$(pubkey_of "$key_file")"
         assert_json_field "$sig_file" \
-            "has(\"$pk\")" \
+            ".entries | has(\"$pk\")" \
             "Pending signers signed by $(basename "$key_file")"
     done
 }
@@ -174,7 +174,7 @@ assert_release_index_signature_count() {
     if [[ ! -f "$sig_file" ]]; then
         sig_file="$(_release_dir "$version")/$INDEX_FILE.$SIGNATURES_SUFFIX"
     fi
-    assert_json_field "$sig_file" "keys | length == $expected" \
+    assert_json_field "$sig_file" ".entries | keys | length == $expected" \
         "Release v$version has $expected signature(s)"
 }
 

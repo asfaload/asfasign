@@ -75,6 +75,9 @@ pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone + std::fm
     fn from_base64(s: &str) -> Result<Self, KeyError> {
         Self::from_bytes(s.as_bytes())
     }
+    fn from_base64_with_format(s: &str, _format: &KeyFormat) -> Result<Self, KeyError> {
+        Self::from_base64(s)
+    }
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError>;
     fn from_secret_key(sk: &Self::SecretKeyType) -> Result<Self, KeyError>;
     fn key_format(&self) -> KeyFormat;
@@ -111,6 +114,9 @@ pub trait AsfaloadSignatureTrait: Sized {
     // As we need to serialise to json, and json does not support multiline strings, we support
     // the serialisation to base64 format.
     fn from_base64(s: &str) -> Result<Self, SignatureError>;
+    fn from_base64_with_format(s: &str, _format: &KeyFormat) -> Result<Self, SignatureError> {
+        Self::from_base64(s)
+    }
 
     fn to_base64(&self) -> String;
     // Warning: this only adds the file to a pending signatures file, but it does not transition

@@ -177,7 +177,9 @@ pub async fn create_pending_signatures_for(file_path: &str) -> Result<()> {
     let git_repo = git_repo_path().await;
     let absolute_path = git_repo.join(file_path);
     let pending_sig_path = common::fs::names::pending_signatures_path_for(&absolute_path)?;
-    tokio::fs::write(&pending_sig_path, "{}").await?;
+    let sig_file = features_lib::SignaturesFile::new();
+    let json = serde_json::to_string_pretty(&sig_file)?;
+    tokio::fs::write(&pending_sig_path, json).await?;
     Ok(())
 }
 

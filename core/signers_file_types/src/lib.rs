@@ -1,10 +1,11 @@
 pub mod revocation;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
 use common::errors::{SignersFileError, keys::KeyError};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use signatures::keys::KeyFormat;
+use signatures::signatures_file::SignaturesFile;
 use signatures::{keys::AsfaloadPublicKeyTrait, types::AsfaloadPublicKeys};
 
 pub mod errs {
@@ -430,8 +431,8 @@ pub struct HistoryEntry {
     pub obsoleted_at: DateTime<Utc>,
     /// Content of the signers file
     pub signers_file: SignersConfig,
-    /// Content of the signatures file (map from public key string to signature string)
-    pub signatures: HashMap<String, String>,
+    /// Signatures collected for the signers file
+    pub signatures: SignaturesFile,
     /// Metadata about the origin of the signers file
     pub metadata: SignersConfigMetadata,
 }
