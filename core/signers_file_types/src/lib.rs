@@ -386,8 +386,14 @@ impl Serialize for SignerData {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("SignerData", 2)?;
         state.serialize_field("format", &self.format)?;
-        // Convert the public key to its string representation using the trait method
-        state.serialize_field("pubkey", &self.pubkey.to_base64())?;
+        // Write bare base64 (without format prefix) since the format field already
+        // provides the algorithm context.
+        let prefixed = self.pubkey.to_base64();
+        let bare_b64 = prefixed
+            .split_once(':')
+            .map(|(_, b)| b)
+            .unwrap_or(&prefixed);
+        state.serialize_field("pubkey", bare_b64)?;
         state.end()
     }
 }
@@ -404,10 +410,15 @@ impl<'de> Deserialize<'de> for SignerData {
         }
 
         let helper = SignerDataHelper::deserialize(deserializer)?;
-        // Parse the public key from string using the trait method
-        let pubkey = AsfaloadPublicKeys::from_base64(&helper.pubkey).map_err(|_e| {
-            serde::de::Error::custom(format!("Problem parsing pubkey base64: {}", helper.pubkey))
-        })?;
+        // Use from_base64_with_format since the format field provides the algorithm
+        // context — no prefix needed on the pubkey string.
+        let pubkey = AsfaloadPublicKeys::from_base64_with_format(&helper.pubkey, &helper.format)
+            .map_err(|_e| {
+                serde::de::Error::custom(format!(
+                    "Problem parsing pubkey base64: {}",
+                    helper.pubkey
+                ))
+            })?;
         Ok(SignerData {
             format: helper.format,
             pubkey,
