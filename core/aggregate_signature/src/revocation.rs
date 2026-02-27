@@ -468,15 +468,17 @@ mod tests {
 
         // Verify revocation signature file content
         let revocation_sig_content = fs::read_to_string(&revocation_sig_path)?;
-        let revocation_sig_map: HashMap<String, String> =
+        let revocation_sig_file: signatures::signatures_file::SignaturesFile =
             serde_json::from_str(&revocation_sig_content)?;
-        assert_eq!(revocation_sig_map.len(), 1);
-        assert!(revocation_sig_map.contains_key(&initiator_pubkey.to_base64()));
+        assert_eq!(revocation_sig_file.entries.len(), 1);
+        assert!(revocation_sig_file.entries.contains_key(&initiator_pubkey.to_base64()));
         assert_eq!(
-            revocation_sig_map
+            revocation_sig_file
+                .entries
                 .get(&initiator_pubkey.to_base64())
-                .unwrap(),
-            &revocation_signature.to_base64()
+                .unwrap()
+                .signature,
+            revocation_signature.to_base64()
         );
 
         // Verify revocation signers file matches global signers
@@ -487,9 +489,9 @@ mod tests {
 
         // Verify revoked signatures file content matches original
         let original_sig_content = fs::read_to_string(&revoked_sig_path)?;
-        let original_sig_map: HashMap<String, String> =
+        let original_sig_file: signatures::signatures_file::SignaturesFile =
             serde_json::from_str(&original_sig_content)?;
-        assert_eq!(original_sig_map.len(), 2); // Should have both artifact signers
+        assert_eq!(original_sig_file.entries.len(), 2); // Should have both artifact signers
 
         Ok(())
     }
@@ -1147,11 +1149,11 @@ mod tests {
 
         // Verify both signatures are in the revocation signature file
         let revocation_sig_content = fs::read_to_string(&revocation_sig_path)?;
-        let revocation_sig_map: HashMap<String, String> =
+        let revocation_sig_file: signatures::signatures_file::SignaturesFile =
             serde_json::from_str(&revocation_sig_content)?;
-        assert_eq!(revocation_sig_map.len(), 2);
-        assert!(revocation_sig_map.contains_key(&initiator_pubkey.to_base64()));
-        assert!(revocation_sig_map.contains_key(&second_pubkey.to_base64()));
+        assert_eq!(revocation_sig_file.entries.len(), 2);
+        assert!(revocation_sig_file.entries.contains_key(&initiator_pubkey.to_base64()));
+        assert!(revocation_sig_file.entries.contains_key(&second_pubkey.to_base64()));
 
         Ok(())
     }
@@ -1212,9 +1214,9 @@ mod tests {
         let pending_revocation_file_path = pending_revocation_path_for(&artifact_path)?;
         let pending_sig_path = pending_signatures_path_for(&pending_revocation_file_path)?;
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 1, "Should have 1 signature after first call");
-        assert!(sig_map.contains_key(&first_pubkey.to_base64()));
+        let sig_file: signatures::signatures_file::SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_file.entries.len(), 1, "Should have 1 signature after first call");
+        assert!(sig_file.entries.contains_key(&first_pubkey.to_base64()));
 
         // Second revocation call with key 4 — should now ERROR because
         // pending revocation already exists. Additional signatures go
@@ -1255,9 +1257,9 @@ mod tests {
 
         // Verify first signature is still intact
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 1, "Should still have exactly 1 signature");
-        assert!(sig_map.contains_key(&first_pubkey.to_base64()));
+        let sig_file: signatures::signatures_file::SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_file.entries.len(), 1, "Should still have exactly 1 signature");
+        assert!(sig_file.entries.contains_key(&first_pubkey.to_base64()));
 
         let pending_revocation = SignatureWithState::load_for_file(pending_revocation_file_path)?;
         let final_sig = pending_revocation

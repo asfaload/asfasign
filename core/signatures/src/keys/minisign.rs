@@ -574,21 +574,21 @@ mod asfaload_index_tests {
 
         // Verify the content of the signatures file
         let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
-        let sig_file: std::collections::HashMap<String, String> =
+        let sig_file: crate::signatures_file::SignaturesFile =
             serde_json::from_str(&sig_file_content)?;
         let pubkey_b64 = pubkey.to_base64();
         let pubkey2_b64 = pubkey2.to_base64();
         assert!(
-            sig_file.contains_key(&pubkey_b64),
+            sig_file.entries.contains_key(&pubkey_b64),
             "Signatures file should contain an entry for the public key"
         );
         assert!(
-            !sig_file.contains_key(&pubkey2_b64),
+            !sig_file.entries.contains_key(&pubkey2_b64),
             "Signatures file should NOT contain an entry for the second public key"
         );
         assert_eq!(
-            sig_file.get(&pubkey_b64).unwrap(),
-            &signature.to_base64(),
+            sig_file.entries.get(&pubkey_b64).unwrap().signature,
+            signature.to_base64(),
             "Signatures file should contain the correct signature"
         );
 
@@ -597,26 +597,26 @@ mod asfaload_index_tests {
 
         // Re-read the signatures file as it should have been modified
         let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
-        let sig_file: std::collections::HashMap<String, String> =
+        let sig_file: crate::signatures_file::SignaturesFile =
             serde_json::from_str(&sig_file_content)?;
         // First signature is still there
         assert!(
-            sig_file.contains_key(&pubkey_b64),
+            sig_file.entries.contains_key(&pubkey_b64),
             "Signatures file should contain an entry for the public key"
         );
         assert_eq!(
-            sig_file.get(&pubkey_b64).unwrap(),
-            &signature.to_base64(),
+            sig_file.entries.get(&pubkey_b64).unwrap().signature,
+            signature.to_base64(),
             "Signatures file should contain the correct signature"
         );
         // Second signature is added
         assert!(
-            sig_file.contains_key(&pubkey2_b64),
+            sig_file.entries.contains_key(&pubkey2_b64),
             "Signatures file should contain an entry for the second public key"
         );
         assert_eq!(
-            sig_file.get(&pubkey2_b64).unwrap(),
-            &signature2.to_base64(),
+            sig_file.entries.get(&pubkey2_b64).unwrap().signature,
+            signature2.to_base64(),
             "Signatures file should contain the correct second signature"
         );
 
