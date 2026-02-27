@@ -12,13 +12,14 @@ use constants::{
 };
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
+    signatures_file::SignaturesFile,
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
 use signers_file_types::{
     HistoryEntry, HistoryFile, SignersConfig, SignersConfigMetadata, SignersConfigProposal,
     parse_signers_config, parse_signers_config_proposal,
 };
-use std::{borrow::Borrow, collections::HashMap, ffi::OsStr, fs, io::Write, path::Path};
+use std::{borrow::Borrow, ffi::OsStr, fs, io::Write, path::Path};
 //
 
 // Helper function used to validate the signer of a signers file
@@ -339,7 +340,7 @@ fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), Signe
     // Read the signatures file for the active signers
     let signatures_file_path = signatures_path_for(&active_signers_file)?;
     let signatures_content = fs::read_to_string(&signatures_file_path)?;
-    let signatures: HashMap<String, String> = serde_json::from_str(&signatures_content)?;
+    let signatures: SignaturesFile = serde_json::from_str(&signatures_content)?;
 
     // Read the metadata file for the active signers
     let metadata_file_path = active_signers_dir.join(METADATA_FILE);
