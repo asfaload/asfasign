@@ -9,10 +9,10 @@ _project_dir() {
     echo "$E2E_GIT_REPO_PATH/github.com/${E2E_REPO}"
 }
 
-# Extract minisign public key string from a key file path.
-# Usage: pubkey_of "$KEY_0"  →  "RWS1kZJeKmeNOI0vl8hjI/..."
+# Extract minisign public key string from a key file path (with format prefix).
+# Usage: pubkey_of "$KEY_0"  →  "minisign:RWS1kZJeKmeNOI0vl8hjI/..."
 pubkey_of() {
-    sed -n 2p "${1}.pub"
+    echo "minisign:$(sed -n 2p "${1}.pub")"
 }
 
 # --- Low-level assertion primitives ---
