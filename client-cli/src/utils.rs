@@ -73,16 +73,15 @@ fn get_unvalidated_password(
     }
 
     // If none found, prompt the user
-    eprint!("{}", prompt_message);
-    let password = rpassword::read_password()
+    let password = rpassword::prompt_password(prompt_message)
         .map_err(|e| ClientCliError::InvalidInput(format!("Failed to read password: {}", e)))?;
 
     match password_confirmation {
         PasswordConfirmation::RequireConfirmation => {
-            eprint!("Confirmation:");
-            let password_confirmation = rpassword::read_password().map_err(|e| {
-                ClientCliError::InvalidInput(format!("Failed to read password: {}", e))
-            })?;
+            let password_confirmation =
+                rpassword::prompt_password("Confirmation:").map_err(|e| {
+                    ClientCliError::InvalidInput(format!("Failed to read password: {}", e))
+                })?;
 
             if password_confirmation == password {
                 Ok(password)
