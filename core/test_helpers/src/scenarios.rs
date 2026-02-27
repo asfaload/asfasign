@@ -6,6 +6,7 @@ use std::{
 use anyhow::Result;
 use common::fs::names::pending_signatures_path_for;
 use constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use signatures::signatures_file::SignaturesFile;
 use signers_file_types::HistoryFile;
 pub fn setup_asfald_project_registered<P: AsRef<Path>>(
     repo_path: P,
@@ -41,6 +42,7 @@ pub fn setup_asfald_project_registered<P: AsRef<Path>>(
     let pending_index_file = pending_signers_dir.join(SIGNERS_FILE);
     fs::write(&pending_index_file, signers_config_json.into())?;
     let pending_signers_sig = pending_signatures_path_for(&pending_index_file)?;
-    fs::write(&pending_signers_sig, "{}")?;
+    let empty_sig_file = serde_json::to_string(&SignaturesFile::new())?;
+    fs::write(&pending_signers_sig, &empty_sig_file)?;
     Ok(pending_index_file)
 }

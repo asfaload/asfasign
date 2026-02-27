@@ -12,7 +12,7 @@ use constants::{
 };
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
-    signatures_file::SignaturesFile,
+    signatures_file::{SignaturesFile, TaggedSignature},
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
 use signers_file_types::{
@@ -845,13 +845,13 @@ mod tests {
 
         // Check the signature file content
         let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
-        let sig_map: std::collections::HashMap<String, String> =
+        let sig_map: SignaturesFile =
             serde_json::from_str(&sig_content).unwrap();
-        assert_eq!(sig_map.len(), 1);
-        assert!(sig_map.contains_key(&pub_key.to_base64()));
+        assert_eq!(sig_map.entries.len(), 1);
+        assert!(sig_map.entries.contains_key(&pub_key.to_base64()));
         assert_eq!(
-            sig_map.get(&pub_key.to_base64()).unwrap(),
-            &signature.to_base64()
+            sig_map.entries[&pub_key.to_base64()].signature,
+            signature.to_base64()
         );
         assert_metadata_file_valid(dir_path, false);
         Ok(())
@@ -923,13 +923,13 @@ mod tests {
 
         // Check the signature file content
         let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
-        let sig_map: std::collections::HashMap<String, String> =
+        let sig_map: SignaturesFile =
             serde_json::from_str(&sig_content).unwrap();
-        assert_eq!(sig_map.len(), 1);
-        assert!(sig_map.contains_key(&pub_key0.to_base64()));
+        assert_eq!(sig_map.entries.len(), 1);
+        assert!(sig_map.entries.contains_key(&pub_key0.to_base64()));
         assert_eq!(
-            sig_map.get(&pub_key0.to_base64()).unwrap(),
-            &signature.to_base64()
+            sig_map.entries[&pub_key0.to_base64()].signature,
+            signature.to_base64()
         );
         assert_metadata_file_valid(dir_path, false);
         Ok(())
@@ -983,13 +983,13 @@ mod tests {
         assert!(sig_file_path.exists());
         // Check the signature file content
         let sig_content = fs::read_to_string(sig_file_path).unwrap();
-        let sig_map: std::collections::HashMap<String, String> =
+        let sig_map: SignaturesFile =
             serde_json::from_str(&sig_content).unwrap();
-        assert_eq!(sig_map.len(), 1);
-        assert!(sig_map.contains_key(&pub_key.to_base64()));
+        assert_eq!(sig_map.entries.len(), 1);
+        assert!(sig_map.entries.contains_key(&pub_key.to_base64()));
         assert_eq!(
-            sig_map.get(&pub_key.to_base64()).unwrap(),
-            &signature.to_base64()
+            sig_map.entries[&pub_key.to_base64()].signature,
+            signature.to_base64()
         );
 
         // Check no pending signers dir was left
@@ -1700,8 +1700,6 @@ mod tests {
         Ok(())
     }
     use chrono::{DateTime, Utc};
-    use std::collections::HashMap;
-
     // Helper function to create a test active signers setup
     fn create_test_active_signers(
         root_dir: &Path,
@@ -1764,7 +1762,7 @@ mod tests {
         // Read the original signatures file content
         let signatures_file_path = signatures_path_for(&signers_file_path)?;
         let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
-        let original_signatures: HashMap<String, String> =
+        let original_signatures: SignaturesFile =
             serde_json::from_str(&original_signatures_content)?;
 
         // Ensure history file doesn't exist initially
@@ -1826,7 +1824,7 @@ mod tests {
                 "master_keys": [],
                 "threshold": 1
             },
-            "signatures": {},
+            "signatures": {"entries": {}},
             "metadata": {
                 "data": {
                     "Forge": {
@@ -1863,7 +1861,7 @@ mod tests {
         // Read the original signatures file content
         let signatures_file_path = signatures_path_for(&signers_file_path)?;
         let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
-        let original_signatures: HashMap<String, String> =
+        let original_signatures: SignaturesFile =
             serde_json::from_str(&original_signatures_content)?;
 
         // Move to history
@@ -1914,7 +1912,7 @@ mod tests {
                 "artifact_signers": [],
                 "master_keys": []
             },
-            "signatures": {"key1": "sig1"},
+            "signatures": {"entries": {"key1": {"format": "minisign", "signature": "sig1"}}},
             "metadata": {
                 "data": {
                     "Forge": {
@@ -1938,7 +1936,7 @@ mod tests {
                 "artifact_signers": [],
                 "master_keys": []
             },
-            "signatures": {"key2": "sig2"},
+            "signatures": {"entries": {"key2": {"format": "minisign", "signature": "sig2"}}},
             "metadata": {
                 "data": {
                     "Forge": {
@@ -1974,7 +1972,7 @@ mod tests {
         // Read the original signatures file content
         let signatures_file_path = signatures_path_for(&signers_file_path)?;
         let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
-        let original_signatures: HashMap<String, String> =
+        let original_signatures: SignaturesFile =
             serde_json::from_str(&original_signatures_content)?;
 
         // Move to history
@@ -2054,7 +2052,7 @@ mod tests {
 
         // Read original signatures content
         let original_signatures_content = fs::read_to_string(&signatures_path)?;
-        let original_signatures: HashMap<String, String> =
+        let original_signatures: SignaturesFile =
             serde_json::from_str(&original_signatures_content)?;
 
         // Move to history
@@ -2189,7 +2187,7 @@ mod tests {
         // Read the original signatures file content
         let signatures_file_path = signatures_path_for(&signers_file_path)?;
         let original_signatures_content = fs::read_to_string(&signatures_file_path)?;
-        let original_signatures: HashMap<String, String> =
+        let original_signatures: SignaturesFile =
             serde_json::from_str(&original_signatures_content)?;
 
         // Move to history
@@ -2237,18 +2235,24 @@ mod tests {
         .unwrap()
     }
 
-    // Helper function to create a test signatures map
-    fn create_test_signatures(test_keys: &TestKeys) -> HashMap<String, String> {
-        let mut signatures = HashMap::new();
-        signatures.insert(
+    // Helper function to create a test signatures file
+    fn create_test_signatures(test_keys: &TestKeys) -> SignaturesFile {
+        let mut sig_file = SignaturesFile::new();
+        sig_file.entries.insert(
             test_keys.pub_key(0).unwrap().to_base64(),
-            "test_signature_0".to_string(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: "test_signature_0".to_string(),
+            },
         );
-        signatures.insert(
+        sig_file.entries.insert(
             test_keys.pub_key(1).unwrap().to_base64(),
-            "test_signature_1".to_string(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: "test_signature_1".to_string(),
+            },
         );
-        signatures
+        sig_file
     }
 
     // Helper function to create a test history entry
@@ -2273,7 +2277,7 @@ mod tests {
         assert_eq!(entry.signers_file.artifact_signers().len(), 1);
         assert_eq!(entry.signers_file.artifact_signers()[0].threshold, 2);
         assert_eq!(entry.signers_file.artifact_signers()[0].signers.len(), 2);
-        assert_eq!(entry.signatures.len(), 2);
+        assert_eq!(entry.signatures.entries.len(), 2);
     }
 
     #[test]
@@ -2408,8 +2412,16 @@ mod tests {
         "admin_keys": null
       },
       "signatures": {
-        "PUBKEY0_PLACEHOLDER": "SIGNATURE0_PLACEHOLDER",
-        "PUBKEY1_PLACEHOLDER": "SIGNATURE1_PLACEHOLDER"
+        "entries": {
+          "PUBKEY0_PLACEHOLDER": {
+            "format": "minisign",
+            "signature": "SIGNATURE0_PLACEHOLDER"
+          },
+          "PUBKEY1_PLACEHOLDER": {
+            "format": "minisign",
+            "signature": "SIGNATURE1_PLACEHOLDER"
+          }
+        }
       },
       "metadata": {
         "data": {
@@ -2492,14 +2504,14 @@ mod tests {
         );
 
         // Verify the signatures
-        assert_eq!(history_file.entries()[0].signatures.len(), 2);
+        assert_eq!(history_file.entries()[0].signatures.entries.len(), 2);
         assert_eq!(
-            history_file.entries()[0].signatures.get(&pubkey0).unwrap(),
-            &signature0_b64
+            history_file.entries()[0].signatures.entries[&pubkey0].signature,
+            signature0_b64
         );
         assert_eq!(
-            history_file.entries()[0].signatures.get(&pubkey1).unwrap(),
-            &signature1_b64
+            history_file.entries()[0].signatures.entries[&pubkey1].signature,
+            signature1_b64
         );
 
         // Verify that the signatures are valid for the test data
@@ -2533,7 +2545,7 @@ mod tests {
       "master_keys": [],
       "admin_keys": null
     },
-    "signatures": {},
+    "signatures": {"entries": {}},
     "metadata": {
       "data": {
         "Forge": {
@@ -2581,7 +2593,7 @@ mod tests {
             "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
         assert_eq!(loaded_history_file.entries()[0].signers_file.version(), 1);
-        assert_eq!(loaded_history_file.entries()[0].signatures.len(), 2);
+        assert_eq!(loaded_history_file.entries()[0].signatures.entries.len(), 2);
     }
 
     #[test]
@@ -2702,7 +2714,7 @@ mod tests {
         let entry = HistoryEntry {
             obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
             signers_file: create_test_signers_config(&test_keys),
-            signatures: HashMap::new(),
+            signatures: SignaturesFile::new(),
             metadata: test_metadata(),
         };
 
@@ -2713,7 +2725,7 @@ mod tests {
         let deserialized: HistoryFile = parse_history_file(&json).unwrap();
 
         assert_eq!(deserialized.entries().len(), 1);
-        assert_eq!(deserialized.entries()[0].signatures.len(), 0);
+        assert_eq!(deserialized.entries()[0].signatures.entries.len(), 0);
     }
 
     // Helper function to create a test active signers setup
@@ -3766,12 +3778,12 @@ mod tests {
 
         // Verify signature content
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 1);
-        assert!(sig_map.contains_key(&pubkey.to_base64()));
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 1);
+        assert!(sig_map.entries.contains_key(&pubkey.to_base64()));
         assert_eq!(
-            sig_map.get(&pubkey.to_base64()).unwrap(),
-            &signature.to_base64()
+            sig_map.entries[&pubkey.to_base64()].signature,
+            signature.to_base64()
         );
 
         assert_metadata_file_valid(dir_path, false);
@@ -4421,17 +4433,23 @@ mod tests {
         signer_indices: &[usize],
     ) -> Result<(), SignersFileError> {
         let hash = common::sha512_for_file(signers_file_path)?;
-        let mut signatures = HashMap::new();
+        let mut sig_file = SignaturesFile::new();
 
         for &index in signer_indices {
             let pubkey = test_keys.pub_key(index).unwrap();
             let seckey = test_keys.sec_key(index).unwrap();
             let signature = seckey.sign(&hash).unwrap();
-            signatures.insert(pubkey.to_base64(), signature.to_base64());
+            sig_file.entries.insert(
+                pubkey.to_base64(),
+                TaggedSignature {
+                    format: KeyFormat::Minisign,
+                    signature: signature.to_base64(),
+                },
+            );
         }
 
         let pending_sig_path = pending_signatures_path_for(signers_file_path)?;
-        fs::write(pending_sig_path, serde_json::to_string(&signatures)?)?;
+        fs::write(pending_sig_path, serde_json::to_string(&sig_file)?)?;
 
         Ok(())
     }
@@ -4462,12 +4480,12 @@ mod tests {
 
         // Verify the signature file content
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 1);
-        assert!(sig_map.contains_key(&pubkey.to_base64()));
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 1);
+        assert!(sig_map.entries.contains_key(&pubkey.to_base64()));
         assert_eq!(
-            sig_map.get(&pubkey.to_base64()).unwrap(),
-            &signature.to_base64()
+            sig_map.entries[&pubkey.to_base64()].signature,
+            signature.to_base64()
         );
 
         Ok(())
@@ -4537,10 +4555,10 @@ mod tests {
 
         // Verify the signature file content contains both signatures
         let sig_content = fs::read_to_string(&complete_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 2);
-        assert!(sig_map.contains_key(&test_keys.pub_key(0).unwrap().to_base64()));
-        assert!(sig_map.contains_key(&pubkey.to_base64()));
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 2);
+        assert!(sig_map.entries.contains_key(&test_keys.pub_key(0).unwrap().to_base64()));
+        assert!(sig_map.entries.contains_key(&pubkey.to_base64()));
 
         Ok(())
     }
@@ -4583,12 +4601,12 @@ mod tests {
 
         // Verify the signature file content
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 1);
-        assert!(sig_map.contains_key(&pubkey0.to_base64()));
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 1);
+        assert!(sig_map.entries.contains_key(&pubkey0.to_base64()));
         assert_eq!(
-            sig_map.get(&pubkey0.to_base64()).unwrap(),
-            &signature0.to_base64()
+            sig_map.entries[&pubkey0.to_base64()].signature,
+            signature0.to_base64()
         );
 
         // Add second signature
@@ -4598,10 +4616,10 @@ mod tests {
         //
         // Verify the signature file content contains both signatures
         let sig_content = fs::read_to_string(&complete_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 2);
-        assert!(sig_map.contains_key(&pubkey0.to_base64()));
-        assert!(sig_map.contains_key(&pubkey1.to_base64()));
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 2);
+        assert!(sig_map.entries.contains_key(&pubkey0.to_base64()));
+        assert!(sig_map.entries.contains_key(&pubkey1.to_base64()));
 
         Ok(())
     }
@@ -4772,15 +4790,15 @@ mod tests {
         );
 
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 1, "Should have one signature");
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 1, "Should have one signature");
         assert!(
-            sig_map.contains_key(&pubkey0.to_base64()),
+            sig_map.entries.contains_key(&pubkey0.to_base64()),
             "Should contain first signature"
         );
         assert_eq!(
-            sig_map.get(&pubkey0.to_base64()).unwrap(),
-            &signature0.to_base64()
+            sig_map.entries[&pubkey0.to_base64()].signature,
+            signature0.to_base64()
         );
 
         // Sign with second key (present in existing signers file in parent dir)
@@ -4802,19 +4820,19 @@ mod tests {
         );
 
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 2, "Should have two signatures");
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 2, "Should have two signatures");
         assert!(
-            sig_map.contains_key(&pubkey0.to_base64()),
+            sig_map.entries.contains_key(&pubkey0.to_base64()),
             "Should contain first signature"
         );
         assert!(
-            sig_map.contains_key(&pubkey1.to_base64()),
+            sig_map.entries.contains_key(&pubkey1.to_base64()),
             "Should contain second signature"
         );
         assert_eq!(
-            sig_map.get(&pubkey1.to_base64()).unwrap(),
-            &signature1.to_base64()
+            sig_map.entries[&pubkey1.to_base64()].signature,
+            signature1.to_base64()
         );
 
         // Sign with third key (present in new signers file)
@@ -4836,23 +4854,23 @@ mod tests {
         );
 
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 3, "Should have three signatures");
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 3, "Should have three signatures");
         assert!(
-            sig_map.contains_key(&pubkey0.to_base64()),
+            sig_map.entries.contains_key(&pubkey0.to_base64()),
             "Should contain first signature"
         );
         assert!(
-            sig_map.contains_key(&pubkey1.to_base64()),
+            sig_map.entries.contains_key(&pubkey1.to_base64()),
             "Should contain second signature"
         );
         assert!(
-            sig_map.contains_key(&pubkey2.to_base64()),
+            sig_map.entries.contains_key(&pubkey2.to_base64()),
             "Should contain third signature"
         );
         assert_eq!(
-            sig_map.get(&pubkey2.to_base64()).unwrap(),
-            &signature2.to_base64()
+            sig_map.entries[&pubkey2.to_base64()].signature,
+            signature2.to_base64()
         );
 
         // Sign with fourth key (present in new signers file)
@@ -4878,27 +4896,27 @@ mod tests {
         );
 
         let sig_content = fs::read_to_string(&complete_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 4, "Should have all four signatures");
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 4, "Should have all four signatures");
         assert!(
-            sig_map.contains_key(&pubkey0.to_base64()),
+            sig_map.entries.contains_key(&pubkey0.to_base64()),
             "Should contain first signature"
         );
         assert!(
-            sig_map.contains_key(&pubkey1.to_base64()),
+            sig_map.entries.contains_key(&pubkey1.to_base64()),
             "Should contain second signature"
         );
         assert!(
-            sig_map.contains_key(&pubkey2.to_base64()),
+            sig_map.entries.contains_key(&pubkey2.to_base64()),
             "Should contain third signature"
         );
         assert!(
-            sig_map.contains_key(&pubkey3.to_base64()),
+            sig_map.entries.contains_key(&pubkey3.to_base64()),
             "Should contain fourth signature"
         );
         assert_eq!(
-            sig_map.get(&pubkey3.to_base64()).unwrap(),
-            &signature3.to_base64()
+            sig_map.entries[&pubkey3.to_base64()].signature,
+            signature3.to_base64()
         );
 
         Ok(())
@@ -4952,15 +4970,15 @@ mod tests {
         );
 
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 1, "Should have one signature");
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 1, "Should have one signature");
         assert!(
-            sig_map.contains_key(&pubkey0.to_base64()),
+            sig_map.entries.contains_key(&pubkey0.to_base64()),
             "Should contain first signature"
         );
         assert_eq!(
-            sig_map.get(&pubkey0.to_base64()).unwrap(),
-            &signature0.to_base64()
+            sig_map.entries[&pubkey0.to_base64()].signature,
+            signature0.to_base64()
         );
 
         // Sign with second key
@@ -4983,19 +5001,19 @@ mod tests {
         );
 
         let sig_content = fs::read_to_string(&complete_sig_path)?;
-        let sig_map: HashMap<String, String> = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.len(), 2, "Should have two signatures");
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 2, "Should have two signatures");
         assert!(
-            sig_map.contains_key(&pubkey0.to_base64()),
+            sig_map.entries.contains_key(&pubkey0.to_base64()),
             "Should contain first signature"
         );
         assert!(
-            sig_map.contains_key(&pubkey1.to_base64()),
+            sig_map.entries.contains_key(&pubkey1.to_base64()),
             "Should contain second signature"
         );
         assert_eq!(
-            sig_map.get(&pubkey1.to_base64()).unwrap(),
-            &signature1.to_base64()
+            sig_map.entries[&pubkey1.to_base64()].signature,
+            signature1.to_base64()
         );
 
         Ok(())
