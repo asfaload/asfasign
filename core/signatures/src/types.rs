@@ -99,7 +99,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
 
     fn to_base64(&self) -> String {
         match self {
-            Self::Minisign(pk) => pk.to_base64(),
+            Self::Minisign(pk) => format!("minisign:{}", pk.to_base64()),
         }
     }
 
@@ -114,18 +114,30 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
     }
 
     fn from_base64(s: &str) -> Result<Self, KeyError> {
-        // With multiple backing algorithms, we could try one
-        // after the other and return the corresponding one
-        // if only one worked. If multiple attempts are successful
-        // we don't know which one should be returned.
-        let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(s)?;
-        Ok(Self::Minisign(pk))
+        let (format_str, key_b64) = s.split_once(':').ok_or_else(|| {
+            KeyError::CreationFailed(format!(
+                "Public key missing format prefix (expected 'format:base64'): {}",
+                s
+            ))
+        })?;
+        match format_str {
+            "minisign" => {
+                let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(key_b64)?;
+                Ok(Self::Minisign(pk))
+            }
+            _ => Err(KeyError::CreationFailed(format!(
+                "Unknown public key format: {}",
+                format_str
+            ))),
+        }
     }
 
     fn from_base64_with_format(s: &str, format: &KeyFormat) -> Result<Self, KeyError> {
+        // Strip prefix if present
+        let key_b64 = s.split_once(':').map(|(_, b64)| b64).unwrap_or(s);
         match format {
             KeyFormat::Minisign => {
-                let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(s)?;
+                let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(key_b64)?;
                 Ok(Self::Minisign(pk))
             }
         }
