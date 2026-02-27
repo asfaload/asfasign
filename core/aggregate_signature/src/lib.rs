@@ -619,17 +619,22 @@ where
         let file_path = PathBuf::from(&self.origin);
         let sig_file_path = SS::signature_path_for(&file_path)?;
 
-        // Convert signatures to a HashMap of base64-encoded public keys and signatures
-        let signatures_map: HashMap<String, String> = self
+        let entries = self
             .signatures
             .iter()
-            .map(|(pubkey, sig)| (pubkey.to_base64(), sig.to_base64()))
+            .map(|(pubkey, sig)| {
+                (
+                    pubkey.to_base64(),
+                    TaggedSignature {
+                        format: pubkey.key_format(),
+                        signature: sig.to_base64(),
+                    },
+                )
+            })
             .collect();
 
-        // Serialize the HashMap to JSON
-        let json_content = serde_json::to_string_pretty(&signatures_map)?;
-
-        // Write the JSON content to the signature file
+        let sig_file = SignaturesFile { entries };
+        let json_content = serde_json::to_string_pretty(&sig_file)?;
         std::fs::write(&sig_file_path, json_content)?;
 
         Ok(())
