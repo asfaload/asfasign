@@ -272,8 +272,7 @@ fn test_add_to_aggregate() -> Result<()> {
 
     // Verify the content of the signatures file
     let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
-    let sig_file: crate::signatures_file::SignaturesFile =
-        serde_json::from_str(&sig_file_content)?;
+    let sig_file: crate::signatures_file::SignaturesFile = serde_json::from_str(&sig_file_content)?;
     let pubkey_b64 = pubkey.to_base64();
     let pubkey2_b64 = pubkey2.to_base64();
     assert!(
@@ -295,8 +294,7 @@ fn test_add_to_aggregate() -> Result<()> {
 
     // Re-read the signatures file as it should have been modified
     let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
-    let sig_file: crate::signatures_file::SignaturesFile =
-        serde_json::from_str(&sig_file_content)?;
+    let sig_file: crate::signatures_file::SignaturesFile = serde_json::from_str(&sig_file_content)?;
     // First signature is still there
     assert!(
         sig_file.entries.contains_key(&pubkey_b64),

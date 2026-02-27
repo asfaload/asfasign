@@ -1628,10 +1628,13 @@ mod tests {
         ));
 
         let mut incomplete_sig_file = SignaturesFile::new();
-        incomplete_sig_file.entries.insert(pubkey1.clone().to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: sig1.to_base64(),
-        });
+        incomplete_sig_file.entries.insert(
+            pubkey1.clone().to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
         let incomplete_json = serde_json::to_string_pretty(&incomplete_sig_file).unwrap();
         fs::write(&sig_file_path, incomplete_json).unwrap();
 
@@ -1644,14 +1647,20 @@ mod tests {
 
         // Test complete signature (both signatures)
         let mut complete_sig_file = SignaturesFile::new();
-        complete_sig_file.entries.insert(pubkey1.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: sig1.to_base64(),
-        });
-        complete_sig_file.entries.insert(pubkey2.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: sig2.to_base64(),
-        });
+        complete_sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        complete_sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
         let complete_json = serde_json::to_string_pretty(&complete_sig_file).unwrap();
         fs::write(&sig_file_path, complete_json).unwrap();
 
@@ -1668,17 +1677,23 @@ mod tests {
 
         // Test invalid signature (wrong content)
         let mut invalid_sig_file = SignaturesFile::new();
-        invalid_sig_file.entries.insert(pubkey1.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: seckey1
-                .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
-                .unwrap()
-                .to_base64(),
-        });
-        invalid_sig_file.entries.insert(pubkey2.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: sig2.to_base64(),
-        });
+        invalid_sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: seckey1
+                    .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
+                    .unwrap()
+                    .to_base64(),
+            },
+        );
+        invalid_sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
         let invalid_json = serde_json::to_string_pretty(&invalid_sig_file).unwrap();
         fs::write(&sig_file_path, invalid_json).unwrap();
 
@@ -1944,10 +1959,13 @@ mod tests {
         // Create a pending signatures file with the signature
         let pending_sig_path = pending_signatures_path_for(&test_file).unwrap();
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(pubkey.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: signature.to_base64(),
-        });
+        sig_file.entries.insert(
+            pubkey.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: signature.to_base64(),
+            },
+        );
         let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&pending_sig_path, signatures_json).unwrap();
 
@@ -1975,7 +1993,10 @@ mod tests {
         let parsed_content: SignaturesFile = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed_content.entries.len(), 1);
         assert!(parsed_content.entries.contains_key(&pubkey.to_base64()));
-        assert_eq!(parsed_content.entries[&pubkey.to_base64()].signature, signature.to_base64());
+        assert_eq!(
+            parsed_content.entries[&pubkey.to_base64()].signature,
+            signature.to_base64()
+        );
 
         // Verify the returned signature is in Complete state
         assert_eq!(complete_sig.signatures.len(), 1);
@@ -2150,10 +2171,13 @@ mod tests {
 
         // Test incomplete signature (only one signature)
         let mut incomplete_sig_file = SignaturesFile::new();
-        incomplete_sig_file.entries.insert(pubkey1.clone().to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: sig1.to_base64(),
-        });
+        incomplete_sig_file.entries.insert(
+            pubkey1.clone().to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
         let incomplete_json = serde_json::to_string_pretty(&incomplete_sig_file).unwrap();
         fs::write(&pending_sig_file_path, &incomplete_json).unwrap();
 
@@ -2163,14 +2187,20 @@ mod tests {
 
         // Test complete signature (both signatures)
         let mut complete_sig_file = SignaturesFile::new();
-        complete_sig_file.entries.insert(pubkey1.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: sig1.to_base64(),
-        });
-        complete_sig_file.entries.insert(pubkey2.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: sig2.to_base64(),
-        });
+        complete_sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        complete_sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
         let complete_json = serde_json::to_string_pretty(&complete_sig_file).unwrap();
         fs::write(&pending_sig_file_path, complete_json).unwrap();
 
@@ -2178,17 +2208,23 @@ mod tests {
 
         // Test invalid signature (wrong content)
         let mut invalid_sig_file = SignaturesFile::new();
-        invalid_sig_file.entries.insert(pubkey1.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: seckey1
-                .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
-                .unwrap()
-                .to_base64(),
-        });
-        invalid_sig_file.entries.insert(pubkey2.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: sig2.to_base64(),
-        });
+        invalid_sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: seckey1
+                    .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
+                    .unwrap()
+                    .to_base64(),
+            },
+        );
+        invalid_sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
         let invalid_json = serde_json::to_string_pretty(&invalid_sig_file).unwrap();
         fs::write(&pending_sig_file_path, invalid_json).unwrap();
 
@@ -2341,12 +2377,20 @@ mod tests {
 
         // Only old signatures is not sufficient
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(pubkey1.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig1.to_base64(),
-        });
-        sig_file.entries.insert(pubkey2.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig2.to_base64(),
-        });
+        sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
         let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
@@ -2361,12 +2405,20 @@ mod tests {
 
         // Only new signatures is not sufficient
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(pubkey3.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig3.to_base64(),
-        });
-        sig_file.entries.insert(pubkey4.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig4.to_base64(),
-        });
+        sig_file.entries.insert(
+            pubkey3.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig3.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey4.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig4.to_base64(),
+            },
+        );
         let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
@@ -2379,12 +2431,20 @@ mod tests {
 
         // only one of new signers is not sufficient
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(pubkey1.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig1.to_base64(),
-        });
-        sig_file.entries.insert(pubkey3.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig3.to_base64(),
-        });
+        sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey3.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig3.to_base64(),
+            },
+        );
         let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
@@ -2399,15 +2459,27 @@ mod tests {
 
         // only master of old and all new is ok
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(pubkey1.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig1.to_base64(),
-        });
-        sig_file.entries.insert(pubkey3.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig3.to_base64(),
-        });
-        sig_file.entries.insert(pubkey4.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig4.to_base64(),
-        });
+        sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey3.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig3.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey4.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig4.to_base64(),
+            },
+        );
         let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
@@ -2415,15 +2487,27 @@ mod tests {
         assert!(result.is_ok());
         // only admin of old and all new is ok
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(pubkey2.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig2.to_base64(),
-        });
-        sig_file.entries.insert(pubkey3.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig3.to_base64(),
-        });
-        sig_file.entries.insert(pubkey4.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig4.to_base64(),
-        });
+        sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey3.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig3.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey4.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig4.to_base64(),
+            },
+        );
         let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
@@ -2544,9 +2628,13 @@ mod tests {
         // Only old admin signature is not sufficient, the new one also has to sign
         // even though it is not a new signer
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(pubkey2.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign, signature: sig2.to_base64(),
-        });
+        sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
         let signatures_json = serde_json::to_string_pretty(&sig_file).unwrap();
         fs::write(&sig_file_path, signatures_json).unwrap();
 
@@ -2881,7 +2969,10 @@ mod tests {
         let parsed_content: SignaturesFile = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed_content.entries.len(), 1);
         assert!(parsed_content.entries.contains_key(&pubkey.to_base64()));
-        assert_eq!(parsed_content.entries[&pubkey.to_base64()].signature, signature.to_base64());
+        assert_eq!(
+            parsed_content.entries[&pubkey.to_base64()].signature,
+            signature.to_base64()
+        );
 
         Ok(())
     }
@@ -2931,7 +3022,10 @@ mod tests {
         let parsed_content: SignaturesFile = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed_content.entries.len(), 1);
         assert!(parsed_content.entries.contains_key(&pubkey.to_base64()));
-        assert_eq!(parsed_content.entries[&pubkey.to_base64()].signature, signature.to_base64());
+        assert_eq!(
+            parsed_content.entries[&pubkey.to_base64()].signature,
+            signature.to_base64()
+        );
 
         Ok(())
     }
@@ -2986,8 +3080,14 @@ mod tests {
         assert_eq!(parsed_content.entries.len(), 2);
         assert!(parsed_content.entries.contains_key(&pubkey1.to_base64()));
         assert!(parsed_content.entries.contains_key(&pubkey2.to_base64()));
-        assert_eq!(parsed_content.entries[&pubkey1.to_base64()].signature, signature1.to_base64());
-        assert_eq!(parsed_content.entries[&pubkey2.to_base64()].signature, signature2.to_base64());
+        assert_eq!(
+            parsed_content.entries[&pubkey1.to_base64()].signature,
+            signature1.to_base64()
+        );
+        assert_eq!(
+            parsed_content.entries[&pubkey2.to_base64()].signature,
+            signature2.to_base64()
+        );
 
         Ok(())
     }
@@ -3073,7 +3173,10 @@ mod tests {
         let parsed_content: SignaturesFile = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed_content.entries.len(), 1);
         assert!(parsed_content.entries.contains_key(&pubkey.to_base64()));
-        assert_eq!(parsed_content.entries[&pubkey.to_base64()].signature, signature.to_base64());
+        assert_eq!(
+            parsed_content.entries[&pubkey.to_base64()].signature,
+            signature.to_base64()
+        );
 
         Ok(())
     }
@@ -4981,10 +5084,13 @@ mod tests {
         let hash = sha512_for_file(&artifact_path).unwrap();
         let signature = secret_key.sign(&hash).unwrap();
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(public_key.to_base64(), TaggedSignature {
-            format: KeyFormat::Minisign,
-            signature: signature.to_base64(),
-        });
+        sig_file.entries.insert(
+            public_key.to_base64(),
+            TaggedSignature {
+                format: KeyFormat::Minisign,
+                signature: signature.to_base64(),
+            },
+        );
         fs::write(&pending_sig_path, serde_json::to_string(&sig_file).unwrap()).unwrap();
 
         let result = can_signer_add_signature(pending_sig_path, &public_key);
@@ -5022,8 +5128,20 @@ mod tests {
         let sig2 = seckey2.sign(&data)?;
 
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(pubkey1.to_base64(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: sig1.to_base64() });
-        sig_file.entries.insert(pubkey2.to_base64(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: sig2.to_base64() });
+        sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
 
         let json_content = serde_json::to_string_pretty(&sig_file)?;
         fs::write(&sig_file_path, json_content)?;
@@ -5065,7 +5183,13 @@ mod tests {
         let sig = seckey.sign(&data)?;
 
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert("invalid_base64_pubkey".to_string(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: sig.to_base64() });
+        sig_file.entries.insert(
+            "invalid_base64_pubkey".to_string(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig.to_base64(),
+            },
+        );
 
         let json_content = serde_json::to_string_pretty(&sig_file)?;
         fs::write(&sig_file_path, json_content)?;
@@ -5090,7 +5214,13 @@ mod tests {
         let pubkey = test_keys.pub_key(0).unwrap().clone();
 
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(pubkey.to_base64(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: "invalid_base64_signature".to_string() });
+        sig_file.entries.insert(
+            pubkey.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: "invalid_base64_signature".to_string(),
+            },
+        );
 
         let json_content = serde_json::to_string_pretty(&sig_file)?;
         fs::write(&sig_file_path, json_content)?;
@@ -5137,8 +5267,20 @@ mod tests {
         let sig2 = seckey2.sign(&data)?;
 
         let mut entries = HashMap::new();
-        entries.insert(pubkey1.to_base64(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: sig1.to_base64() });
-        entries.insert(pubkey2.to_base64(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: sig2.to_base64() });
+        entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
             parse_tagged_signatures(&entries);
@@ -5173,7 +5315,13 @@ mod tests {
         let sig = seckey.sign(&data)?;
 
         let mut entries = HashMap::new();
-        entries.insert("invalid_base64_pubkey!!!".to_string(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: sig.to_base64() });
+        entries.insert(
+            "invalid_base64_pubkey!!!".to_string(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig.to_base64(),
+            },
+        );
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
             parse_tagged_signatures(&entries);
@@ -5194,7 +5342,10 @@ mod tests {
         let mut entries = HashMap::new();
         entries.insert(
             pubkey.to_base64(),
-            TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: "invalid_base64_signature!!!".to_string() },
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: "invalid_base64_signature!!!".to_string(),
+            },
         );
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
@@ -5220,9 +5371,18 @@ mod tests {
         let mut entries = HashMap::new();
         entries.insert(
             "invalid_base64_pubkey".to_string(),
-            TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: "any_signature".to_string() },
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: "any_signature".to_string(),
+            },
         );
-        entries.insert(pubkey2.to_base64(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: sig2.to_base64() });
+        entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
             parse_tagged_signatures(&entries);
@@ -5245,7 +5405,13 @@ mod tests {
         let sig = seckey.sign(&data)?;
 
         let mut entries = HashMap::new();
-        entries.insert(pubkey.to_base64(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: sig.to_base64() });
+        entries.insert(
+            pubkey.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig.to_base64(),
+            },
+        );
 
         let result: Result<HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, _> =
             parse_tagged_signatures(&entries);
@@ -5270,8 +5436,20 @@ mod tests {
         let sig2 = seckey2.sign(&data)?;
 
         let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(pubkey1.to_base64(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: sig1.to_base64() });
-        sig_file.entries.insert(pubkey2.to_base64(), TaggedSignature { format: signatures::keys::KeyFormat::Minisign, signature: sig2.to_base64() });
+        sig_file.entries.insert(
+            pubkey1.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig1.to_base64(),
+            },
+        );
+        sig_file.entries.insert(
+            pubkey2.to_base64(),
+            TaggedSignature {
+                format: signatures::keys::KeyFormat::Minisign,
+                signature: sig2.to_base64(),
+            },
+        );
 
         let json_bytes = serde_json::to_vec(&sig_file)?;
 

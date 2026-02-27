@@ -471,7 +471,11 @@ mod tests {
         let revocation_sig_file: signatures::signatures_file::SignaturesFile =
             serde_json::from_str(&revocation_sig_content)?;
         assert_eq!(revocation_sig_file.entries.len(), 1);
-        assert!(revocation_sig_file.entries.contains_key(&initiator_pubkey.to_base64()));
+        assert!(
+            revocation_sig_file
+                .entries
+                .contains_key(&initiator_pubkey.to_base64())
+        );
         assert_eq!(
             revocation_sig_file
                 .entries
@@ -1152,8 +1156,16 @@ mod tests {
         let revocation_sig_file: signatures::signatures_file::SignaturesFile =
             serde_json::from_str(&revocation_sig_content)?;
         assert_eq!(revocation_sig_file.entries.len(), 2);
-        assert!(revocation_sig_file.entries.contains_key(&initiator_pubkey.to_base64()));
-        assert!(revocation_sig_file.entries.contains_key(&second_pubkey.to_base64()));
+        assert!(
+            revocation_sig_file
+                .entries
+                .contains_key(&initiator_pubkey.to_base64())
+        );
+        assert!(
+            revocation_sig_file
+                .entries
+                .contains_key(&second_pubkey.to_base64())
+        );
 
         Ok(())
     }
@@ -1214,8 +1226,13 @@ mod tests {
         let pending_revocation_file_path = pending_revocation_path_for(&artifact_path)?;
         let pending_sig_path = pending_signatures_path_for(&pending_revocation_file_path)?;
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_file: signatures::signatures_file::SignaturesFile = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_file.entries.len(), 1, "Should have 1 signature after first call");
+        let sig_file: signatures::signatures_file::SignaturesFile =
+            serde_json::from_str(&sig_content)?;
+        assert_eq!(
+            sig_file.entries.len(),
+            1,
+            "Should have 1 signature after first call"
+        );
         assert!(sig_file.entries.contains_key(&first_pubkey.to_base64()));
 
         // Second revocation call with key 4 — should now ERROR because
@@ -1257,8 +1274,13 @@ mod tests {
 
         // Verify first signature is still intact
         let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_file: signatures::signatures_file::SignaturesFile = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_file.entries.len(), 1, "Should still have exactly 1 signature");
+        let sig_file: signatures::signatures_file::SignaturesFile =
+            serde_json::from_str(&sig_content)?;
+        assert_eq!(
+            sig_file.entries.len(),
+            1,
+            "Should still have exactly 1 signature"
+        );
         assert!(sig_file.entries.contains_key(&first_pubkey.to_base64()));
 
         let pending_revocation = SignatureWithState::load_for_file(pending_revocation_file_path)?;

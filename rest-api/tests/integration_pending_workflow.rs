@@ -64,7 +64,10 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
 
     // Create empty pending signatures file to indicate this file needs signatures
     let pending_sig_path = pending_signatures_path_for(&artifact_path)?;
-    fs::write(&pending_sig_path, serde_json::to_string(&SignaturesFile::new())?)?;
+    fs::write(
+        &pending_sig_path,
+        serde_json::to_string(&SignaturesFile::new())?,
+    )?;
 
     // Start server
     let config_clone = config.clone();

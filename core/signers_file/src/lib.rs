@@ -12,7 +12,7 @@ use constants::{
 };
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
-    signatures_file::{SignaturesFile, TaggedSignature},
+    signatures_file::SignaturesFile,
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
 use signers_file_types::{
@@ -434,6 +434,7 @@ mod tests {
     use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signatures::keys::AsfaloadSignatureTrait;
+    use signatures::signatures_file::TaggedSignature;
     use signers_file_types::KeyFormat;
     use signers_file_types::SignerKind;
     use signers_file_types::parse_history_file;
@@ -845,8 +846,7 @@ mod tests {
 
         // Check the signature file content
         let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
-        let sig_map: SignaturesFile =
-            serde_json::from_str(&sig_content).unwrap();
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content).unwrap();
         assert_eq!(sig_map.entries.len(), 1);
         assert!(sig_map.entries.contains_key(&pub_key.to_base64()));
         assert_eq!(
@@ -923,8 +923,7 @@ mod tests {
 
         // Check the signature file content
         let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
-        let sig_map: SignaturesFile =
-            serde_json::from_str(&sig_content).unwrap();
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content).unwrap();
         assert_eq!(sig_map.entries.len(), 1);
         assert!(sig_map.entries.contains_key(&pub_key0.to_base64()));
         assert_eq!(
@@ -983,8 +982,7 @@ mod tests {
         assert!(sig_file_path.exists());
         // Check the signature file content
         let sig_content = fs::read_to_string(sig_file_path).unwrap();
-        let sig_map: SignaturesFile =
-            serde_json::from_str(&sig_content).unwrap();
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content).unwrap();
         assert_eq!(sig_map.entries.len(), 1);
         assert!(sig_map.entries.contains_key(&pub_key.to_base64()));
         assert_eq!(
@@ -4557,7 +4555,11 @@ mod tests {
         let sig_content = fs::read_to_string(&complete_sig_path)?;
         let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
         assert_eq!(sig_map.entries.len(), 2);
-        assert!(sig_map.entries.contains_key(&test_keys.pub_key(0).unwrap().to_base64()));
+        assert!(
+            sig_map
+                .entries
+                .contains_key(&test_keys.pub_key(0).unwrap().to_base64())
+        );
         assert!(sig_map.entries.contains_key(&pubkey.to_base64()));
 
         Ok(())

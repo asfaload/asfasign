@@ -199,7 +199,11 @@ mod tests {
                 signature: sig.to_base64(),
             },
         );
-        fs::write(&pending2, serde_json::to_string(&pending2_sig_file).unwrap()).unwrap();
+        fs::write(
+            &pending2,
+            serde_json::to_string(&pending2_sig_file).unwrap(),
+        )
+        .unwrap();
 
         // dir3/file3.txt is considered complete because the pending file is not present.
         let artifact3_dir = temp_dir.path().join("dir3");
@@ -475,7 +479,11 @@ mod tests {
                 signature: sig.to_base64(),
             },
         );
-        fs::write(&pending_signers_sig, serde_json::to_string(&signed_sig_file).unwrap()).unwrap();
+        fs::write(
+            &pending_signers_sig,
+            serde_json::to_string(&signed_sig_file).unwrap(),
+        )
+        .unwrap();
 
         let global_signers_dir = temp_dir.path().join(SIGNERS_DIR);
         fs::create_dir_all(&global_signers_dir).unwrap();
