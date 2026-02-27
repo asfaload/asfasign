@@ -7,6 +7,7 @@ use common::fs::names::{
 };
 use common::{AsfaloadHashes, FileType, SignedFileLoader, SignedFileWithKind};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signatures::signatures_file::{SignaturesFile, TaggedSignature};
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 use signers_file_types::{SignerGroup, SignersConfig};
 use std::collections::{HashMap, HashSet};
@@ -176,13 +177,13 @@ where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
     S: AsfaloadSignatureTrait,
 {
-    let signatures_map: HashMap<String, String> = match std::fs::File::open(&sig_file_path) {
+    let sig_file: SignaturesFile = match std::fs::File::open(&sig_file_path) {
         Ok(file) => serde_json::from_reader(file)?,
-        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => HashMap::new(),
+        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => SignaturesFile::new(),
         Err(e) => return Err(e.into()),
     };
 
-    parse_individual_signatures_from_map(signatures_map)
+    parse_tagged_signatures(&sig_file.entries)
 }
 
 pub fn get_individual_signatures_from_bytes<P, S, T: std::borrow::Borrow<[u8]>>(
@@ -195,13 +196,14 @@ where
     let signature_content = signatures_content_in.borrow();
     if signature_content.is_empty() {
         return Ok(HashMap::new());
-    };
-    let signatures_map: HashMap<String, String> = serde_json::from_slice(signature_content)?;
+    }
+    let sig_file: SignaturesFile = serde_json::from_slice(signature_content)?;
 
-    parse_individual_signatures_from_map(signatures_map)
+    parse_tagged_signatures(&sig_file.entries)
 }
-pub fn parse_individual_signatures_from_map<P, S>(
-    signatures_map: HashMap<String, String>,
+
+pub fn parse_tagged_signatures<P, S>(
+    entries: &HashMap<String, TaggedSignature>,
 ) -> Result<HashMap<P, S>, AggregateSignatureError>
 where
     P: AsfaloadPublicKeyTrait<Signature = S> + Eq + std::hash::Hash + Clone,
@@ -209,10 +211,10 @@ where
 {
     let mut signatures: HashMap<P, S> = HashMap::new();
 
-    for (pubkey_b64, sig_b64) in signatures_map {
-        let pubkey = P::from_base64(&pubkey_b64)
+    for (pubkey_b64, tagged) in entries {
+        let pubkey = P::from_base64_with_format(pubkey_b64, &tagged.format)
             .map_err(|e| AggregateSignatureError::PublicKey(format!("{}", e)))?;
-        let signature = S::from_base64(&sig_b64)
+        let signature = S::from_base64_with_format(&tagged.signature, &tagged.format)
             .map_err(|e| AggregateSignatureError::Signature(e.to_string()))?;
         signatures.insert(pubkey, signature);
     }
