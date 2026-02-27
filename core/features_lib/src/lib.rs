@@ -22,6 +22,7 @@ pub use signatures::keys::AsfaloadSecretKeyTrait;
 pub use signatures::keys::AsfaloadSignatureTrait;
 
 // Re-export the types directly
+pub use signatures::signatures_file::{SignaturesFile, TaggedSignature};
 pub use signatures::types::AsfaloadKeyPairs;
 pub use signatures::types::AsfaloadPublicKeys;
 pub use signatures::types::AsfaloadSecretKeys;

@@ -3,13 +3,13 @@
 //! These functions simplify test setup by providing reusable utilities
 //! for creating signers configs, artifact files, and signature files.
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use common::sha512_for_file;
 use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
+use signatures::signatures_file::{SignaturesFile, TaggedSignature};
 use signers_file_types::{
     KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig, SignersConfigProposal,
 };
@@ -84,13 +84,19 @@ pub fn write_pending_signatures(
     use common::fs::names::pending_signatures_path_for;
 
     let file_hash = sha512_for_file(file_path).unwrap();
-    let mut sig_map: HashMap<String, String> = HashMap::new();
+    let mut sig_file = SignaturesFile::new();
     for (pubkey, seckey) in signed_keys {
         let sig = seckey.sign(&file_hash).unwrap();
-        sig_map.insert(pubkey.to_base64(), sig.to_base64());
+        sig_file.entries.insert(
+            pubkey.to_base64(),
+            TaggedSignature {
+                format: pubkey.key_format(),
+                signature: sig.to_base64(),
+            },
+        );
     }
     let sig_path = pending_signatures_path_for(file_path).unwrap();
-    let json = serde_json::to_string_pretty(&sig_map).unwrap();
+    let json = serde_json::to_string_pretty(&sig_file).unwrap();
     fs::write(sig_path, json).unwrap();
 }
 
@@ -198,21 +204,33 @@ pub fn create_complete_signers_setup(
 
     let hash = sha512_for_file(&signers_file)?;
 
-    let mut signatures = HashMap::new();
+    let mut sig_file = SignaturesFile::new();
 
     if let Some(indices) = master_key_indices {
         for &index in &indices {
             let pubkey = test_keys.pub_key(index).unwrap();
             let seckey = test_keys.sec_key(index).unwrap();
             let signature = seckey.sign(&hash)?;
-            signatures.insert(pubkey.to_base64(), signature.to_base64());
+            sig_file.entries.insert(
+                pubkey.to_base64(),
+                TaggedSignature {
+                    format: pubkey.key_format(),
+                    signature: signature.to_base64(),
+                },
+            );
         }
     } else {
         for i in 0..2 {
             let pubkey = test_keys.pub_key(i).unwrap();
             let seckey = test_keys.sec_key(i).unwrap();
             let signature = seckey.sign(&hash)?;
-            signatures.insert(pubkey.to_base64(), signature.to_base64());
+            sig_file.entries.insert(
+                pubkey.to_base64(),
+                TaggedSignature {
+                    format: pubkey.key_format(),
+                    signature: signature.to_base64(),
+                },
+            );
         }
     }
 
@@ -221,7 +239,7 @@ pub fn create_complete_signers_setup(
         signers_file.file_name().unwrap().to_string_lossy(),
         SIGNATURES_SUFFIX
     ));
-    fs::write(&signatures_file, serde_json::to_string_pretty(&signatures)?)?;
+    fs::write(&signatures_file, serde_json::to_string_pretty(&sig_file)?)?;
 
     Ok((signers_file, signatures_file))
 }
