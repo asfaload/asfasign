@@ -122,6 +122,15 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
         Ok(Self::Minisign(pk))
     }
 
+    fn from_base64_with_format(s: &str, format: &KeyFormat) -> Result<Self, KeyError> {
+        match format {
+            KeyFormat::Minisign => {
+                let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(s)?;
+                Ok(Self::Minisign(pk))
+            }
+        }
+    }
+
     fn from_secret_key(sk_in: &AsfaloadSecretKeys) -> Result<Self, KeyError> {
         match sk_in {
             AsfaloadSecretKeys::Minisign(sk) => {
@@ -221,6 +230,15 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
     fn from_base64(s: &str) -> Result<Self, SignatureError> {
         let sig = AsfaloadSignature::<minisign::SignatureBox>::from_base64(s)?;
         Ok(Self::Minisign(sig))
+    }
+
+    fn from_base64_with_format(s: &str, format: &KeyFormat) -> Result<Self, SignatureError> {
+        match format {
+            KeyFormat::Minisign => {
+                let sig = AsfaloadSignature::<minisign::SignatureBox>::from_base64(s)?;
+                Ok(Self::Minisign(sig))
+            }
+        }
     }
 
     fn to_base64(&self) -> String {
