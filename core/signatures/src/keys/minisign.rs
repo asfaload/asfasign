@@ -260,7 +260,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         let signed_data = common::sha512_for_file(signed_file_path)?;
         if pub_key.verify(self, &signed_data).is_ok() {
             // Reject duplicate signatures from the same key
-            let pubkey_b64 = pub_key.to_base64();
+            let pubkey_b64 = format!("minisign:{}", pub_key.to_base64());
             if sig_file.entries.contains_key(&pubkey_b64) {
                 return Err(SignatureError::DuplicateSignature);
             }
@@ -576,8 +576,8 @@ mod asfaload_index_tests {
         let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
         let sig_file: crate::signatures_file::SignaturesFile =
             serde_json::from_str(&sig_file_content)?;
-        let pubkey_b64 = pubkey.to_base64();
-        let pubkey2_b64 = pubkey2.to_base64();
+        let pubkey_b64 = format!("minisign:{}", pubkey.to_base64());
+        let pubkey2_b64 = format!("minisign:{}", pubkey2.to_base64());
         assert!(
             sig_file.entries.contains_key(&pubkey_b64),
             "Signatures file should contain an entry for the public key"

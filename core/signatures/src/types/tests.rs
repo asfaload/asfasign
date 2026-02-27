@@ -162,20 +162,39 @@ fn test_keys_methods() -> Result<()> {
     let value_read = fs::read_to_string(&public_key_path)?;
     // When we saved the key to disk using the minisign Box, it wrote a comment
     // followed by the base64 encoded key. Thus here we only need the second line.
-    let public_key_string = value_read.lines().nth(1).ok_or_else(|| {
+    let bare_b64 = value_read.lines().nth(1).ok_or_else(|| {
         KeyError::IOError(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "Public key file does not contain a second line",
         ))
     })?;
-    let public_key_from_string = AsfaloadPublicKeys::from_base64(public_key_string)?;
+    // from_base64 now requires the format prefix
+    let prefixed_b64 = format!("minisign:{}", bare_b64);
+    let public_key_from_string = AsfaloadPublicKeys::from_base64(&prefixed_b64)?;
     public_key_from_string.verify(&signature, &bytes_to_sign)?;
 
-    // Test AsfaloadPublicKey::from_base64
+    // Test round-trip: to_base64 should return the prefixed form
     let b64 = public_key_from_string.to_base64();
-    assert_eq!(b64, public_key_string);
+    assert_eq!(b64, prefixed_b64);
 
     Ok(())
+}
+
+#[test]
+fn test_from_base64_missing_prefix_returns_error() {
+    let bare_b64 = "RWS1kZJeKmeNOI0vl8hjI/YD7UQYxMq5uYkVWfHCHPtm7bOsbgZMovii";
+    let result = AsfaloadPublicKeys::from_base64(bare_b64);
+    assert!(result.is_err(), "from_base64 without prefix should fail");
+}
+
+#[test]
+fn test_from_base64_unknown_prefix_returns_error() {
+    let bad_prefix = "unknown:RWS1kZJeKmeNOI0vl8hjI/YD7UQYxMq5uYkVWfHCHPtm7bOsbgZMovii";
+    let result = AsfaloadPublicKeys::from_base64(bad_prefix);
+    assert!(
+        result.is_err(),
+        "from_base64 with unknown prefix should fail"
+    );
 }
 
 #[test]
