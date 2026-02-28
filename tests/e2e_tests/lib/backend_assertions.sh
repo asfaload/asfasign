@@ -9,10 +9,19 @@ _project_dir() {
     echo "$E2E_GIT_REPO_PATH/github.com/${E2E_REPO}"
 }
 
-# Extract minisign public key string from a key file path (with format prefix).
+# Extract public key string from a key file path (with format prefix).
+# Detects algorithm by line count: minisign .pub has 2 lines, ed25519 has 1.
 # Usage: pubkey_of "$KEY_0"  →  "minisign:RWS1kZJeKmeNOI0vl8hjI/..."
+# Usage: pubkey_of "$ED_KEY" →  "ed25519:uMIWP0pbjC1PJxOASZtOPn..."
 pubkey_of() {
-    echo "minisign:$(sed -n 2p "${1}.pub")"
+    local pub_file="${1}.pub"
+    local lines
+    lines=$(wc -l < "$pub_file")
+    if [ "$lines" -ge 2 ]; then
+        echo "minisign:$(sed -n 2p "$pub_file")"
+    else
+        echo "ed25519:$(cat "$pub_file")"
+    fi
 }
 
 # --- Low-level assertion primitives ---
