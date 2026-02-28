@@ -9,11 +9,25 @@ _project_dir() {
     echo "$E2E_GIT_REPO_PATH/github.com/${E2E_REPO}"
 }
 
-# Extract public key string from a key file path (with format prefix).
+# Extract bare base64 public key string from a key file path.
 # Detects algorithm by line count: minisign .pub has 2 lines, ed25519 has 1.
-# Usage: pubkey_of "$KEY_0"  ->  "minisign:RWS1kZ..."  (when KEY_TYPE=minisign)
-#        pubkey_of "$KEY_0"  ->  "ed25519:uMIWP0..."   (when KEY_TYPE=ed25519)
+# Usage: pubkey_of "$KEY_0"  ->  "RWS1kZ..."   (bare base64, matches .data.pubkey in signers JSON)
 pubkey_of() {
+    local pub_file="${1}.pub"
+    local lines
+    lines=$(wc -l < "$pub_file")
+    if [ "$lines" -ge 2 ]; then
+        sed -n 2p "$pub_file"
+    else
+        cat "$pub_file"
+    fi
+}
+
+# Extract prefixed public key string (format:base64) for signatures file entries.
+# The signatures file uses prefixed keys as HashMap keys (e.g. "minisign:RWS1kZ...").
+# Usage: prefixed_pubkey_of "$KEY_0"  ->  "minisign:RWS1kZ..."  (when KEY_TYPE=minisign)
+#        prefixed_pubkey_of "$KEY_0"  ->  "ed25519:uMIWP0..."   (when KEY_TYPE=ed25519)
+prefixed_pubkey_of() {
     local pub_file="${1}.pub"
     local lines
     lines=$(wc -l < "$pub_file")
@@ -100,7 +114,7 @@ assert_pending_signers_signatures_contain_keys() {
     sig_file="$project_dir/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$PENDING_SIGNATURES_SUFFIX"
     for key_file in "$@"; do
         local pk
-        pk="$(pubkey_of "$key_file")"
+        pk="$(prefixed_pubkey_of "$key_file")"
         assert_json_field "$sig_file" \
             ".entries | has(\"$pk\")" \
             "Pending signers signed by $(basename "$key_file")"
