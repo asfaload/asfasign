@@ -1,8 +1,11 @@
 .DEFAULT_GOAL := help
 SHELL:=/bin/bash
 
-## Run tests of all components
-test:
+## Run all tests with minisign keys (default)
+test: test-minisign
+
+## Run all tests with minisign keys
+test-minisign:
 	$(MAKE) check-format
 	$(MAKE) clippy
 	cargo nextest run
@@ -70,6 +73,15 @@ help:
 		printf "\n"; \
 	}' \
 	| more $(shell test $(shell uname) == Darwin && echo '--no-init --raw-control-chars')
+
+## Run all tests with ed25519 keys
+test-ed25519:
+	$(MAKE) check-format
+	$(MAKE) clippy
+	KEY_TYPE=ed25519 cargo nextest run
+	KEY_TYPE=ed25519 $(MAKE) test-with-test-utils
+	KEY_TYPE=ed25519 $(MAKE) -C rest-api test-sha256
+	KEY_TYPE=ed25519 $(MAKE) -C rest-api test-with-test-utils-sha256
 
 ## Run client-server integration tests
 client-server-tests:
