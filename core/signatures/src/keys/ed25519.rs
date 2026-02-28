@@ -336,6 +336,10 @@ mod tests {
     use super::*;
     use common::sha512_for_content;
 
+    /// Low-cost scrypt for fast tests. NOT for production.
+    /// Keep in sync with TEST_SCRYPT_LOG_N in test_helpers/src/lib.rs.
+    const TEST_SCRYPT_LOG_N: u8 = 10;
+
     fn get_key_pair() -> Result<
         (
             AsfaloadPublicKey<Ed25519PublicKey>,
@@ -343,13 +347,18 @@ mod tests {
         ),
         KeyError,
     > {
-        let kp = AsfaloadKeyPair::<Ed25519KeyPair>::new("testpass")?;
+        let kp = AsfaloadKeyPair::<Ed25519KeyPair>::new_with_scrypt_log_n(
+            "testpass",
+            TEST_SCRYPT_LOG_N,
+        )?;
         Ok((kp.public_key(), kp.secret_key("testpass")?))
     }
 
     #[test]
     fn test_keypair_generation_and_save() {
-        let kp = AsfaloadKeyPair::<Ed25519KeyPair>::new("testpass").unwrap();
+        let kp =
+            AsfaloadKeyPair::<Ed25519KeyPair>::new_with_scrypt_log_n("testpass", TEST_SCRYPT_LOG_N)
+                .unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
         kp.save(&temp_dir).unwrap();
         assert!(temp_dir.path().join("key").exists());
@@ -384,7 +393,9 @@ mod tests {
 
     #[test]
     fn test_key_file_roundtrip() {
-        let kp = AsfaloadKeyPair::<Ed25519KeyPair>::new("mypass").unwrap();
+        let kp =
+            AsfaloadKeyPair::<Ed25519KeyPair>::new_with_scrypt_log_n("mypass", TEST_SCRYPT_LOG_N)
+                .unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
         let key_path = temp_dir.path().join("mykey");
         kp.save(&key_path).unwrap();
@@ -400,7 +411,9 @@ mod tests {
 
     #[test]
     fn test_public_key_from_secret_key() {
-        let kp = AsfaloadKeyPair::<Ed25519KeyPair>::new("pass").unwrap();
+        let kp =
+            AsfaloadKeyPair::<Ed25519KeyPair>::new_with_scrypt_log_n("pass", TEST_SCRYPT_LOG_N)
+                .unwrap();
         let pk = kp.public_key();
         let sk = kp.secret_key("pass").unwrap();
         let derived_pk = AsfaloadPublicKey::<Ed25519PublicKey>::from_secret_key(&sk).unwrap();
@@ -415,17 +428,23 @@ mod tests {
 
     #[test]
     fn test_wrong_password_fails() {
-        let kp = AsfaloadKeyPair::<Ed25519KeyPair>::new("correct").unwrap();
+        let kp =
+            AsfaloadKeyPair::<Ed25519KeyPair>::new_with_scrypt_log_n("correct", TEST_SCRYPT_LOG_N)
+                .unwrap();
         let result = kp.secret_key("wrong");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_save_refuses_overwrite() {
-        let kp = AsfaloadKeyPair::<Ed25519KeyPair>::new("pass").unwrap();
+        let kp =
+            AsfaloadKeyPair::<Ed25519KeyPair>::new_with_scrypt_log_n("pass", TEST_SCRYPT_LOG_N)
+                .unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
         kp.save(&temp_dir).unwrap();
-        let kp2 = AsfaloadKeyPair::<Ed25519KeyPair>::new("pass").unwrap();
+        let kp2 =
+            AsfaloadKeyPair::<Ed25519KeyPair>::new_with_scrypt_log_n("pass", TEST_SCRYPT_LOG_N)
+                .unwrap();
         let result = kp2.save(&temp_dir);
         assert!(matches!(result, Err(KeyError::NotOverwriting(_))));
     }
@@ -446,7 +465,9 @@ mod tests {
 
     #[test]
     fn test_save_to_named_file() {
-        let kp = AsfaloadKeyPair::<Ed25519KeyPair>::new("pass").unwrap();
+        let kp =
+            AsfaloadKeyPair::<Ed25519KeyPair>::new_with_scrypt_log_n("pass", TEST_SCRYPT_LOG_N)
+                .unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
         let key_path = temp_dir.path().join("mykey");
         kp.save(&key_path).unwrap();

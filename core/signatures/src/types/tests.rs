@@ -529,6 +529,8 @@ fn test_add_to_aggregate_works_without_revocation_file() -> Result<()> {
 // Ed25519 tests
 //------------------------------------------------------------
 
+// Intentionally uses production scrypt cost (via new_with_format -> new()) to verify
+// the production key creation path works. Other ed25519 tests use TEST_SCRYPT_LOG_N.
 #[test]
 fn test_ed25519_new_with_format() -> Result<()> {
     let kp = AsfaloadKeyPairs::new_with_format("mypass", &KeyFormat::Ed25519)?;

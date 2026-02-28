@@ -39,6 +39,25 @@ impl AsfaloadKeyPairs {
             }
         }
     }
+
+    /// Generate keypair with custom scrypt cost (ed25519 only, ignored for minisign).
+    pub fn new_with_format_and_scrypt_log_n(
+        pw: &str,
+        format: &KeyFormat,
+        scrypt_log_n: u8,
+    ) -> Result<Self, KeyError> {
+        match format {
+            KeyFormat::Minisign => {
+                let kp = AsfaloadKeyPair::<minisign::KeyPair>::new(pw)?;
+                Ok(Self::Minisign(kp))
+            }
+            KeyFormat::Ed25519 => {
+                let kp =
+                    AsfaloadKeyPair::<Ed25519KeyPair>::new_with_scrypt_log_n(pw, scrypt_log_n)?;
+                Ok(Self::Ed25519(kp))
+            }
+        }
+    }
 }
 
 impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPairs {

@@ -21,6 +21,10 @@ const FIXTURE_KEY_COUNT: usize = 10;
 /// Password used for all fixture keypairs.
 const FIXTURE_PASSWORD: &str = "password";
 
+/// Low-cost scrypt for fast test key generation. NOT for production.
+/// Keep in sync with TEST_SCRYPT_LOG_N in signatures/src/keys/ed25519.rs.
+const TEST_SCRYPT_LOG_N: u8 = 10;
+
 pub fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures")
 }
@@ -95,7 +99,12 @@ impl TestKeys {
             sec_keys: Vec::with_capacity(n),
         };
         for _ in 0..n {
-            let key_pair = AsfaloadKeyPairs::new_with_format(FIXTURE_PASSWORD, format).unwrap();
+            let key_pair = AsfaloadKeyPairs::new_with_format_and_scrypt_log_n(
+                FIXTURE_PASSWORD,
+                format,
+                TEST_SCRYPT_LOG_N,
+            )
+            .unwrap();
             let pub_key = key_pair.public_key();
             let sec_key = key_pair.secret_key(FIXTURE_PASSWORD).unwrap();
             r.key_pairs.push(key_pair);
@@ -217,9 +226,16 @@ mod tests {
         std::fs::create_dir_all(&fixtures_dir).expect("Failed to create fixtures/keys dir");
 
         for i in 0..FIXTURE_KEY_COUNT {
-            let kp = AsfaloadKeyPairs::new_with_format(FIXTURE_PASSWORD, &KeyFormat::Ed25519)
-                .expect("Failed to generate ed25519 keypair");
+            let kp = AsfaloadKeyPairs::new_with_format_and_scrypt_log_n(
+                FIXTURE_PASSWORD,
+                &KeyFormat::Ed25519,
+                TEST_SCRYPT_LOG_N,
+            )
+            .expect("Failed to generate ed25519 keypair");
             let key_path = fixtures_dir.join(format!("ed25519_key_{i}"));
+            // Remove existing files to allow regeneration
+            let _ = std::fs::remove_file(&key_path);
+            let _ = std::fs::remove_file(key_path.with_extension("pub"));
             kp.save(&key_path)
                 .unwrap_or_else(|e| panic!("Failed to save ed25519 keypair {i}: {e}"));
             println!("Generated ed25519_key_{i}");
