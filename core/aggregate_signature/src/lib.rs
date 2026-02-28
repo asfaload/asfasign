@@ -791,8 +791,7 @@ mod tests {
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signatures::types::AsfaloadSecretKeys;
     use signers_file_types::{
-        KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig,
-        SignersConfigProposal,
+        Signer, SignerData, SignerGroup, SignerKind, SignersConfig, SignersConfigProposal,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -831,6 +830,8 @@ mod tests {
         );
 
         // Create signers config JSON string
+        let key_format = serde_json::to_string(&pubkey.key_format()).unwrap();
+        let key_format_str = key_format.trim_matches('"');
         let json_config_template = r#"
     {
       "timestamp": "TIMESTAMP",
@@ -838,8 +839,8 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
           ],
           "threshold": THRESHOLD_PLACEHOLDER
         }
@@ -852,6 +853,7 @@ mod tests {
         // Replace placeholders with actual timestamp and public keys
         let json_config = json_config_template
             .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("FORMAT_PLACEHOLDER", key_format_str)
             .replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64())
             .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64())
             .replace("THRESHOLD_PLACEHOLDER", "1");
@@ -866,6 +868,7 @@ mod tests {
         // Should be incomplete with threshold 2
         let high_threshold_config = json_config_template
             .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("FORMAT_PLACEHOLDER", key_format_str)
             .replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64())
             .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64())
             .replace("THRESHOLD_PLACEHOLDER", "2");
@@ -899,14 +902,14 @@ mod tests {
         let signer = signers_file_types::Signer {
             kind: SignerKind::Key,
             data: signers_file_types::SignerData {
-                format: KeyFormat::Minisign,
+                format: pubkey.key_format(),
                 pubkey: pubkey.clone(),
             },
         };
         let signer2 = signers_file_types::Signer {
             kind: SignerKind::Key,
             data: signers_file_types::SignerData {
-                format: KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 pubkey: pubkey2.clone(),
             },
         };
@@ -1014,6 +1017,8 @@ mod tests {
         );
 
         // Create signers config JSON string with two groups
+        let key_format = serde_json::to_string(&pubkey1.key_format()).unwrap();
+        let key_format_str = key_format.trim_matches('"');
         let json_config = r#"
     {
       "timestamp": "TIMESTAMP",
@@ -1021,13 +1026,13 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
           ],
           "threshold": 1
         },
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
           ],
           "threshold": 1
         }
@@ -1040,6 +1045,7 @@ mod tests {
         // Replace placeholders with actual public keys
         let json_config = json_config
             .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("FORMAT_PLACEHOLDER", key_format_str)
             .replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64())
             .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
 
@@ -1058,7 +1064,7 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
           ],
           "threshold": 1
         }
@@ -1066,7 +1072,7 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
           ],
           "threshold": 1
         }
@@ -1078,6 +1084,7 @@ mod tests {
         // Replace placeholders with actual timestamp and public keys
         let json_config_mixed = json_config_mixed
             .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
+            .replace("FORMAT_PLACEHOLDER", key_format_str)
             .replace("PUBKEY1_PLACEHOLDER", &pubkey1.to_base64())
             .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64());
 
@@ -1116,8 +1123,12 @@ mod tests {
 
         let data = common::sha512_for_content(b"test data".to_vec())?;
 
+        let key_format = serde_json::to_string(&pubkey1.key_format()).unwrap();
+        let key_format_str = key_format.trim_matches('"');
         let build_groups = |tpl: String| {
-            let json = test_keys.substitute_keys(tpl);
+            let json = test_keys
+                .substitute_keys(tpl)
+                .replace("FORMAT_PLACEHOLDER", key_format_str);
 
             let groups: Vec<SignerGroup> = serde_json::from_str(&json).unwrap();
             groups
@@ -1195,7 +1206,7 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
         ],
         "threshold": 1
       }
@@ -1212,7 +1223,7 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
         ],
         "threshold": 1
       }
@@ -1228,8 +1239,8 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } },
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } },
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
         ],
         "threshold": 2
       }
@@ -1245,8 +1256,8 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } },
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } },
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
         ],
         "threshold": 2
       }
@@ -1263,8 +1274,8 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } },
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } },
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
         ],
         "threshold": 2
       }
@@ -1281,8 +1292,8 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } },
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } },
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
         ],
         "threshold": 2
       }
@@ -1300,13 +1311,13 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
         ],
         "threshold": 1
       },
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
         ],
         "threshold": 1
       }
@@ -1323,13 +1334,13 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
         ],
         "threshold": 1
       },
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER" } }
         ],
         "threshold": 1
       }
@@ -1345,15 +1356,15 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
         ],
         "threshold": 2
       },
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER" } }
         ],
         "threshold": 2
       }
@@ -1369,15 +1380,15 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
         ],
         "threshold": 2
       },
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER" } }
         ],
         "threshold": 2
       }
@@ -1393,10 +1404,10 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER" } }
         ],
         "threshold": 4
       }
@@ -1412,15 +1423,15 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
         ],
         "threshold": 2
       },
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER" } }
         ],
         "threshold": 2
       }
@@ -1436,15 +1447,15 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
         ],
         "threshold": 2
       },
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER" } }
         ],
         "threshold": 2
       }
@@ -1460,15 +1471,15 @@ mod tests {
     [
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY1_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY2_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER" } }
         ],
         "threshold": 2
       },
       {
         "signers": [
-          { "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY3_PLACEHOLDER" } }
-          ,{ "kind": "key", "data": { "format": "minisign", "pubkey": "PUBKEY4_PLACEHOLDER" } }
+          { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER" } }
+          ,{ "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER" } }
         ],
         "threshold": 2
       }
@@ -1587,14 +1598,14 @@ mod tests {
                     Signer {
                         kind: SignerKind::Key,
                         data: SignerData {
-                            format: KeyFormat::Minisign,
+                            format: pubkey1.key_format(),
                             pubkey: pubkey1.clone(),
                         },
                     },
                     Signer {
                         kind: SignerKind::Key,
                         data: SignerData {
-                            format: KeyFormat::Minisign,
+                            format: pubkey2.key_format(),
                             pubkey: pubkey2.clone(),
                         },
                     },
@@ -1631,7 +1642,7 @@ mod tests {
         incomplete_sig_file.entries.insert(
             pubkey1.clone().to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: sig1.to_base64(),
             },
         );
@@ -1650,14 +1661,14 @@ mod tests {
         complete_sig_file.entries.insert(
             pubkey1.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: sig1.to_base64(),
             },
         );
         complete_sig_file.entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
@@ -1680,7 +1691,7 @@ mod tests {
         invalid_sig_file.entries.insert(
             pubkey1.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: seckey1
                     .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
                     .unwrap()
@@ -1690,7 +1701,7 @@ mod tests {
         invalid_sig_file.entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
@@ -1937,7 +1948,7 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: KeyFormat::Minisign,
+                        format: pubkey.key_format(),
                         pubkey: pubkey.clone(),
                     },
                 }],
@@ -1962,7 +1973,7 @@ mod tests {
         sig_file.entries.insert(
             pubkey.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey.key_format(),
                 signature: signature.to_base64(),
             },
         );
@@ -2124,14 +2135,14 @@ mod tests {
                     Signer {
                         kind: SignerKind::Key,
                         data: SignerData {
-                            format: KeyFormat::Minisign,
+                            format: pubkey1.key_format(),
                             pubkey: pubkey1.clone(),
                         },
                     },
                     Signer {
                         kind: SignerKind::Key,
                         data: SignerData {
-                            format: KeyFormat::Minisign,
+                            format: pubkey2.key_format(),
                             pubkey: pubkey2.clone(),
                         },
                     },
@@ -2174,7 +2185,7 @@ mod tests {
         incomplete_sig_file.entries.insert(
             pubkey1.clone().to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: sig1.to_base64(),
             },
         );
@@ -2190,14 +2201,14 @@ mod tests {
         complete_sig_file.entries.insert(
             pubkey1.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: sig1.to_base64(),
             },
         );
         complete_sig_file.entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
@@ -2211,7 +2222,7 @@ mod tests {
         invalid_sig_file.entries.insert(
             pubkey1.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: seckey1
                     .sign(&common::sha512_for_content(b"wrong content".to_vec())?)
                     .unwrap()
@@ -2221,7 +2232,7 @@ mod tests {
         invalid_sig_file.entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
@@ -2293,7 +2304,7 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: KeyFormat::Minisign,
+                        format: pubkey1.key_format(),
                         pubkey: pubkey1.clone(),
                     },
                 }],
@@ -2303,7 +2314,7 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: KeyFormat::Minisign,
+                        format: pubkey2.key_format(),
                         pubkey: pubkey2.clone(),
                     },
                 }],
@@ -2326,7 +2337,7 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: KeyFormat::Minisign,
+                        format: pubkey1.key_format(),
                         pubkey: pubkey1.clone(),
                     },
                 }],
@@ -2336,7 +2347,7 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: KeyFormat::Minisign,
+                        format: pubkey3.key_format(),
                         pubkey: pubkey3.clone(),
                     },
                 }],
@@ -2346,7 +2357,7 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: KeyFormat::Minisign,
+                        format: pubkey4.key_format(),
                         pubkey: pubkey4.clone(),
                     },
                 }],
@@ -2380,14 +2391,14 @@ mod tests {
         sig_file.entries.insert(
             pubkey1.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: sig1.to_base64(),
             },
         );
         sig_file.entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
@@ -2408,14 +2419,14 @@ mod tests {
         sig_file.entries.insert(
             pubkey3.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey3.key_format(),
                 signature: sig3.to_base64(),
             },
         );
         sig_file.entries.insert(
             pubkey4.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey4.key_format(),
                 signature: sig4.to_base64(),
             },
         );
@@ -2434,14 +2445,14 @@ mod tests {
         sig_file.entries.insert(
             pubkey1.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: sig1.to_base64(),
             },
         );
         sig_file.entries.insert(
             pubkey3.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey3.key_format(),
                 signature: sig3.to_base64(),
             },
         );
@@ -2462,21 +2473,21 @@ mod tests {
         sig_file.entries.insert(
             pubkey1.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: sig1.to_base64(),
             },
         );
         sig_file.entries.insert(
             pubkey3.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey3.key_format(),
                 signature: sig3.to_base64(),
             },
         );
         sig_file.entries.insert(
             pubkey4.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey4.key_format(),
                 signature: sig4.to_base64(),
             },
         );
@@ -2490,21 +2501,21 @@ mod tests {
         sig_file.entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
         sig_file.entries.insert(
             pubkey3.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey3.key_format(),
                 signature: sig3.to_base64(),
             },
         );
         sig_file.entries.insert(
             pubkey4.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey4.key_format(),
                 signature: sig4.to_base64(),
             },
         );
@@ -2556,7 +2567,7 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: KeyFormat::Minisign,
+                        format: pubkey1.key_format(),
                         pubkey: pubkey1.clone(),
                     },
                 }],
@@ -2566,7 +2577,7 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: KeyFormat::Minisign,
+                        format: pubkey2.key_format(),
                         pubkey: pubkey2.clone(),
                     },
                 }],
@@ -2590,7 +2601,7 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: KeyFormat::Minisign,
+                        format: pubkey2.key_format(),
                         pubkey: pubkey2.clone(),
                     },
                 }],
@@ -2600,7 +2611,7 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: KeyFormat::Minisign,
+                        format: pubkey1.key_format(),
                         pubkey: pubkey1.clone(),
                     },
                 }],
@@ -2631,7 +2642,7 @@ mod tests {
         sig_file.entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
@@ -2677,7 +2688,7 @@ mod tests {
         let create_signer = |pubkey: AsfaloadPublicKeys| Signer {
             kind: SignerKind::Key,
             data: SignerData {
-                format: KeyFormat::Minisign,
+                format: pubkey.key_format(),
                 pubkey,
             },
         };
@@ -3193,7 +3204,7 @@ mod tests {
             .map(|pubkey| Signer {
                 kind: SignerKind::Key,
                 data: SignerData {
-                    format: KeyFormat::Minisign,
+                    format: pubkey.key_format(),
                     pubkey,
                 },
             })
@@ -5087,7 +5098,7 @@ mod tests {
         sig_file.entries.insert(
             public_key.to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: public_key.key_format(),
                 signature: signature.to_base64(),
             },
         );
@@ -5131,14 +5142,14 @@ mod tests {
         sig_file.entries.insert(
             pubkey1.to_base64(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: sig1.to_base64(),
             },
         );
         sig_file.entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
@@ -5177,6 +5188,7 @@ mod tests {
         let sig_file_path = temp_dir.path().join("test.signatures.json");
 
         let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
         let seckey = test_keys.sec_key(0).unwrap();
 
         let data = common::sha512_for_content(b"test data".to_vec())?;
@@ -5186,7 +5198,7 @@ mod tests {
         sig_file.entries.insert(
             "invalid_base64_pubkey".to_string(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey.key_format(),
                 signature: sig.to_base64(),
             },
         );
@@ -5217,7 +5229,7 @@ mod tests {
         sig_file.entries.insert(
             pubkey.to_base64(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey.key_format(),
                 signature: "invalid_base64_signature".to_string(),
             },
         );
@@ -5270,14 +5282,14 @@ mod tests {
         entries.insert(
             pubkey1.to_base64(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: sig1.to_base64(),
             },
         );
         entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
@@ -5309,6 +5321,7 @@ mod tests {
     #[test]
     fn test_parse_tagged_signatures_invalid_pubkey() -> Result<()> {
         let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
         let seckey = test_keys.sec_key(0).unwrap();
 
         let data = common::sha512_for_content(b"test data".to_vec())?;
@@ -5318,7 +5331,7 @@ mod tests {
         entries.insert(
             "invalid_base64_pubkey!!!".to_string(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey.key_format(),
                 signature: sig.to_base64(),
             },
         );
@@ -5343,7 +5356,7 @@ mod tests {
         entries.insert(
             pubkey.to_base64(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey.key_format(),
                 signature: "invalid_base64_signature!!!".to_string(),
             },
         );
@@ -5372,14 +5385,14 @@ mod tests {
         entries.insert(
             "invalid_base64_pubkey".to_string(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: "any_signature".to_string(),
             },
         );
         entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
@@ -5408,7 +5421,7 @@ mod tests {
         entries.insert(
             pubkey.to_base64(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey.key_format(),
                 signature: sig.to_base64(),
             },
         );
@@ -5439,14 +5452,14 @@ mod tests {
         sig_file.entries.insert(
             pubkey1.to_base64(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey1.key_format(),
                 signature: sig1.to_base64(),
             },
         );
         sig_file.entries.insert(
             pubkey2.to_base64(),
             TaggedSignature {
-                format: signatures::keys::KeyFormat::Minisign,
+                format: pubkey2.key_format(),
                 signature: sig2.to_base64(),
             },
         );
