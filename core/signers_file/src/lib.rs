@@ -2239,14 +2239,14 @@ mod tests {
         sig_file.entries.insert(
             test_keys.pub_key(0).unwrap().to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: test_keys.pub_key(0).unwrap().key_format(),
                 signature: "test_signature_0".to_string(),
             },
         );
         sig_file.entries.insert(
             test_keys.pub_key(1).unwrap().to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: test_keys.pub_key(1).unwrap().key_format(),
                 signature: "test_signature_1".to_string(),
             },
         );
@@ -4440,7 +4440,7 @@ mod tests {
             sig_file.entries.insert(
                 pubkey.to_base64(),
                 TaggedSignature {
-                    format: KeyFormat::Minisign,
+                    format: pubkey.key_format(),
                     signature: signature.to_base64(),
                 },
             );
