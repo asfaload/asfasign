@@ -70,3 +70,21 @@ jobs:
               cd "$GITHUB_WORKSPACE" || { echo "ERROR: Failed to return to workspace"; exit 1; }
             done
           done
+
+  test-ed25519:
+    name: Run core tests with ed25519 keys
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+      - name: Run core tests with KEY_TYPE=ed25519
+        env:
+          KEY_TYPE: ed25519
+        run: |
+          cargo nextest run \
+            --package test_helpers \
+            --package signers_file \
+            --package aggregate_signature \
+            --package signatures \
+            --package integration_tests
