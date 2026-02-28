@@ -140,6 +140,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
                 let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(key_b64)?;
                 Ok(Self::Minisign(pk))
             }
+            KeyFormat::Ed25519 => todo!("ed25519 public key support"),
         }
     }
 
@@ -250,6 +251,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
                 let sig = AsfaloadSignature::<minisign::SignatureBox>::from_base64(s)?;
                 Ok(Self::Minisign(sig))
             }
+            KeyFormat::Ed25519 => todo!("ed25519 signature support"),
         }
     }
 

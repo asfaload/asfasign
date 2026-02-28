@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum KeyFormat {
     Minisign,
+    Ed25519,
 }
 
 // Trait that we will implement for keypairs we support. Initially only minisign::KeyPair
