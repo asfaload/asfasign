@@ -6,6 +6,7 @@ pub use signers_setup::*;
 use signatures::keys::AsfaloadKeyPairTrait;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::keys::AsfaloadSecretKeyTrait;
+use signatures::keys::KeyFormat;
 use signatures::types::AsfaloadKeyPairs;
 use signatures::types::AsfaloadPublicKeys;
 use signatures::types::AsfaloadSecretKeys;
@@ -28,6 +29,9 @@ pub fn fixtures_keys_dir() -> PathBuf {
 }
 pub fn fixtures_pub_key(n: usize) -> PathBuf {
     fixtures_keys_dir().join(format!("key_{}.pub", n))
+}
+pub fn fixtures_ed25519_pub_key(n: usize) -> PathBuf {
+    fixtures_keys_dir().join(format!("ed25519_key_{}.pub", n))
 }
 
 pub struct TestKeys {
@@ -77,21 +81,65 @@ impl TestKeys {
         r
     }
 
-    /// Generate fresh keypairs at runtime. Use only when the full
+    /// Generate fresh minisign keypairs at runtime. Use only when the full
     /// AsfaloadKeyPairs is needed (e.g., for .save() or .key_pair()).
     pub fn new_generated(n: usize) -> Self {
+        Self::new_generated_with_format(n, &KeyFormat::Minisign)
+    }
+
+    /// Generate fresh keypairs at runtime with a specific algorithm format.
+    pub fn new_generated_with_format(n: usize, format: &KeyFormat) -> Self {
         let mut r = TestKeys {
             key_pairs: Vec::with_capacity(n),
             pub_keys: Vec::with_capacity(n),
             sec_keys: Vec::with_capacity(n),
         };
         for _ in 0..n {
-            let key_pair = AsfaloadKeyPairs::new(FIXTURE_PASSWORD).unwrap();
+            let key_pair = AsfaloadKeyPairs::new_with_format(FIXTURE_PASSWORD, format).unwrap();
             let pub_key = key_pair.public_key();
             let sec_key = key_pair.secret_key(FIXTURE_PASSWORD).unwrap();
             r.key_pairs.push(key_pair);
             r.sec_keys.push(sec_key);
             r.pub_keys.push(pub_key);
+        }
+
+        r
+    }
+
+    /// Load pre-generated ed25519 keys from fixture files starting at index 0.
+    pub fn new_ed25519(n: usize) -> Self {
+        Self::new_ed25519_from(0, n)
+    }
+
+    /// Load pre-generated ed25519 keys from fixture files starting at `start`.
+    pub fn new_ed25519_from(start: usize, n: usize) -> Self {
+        assert!(
+            start + n <= FIXTURE_KEY_COUNT,
+            "Only {FIXTURE_KEY_COUNT} fixture keypairs available, requested indices {start}..{}",
+            start + n
+        );
+        let fixtures_dir = fixtures_keys_dir();
+
+        let mut r = TestKeys {
+            key_pairs: Vec::new(),
+            pub_keys: Vec::with_capacity(n),
+            sec_keys: Vec::with_capacity(n),
+        };
+        for i in start..start + n {
+            let pk =
+                AsfaloadPublicKeys::from_file(fixtures_dir.join(format!("ed25519_key_{i}.pub")))
+                    .unwrap_or_else(|e| {
+                        panic!("Failed to load fixture ed25519 public key ed25519_key_{i}.pub: {e}")
+                    });
+            let sk = AsfaloadSecretKeys::from_file(
+                fixtures_dir.join(format!("ed25519_key_{i}")),
+                FIXTURE_PASSWORD,
+            )
+            .unwrap_or_else(|e| {
+                panic!("Failed to load fixture ed25519 secret key ed25519_key_{i}: {e}")
+            });
+            r.pub_keys.push(pk);
+            r.sec_keys.push(sk);
         }
 
         r
@@ -135,7 +183,7 @@ pub fn test_metadata() -> SignersConfigMetadata {
 mod tests {
     use super::*;
 
-    /// Generate fixture keypairs and save them to fixtures/keys/.
+    /// Generate minisign fixture keypairs and save them to fixtures/keys/.
     /// Run with: cargo test --package test_helpers -- gen_fixture_keys --ignored --nocapture
     #[test]
     #[ignore]
@@ -153,7 +201,31 @@ mod tests {
             println!("Generated key_{i}");
         }
         println!(
-            "Done: generated {FIXTURE_KEY_COUNT} keypairs in {}",
+            "Done: generated {FIXTURE_KEY_COUNT} minisign keypairs in {}",
+            fixtures_dir.display()
+        );
+    }
+
+    /// Generate ed25519 fixture keypairs and save them to fixtures/keys/.
+    /// Run with: cargo test --package test_helpers -- gen_fixture_ed25519_keys --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn gen_fixture_ed25519_keys() {
+        let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("keys");
+        std::fs::create_dir_all(&fixtures_dir).expect("Failed to create fixtures/keys dir");
+
+        for i in 0..FIXTURE_KEY_COUNT {
+            let kp = AsfaloadKeyPairs::new_with_format(FIXTURE_PASSWORD, &KeyFormat::Ed25519)
+                .expect("Failed to generate ed25519 keypair");
+            let key_path = fixtures_dir.join(format!("ed25519_key_{i}"));
+            kp.save(&key_path)
+                .unwrap_or_else(|e| panic!("Failed to save ed25519 keypair {i}: {e}"));
+            println!("Generated ed25519_key_{i}");
+        }
+        println!(
+            "Done: generated {FIXTURE_KEY_COUNT} ed25519 keypairs in {}",
             fixtures_dir.display()
         );
     }
@@ -172,6 +244,30 @@ mod tests {
     #[test]
     fn test_fixture_keys_can_sign_and_verify() {
         let keys = TestKeys::new(2);
+        let data = common::sha512_for_content(b"test data".to_vec()).unwrap();
+        let sig = keys.sec_key(0).unwrap().sign(&data).unwrap();
+        keys.pub_key(0).unwrap().verify(&sig, &data).unwrap();
+    }
+
+    #[test]
+    fn test_load_ed25519_fixture_keys() {
+        let keys = TestKeys::new_ed25519(5);
+        for i in 0..5 {
+            assert!(
+                keys.pub_key(i).is_some(),
+                "ed25519 pub_key({i}) should exist"
+            );
+            assert!(
+                keys.sec_key(i).is_some(),
+                "ed25519 sec_key({i}) should exist"
+            );
+        }
+        assert!(keys.key_pair(0).is_none());
+    }
+
+    #[test]
+    fn test_ed25519_fixture_keys_can_sign_and_verify() {
+        let keys = TestKeys::new_ed25519(2);
         let data = common::sha512_for_content(b"test data".to_vec()).unwrap();
         let sig = keys.sec_key(0).unwrap().sign(&data).unwrap();
         keys.pub_key(0).unwrap().verify(&sig, &data).unwrap();
