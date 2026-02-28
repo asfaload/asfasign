@@ -173,5 +173,35 @@ pub mod keys {
             }
         }
     }
+
+    impl From<ed25519_dalek::SignatureError> for KeyError {
+        fn from(e: ed25519_dalek::SignatureError) -> Self {
+            KeyError::CreationFailed(e.to_string())
+        }
+    }
+
+    impl From<ed25519_dalek::SignatureError> for SignError {
+        fn from(e: ed25519_dalek::SignatureError) -> Self {
+            SignError::SignatureFailed(e.to_string())
+        }
+    }
+
+    impl From<ed25519_dalek::SignatureError> for VerifyError {
+        fn from(e: ed25519_dalek::SignatureError) -> Self {
+            VerifyError::VerificationFailed(e.to_string())
+        }
+    }
+
+    impl From<ed25519_dalek::SignatureError> for SignatureError {
+        fn from(e: ed25519_dalek::SignatureError) -> Self {
+            SignatureError::FormatError(e.to_string())
+        }
+    }
+
+    impl From<pkcs8::Error> for KeyError {
+        fn from(e: pkcs8::Error) -> Self {
+            KeyError::CreationFailed(e.to_string())
+        }
+    }
 }
 use keys::*;
