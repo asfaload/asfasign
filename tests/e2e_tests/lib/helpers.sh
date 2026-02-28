@@ -1,29 +1,32 @@
 # --- Fixture key paths ---
 _HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- Key type selection (must be before sourcing urls.sh which uses KEY_TYPE) ---
+KEY_TYPE="${KEY_TYPE:-minisign}"
+KEYS_DIR="$(cd "$_HELPERS_DIR/../../.." && pwd)/core/test_helpers/fixtures/keys"
+case "$KEY_TYPE" in
+    minisign) _KEY_PREFIX="" ;;
+    ed25519)  _KEY_PREFIX="ed25519_" ;;
+    *)
+        printf 'Unknown KEY_TYPE: %s (expected: minisign or ed25519)\n' "$KEY_TYPE" >&2
+        exit 1
+        ;;
+esac
+
 . "$_HELPERS_DIR/urls.sh"
 . "$_HELPERS_DIR/constants.sh"
 . "$_HELPERS_DIR/backend_assertions.sh"
-KEYS_DIR="$(cd "$_HELPERS_DIR/../../.." && pwd)/core/test_helpers/fixtures/keys"
-KEY_0="$KEYS_DIR/key_0"
-KEY_1="$KEYS_DIR/key_1"
-KEY_2="$KEYS_DIR/key_2"
-KEY_3="$KEYS_DIR/key_3"
-KEY_4="$KEYS_DIR/key_4"
-KEY_5="$KEYS_DIR/key_5"
-KEY_6="$KEYS_DIR/key_6"
-KEY_7="$KEYS_DIR/key_7"
-KEY_8="$KEYS_DIR/key_8"
-KEY_9="$KEYS_DIR/key_9"
-ED_KEY_0="$KEYS_DIR/ed25519_key_0"
-ED_KEY_1="$KEYS_DIR/ed25519_key_1"
-ED_KEY_2="$KEYS_DIR/ed25519_key_2"
-ED_KEY_3="$KEYS_DIR/ed25519_key_3"
-ED_KEY_4="$KEYS_DIR/ed25519_key_4"
-ED_KEY_5="$KEYS_DIR/ed25519_key_5"
-ED_KEY_6="$KEYS_DIR/ed25519_key_6"
-ED_KEY_7="$KEYS_DIR/ed25519_key_7"
-ED_KEY_8="$KEYS_DIR/ed25519_key_8"
-ED_KEY_9="$KEYS_DIR/ed25519_key_9"
+
+KEY_0="$KEYS_DIR/${_KEY_PREFIX}key_0"
+KEY_1="$KEYS_DIR/${_KEY_PREFIX}key_1"
+KEY_2="$KEYS_DIR/${_KEY_PREFIX}key_2"
+KEY_3="$KEYS_DIR/${_KEY_PREFIX}key_3"
+KEY_4="$KEYS_DIR/${_KEY_PREFIX}key_4"
+KEY_5="$KEYS_DIR/${_KEY_PREFIX}key_5"
+KEY_6="$KEYS_DIR/${_KEY_PREFIX}key_6"
+KEY_7="$KEYS_DIR/${_KEY_PREFIX}key_7"
+KEY_8="$KEYS_DIR/${_KEY_PREFIX}key_8"
+KEY_9="$KEYS_DIR/${_KEY_PREFIX}key_9"
 
 # --- Git OID-aware helpers ---
 
