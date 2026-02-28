@@ -195,7 +195,7 @@ mod tests {
         pending2_sig_file.entries.insert(
             test_keys.pub_key(0).unwrap().to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: test_keys.pub_key(0).unwrap().key_format(),
                 signature: sig.to_base64(),
             },
         );
@@ -475,7 +475,7 @@ mod tests {
         signed_sig_file.entries.insert(
             test_keys.pub_key(0).unwrap().to_base64(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: test_keys.pub_key(0).unwrap().key_format(),
                 signature: sig.to_base64(),
             },
         );
