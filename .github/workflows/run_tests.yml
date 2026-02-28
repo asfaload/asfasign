@@ -53,14 +53,20 @@ jobs:
         run: |
           echo "Testing changed components: ${{ steps.detect-changes.outputs.components }}"
           for component in ${{ steps.detect-changes.outputs.components }}; do
-            if [ -f "$component/Cargo.toml" ]; then
-              echo "Testing component: $component"
-              cd "$component"
+            # Find all Cargo.toml files under this component directory
+            mapfile -t crate_dirs < <(find "$component" -name Cargo.toml -exec dirname {} \; 2>/dev/null | sort)
+            if [ ${#crate_dirs[@]} -eq 0 ]; then
+              echo "No Cargo.toml found under $component, skipping"
+              continue
+            fi
+            for crate_dir in "${crate_dirs[@]}"; do
+              echo "Testing crate: $crate_dir"
+              cd "$crate_dir" || { echo "ERROR: Failed to enter $crate_dir"; exit 1; }
               if [ -f "Makefile" ]; then
                 make test
               else
                 cargo test --features test-utils || cargo test
               fi
-              cd ..
-            fi
+              cd "$GITHUB_WORKSPACE" || { echo "ERROR: Failed to return to workspace"; exit 1; }
+            done
           done
