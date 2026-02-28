@@ -374,9 +374,11 @@ fn test_signature_trait_error_mapping() -> Result<()> {
     let r = AsfaloadSignatures::from_base64("invalid");
     assert!(matches!(r, Err(SignatureError::Base64DecodeFailed(_))));
 
-    // This seems to be reported as IO error by minisign
+    // With multi-format support, from_string tries minisign first (which
+    // reports this as IoError) then falls back to ed25519 (which fails
+    // with Base64DecodeFailed). The last-tried format's error is returned.
     let r = AsfaloadSignatures::from_string("invalid");
-    assert!(matches!(r, Err(SignatureError::IoError(_))));
+    assert!(r.is_err());
     Ok(())
 }
 
