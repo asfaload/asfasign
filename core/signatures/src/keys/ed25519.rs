@@ -11,7 +11,8 @@ use common::{
     fs::names::{pending_signatures_path_for, revocation_path_for, signatures_path_for},
 };
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
-use pkcs8::{DecodePrivateKey, EncodePrivateKey};
+use pkcs8::der::pem::PemLabel;
+use pkcs8::{DecodePrivateKey, EncodePrivateKey, EncryptedPrivateKeyInfo};
 use std::fs::{self, File};
 use std::path::Path;
 
@@ -25,30 +26,65 @@ pub type Ed25519PublicKey = VerifyingKey;
 pub type Ed25519SecretKey = SigningKey;
 pub type Ed25519Signature = ed25519_dalek::Signature;
 
+/// Scrypt log_n for production ed25519 key encryption.
+const SCRYPT_LOG_N: u8 = 15;
+
+/// Encrypt a signing key to PKCS#8 PEM with custom scrypt parameters.
+fn encrypt_signing_key(
+    signing_key: &SigningKey,
+    password: &str,
+    scrypt_log_n: u8,
+) -> Result<String, KeyError> {
+    let der = signing_key
+        .to_pkcs8_der()
+        .map_err(|e| KeyError::CreationFailed(format!("PKCS#8 DER encoding failed: {}", e)))?;
+
+    let pki = pkcs8::PrivateKeyInfo::try_from(der.as_bytes())
+        .map_err(|e| KeyError::CreationFailed(format!("PKCS#8 parsing failed: {}", e)))?;
+
+    let mut salt = [0u8; 16];
+    let mut iv = [0u8; 16];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut salt);
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut iv);
+
+    let scrypt_params = scrypt::Params::new(scrypt_log_n, 8, 1, 32)
+        .map_err(|e| KeyError::CreationFailed(format!("Invalid scrypt params: {}", e)))?;
+    let pbes2_params = pkcs8::pkcs5::pbes2::Parameters::scrypt_aes256cbc(scrypt_params, &salt, &iv)
+        .map_err(|e| KeyError::CreationFailed(format!("PBES2 params failed: {}", e)))?;
+
+    let encrypted_doc = pki
+        .encrypt_with_params(pbes2_params, password.as_bytes())
+        .map_err(|e| KeyError::CreationFailed(format!("PKCS#8 encryption failed: {}", e)))?;
+
+    let pem = encrypted_doc
+        .to_pem(EncryptedPrivateKeyInfo::PEM_LABEL, pkcs8::LineEnding::LF)
+        .map_err(|e| KeyError::CreationFailed(format!("PEM encoding failed: {}", e)))?;
+
+    Ok(pem.to_string())
+}
+
 // --- KeyPair ---
 
-impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<Ed25519KeyPair> {
-    type PublicKey = AsfaloadPublicKey<Ed25519PublicKey>;
-    type SecretKey = AsfaloadSecretKey<Ed25519SecretKey>;
-
-    fn new(password: &str) -> Result<Self, KeyError> {
+impl AsfaloadKeyPair<Ed25519KeyPair> {
+    /// Create a new ed25519 keypair with custom scrypt cost for key encryption.
+    pub fn new_with_scrypt_log_n(password: &str, scrypt_log_n: u8) -> Result<Self, KeyError> {
         let signing_key = SigningKey::generate(&mut rand::rngs::OsRng);
-
-        let encrypted_pem = signing_key
-            .to_pkcs8_encrypted_pem(
-                rand::rngs::OsRng,
-                password.as_bytes(),
-                pkcs8::LineEnding::LF,
-            )
-            .map_err(|e| KeyError::CreationFailed(format!("PKCS#8 encryption failed: {}", e)))?
-            .to_string();
-
+        let encrypted_pem = encrypt_signing_key(&signing_key, password, scrypt_log_n)?;
         Ok(AsfaloadKeyPair {
             key_pair: Ed25519KeyPair {
                 signing_key,
                 encrypted_pem,
             },
         })
+    }
+}
+
+impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<Ed25519KeyPair> {
+    type PublicKey = AsfaloadPublicKey<Ed25519PublicKey>;
+    type SecretKey = AsfaloadSecretKey<Ed25519SecretKey>;
+
+    fn new(password: &str) -> Result<Self, KeyError> {
+        Self::new_with_scrypt_log_n(password, SCRYPT_LOG_N)
     }
 
     fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, KeyError> {
