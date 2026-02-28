@@ -11,19 +11,21 @@ use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FIL
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
 use signatures::signatures_file::{SignaturesFile, TaggedSignature};
 use signers_file_types::{
-    KeyFormat, Signer, SignerData, SignerGroup, SignerKind, SignersConfig, SignersConfigProposal,
+    Signer, SignerData, SignerGroup, SignerKind, SignersConfig, SignersConfigProposal,
 };
 use tempfile::TempDir;
 
 use crate::TestKeys;
 
 /// Create a Signer from a TestKeys instance at the given index.
+/// The format is inferred from the public key's algorithm.
 pub fn create_signer(test_keys: &TestKeys, index: usize) -> Signer {
+    let pubkey = test_keys.pub_key(index).unwrap().clone();
     Signer {
         kind: SignerKind::Key,
         data: SignerData {
-            format: KeyFormat::Minisign,
-            pubkey: test_keys.pub_key(index).unwrap().clone(),
+            format: pubkey.key_format(),
+            pubkey,
         },
     }
 }
@@ -120,67 +122,36 @@ pub fn create_complete_signers_setup(
     fs::create_dir_all(&signers_dir)?;
     let signers_file = signers_dir.join(SIGNERS_FILE);
 
-    let artifact_signers = vec![
+    let signer_at = |i: usize| -> Signer {
+        let pubkey = test_keys.pub_key(i).unwrap().clone();
         Signer {
             kind: SignerKind::Key,
             data: SignerData {
-                format: KeyFormat::Minisign,
-                pubkey: test_keys.pub_key(0).unwrap().clone(),
+                format: pubkey.key_format(),
+                pubkey,
             },
-        },
-        Signer {
-            kind: SignerKind::Key,
-            data: SignerData {
-                format: KeyFormat::Minisign,
-                pubkey: test_keys.pub_key(1).unwrap().clone(),
-            },
-        },
-    ];
+        }
+    };
+
+    let artifact_signers = vec![signer_at(0), signer_at(1)];
 
     let master_keys = master_key_indices.clone().map(|indices| {
         vec![SignerGroup {
-            signers: indices
-                .iter()
-                .map(|&i| Signer {
-                    kind: SignerKind::Key,
-                    data: SignerData {
-                        format: KeyFormat::Minisign,
-                        pubkey: test_keys.pub_key(i).unwrap().clone(),
-                    },
-                })
-                .collect(),
+            signers: indices.iter().map(|&i| signer_at(i)).collect(),
             threshold: indices.len() as u32,
         }]
     });
 
     let admin_keys = admin_key_indices.clone().map(|indices| {
         vec![SignerGroup {
-            signers: indices
-                .iter()
-                .map(|&i| Signer {
-                    kind: SignerKind::Key,
-                    data: SignerData {
-                        format: KeyFormat::Minisign,
-                        pubkey: test_keys.pub_key(i).unwrap().clone(),
-                    },
-                })
-                .collect(),
+            signers: indices.iter().map(|&i| signer_at(i)).collect(),
             threshold: indices.len() as u32,
         }]
     });
 
     let revocation_keys = revocation_key_indices.map(|indices| {
         vec![SignerGroup {
-            signers: indices
-                .iter()
-                .map(|&i| Signer {
-                    kind: SignerKind::Key,
-                    data: SignerData {
-                        format: KeyFormat::Minisign,
-                        pubkey: test_keys.pub_key(i).unwrap().clone(),
-                    },
-                })
-                .collect(),
+            signers: indices.iter().map(|&i| signer_at(i)).collect(),
             threshold: indices.len() as u32,
         }]
     });
