@@ -7,9 +7,13 @@ TEST_NAME="$(basename "$0" .sh)"
 
 # Signers file suffix for the e2e test repo, derived from KEY_TYPE.
 # minisign uses no suffix (original files), ed25519 uses "_ed25519".
-case "${KEY_TYPE:-minisign}" in
+case "$KEY_TYPE" in
     minisign) _SIGNERS_SUFFIX="" ;;
     ed25519)  _SIGNERS_SUFFIX="_ed25519" ;;
+    *)
+        printf 'urls.sh: unsupported KEY_TYPE: %s\n' "$KEY_TYPE" >&2
+        exit 1
+        ;;
 esac
 
 signers_file() {

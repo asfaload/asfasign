@@ -11,8 +11,8 @@ _project_dir() {
 
 # Extract public key string from a key file path (with format prefix).
 # Detects algorithm by line count: minisign .pub has 2 lines, ed25519 has 1.
-# Usage: pubkey_of "$KEY_0"  →  "minisign:RWS1kZJeKmeNOI0vl8hjI/..."
-# Usage: pubkey_of "$ED_KEY" →  "ed25519:uMIWP0pbjC1PJxOASZtOPn..."
+# Usage: pubkey_of "$KEY_0"  ->  "minisign:RWS1kZ..."  (when KEY_TYPE=minisign)
+#        pubkey_of "$KEY_0"  ->  "ed25519:uMIWP0..."   (when KEY_TYPE=ed25519)
 pubkey_of() {
     local pub_file="${1}.pub"
     local lines
