@@ -193,12 +193,27 @@ impl TestKeys {
     }
 
     pub fn substitute_keys(&self, tpl: String) -> String {
-        self.pub_keys.iter().enumerate().fold(tpl, |t, (i, k)| {
-            t.replace(
-                format!("PUBKEY{}_PLACEHOLDER", i).as_str(),
-                k.to_base64().as_str(),
-            )
-        })
+        let result = self.pub_keys.iter().enumerate().fold(tpl, |t, (i, k)| {
+            // Insert bare base64 (without "format:" prefix) since JSON templates
+            // have a separate "format" field.
+            let prefixed = k.to_base64();
+            let bare = prefixed
+                .split_once(':')
+                .map(|(_, b)| b)
+                .unwrap_or(&prefixed);
+            t.replace(format!("PUBKEY{}_PLACEHOLDER", i).as_str(), bare)
+        });
+        // Replace FORMAT_PLACEHOLDER with the serialized key format string.
+        // All keys in a TestKeys instance share the same format.
+        if let Some(first_key) = self.pub_keys.first() {
+            let format_str = serde_json::to_string(&first_key.key_format())
+                .unwrap()
+                .trim_matches('"')
+                .to_string();
+            result.replace("FORMAT_PLACEHOLDER", &format_str)
+        } else {
+            result
+        }
     }
 }
 
