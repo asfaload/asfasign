@@ -38,6 +38,17 @@ pub fn fixtures_ed25519_pub_key(n: usize) -> PathBuf {
     fixtures_keys_dir().join(format!("ed25519_key_{}.pub", n))
 }
 
+/// Select key algorithm from the KEY_TYPE env var, matching the e2e test convention.
+/// Defaults to Minisign so existing tests are unaffected.
+/// Panics on unrecognised values to surface typos early.
+fn default_key_type() -> KeyFormat {
+    match std::env::var("KEY_TYPE").as_deref() {
+        Ok("ed25519") => KeyFormat::Ed25519,
+        Ok("minisign") | Err(_) => KeyFormat::Minisign,
+        Ok(other) => panic!("Unknown KEY_TYPE: {other} (expected: minisign or ed25519)"),
+    }
+}
+
 pub struct TestKeys {
     key_pairs: Vec<AsfaloadKeyPairs>,
     pub_keys: Vec<AsfaloadPublicKeys>,
@@ -45,25 +56,37 @@ pub struct TestKeys {
 }
 
 impl TestKeys {
-    /// Load pre-generated keys from fixture files starting at index 0.
-    /// Much faster than generating. Panics if n > 10.
+    /// Load pre-generated keys based on KEY_TYPE env var.
+    /// KEY_TYPE=ed25519 loads ed25519 fixtures, default loads minisign.
     pub fn new(n: usize) -> Self {
         Self::new_from(0, n)
     }
 
-    /// Load pre-generated keys from fixture files starting at `start`.
-    /// Use this when you need multiple independent key sets in the same test
-    /// (e.g., `TestKeys::new(2)` for existing and `TestKeys::new_from(2, 2)` for new).
-    /// Panics if start + n > 10.
+    /// Load pre-generated keys based on KEY_TYPE env var, starting at `start`.
     pub fn new_from(start: usize, n: usize) -> Self {
+        match default_key_type() {
+            KeyFormat::Ed25519 => Self::new_ed25519_from(start, n),
+            KeyFormat::Minisign => Self::new_minisign_from(start, n),
+        }
+    }
+
+    /// Load pre-generated minisign keys from fixture files starting at index 0.
+    /// Much faster than generating. Panics if n > 10.
+    pub fn new_minisign(n: usize) -> Self {
+        Self::new_minisign_from(0, n)
+    }
+
+    /// Load pre-generated minisign keys from fixture files starting at `start`.
+    /// Use this when you need multiple independent key sets in the same test
+    /// (e.g., `TestKeys::new_minisign(2)` for existing and `TestKeys::new_minisign_from(2, 2)` for new).
+    /// Panics if start + n > 10.
+    pub fn new_minisign_from(start: usize, n: usize) -> Self {
         assert!(
             start + n <= FIXTURE_KEY_COUNT,
             "Only {FIXTURE_KEY_COUNT} fixture keypairs available, requested indices {start}..{}",
             start + n
         );
-        let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("fixtures")
-            .join("keys");
+        let fixtures_dir = fixtures_keys_dir();
 
         let mut r = TestKeys {
             key_pairs: Vec::new(),
@@ -85,9 +108,14 @@ impl TestKeys {
         r
     }
 
+    /// Generate fresh keypairs at runtime using KEY_TYPE env var to select format.
+    pub fn new_generated(n: usize) -> Self {
+        Self::new_generated_with_format(n, &default_key_type())
+    }
+
     /// Generate fresh minisign keypairs at runtime. Use only when the full
     /// AsfaloadKeyPairs is needed (e.g., for .save() or .key_pair()).
-    pub fn new_generated(n: usize) -> Self {
+    pub fn new_generated_minisign(n: usize) -> Self {
         Self::new_generated_with_format(n, &KeyFormat::Minisign)
     }
 
