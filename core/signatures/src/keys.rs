@@ -1,6 +1,20 @@
 pub mod ed25519;
 pub mod minisign;
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+
+// Shared utility: append ".pub" to a key file path.
+// Beware, if the path ends with /, the trailing slash is dropped before appending.
+// See https://www.reddit.com/r/rust/comments/ooh5wn/damn_trailing_slash/
+pub(crate) fn append_pub_extension<T: AsRef<Path>>(p: &T) -> PathBuf {
+    let path = p.as_ref();
+    let file_name = path.file_name().unwrap();
+    let mut osstring: OsString = file_name.to_os_string();
+    osstring.push(".pub");
+    let mut pub_path_buf = path.to_path_buf();
+    pub_path_buf.set_file_name(osstring.as_os_str());
+    pub_path_buf
+}
 
 use common::errors::keys::{SignError, SignatureError, VerifyError};
 use common::{AsfaloadHashes, errors::keys::KeyError};

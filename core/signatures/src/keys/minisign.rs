@@ -1,7 +1,7 @@
 use crate::keys::{
     AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-    KeyFormat,
+    KeyFormat, append_pub_extension,
 };
 use crate::signatures_file::{SignaturesFile, TaggedSignature};
 use base64::{Engine, prelude::BASE64_STANDARD};
@@ -12,32 +12,7 @@ use common::{
 };
 pub use minisign::{KeyPair, PublicKey, SecretKey, SignatureBox};
 use serde_json;
-use std::{
-    ffi::OsString,
-    fs,
-    fs::File,
-    io::Cursor,
-    path::{Path, PathBuf},
-};
-
-// Convert minisign errors to our generic errors
-// Beware, if the path ends with /, it is dropped before appending .pub.
-// See https://www.reddit.com/r/rust/comments/ooh5wn/damn_trailing_slash/
-fn append_pub_extension<T: AsRef<Path>>(p: &T) -> PathBuf {
-    let path = p.as_ref();
-    let file_name = path
-        // returns an option as path might not include file name
-        .file_name()
-        // this function always gets a file name
-        .unwrap();
-    // Append .pub extension
-    let mut osstring: OsString = file_name.to_os_string();
-    osstring.push(".pub");
-    let pub_os_str = osstring.as_os_str();
-    let mut pub_path_buf = path.to_path_buf();
-    pub_path_buf.set_file_name(pub_os_str);
-    pub_path_buf
-}
+use std::{fs, fs::File, io::Cursor, path::Path};
 fn save_to_file_path<T: AsRef<Path>>(
     keypair: &AsfaloadKeyPair<minisign::KeyPair>,
     p: T,

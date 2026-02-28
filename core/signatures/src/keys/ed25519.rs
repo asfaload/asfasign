@@ -1,7 +1,7 @@
 use crate::keys::{
     AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-    KeyFormat,
+    KeyFormat, append_pub_extension,
 };
 use crate::signatures_file::{SignaturesFile, TaggedSignature};
 use base64::{Engine, prelude::BASE64_STANDARD};
@@ -13,7 +13,7 @@ use common::{
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use std::fs::{self, File};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Wrapper holding the signing key and its encrypted PKCS#8 PEM for storage.
 pub struct Ed25519KeyPair {
@@ -24,16 +24,6 @@ pub struct Ed25519KeyPair {
 pub type Ed25519PublicKey = VerifyingKey;
 pub type Ed25519SecretKey = SigningKey;
 pub type Ed25519Signature = ed25519_dalek::Signature;
-
-fn append_pub_extension<T: AsRef<Path>>(p: &T) -> PathBuf {
-    let path = p.as_ref();
-    let file_name = path.file_name().unwrap();
-    let mut osstring = file_name.to_os_string();
-    osstring.push(".pub");
-    let mut pub_path_buf = path.to_path_buf();
-    pub_path_buf.set_file_name(osstring.as_os_str());
-    pub_path_buf
-}
 
 // --- KeyPair ---
 
