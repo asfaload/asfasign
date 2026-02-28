@@ -1,3 +1,4 @@
+pub mod ed25519;
 pub mod minisign;
 use std::path::Path;
 
