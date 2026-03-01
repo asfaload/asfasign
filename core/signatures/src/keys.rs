@@ -27,6 +27,30 @@ pub enum KeyFormat {
     Ed25519,
 }
 
+impl std::fmt::Display for KeyFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyFormat::Minisign => write!(f, "minisign"),
+            KeyFormat::Ed25519 => write!(f, "ed25519"),
+        }
+    }
+}
+
+impl std::str::FromStr for KeyFormat {
+    type Err = KeyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "minisign" => Ok(KeyFormat::Minisign),
+            "ed25519" => Ok(KeyFormat::Ed25519),
+            _ => Err(KeyError::CreationFailed(format!(
+                "Unknown key format: {}",
+                s
+            ))),
+        }
+    }
+}
+
 // Trait that we will implement for keypairs we support. Initially only minisign::KeyPair
 pub trait AsfaloadKeyPairTrait<'a>: Sized {
     type PublicKey;
@@ -145,4 +169,41 @@ pub trait AsfaloadSignatureTrait: Sized {
         dir: P,
         pub_key: &Self::PublicKeyType,
     ) -> Result<(), SignatureError>;
+}
+
+#[cfg(test)]
+mod key_format_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_key_format_display() {
+        assert_eq!(format!("{}", KeyFormat::Minisign), "minisign");
+        assert_eq!(format!("{}", KeyFormat::Ed25519), "ed25519");
+    }
+
+    #[test]
+    fn test_key_format_from_str() {
+        assert_eq!(
+            KeyFormat::from_str("minisign").unwrap(),
+            KeyFormat::Minisign
+        );
+        assert_eq!(KeyFormat::from_str("ed25519").unwrap(), KeyFormat::Ed25519);
+    }
+
+    #[test]
+    fn test_key_format_from_str_invalid() {
+        assert!(KeyFormat::from_str("rsa").is_err());
+        assert!(KeyFormat::from_str("").is_err());
+    }
+
+    #[test]
+    fn test_key_format_roundtrip() {
+        let formats = [KeyFormat::Minisign, KeyFormat::Ed25519];
+        for fmt in &formats {
+            let s = format!("{}", fmt);
+            let parsed = KeyFormat::from_str(&s).unwrap();
+            assert_eq!(*fmt, parsed);
+        }
+    }
 }
