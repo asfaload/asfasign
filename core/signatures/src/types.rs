@@ -17,6 +17,7 @@ use common::{
     errors::keys::{KeyError, SignError, SignatureError, VerifyError},
 };
 use std::path::Path;
+use std::str::FromStr;
 
 #[cfg(test)]
 mod tests;
@@ -144,8 +145,8 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
 
     fn to_base64(&self) -> String {
         match self {
-            Self::Minisign(pk) => format!("minisign:{}", pk.to_base64()),
-            Self::Ed25519(pk) => format!("ed25519:{}", pk.to_base64()),
+            Self::Minisign(pk) => format!("{}:{}", KeyFormat::Minisign, pk.to_base64()),
+            Self::Ed25519(pk) => format!("{}:{}", KeyFormat::Ed25519, pk.to_base64()),
         }
     }
 
@@ -174,19 +175,16 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
                 s
             ))
         })?;
-        match format_str {
-            "minisign" => {
+        let format = KeyFormat::from_str(format_str)?;
+        match format {
+            KeyFormat::Minisign => {
                 let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(key_b64)?;
                 Ok(Self::Minisign(pk))
             }
-            "ed25519" => {
+            KeyFormat::Ed25519 => {
                 let pk = AsfaloadPublicKey::<Ed25519PublicKey>::from_base64(key_b64)?;
                 Ok(Self::Ed25519(pk))
             }
-            _ => Err(KeyError::CreationFailed(format!(
-                "Unknown public key format: {}",
-                format_str
-            ))),
         }
     }
 
