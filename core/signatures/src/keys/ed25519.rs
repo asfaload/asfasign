@@ -1,7 +1,7 @@
 use crate::keys::{
     AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-    KeyFormat, append_pub_extension,
+    KeyFormat,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use common::{AsfaloadHashes, errors::keys::*};
@@ -83,21 +83,7 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<Ed25519KeyPair> {
     }
 
     fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, KeyError> {
-        let path = p.as_ref();
-
-        let (sk_path, pk_path) = if path.is_dir() {
-            let sk = path.join("key");
-            let pk = path.join("key.pub");
-            (sk, pk)
-        } else {
-            (path.to_path_buf(), append_pub_extension(&path))
-        };
-
-        if sk_path.exists() || pk_path.exists() {
-            return Err(KeyError::NotOverwriting(
-                "Refusing to write key to existing file!".to_string(),
-            ));
-        }
+        let (sk_path, pk_path) = super::resolve_save_paths(&p)?;
 
         // Write encrypted PKCS#8 PEM secret key
         fs::write(&sk_path, &self.key_pair.encrypted_pem)?;
@@ -270,6 +256,7 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<Ed25519Signature> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keys::append_pub_extension;
     use common::sha512_for_content;
 
     /// Low-cost scrypt for fast tests. NOT for production.

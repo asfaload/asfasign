@@ -1,27 +1,13 @@
 use crate::keys::{
     AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-    KeyFormat, append_pub_extension,
+    KeyFormat,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use common::{AsfaloadHashes, errors::keys::*};
 pub use minisign::{KeyPair, PublicKey, SecretKey, SignatureBox};
 use std::{fs, io::Cursor, path::Path};
-fn save_to_file_path<T: AsRef<Path>>(
-    keypair: &AsfaloadKeyPair<minisign::KeyPair>,
-    p: T,
-) -> Result<&AsfaloadKeyPair<minisign::KeyPair>, KeyError> {
-    let path = p.as_ref();
-    // Use "key"" as default name
-    // Secret key to disk
-    let sk_string = keypair.key_pair.sk.to_box(None)?.into_string();
-    let () = fs::write(path, &sk_string)?;
-    // Pub key to disk
-    let pk_string = keypair.key_pair.pk.to_box()?.into_string();
-    let pub_path_buf = append_pub_extension(&p);
-    let () = fs::write(pub_path_buf.as_path(), &pk_string)?;
-    Ok(keypair)
-}
+
 impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
     type PublicKey = AsfaloadPublicKey<minisign::PublicKey>;
     type SecretKey = AsfaloadSecretKey<minisign::SecretKey>;
@@ -30,30 +16,15 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
         Ok(AsfaloadKeyPair { key_pair: kp })
     }
     fn save<T: AsRef<Path>>(&self, p: T) -> Result<&AsfaloadKeyPair<minisign::KeyPair>, KeyError> {
-        let path = p.as_ref();
-        // If this is a path to an existing dir
-        if path.is_dir() {
-            // Need assignments to avoid E0716
-            let path_buf = path.to_path_buf();
-            let key_path_buf = path_buf.join("key");
-            let file_path = key_path_buf.as_path();
-            // Do not go further if we would overwrite a file (either for secret key of pub key)
-            if file_path.exists() || (append_pub_extension(&file_path).as_path().exists()) {
-                Err(KeyError::NotOverwriting(
-                    "Refusing to write key to default name \"key\" in directory!".to_string(),
-                ))
-            } else {
-                save_to_file_path(self, file_path)
-            }
-        // Do not go further if we would overwrite a file (either for secret key of pub key)
-        } else if path.exists() || (append_pub_extension(&path).exists()) {
-            Err(KeyError::NotOverwriting(
-                "Refusing to write key to existing file!".to_string(),
-            ))
-        // In this case we got a path to a file to be created
-        } else {
-            save_to_file_path(self, path)
-        }
+        let (sk_path, pk_path) = super::resolve_save_paths(&p)?;
+
+        let sk_string = self.key_pair.sk.to_box(None)?.into_string();
+        fs::write(&sk_path, &sk_string)?;
+
+        let pk_string = self.key_pair.pk.to_box()?.into_string();
+        fs::write(&pk_path, &pk_string)?;
+
+        Ok(self)
     }
     fn public_key(&self) -> Self::PublicKey {
         AsfaloadPublicKey {
@@ -216,6 +187,7 @@ mod asfaload_index_tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::keys::append_pub_extension;
     //------------------------------------------------------------
     // Keypairs
     //------------------------------------------------------------

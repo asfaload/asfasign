@@ -21,6 +21,29 @@ use crate::signatures_file::{SignaturesFile, TaggedSignature};
 use common::errors::keys::{SignError, SignatureError, VerifyError};
 use common::fs::names::{pending_signatures_path_for, revocation_path_for, signatures_path_for};
 use common::{AsfaloadHashes, errors::keys::KeyError};
+
+/// Resolve secret-key and public-key file paths from a save target,
+/// and refuse to overwrite existing files.
+///
+/// If `path` is an existing directory, uses default names `key` / `key.pub`.
+/// Otherwise treats `path` as the secret-key file and appends `.pub` for the public key.
+pub(crate) fn resolve_save_paths<T: AsRef<Path>>(p: T) -> Result<(PathBuf, PathBuf), KeyError> {
+    let path = p.as_ref();
+
+    let (sk_path, pk_path) = if path.is_dir() {
+        (path.join("key"), path.join("key.pub"))
+    } else {
+        (path.to_path_buf(), append_pub_extension(&p))
+    };
+
+    if sk_path.exists() || pk_path.exists() {
+        return Err(KeyError::NotOverwriting(
+            "Refusing to write key to existing file!".to_string(),
+        ));
+    }
+
+    Ok((sk_path, pk_path))
+}
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
