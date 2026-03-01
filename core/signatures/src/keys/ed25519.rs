@@ -3,17 +3,12 @@ use crate::keys::{
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
     KeyFormat, append_pub_extension,
 };
-use crate::signatures_file::{SignaturesFile, TaggedSignature};
 use base64::{Engine, prelude::BASE64_STANDARD};
-use common::{
-    AsfaloadHashes,
-    errors::keys::*,
-    fs::names::{pending_signatures_path_for, revocation_path_for, signatures_path_for},
-};
+use common::{AsfaloadHashes, errors::keys::*};
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
 use pkcs8::der::pem::PemLabel;
 use pkcs8::{DecodePrivateKey, EncodePrivateKey, EncryptedPrivateKeyInfo};
-use std::fs::{self, File};
+use std::fs;
 use std::path::Path;
 
 /// Wrapper holding the signing key and its encrypted PKCS#8 PEM for storage.
@@ -269,65 +264,6 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<Ed25519Signature> {
 
     fn to_base64(&self) -> String {
         BASE64_STANDARD.encode(self.signature.to_bytes())
-    }
-
-    fn add_to_aggregate_for_file<P: AsRef<Path>>(
-        &self,
-        signed_file: P,
-        pub_key: &Self::PublicKeyType,
-    ) -> Result<(), SignatureError> {
-        if signed_file.as_ref().is_dir() {
-            return Err(SignatureError::IoError(std::io::Error::new(
-                std::io::ErrorKind::IsADirectory,
-                "Requires a file, cannot sign a directory",
-            )));
-        }
-        let signed_file_path = signed_file.as_ref();
-        let signatures_path = signatures_path_for(signed_file_path)?;
-
-        if signatures_path.exists() && signatures_path.is_file() {
-            return Err(SignatureError::IoError(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "Aggregate signature is already complete",
-            )));
-        }
-
-        let revocation_path = revocation_path_for(signed_file_path)?;
-        if revocation_path.exists() && revocation_path.is_file() {
-            return Err(SignatureError::FileRevoked(signed_file_path.to_path_buf()));
-        }
-
-        let pending_sig_file_path = pending_signatures_path_for(signed_file_path)?;
-
-        let mut sig_file: SignaturesFile = match File::open(&pending_sig_file_path) {
-            Ok(file) => serde_json::from_reader(file)?,
-            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => SignaturesFile::new(),
-            Err(e) => return Err(e.into()),
-        };
-
-        let signed_data = common::sha512_for_file(signed_file_path)?;
-        if pub_key.verify(self, &signed_data).is_ok() {
-            let pubkey_b64 = format!("ed25519:{}", pub_key.to_base64());
-            if sig_file.entries.contains_key(&pubkey_b64) {
-                return Err(SignatureError::DuplicateSignature);
-            }
-            sig_file.entries.insert(
-                pubkey_b64,
-                TaggedSignature {
-                    format: KeyFormat::Ed25519,
-                    signature: self.to_base64(),
-                },
-            );
-
-            let file = File::create(&pending_sig_file_path)?;
-            serde_json::to_writer_pretty(file, &sig_file)?;
-
-            Ok(())
-        } else {
-            Err(SignatureError::InvalidSignatureForAggregate(
-                signed_file_path.to_path_buf(),
-            ))
-        }
     }
 }
 

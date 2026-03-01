@@ -3,16 +3,10 @@ use crate::keys::{
     AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
     KeyFormat, append_pub_extension,
 };
-use crate::signatures_file::{SignaturesFile, TaggedSignature};
 use base64::{Engine, prelude::BASE64_STANDARD};
-use common::{
-    AsfaloadHashes,
-    errors::keys::*,
-    fs::names::{pending_signatures_path_for, revocation_path_for, signatures_path_for},
-};
+use common::{AsfaloadHashes, errors::keys::*};
 pub use minisign::{KeyPair, PublicKey, SecretKey, SignatureBox};
-use serde_json;
-use std::{fs, fs::File, io::Cursor, path::Path};
+use std::{fs, io::Cursor, path::Path};
 fn save_to_file_path<T: AsRef<Path>>(
     keypair: &AsfaloadKeyPair<minisign::KeyPair>,
     p: T,
@@ -194,70 +188,6 @@ impl AsfaloadSignatureTrait for AsfaloadSignature<minisign::SignatureBox> {
         let s = self.signature.to_string();
         BASE64_STANDARD.encode(s)
     }
-    fn add_to_aggregate_for_file<P: AsRef<Path>>(
-        &self,
-        signed_file: P,
-        pub_key: &Self::PublicKeyType,
-    ) -> Result<(), SignatureError> {
-        if signed_file.as_ref().is_dir() {
-            return Err(SignatureError::IoError(std::io::Error::new(
-                std::io::ErrorKind::IsADirectory,
-                "Requires a file, cannot sign a directory",
-            )));
-        }
-        let signed_file_path = signed_file.as_ref();
-        let signatures_path = signatures_path_for(signed_file_path)?;
-
-        // Refuse to add signatures to already completed signature.
-        if signatures_path.exists() && signatures_path.is_file() {
-            return Err(SignatureError::IoError(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "Aggregate signature is already complete",
-            )));
-        }
-
-        // Check if the file has been revoked
-        let revocation_path = revocation_path_for(signed_file_path)?;
-        if revocation_path.exists() && revocation_path.is_file() {
-            return Err(SignatureError::FileRevoked(signed_file_path.to_path_buf()));
-        }
-
-        // The path to the signatures JSON file
-        let pending_sig_file_path = pending_signatures_path_for(signed_file_path)?;
-
-        // Read existing signatures, or create a new SignaturesFile if the file doesn't exist.
-        let mut sig_file: SignaturesFile = match File::open(&pending_sig_file_path) {
-            Ok(file) => serde_json::from_reader(file)?,
-            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => SignaturesFile::new(),
-            Err(e) => return Err(e.into()),
-        };
-
-        let signed_data = common::sha512_for_file(signed_file_path)?;
-        if pub_key.verify(self, &signed_data).is_ok() {
-            // Reject duplicate signatures from the same key
-            let pubkey_b64 = format!("minisign:{}", pub_key.to_base64());
-            if sig_file.entries.contains_key(&pubkey_b64) {
-                return Err(SignatureError::DuplicateSignature);
-            }
-            sig_file.entries.insert(
-                pubkey_b64,
-                TaggedSignature {
-                    format: KeyFormat::Minisign,
-                    signature: self.to_base64(),
-                },
-            );
-
-            // Write the updated file back
-            let file = File::create(&pending_sig_file_path)?;
-            serde_json::to_writer_pretty(file, &sig_file)?;
-
-            Ok(())
-        } else {
-            Err(SignatureError::InvalidSignatureForAggregate(
-                signed_file_path.to_path_buf(),
-            ))
-        }
-    }
 }
 
 use std::hash::{Hash, Hasher};
@@ -282,6 +212,7 @@ mod asfaload_index_tests {
 
     use anyhow::{Context, Result};
     use constants::PENDING_SIGNATURES_SUFFIX;
+    use serde_json;
     use tempfile::TempDir;
 
     use super::*;
