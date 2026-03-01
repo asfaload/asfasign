@@ -2,7 +2,7 @@
 SHELL:=/bin/bash
 
 ## Run all tests with minisign keys (default)
-test: test-minisign
+test: test-ed25519
 
 ## Run all tests with minisign keys
 test-minisign:
