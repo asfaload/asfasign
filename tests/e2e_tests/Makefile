@@ -2,22 +2,27 @@
 SHELL := /bin/bash
 
 TESTS := basic_flow.sh signers_update_by_master.sh
+KEY_TYPES ?= minisign ed25519
 
-## Run all e2e tests with both sha1 and sha256 oids
+## Run all e2e tests with both oid formats and all key types
 test: test-sha1 test-sha256
 
-## Run all e2e tests with sha1 oids (default git object format)
+## Run all e2e tests with sha1 oids (all key types)
 test-sha1:
-	@for t in $(TESTS); do \
-		printf '\n══ Running %s (sha1) ══\n\n' "$$t"; \
-		./$$t || exit 1; \
+	@for kt in $(KEY_TYPES); do \
+		for t in $(TESTS); do \
+			printf '\n══ Running %s (sha1, %s) ══\n\n' "$$t" "$$kt"; \
+			KEY_TYPE=$$kt ./$$t || exit 1; \
+		done; \
 	done
 
-## Run all e2e tests with sha256 oids
+## Run all e2e tests with sha256 oids (all key types)
 test-sha256:
-	@for t in $(TESTS); do \
-		printf '\n══ Running %s (sha256) ══\n\n' "$$t"; \
-		ASFALOAD_GIT_BACKEND=sha256 ./$$t || exit 1; \
+	@for kt in $(KEY_TYPES); do \
+		for t in $(TESTS); do \
+			printf '\n══ Running %s (sha256, %s) ══\n\n' "$$t" "$$kt"; \
+			ASFALOAD_GIT_BACKEND=sha256 KEY_TYPE=$$kt ./$$t || exit 1; \
+		done; \
 	done
 
 help:

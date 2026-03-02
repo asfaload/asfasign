@@ -1,5 +1,6 @@
 use crate::keys::{
     AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+    KeyFormat,
 };
 use anyhow::{Context, Result};
 use common::errors::keys::{KeyError, SignatureError};
@@ -24,7 +25,7 @@ fn fixtures_dir() -> PathBuf {
         .join("keys")
 }
 
-/// Load a key pair from fixture files (much faster than generating).
+/// Load a minisign key pair from fixture files.
 fn get_key_pair() -> Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
     let dir = fixtures_dir();
     let pk = AsfaloadPublicKeys::from_file(dir.join("key_0.pub"))?;
@@ -32,7 +33,7 @@ fn get_key_pair() -> Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
     Ok((pk, sk))
 }
 
-/// Load two key pairs from fixture files.
+/// Load two minisign key pairs from fixture files.
 fn get_two_key_pairs() -> Result<(
     AsfaloadPublicKeys,
     AsfaloadSecretKeys,
@@ -44,6 +45,29 @@ fn get_two_key_pairs() -> Result<(
     let sk1 = AsfaloadSecretKeys::from_file(dir.join("key_0"), "password")?;
     let pk2 = AsfaloadPublicKeys::from_file(dir.join("key_1.pub"))?;
     let sk2 = AsfaloadSecretKeys::from_file(dir.join("key_1"), "password")?;
+    Ok((pk1, sk1, pk2, sk2))
+}
+
+/// Load an ed25519 key pair from fixture files.
+fn get_ed25519_key_pair() -> Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
+    let dir = fixtures_dir();
+    let pk = AsfaloadPublicKeys::from_file(dir.join("ed25519_key_0.pub"))?;
+    let sk = AsfaloadSecretKeys::from_file(dir.join("ed25519_key_0"), "password")?;
+    Ok((pk, sk))
+}
+
+/// Load two ed25519 key pairs from fixture files.
+fn get_two_ed25519_key_pairs() -> Result<(
+    AsfaloadPublicKeys,
+    AsfaloadSecretKeys,
+    AsfaloadPublicKeys,
+    AsfaloadSecretKeys,
+)> {
+    let dir = fixtures_dir();
+    let pk1 = AsfaloadPublicKeys::from_file(dir.join("ed25519_key_0.pub"))?;
+    let sk1 = AsfaloadSecretKeys::from_file(dir.join("ed25519_key_0"), "password")?;
+    let pk2 = AsfaloadPublicKeys::from_file(dir.join("ed25519_key_1.pub"))?;
+    let sk2 = AsfaloadSecretKeys::from_file(dir.join("ed25519_key_1"), "password")?;
     Ok((pk1, sk1, pk2, sk2))
 }
 
@@ -162,20 +186,39 @@ fn test_keys_methods() -> Result<()> {
     let value_read = fs::read_to_string(&public_key_path)?;
     // When we saved the key to disk using the minisign Box, it wrote a comment
     // followed by the base64 encoded key. Thus here we only need the second line.
-    let public_key_string = value_read.lines().nth(1).ok_or_else(|| {
+    let bare_b64 = value_read.lines().nth(1).ok_or_else(|| {
         KeyError::IOError(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "Public key file does not contain a second line",
         ))
     })?;
-    let public_key_from_string = AsfaloadPublicKeys::from_base64(public_key_string)?;
+    // from_base64 now requires the format prefix
+    let prefixed_b64 = format!("minisign:{}", bare_b64);
+    let public_key_from_string = AsfaloadPublicKeys::from_base64(&prefixed_b64)?;
     public_key_from_string.verify(&signature, &bytes_to_sign)?;
 
-    // Test AsfaloadPublicKey::from_base64
+    // Test round-trip: to_base64 should return the prefixed form
     let b64 = public_key_from_string.to_base64();
-    assert_eq!(b64, public_key_string);
+    assert_eq!(b64, prefixed_b64);
 
     Ok(())
+}
+
+#[test]
+fn test_from_base64_missing_prefix_returns_error() {
+    let bare_b64 = "RWS1kZJeKmeNOI0vl8hjI/YD7UQYxMq5uYkVWfHCHPtm7bOsbgZMovii";
+    let result = AsfaloadPublicKeys::from_base64(bare_b64);
+    assert!(result.is_err(), "from_base64 without prefix should fail");
+}
+
+#[test]
+fn test_from_base64_unknown_prefix_returns_error() {
+    let bad_prefix = "unknown:RWS1kZJeKmeNOI0vl8hjI/YD7UQYxMq5uYkVWfHCHPtm7bOsbgZMovii";
+    let result = AsfaloadPublicKeys::from_base64(bad_prefix);
+    assert!(
+        result.is_err(),
+        "from_base64 with unknown prefix should fail"
+    );
 }
 
 #[test]
@@ -355,9 +398,11 @@ fn test_signature_trait_error_mapping() -> Result<()> {
     let r = AsfaloadSignatures::from_base64("invalid");
     assert!(matches!(r, Err(SignatureError::Base64DecodeFailed(_))));
 
-    // This seems to be reported as IO error by minisign
+    // With multi-format support, from_string tries minisign first (which
+    // reports this as IoError) then falls back to ed25519 (which fails
+    // with Base64DecodeFailed). The last-tried format's error is returned.
     let r = AsfaloadSignatures::from_string("invalid");
-    assert!(matches!(r, Err(SignatureError::IoError(_))));
+    assert!(r.is_err());
     Ok(())
 }
 
@@ -476,6 +521,194 @@ fn test_add_to_aggregate_works_without_revocation_file() -> Result<()> {
         "Signature should succeed when no revocation file exists, but got: {:?}",
         result.unwrap_err()
     );
+
+    Ok(())
+}
+
+//------------------------------------------------------------
+// Ed25519 tests
+//------------------------------------------------------------
+
+// Intentionally uses production scrypt cost (via new_with_format -> new()) to verify
+// the production key creation path works. Other ed25519 tests use TEST_SCRYPT_LOG_N.
+#[test]
+fn test_ed25519_new_with_format() -> Result<()> {
+    let kp = AsfaloadKeyPairs::new_with_format("mypass", &KeyFormat::Ed25519)?;
+    let temp_dir = tempfile::tempdir()?;
+    kp.save(temp_dir.path())?;
+    assert!(temp_dir.path().join("key").exists());
+    assert!(temp_dir.path().join("key.pub").exists());
+
+    let sk = AsfaloadSecretKeys::from_file(temp_dir.path().join("key"), "mypass")?;
+    let pk = AsfaloadPublicKeys::from_file(temp_dir.path().join("key.pub"))?;
+    assert_eq!(pk.key_format(), KeyFormat::Ed25519);
+
+    let data = common::sha512_for_content(b"ed25519 test".to_vec())?;
+    let sig = sk.sign(&data)?;
+    pk.verify(&sig, &data)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_ed25519_fixture_sign_and_verify() -> Result<()> {
+    let (pk, sk) = get_ed25519_key_pair()?;
+    assert_eq!(pk.key_format(), KeyFormat::Ed25519);
+
+    let data = common::sha512_for_content(b"ed25519 fixture test".to_vec())?;
+    let sig = sk.sign(&data)?;
+    pk.verify(&sig, &data)?;
+    Ok(())
+}
+
+#[test]
+fn test_ed25519_base64_round_trip() -> Result<()> {
+    let (pk, _) = get_ed25519_key_pair()?;
+    let b64 = pk.to_base64();
+    assert!(b64.starts_with("ed25519:"));
+    let pk2 = AsfaloadPublicKeys::from_base64(&b64)?;
+    assert_eq!(pk, pk2);
+    Ok(())
+}
+
+#[test]
+fn test_ed25519_signature_serialisation() -> Result<()> {
+    let (pk, sk) = get_ed25519_key_pair()?;
+    let data = common::sha512_for_content(b"serialise me".to_vec())?;
+    let sig = sk.sign(&data)?;
+
+    // Base64 round-trip
+    let b64 = sig.to_base64();
+    let sig2 = AsfaloadSignatures::from_base64(&b64)?;
+    pk.verify(&sig2, &data)?;
+
+    // File round-trip
+    let temp_dir = TempDir::new()?;
+    let sig_path = temp_dir.path().join("ed25519_sig");
+    sig.to_file(&sig_path)?;
+    let sig3 = AsfaloadSignatures::from_file(&sig_path)?;
+    pk.verify(&sig3, &data)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_ed25519_public_key_from_secret_key() -> Result<()> {
+    let (pk, sk) = get_ed25519_key_pair()?;
+    let derived = AsfaloadPublicKeys::from_secret_key(&sk)?;
+    assert_eq!(derived.to_base64(), pk.to_base64());
+    Ok(())
+}
+
+#[test]
+fn test_ed25519_public_key_serde_round_trip() -> Result<()> {
+    let (pk, _) = get_ed25519_key_pair()?;
+    let json = serde_json::to_string(&pk)?;
+    let expected_json = format!("\"{}\"", pk.to_base64());
+    assert_eq!(json, expected_json);
+
+    let deserialized: AsfaloadPublicKeys = serde_json::from_str(&json)?;
+    assert_eq!(deserialized, pk);
+    Ok(())
+}
+
+#[test]
+fn test_ed25519_add_to_aggregate() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
+    fs::write(&signed_file_path, "ed25519 aggregate test")?;
+
+    let (pk1, sk1, pk2, sk2) = get_two_ed25519_key_pairs()?;
+    let data = common::sha512_for_content(b"ed25519 aggregate test".to_vec())?;
+    let sig1 = sk1.sign(&data)?;
+    let sig2 = sk2.sign(&data)?;
+
+    sig1.add_to_aggregate_for_file(&signed_file_path, &pk1)?;
+    sig2.add_to_aggregate_for_file(&signed_file_path, &pk2)?;
+
+    let sig_file_path = signed_file_path.with_file_name(format!(
+        "{}.{}",
+        signed_file_path.to_string_lossy(),
+        PENDING_SIGNATURES_SUFFIX
+    ));
+    let content = fs::read_to_string(&sig_file_path)?;
+    let sig_file: crate::signatures_file::SignaturesFile = serde_json::from_str(&content)?;
+    assert_eq!(sig_file.entries.len(), 2);
+    assert!(sig_file.entries.contains_key(&pk1.to_base64()));
+    assert!(sig_file.entries.contains_key(&pk2.to_base64()));
+    assert_eq!(
+        sig_file.entries.get(&pk1.to_base64()).unwrap().format,
+        KeyFormat::Ed25519
+    );
+
+    Ok(())
+}
+
+//------------------------------------------------------------
+// Cross-algorithm tests
+//------------------------------------------------------------
+
+#[test]
+fn test_cross_algorithm_verify_fails() -> Result<()> {
+    let (minisign_pk, minisign_sk) = get_key_pair()?;
+    let (ed25519_pk, ed25519_sk) = get_ed25519_key_pair()?;
+
+    let data = common::sha512_for_content(b"cross-algo test".to_vec())?;
+    let minisign_sig = minisign_sk.sign(&data)?;
+    let ed25519_sig = ed25519_sk.sign(&data)?;
+
+    // Minisign key cannot verify ed25519 signature
+    let result = minisign_pk.verify(&ed25519_sig, &data);
+    assert!(
+        result.is_err(),
+        "Minisign key should not verify ed25519 signature"
+    );
+
+    // Ed25519 key cannot verify minisign signature
+    let result = ed25519_pk.verify(&minisign_sig, &data);
+    assert!(
+        result.is_err(),
+        "Ed25519 key should not verify minisign signature"
+    );
+
+    // Same-algorithm verification still works
+    minisign_pk.verify(&minisign_sig, &data)?;
+    ed25519_pk.verify(&ed25519_sig, &data)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_mixed_algorithm_aggregate() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
+    fs::write(&signed_file_path, "mixed algo test")?;
+
+    let (minisign_pk, minisign_sk) = get_key_pair()?;
+    let (ed25519_pk, ed25519_sk) = get_ed25519_key_pair()?;
+
+    let data = common::sha512_for_content(b"mixed algo test".to_vec())?;
+    let minisign_sig = minisign_sk.sign(&data)?;
+    let ed25519_sig = ed25519_sk.sign(&data)?;
+
+    // Both algorithms can contribute to the same aggregate
+    minisign_sig.add_to_aggregate_for_file(&signed_file_path, &minisign_pk)?;
+    ed25519_sig.add_to_aggregate_for_file(&signed_file_path, &ed25519_pk)?;
+
+    let sig_file_path = signed_file_path.with_file_name(format!(
+        "{}.{}",
+        signed_file_path.to_string_lossy(),
+        PENDING_SIGNATURES_SUFFIX
+    ));
+    let content = fs::read_to_string(&sig_file_path)?;
+    let sig_file: crate::signatures_file::SignaturesFile = serde_json::from_str(&content)?;
+    assert_eq!(sig_file.entries.len(), 2);
+
+    // Check format tags
+    let minisign_entry = sig_file.entries.get(&minisign_pk.to_base64()).unwrap();
+    assert_eq!(minisign_entry.format, KeyFormat::Minisign);
+    let ed25519_entry = sig_file.entries.get(&ed25519_pk.to_base64()).unwrap();
+    assert_eq!(ed25519_entry.format, KeyFormat::Ed25519);
 
     Ok(())
 }

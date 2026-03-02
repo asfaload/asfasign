@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::output::NewKeysOutput;
 use crate::utils::ensure_dir_exists;
 use anyhow::Result;
-use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
+use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs, KeyFormat};
 
 /// Handles the `keys` command.
 ///
@@ -12,6 +12,7 @@ use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
 /// * `output_dir` - The directory to store the key
 /// * `password` - Password to protect the secret key
 /// * `json` - Whether to output results as JSON
+/// * `format` - The signing algorithm to use
 ///
 /// # Returns
 /// * `Result<()>` - Ok if the command was handled successfully, Err otherwise
@@ -20,16 +21,17 @@ pub fn handle_new_keys_command(
     output_dir: &Path,
     password: String,
     json: bool,
+    format: &KeyFormat,
 ) -> Result<()> {
     ensure_dir_exists(output_dir)?;
 
     if !json {
         println!(
-            "Generating keypair with name '{}' in directory {:?}",
-            name, output_dir
+            "Generating {:?} keypair with name '{}' in directory {:?}",
+            format, name, output_dir
         );
     }
-    let kp = AsfaloadKeyPairs::new(password.as_str())?;
+    let kp = AsfaloadKeyPairs::new_with_format(password.as_str(), format)?;
     let location = output_dir.join(name);
     kp.save(&location)?;
 

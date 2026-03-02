@@ -5,9 +5,20 @@
 E2E_REPO="asfaload/repo_for_e2e_tests"
 TEST_NAME="$(basename "$0" .sh)"
 
+# Signers file suffix for the e2e test repo, derived from KEY_TYPE.
+# minisign uses no suffix (original files), ed25519 uses "_ed25519".
+case "$KEY_TYPE" in
+    minisign) _SIGNERS_SUFFIX="" ;;
+    ed25519)  _SIGNERS_SUFFIX="_ed25519" ;;
+    *)
+        printf 'urls.sh: unsupported KEY_TYPE: %s\n' "$KEY_TYPE" >&2
+        exit 1
+        ;;
+esac
+
 signers_file() {
     local n="$1"
-    echo "https://github.com/${E2E_REPO}/blob/master/${TEST_NAME}/signers_file_${n}.json"
+    echo "https://github.com/${E2E_REPO}/blob/master/${TEST_NAME}/signers_file_${n}${_SIGNERS_SUFFIX}.json"
 }
 
 pending_signers_file() {

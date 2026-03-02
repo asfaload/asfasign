@@ -20,6 +20,7 @@ pub use signatures::keys::AsfaloadKeyPairTrait;
 pub use signatures::keys::AsfaloadPublicKeyTrait;
 pub use signatures::keys::AsfaloadSecretKeyTrait;
 pub use signatures::keys::AsfaloadSignatureTrait;
+pub use signatures::keys::KeyFormat;
 
 // Re-export the types directly
 pub use signatures::signatures_file::{SignaturesFile, TaggedSignature};

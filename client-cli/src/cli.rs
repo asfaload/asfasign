@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use signatures::keys::KeyFormat;
 use std::path::PathBuf;
 
 /// Default backend API URL
@@ -53,6 +54,22 @@ impl ForgeType {
     }
 }
 
+#[derive(clap::ValueEnum, Clone, Debug, Default)]
+pub enum AlgorithmType {
+    #[default]
+    Minisign,
+    Ed25519,
+}
+
+impl From<AlgorithmType> for KeyFormat {
+    fn from(alg: AlgorithmType) -> Self {
+        match alg {
+            AlgorithmType::Minisign => KeyFormat::Minisign,
+            AlgorithmType::Ed25519 => KeyFormat::Ed25519,
+        }
+    }
+}
+
 #[derive(clap::Args, Debug)]
 pub struct ForgeTypeArgs {
     /// Override forge type detection (github, gitlab, fileserver)
@@ -79,6 +96,10 @@ pub enum Commands {
         /// Directory to store the key
         #[arg(long, short)]
         output_dir: PathBuf,
+
+        /// Signing algorithm to use (minisign or ed25519)
+        #[arg(long, short = 'a', default_value = "minisign")]
+        algorithm: AlgorithmType,
 
         #[command(flatten)]
         password_args: PasswordArgs,

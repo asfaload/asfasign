@@ -5,7 +5,20 @@ set -euo pipefail
 # run with env var debug=1 to print commands and outputs.
 # If you start the backend separately, send the backend env var the the backedn url,
 # eg http://localhost:3000
-
+# Signers file generation (ed25519):
+# ----------------------------------
+# cargo run -- new-signers-file --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_0.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_1.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_2.pub -A 2 -o signers_file_1.json
+# cargo run --quiet -- new-signers-file \
+#    --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_0.pub \
+#    --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_1.pub \
+#    --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_2.pub \
+#    --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_3.pub \
+#    -A 3 \
+#    --revocation-key-file ../core/test_helpers/fixtures/keys/ed25519_key_4.pub \
+#    --revocation-key-file ../core/test_helpers/fixtures/keys/ed25519_key_5.pub \
+#    --revocation-key-file ../core/test_helpers/fixtures/keys/ed25519_key_6.pub \
+#    -R 2 \
+#    -o /tmp/signers_file_2_ed25519.json
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/helpers.sh"
 

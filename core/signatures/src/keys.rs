@@ -1,14 +1,82 @@
+pub mod ed25519;
 pub mod minisign;
-use std::path::Path;
+use std::ffi::OsString;
+use std::fs::File;
+use std::path::{Path, PathBuf};
 
+// Shared utility: append ".pub" to a key file path.
+// Beware, if the path ends with /, the trailing slash is dropped before appending.
+// See https://www.reddit.com/r/rust/comments/ooh5wn/damn_trailing_slash/
+pub(crate) fn append_pub_extension<T: AsRef<Path>>(p: &T) -> Result<PathBuf, KeyError> {
+    let path = p.as_ref();
+    let file_name = path.file_name().ok_or(KeyError::GenericError(
+        "Filename extraction from path failed.".into(),
+    ))?;
+    let mut osstring: OsString = file_name.to_os_string();
+    osstring.push(".pub");
+    let mut pub_path_buf = path.to_path_buf();
+    pub_path_buf.set_file_name(osstring.as_os_str());
+    Ok(pub_path_buf)
+}
+
+use crate::signatures_file::{SignaturesFile, TaggedSignature};
 use common::errors::keys::{SignError, SignatureError, VerifyError};
+use common::fs::names::{pending_signatures_path_for, revocation_path_for, signatures_path_for};
 use common::{AsfaloadHashes, errors::keys::KeyError};
+
+/// Resolve secret-key and public-key file paths from a save target,
+/// and refuse to overwrite existing files.
+///
+/// If `path` is an existing directory, uses default names `key` / `key.pub`.
+/// Otherwise treats `path` as the secret-key file and appends `.pub` for the public key.
+pub(crate) fn resolve_save_paths<T: AsRef<Path>>(p: T) -> Result<(PathBuf, PathBuf), KeyError> {
+    let path = p.as_ref();
+
+    let (sk_path, pk_path) = if path.is_dir() {
+        (path.join("key"), path.join("key.pub"))
+    } else {
+        (path.to_path_buf(), append_pub_extension(&p)?)
+    };
+
+    if sk_path.exists() || pk_path.exists() {
+        return Err(KeyError::NotOverwriting(
+            "Refusing to write key to existing file!".to_string(),
+        ));
+    }
+
+    Ok((sk_path, pk_path))
+}
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KeyFormat {
     Minisign,
+    Ed25519,
+}
+
+impl std::fmt::Display for KeyFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyFormat::Minisign => write!(f, "minisign"),
+            KeyFormat::Ed25519 => write!(f, "ed25519"),
+        }
+    }
+}
+
+impl std::str::FromStr for KeyFormat {
+    type Err = KeyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "minisign" => Ok(KeyFormat::Minisign),
+            "ed25519" => Ok(KeyFormat::Ed25519),
+            _ => Err(KeyError::CreationFailed(format!(
+                "Unknown key format: {}",
+                s
+            ))),
+        }
+    }
 }
 
 // Trait that we will implement for keypairs we support. Initially only minisign::KeyPair
@@ -126,7 +194,98 @@ pub trait AsfaloadSignatureTrait: Sized {
     // evaluate completeness is not available.
     fn add_to_aggregate_for_file<P: AsRef<Path>>(
         &self,
-        dir: P,
+        signed_file: P,
         pub_key: &Self::PublicKeyType,
-    ) -> Result<(), SignatureError>;
+    ) -> Result<(), SignatureError> {
+        if signed_file.as_ref().is_dir() {
+            return Err(SignatureError::IoError(std::io::Error::new(
+                std::io::ErrorKind::IsADirectory,
+                "Requires a file, cannot sign a directory",
+            )));
+        }
+        let signed_file_path = signed_file.as_ref();
+        let signatures_path = signatures_path_for(signed_file_path)?;
+
+        if signatures_path.exists() && signatures_path.is_file() {
+            return Err(SignatureError::IoError(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "Aggregate signature is already complete",
+            )));
+        }
+
+        let revocation_path = revocation_path_for(signed_file_path)?;
+        if revocation_path.exists() && revocation_path.is_file() {
+            return Err(SignatureError::FileRevoked(signed_file_path.to_path_buf()));
+        }
+
+        let pending_sig_file_path = pending_signatures_path_for(signed_file_path)?;
+
+        let mut sig_file: SignaturesFile = match File::open(&pending_sig_file_path) {
+            Ok(file) => serde_json::from_reader(file)?,
+            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => SignaturesFile::new(),
+            Err(e) => return Err(e.into()),
+        };
+
+        let signed_data = common::sha512_for_file(signed_file_path)?;
+        if pub_key.verify(self, &signed_data).is_ok() {
+            let key_format = pub_key.key_format();
+            let pubkey_b64 = format!("{}:{}", key_format, pub_key.to_base64());
+            if sig_file.entries.contains_key(&pubkey_b64) {
+                return Err(SignatureError::DuplicateSignature);
+            }
+            sig_file.entries.insert(
+                pubkey_b64,
+                TaggedSignature {
+                    format: key_format,
+                    signature: self.to_base64(),
+                },
+            );
+
+            let file = File::create(&pending_sig_file_path)?;
+            serde_json::to_writer_pretty(file, &sig_file)?;
+
+            Ok(())
+        } else {
+            Err(SignatureError::InvalidSignatureForAggregate(
+                signed_file_path.to_path_buf(),
+            ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod key_format_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_key_format_display() {
+        assert_eq!(format!("{}", KeyFormat::Minisign), "minisign");
+        assert_eq!(format!("{}", KeyFormat::Ed25519), "ed25519");
+    }
+
+    #[test]
+    fn test_key_format_from_str() {
+        assert_eq!(
+            KeyFormat::from_str("minisign").unwrap(),
+            KeyFormat::Minisign
+        );
+        assert_eq!(KeyFormat::from_str("ed25519").unwrap(), KeyFormat::Ed25519);
+    }
+
+    #[test]
+    fn test_key_format_from_str_invalid() {
+        assert!(KeyFormat::from_str("rsa").is_err());
+        assert!(KeyFormat::from_str("").is_err());
+    }
+
+    #[test]
+    fn test_key_format_roundtrip() {
+        let formats = [KeyFormat::Minisign, KeyFormat::Ed25519];
+        for fmt in &formats {
+            let s = format!("{}", fmt);
+            let parsed = KeyFormat::from_str(&s).unwrap();
+            assert_eq!(*fmt, parsed);
+        }
+    }
 }
