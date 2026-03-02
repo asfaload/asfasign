@@ -145,8 +145,8 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
 
     fn to_base64(&self) -> String {
         match self {
-            Self::Minisign(pk) => format!("{}:{}", KeyFormat::Minisign, pk.to_base64()),
-            Self::Ed25519(pk) => format!("{}:{}", KeyFormat::Ed25519, pk.to_base64()),
+            Self::Minisign(pk) => pk.to_base64(),
+            Self::Ed25519(pk) => pk.to_base64(),
         }
     }
 
@@ -189,8 +189,19 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
     }
 
     fn from_base64_with_format(s: &str, format: &KeyFormat) -> Result<Self, KeyError> {
-        // Strip prefix if present
-        let key_b64 = s.split_once(':').map(|(_, b64)| b64).unwrap_or(s);
+        let key_b64 = match s.split_once(':') {
+            Some((prefix, rest)) => {
+                let actual = KeyFormat::from_str(prefix)?;
+                if &actual != format {
+                    return Err(KeyError::CreationFailed(format!(
+                        "Public key format prefix mismatch: expected {}, got {}",
+                        format, actual
+                    )));
+                }
+                rest
+            }
+            None => s,
+        };
         match format {
             KeyFormat::Minisign => {
                 let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(key_b64)?;
