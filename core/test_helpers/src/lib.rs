@@ -206,10 +206,7 @@ impl TestKeys {
         // Replace FORMAT_PLACEHOLDER with the serialized key format string.
         // All keys in a TestKeys instance share the same format.
         if let Some(first_key) = self.pub_keys.first() {
-            let format_str = serde_json::to_string(&first_key.key_format())
-                .unwrap()
-                .trim_matches('"')
-                .to_string();
+            let format_str = first_key.key_format().to_string();
             result.replace("FORMAT_PLACEHOLDER", &format_str)
         } else {
             result

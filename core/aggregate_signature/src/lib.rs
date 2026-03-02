@@ -830,8 +830,7 @@ mod tests {
         );
 
         // Create signers config JSON string
-        let key_format = serde_json::to_string(&pubkey.key_format()).unwrap();
-        let key_format_str = key_format.trim_matches('"');
+        let key_format_str = pubkey.key_format().to_string();
         let json_config_template = r#"
     {
       "timestamp": "TIMESTAMP",
@@ -853,7 +852,7 @@ mod tests {
         // Replace placeholders with actual timestamp and public keys
         let json_config = json_config_template
             .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
-            .replace("FORMAT_PLACEHOLDER", key_format_str)
+            .replace("FORMAT_PLACEHOLDER", &key_format_str)
             .replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64())
             .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64())
             .replace("THRESHOLD_PLACEHOLDER", "1");
@@ -868,7 +867,7 @@ mod tests {
         // Should be incomplete with threshold 2
         let high_threshold_config = json_config_template
             .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
-            .replace("FORMAT_PLACEHOLDER", key_format_str)
+            .replace("FORMAT_PLACEHOLDER", &key_format_str)
             .replace("PUBKEY1_PLACEHOLDER", &pubkey.to_base64())
             .replace("PUBKEY2_PLACEHOLDER", &pubkey2.to_base64())
             .replace("THRESHOLD_PLACEHOLDER", "2");
