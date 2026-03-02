@@ -324,8 +324,10 @@ mod tests {
         kp.save(&key_path).unwrap();
 
         let sk = AsfaloadSecretKey::<Ed25519SecretKey>::from_file(&key_path, "mypass").unwrap();
-        let pk = AsfaloadPublicKey::<Ed25519PublicKey>::from_file(append_pub_extension(&key_path))
-            .unwrap();
+        let pk = AsfaloadPublicKey::<Ed25519PublicKey>::from_file(
+            append_pub_extension(&key_path).unwrap(),
+        )
+        .unwrap();
 
         let data = sha512_for_content(b"roundtrip".to_vec()).unwrap();
         let sig = sk.sign(&data).unwrap();

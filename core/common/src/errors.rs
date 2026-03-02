@@ -110,6 +110,8 @@ pub mod keys {
         IOError(#[from] std::io::Error),
         #[error("Refusing to overwrite existing files")]
         NotOverwriting(String),
+        #[error("Error: {0}")]
+        GenericError(String),
     }
 
     #[derive(Error, Debug)]

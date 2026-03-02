@@ -7,14 +7,16 @@ use std::path::{Path, PathBuf};
 // Shared utility: append ".pub" to a key file path.
 // Beware, if the path ends with /, the trailing slash is dropped before appending.
 // See https://www.reddit.com/r/rust/comments/ooh5wn/damn_trailing_slash/
-pub(crate) fn append_pub_extension<T: AsRef<Path>>(p: &T) -> PathBuf {
+pub(crate) fn append_pub_extension<T: AsRef<Path>>(p: &T) -> Result<PathBuf, KeyError> {
     let path = p.as_ref();
-    let file_name = path.file_name().unwrap();
+    let file_name = path.file_name().ok_or(KeyError::GenericError(
+        "Filename extraction from path failed.".into(),
+    ))?;
     let mut osstring: OsString = file_name.to_os_string();
     osstring.push(".pub");
     let mut pub_path_buf = path.to_path_buf();
     pub_path_buf.set_file_name(osstring.as_os_str());
-    pub_path_buf
+    Ok(pub_path_buf)
 }
 
 use crate::signatures_file::{SignaturesFile, TaggedSignature};
@@ -33,7 +35,7 @@ pub(crate) fn resolve_save_paths<T: AsRef<Path>>(p: T) -> Result<(PathBuf, PathB
     let (sk_path, pk_path) = if path.is_dir() {
         (path.join("key"), path.join("key.pub"))
     } else {
-        (path.to_path_buf(), append_pub_extension(&p))
+        (path.to_path_buf(), append_pub_extension(&p)?)
     };
 
     if sk_path.exists() || pk_path.exists() {
