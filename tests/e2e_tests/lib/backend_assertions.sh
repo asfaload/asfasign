@@ -23,19 +23,10 @@ pubkey_of() {
     fi
 }
 
-# Extract prefixed public key string (format:base64) for signatures file entries.
-# The signatures file uses prefixed keys as HashMap keys (e.g. "minisign:RWS1kZ...").
-# Usage: prefixed_pubkey_of "$KEY_0"  ->  "minisign:RWS1kZ..."  (when KEY_TYPE=minisign)
-#        prefixed_pubkey_of "$KEY_0"  ->  "ed25519:uMIWP0..."   (when KEY_TYPE=ed25519)
+# Stored key is always with prefix, which was not the case initially
 prefixed_pubkey_of() {
     local pub_file="${1}.pub"
-    local lines
-    lines=$(wc -l < "$pub_file")
-    if [ "$lines" -ge 2 ]; then
-        echo "minisign:$(sed -n 2p "$pub_file")"
-    else
-        echo "ed25519:$(cat "$pub_file")"
-    fi
+    echo "$(cat "$pub_file")"
 }
 
 # --- Low-level assertion primitives ---
