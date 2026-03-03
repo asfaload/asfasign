@@ -94,8 +94,13 @@ impl TestKeys {
             sec_keys: Vec::with_capacity(n),
         };
         for i in start..start + n {
-            let pk = AsfaloadPublicKeys::from_file(fixtures_dir.join(format!("key_{i}.pub")))
-                .unwrap_or_else(|e| panic!("Failed to load fixture public key key_{i}.pub: {e}"));
+            let key_path = fixtures_dir.join(format!("key_{i}.pub"));
+            let pk = AsfaloadPublicKeys::from_file(&key_path).unwrap_or_else(|e| {
+                panic!(
+                    "Failed to load fixture public key {}: {e}",
+                    key_path.display()
+                )
+            });
             let sk = AsfaloadSecretKeys::from_file(
                 fixtures_dir.join(format!("key_{i}")),
                 FIXTURE_PASSWORD,
@@ -197,11 +202,7 @@ impl TestKeys {
             // Insert bare base64 (without "format:" prefix) since JSON templates
             // have a separate "format" field.
             let prefixed = k.to_base64();
-            let bare = prefixed
-                .split_once(':')
-                .map(|(_, b)| b)
-                .unwrap_or(&prefixed);
-            t.replace(format!("PUBKEY{}_PLACEHOLDER", i).as_str(), bare)
+            t.replace(format!("PUBKEY{}_PLACEHOLDER", i).as_str(), &prefixed)
         });
         // Replace FORMAT_PLACEHOLDER with the serialized key format string.
         // All keys in a TestKeys instance share the same format.
