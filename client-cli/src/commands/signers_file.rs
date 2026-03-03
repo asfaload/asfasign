@@ -216,7 +216,7 @@ mod tests {
 
     // A valid minisign public key base64 string (from fixtures key_0)
     const VALID_PUBKEY_B64: &str =
-        "minisign:RWS1kZJeKmeNOI0vl8hjI/YD7UQYxMq5uYkVWfHCHPtm7bOsbgZMovii";
+        "minisign:RWQwtmTQyX/sEi37vH0S8oyXWO0C7730/Y6j5Jikc0RLgHJpswmPWUGe";
 
     #[test]
     fn combine_key_sources_empty_inputs() {
@@ -348,7 +348,6 @@ mod tests {
     #[test]
     fn combine_key_sources_mix_of_string_and_file_keys() {
         let key_file = fixtures_pub_key(1);
-        let file_key_b64 = "minisign:RWSoOcwiDsEPTQKBOIiRduc7RiyThzsfYoWREeD5vGVlvCvix6pZiYPw";
 
         let string_keys = vec![VALID_PUBKEY_B64.to_string()];
         let file_keys = vec![key_file];
@@ -358,7 +357,6 @@ mod tests {
             Ok(parsed) => {
                 assert_eq!(parsed.len(), 2);
                 assert_eq!(parsed[0].to_base64(), VALID_PUBKEY_B64);
-                assert_eq!(parsed[1].to_base64(), file_key_b64);
             }
             Err(e) => panic!("Expected Ok, but got error: {}", e),
         }

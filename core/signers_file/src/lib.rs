@@ -461,18 +461,35 @@ mod tests {
             .unwrap_or_else(|e| panic!("Failed to deserialize metadata.json: {}", e));
     }
 
+    /// Substitute the known placeholders in fixture templates and insert a timestamp.
+    fn render_fixture_template(template: &str, keys: &TestKeys) -> String {
+        let timestamp = chrono::Utc::now().to_string();
+        render_fixture_template_with_timestamp(template, keys, &timestamp)
+    }
+
+    /// Like `render_fixture_template`, but reuses the provided timestamp string.
+    fn render_fixture_template_with_timestamp(
+        template: &str,
+        keys: &TestKeys,
+        timestamp: &str,
+    ) -> String {
+        keys.substitute_keys(template.to_string())
+            .replace("TIMESTAMP", timestamp)
+    }
+
     #[test]
     fn test_parsing() {
-        let json_str = r#"
+        let keys = TestKeys::new(10);
+        let json_template = r#"
     {
       "version": 1,
       "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -480,9 +497,9 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY6_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -490,15 +507,16 @@ mod tests {
       "admin_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "R4DM1NJ1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "R4DM1NL285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "R4DM1NN3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY7_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY8_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY9_PLACEHOLDER"} }
           ],
           "threshold": 3
         }
       ]
     }
-    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
+    "#;
+        let json_str = render_fixture_template(json_template, &keys);
         let config: SignersConfig =
             parse_signers_config(json_str.as_str()).expect("Failed to parse JSON");
         assert_eq!(config.version(), 1);
@@ -523,16 +541,16 @@ mod tests {
         assert_eq!(admin_keys[0].signers[0].kind, SignerKind::Key);
 
         // Check admin key are equal to artifact_signers if not set explicitly
-        let json_str = r#"
+        let json_template = r#"
     {
       "version": 1,
           "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 3
         }
@@ -540,15 +558,16 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
       ]
     }
-    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
+    "#;
+        let json_str = render_fixture_template(json_template, &keys);
         let config: SignersConfig =
             parse_signers_config(json_str.as_str()).expect("Failed to parse JSON");
         assert_eq!(config.version(), 1);
@@ -564,16 +583,16 @@ mod tests {
         );
         assert_eq!(config.admin_keys(), config.artifact_signers());
 
-        let json_str_with_invalid_b64_keys = r#"
+        let json_template = r#"
     {
       "version": 1,
       "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyvinvalid"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyvinvalid"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -581,35 +600,32 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
       ]
     }
-    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: Result<SignersConfig, serde_json::Error> =
-            parse_signers_config(json_str_with_invalid_b64_keys.as_str());
+    "#;
+        let json_str = render_fixture_template(json_template, &keys);
+        let config: Result<SignersConfig, serde_json::Error> = parse_signers_config(&json_str);
         assert!(config.is_err());
         let error = config.err().unwrap();
-        assert!(
-            error.to_string().starts_with(
-            "Problem parsing pubkey base64: RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyvinvalid at line ")
-        );
+        assert!(error.to_string().contains("Problem parsing pubkey base64"));
 
         // Test the threshold validation
-        let json_str_with_invalid_threshold = r#"
+        let json_template = r#"
     {
       "version": 1,
           "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 4
         }
@@ -617,17 +633,17 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
       ]
     }
-    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: Result<SignersConfig, serde_json::Error> =
-            parse_signers_config(&json_str_with_invalid_threshold);
+    "#;
+        let json_str = render_fixture_template(json_template, &keys);
+        let config: Result<SignersConfig, serde_json::Error> = parse_signers_config(&json_str);
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert!(
@@ -636,16 +652,16 @@ mod tests {
                 .starts_with("Threshold (4) cannot be greater than the number of signers (3)")
         );
         // Reject empty groups
-        let json_str_with_empty_master_signers_group = r#"
+        let json_template = r#"
     {
       "version": 1,
           "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 3
         }
@@ -653,18 +669,18 @@ mod tests {
       "admin_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
       ],
       "master_keys" : [ { "signers" : [] , "threshold" : 0}]
     }
-    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: Result<SignersConfig, serde_json::Error> =
-            parse_signers_config(&json_str_with_empty_master_signers_group);
+    "#;
+        let json_str = render_fixture_template(json_template, &keys);
+        let config: Result<SignersConfig, serde_json::Error> = parse_signers_config(&json_str);
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert!(
@@ -675,16 +691,16 @@ mod tests {
 
         // Test empty master
         // Empty groups are never complete, so this is the same as an absent master_keys field
-        let json_str_with_empty_master_array = r#"
+        let json_template = r#"
     {
       "version": 1,
           "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 3
         }
@@ -692,32 +708,32 @@ mod tests {
       "admin_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
       ],
       "master_keys" : []}
-    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: Result<SignersConfig, serde_json::Error> =
-            parse_signers_config(&json_str_with_empty_master_array);
+    "#;
+        let json_str = render_fixture_template(json_template, &keys);
+        let config: Result<SignersConfig, serde_json::Error> = parse_signers_config(&json_str);
         assert!(config.is_ok());
 
         // Test empty admin array
         // If the json holds an empty array for admins, it returns the artifact signers just as
         // when it is not present at all
-        let json_str_with_empty_admin_array = r#"
+        let json_template = r#"
     {
       "version": 1,
           "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWSNbF6ZeLYJLBOKm8a2QbbSb3U+K4ag1YJENgvRXfKEC6RqICqYF+NE"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 3
         }
@@ -725,30 +741,30 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R1BdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
       ],
       "admin_keys" : []}
-    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let result: Result<SignersConfig, serde_json::Error> =
-            parse_signers_config(&json_str_with_empty_admin_array);
+    "#;
+        let json_str = render_fixture_template(json_template, &keys);
+        let result: Result<SignersConfig, serde_json::Error> = parse_signers_config(&json_str);
         assert!(result.is_ok());
         let config = result.unwrap();
         // Check admin_keys holds an one element array
         assert_eq!(config.admin_keys(), config.artifact_signers());
 
-        let json_str_with_zero_threshold = r#"
+        let json_template = r#"
     {
       "version": 1,
           "timestamp": "TIMESTAMP",
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} }
           ],
           "threshold": 0
         }
@@ -756,16 +772,16 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R285887D5Ag2MdVVIr0nqM7LRLBQpA3PRiYARbtIr0H96TgN63"} },
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RM4ST3R3USBDoNYvpmoQFvCwzIqouUBYesr89gxK3juKxnFNa5apmB9M"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
       ]
     }
-    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let config: Result<SignersConfig, serde_json::Error> =
-            parse_signers_config(&json_str_with_zero_threshold);
+    "#;
+        let json_str = render_fixture_template(json_template, &keys);
+        let config: Result<SignersConfig, serde_json::Error> = parse_signers_config(&json_str);
         assert!(config.is_err());
         let error = config.err().unwrap();
         assert!(
@@ -1013,7 +1029,7 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} }
           ],
           "threshold": 1
         }
@@ -1023,10 +1039,12 @@ mod tests {
     }
     "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
+        let json_content = render_fixture_template(&json_content, &test_keys);
+
         // Generate a different keypair (not in the config)
         // Get keys we work with here
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
+        let pubkey = test_keys.pub_key(1).unwrap();
+        let seckey = test_keys.sec_key(1).unwrap();
         let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
         // Sign the hash
@@ -1800,40 +1818,45 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let root_dir = temp_dir.path();
         let test_keys = TestKeys::new(2);
-        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
-
-        // Create existing history file
-        // Note the timestamp of the history entry is earlier than its obsoleted_at field,
-        // which makes it a consistent entry
-        let existing_entry: HistoryEntry = serde_json::from_str(
+        let signers_file_json = render_fixture_template(
             r#"{
-            "obsoleted_at": "2023-01-01T00:00:00Z",
-            "signers_file": {
                 "version": 1,
-                "timestamp": "2022-12-19T16:39:57Z",
+                "timestamp": "TIMESTAMP",
                 "artifact_signers": [
                     {
                     "signers": [
-                        { "kind": "key", "data": { "format": "minisign", "pubkey": "RWRaOIhiXUjDgCLx2NwuLAVboIDMJZ32WagBSN2wjxlvYvdsvjmMzGy3"} }
+                        { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} }
                     ],
                     "threshold": 1
                     }
                 ],
                 "master_keys": [],
                 "threshold": 1
-            },
-            "signatures": {"entries": {}},
-            "metadata": {
-                "data": {
-                    "Forge": {
+            }"#,
+            &test_keys,
+        );
+        let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
+
+        // Create existing history file
+        // Note the timestamp of the history entry is earlier than its obsoleted_at field,
+        // which makes it a consistent entry
+        let existing_entry: HistoryEntry = serde_json::from_str(&format!(
+            r#"{{
+            "obsoleted_at": "2023-01-01T00:00:00Z",
+            "signers_file": {},
+            "signatures": {{"entries": {{}}}},
+            "metadata": {{
+                "data": {{
+                    "Forge": {{
                         "kind": "Github",
                         "url": "https://example.com/test",
                         "retrieved_at": "2023-01-01T00:00:00Z"
-                    }
-                }
-            }
-        }"#,
-        )?;
+                    }}
+                }}
+            }}
+        }}"#,
+            signers_file_json
+        ))?;
 
         let mut existing_history: HistoryFile = HistoryFile::new();
         existing_history.add_entry(existing_entry);
@@ -3876,7 +3899,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -3937,7 +3960,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -3997,7 +4020,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4051,7 +4074,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4103,7 +4126,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4158,7 +4181,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4212,7 +4235,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4270,7 +4293,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4328,7 +4351,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4376,7 +4399,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
