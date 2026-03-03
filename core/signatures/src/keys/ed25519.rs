@@ -88,7 +88,8 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<Ed25519KeyPair> {
 
         // Write public key as plain base64
         let pk_b64 = BASE64_STANDARD.encode(self.key_pair.signing_key.verifying_key().as_bytes());
-        fs::write(&pk_path, &pk_b64)?;
+        let with_prefix = format!("ed25519:{}", pk_b64);
+        fs::write(&pk_path, with_prefix)?;
 
         Ok(self)
     }

@@ -21,7 +21,7 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
         let sk_string = self.key_pair.sk.to_box(None)?.into_string();
         fs::write(&sk_path, &sk_string)?;
 
-        let pk_string = self.key_pair.pk.to_box()?.into_string();
+        let pk_string = self.public_key().to_base64();
         fs::write(&pk_path, &pk_string)?;
 
         Ok(self)
@@ -98,6 +98,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         format!("{}:{}", KeyFormat::Minisign, self.key.to_base64())
     }
 
+    // FIXME: what about the prefix here?
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
         let k = minisign::PublicKey::from_bytes(data)?;
         Ok(AsfaloadPublicKey { key: k })
@@ -105,20 +106,18 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     // When saving to a file, we store a PublicKeyBox as encouraged by minisign for storage.
     // Other methods manipulate the PublickKey directly
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError> {
-        let k = minisign::PublicKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
-            .into_public_key()?;
-        Ok(AsfaloadPublicKey { key: k })
+        let content = std::fs::read_to_string(&path)?;
+        Self::from_base64(&content)
     }
 
     fn from_base64(s: &str) -> Result<Self, KeyError> {
         let bare = match s.split_once(':') {
             Some((prefix, rest)) => {
-                let format = KeyFormat::from_str(prefix)?;
-                if format != KeyFormat::Minisign {
+                if prefix != KeyFormat::Minisign.to_string() {
                     return Err(KeyError::CreationFailed(format!(
                         "Public key format prefix mismatch: expected {}, got {}",
                         KeyFormat::Minisign,
-                        format
+                        prefix
                     )));
                 }
                 rest
