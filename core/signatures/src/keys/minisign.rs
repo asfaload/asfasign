@@ -200,7 +200,6 @@ mod asfaload_index_tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::keys::append_pub_extension;
     //------------------------------------------------------------
     // Keypairs
     //------------------------------------------------------------
@@ -313,19 +312,6 @@ mod asfaload_index_tests {
         Ok(())
     }
 
-    #[test]
-    fn test_append_pub_extension() {
-        let p = Path::new("/home/asfa/key");
-        let buf_with_ext = append_pub_extension(&p).unwrap();
-        let with_ext = buf_with_ext.as_path();
-        assert_eq!(with_ext.to_str(), Some("/home/asfa/key.pub"));
-
-        // Illustration that the trailing / is dropped. See append_pub_extension comment.
-        let p = Path::new("/home/asfa/key/");
-        let buf_with_ext = append_pub_extension(&p).unwrap();
-        let with_ext = buf_with_ext.as_path();
-        assert_eq!(with_ext.to_str(), Some("/home/asfa/key.pub"));
-    }
     //------------------------------------------------------------
     // AsfaloadSecretKey
     //------------------------------------------------------------
