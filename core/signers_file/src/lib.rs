@@ -441,6 +441,7 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
     use test_helpers::TestKeys;
+    use test_helpers::default_key_type;
     use test_helpers::test_metadata;
 
     fn assert_metadata_file_valid(root_dir: &Path, is_active: bool) {
@@ -528,7 +529,7 @@ mod tests {
         );
         assert_eq!(
             config.artifact_signers()[0].signers[0].data.format,
-            KeyFormat::Minisign
+            default_key_type()
         );
         assert_eq!(config.master_keys().unwrap_or_default().len(), 1);
         assert_eq!(config.master_keys().unwrap_or_default()[0].threshold, 2);

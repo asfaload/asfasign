@@ -41,7 +41,7 @@ pub fn fixtures_ed25519_pub_key(n: usize) -> PathBuf {
 /// Select key algorithm from the KEY_TYPE env var, matching the e2e test convention.
 /// Defaults to Minisign so existing tests are unaffected.
 /// Panics on unrecognised values to surface typos early.
-fn default_key_type() -> KeyFormat {
+pub fn default_key_type() -> KeyFormat {
     match std::env::var("KEY_TYPE").as_deref() {
         Ok("ed25519") => KeyFormat::Ed25519,
         Ok("minisign") | Err(_) => KeyFormat::Minisign,
