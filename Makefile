@@ -83,6 +83,10 @@ test-ed25519:
 	KEY_TYPE=ed25519 $(MAKE) -C rest-api test-sha256
 	KEY_TYPE=ed25519 $(MAKE) -C rest-api test-with-test-utils-sha256
 
+## Run mutation tests (with ed25519 keys). Select packages in .cargo/mutants.toml
+test-mutants:
+	KEY_TYPE=ed25519 cargo mutants --test-tool nextest
+
 ## Run client-server integration tests
 client-server-tests:
 	cargo test --package client-server-integration-tests
