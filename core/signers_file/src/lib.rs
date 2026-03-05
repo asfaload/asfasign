@@ -580,7 +580,7 @@ mod tests {
         );
         assert_eq!(
             config.artifact_signers()[0].signers[0].data.format,
-            KeyFormat::Minisign
+            default_key_type()
         );
         assert_eq!(config.admin_keys(), config.artifact_signers());
 
