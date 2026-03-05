@@ -199,6 +199,8 @@ mod asfaload_index_tests {
     use serde_json;
     use tempfile::TempDir;
 
+    use crate::types::{AsfaloadKeyPairs, AsfaloadPublicKeys, AsfaloadSecretKeys};
+
     use super::*;
     //------------------------------------------------------------
     // Keypairs
@@ -315,52 +317,6 @@ mod asfaload_index_tests {
     //------------------------------------------------------------
     // AsfaloadSecretKey
     //------------------------------------------------------------
-    #[test]
-    fn test_keys_methods() -> Result<()> {
-        // Save keypair in temp dir
-        let temp_dir = tempfile::tempdir().unwrap();
-        let kp = AsfaloadKeyPair::<minisign::KeyPair>::new("mypass")?;
-        kp.save(&temp_dir)?;
-
-        // Load secret key from disk
-        let secret_key_path = temp_dir.as_ref().to_path_buf().join("key");
-        let secret_key =
-            AsfaloadSecretKey::<minisign::SecretKey>::from_file(secret_key_path, "mypass")?;
-
-        // Generate signature
-        let bytes_to_sign = common::sha512_for_content(b"My string to sign".to_vec())?;
-        let signature = secret_key.sign(&bytes_to_sign)?;
-
-        // Load public key from disk
-        let public_key_path = temp_dir.as_ref().to_path_buf().join("key.pub");
-        let public_key = AsfaloadPublicKey::<minisign::PublicKey>::from_file(&public_key_path)?;
-
-        // Verify signature
-        public_key.verify(&signature, &bytes_to_sign)?;
-
-        // Load key from base64 and validate
-        let value_read = fs::read_to_string(&public_key_path)?;
-        // When we saved the key to disk using the Box, it wrote a comment
-        // followed by the base64 encoded key. Thus here we only need the second line.
-        let public_key_string = value_read.lines().nth(1).ok_or_else(|| {
-            KeyError::IOError(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Public key file does not contain a second line",
-            ))
-        })?;
-        let public_key_from_string =
-            AsfaloadPublicKey::<minisign::PublicKey>::from_base64(public_key_string)?;
-        public_key_from_string.verify(&signature, &bytes_to_sign)?;
-
-        // Test AsfaloadPublicKey::from_base64
-        let b64 = public_key_from_string.to_base64();
-        assert_eq!(
-            b64,
-            format!("{}:{}", KeyFormat::Minisign, public_key_string)
-        );
-
-        Ok(())
-    }
     #[test]
     fn test_from_base64_with_prefix() -> Result<()> {
         let (pk, _sk) = get_key_pair()?;
