@@ -6,7 +6,7 @@ use crate::keys::{
 use base64::{Engine, prelude::BASE64_STANDARD};
 use common::{AsfaloadHashes, errors::keys::*};
 pub use minisign::{KeyPair, PublicKey, SecretKey, SignatureBox};
-use std::{fs, io::Cursor, path::Path, str::FromStr};
+use std::{fs, io::Cursor, path::Path};
 
 impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
     type PublicKey = AsfaloadPublicKey<minisign::PublicKey>;
@@ -198,8 +198,6 @@ mod asfaload_index_tests {
     use constants::PENDING_SIGNATURES_SUFFIX;
     use serde_json;
     use tempfile::TempDir;
-
-    use crate::types::{AsfaloadKeyPairs, AsfaloadPublicKeys, AsfaloadSecretKeys};
 
     use super::*;
     //------------------------------------------------------------

@@ -284,16 +284,6 @@ mod tests {
     use git2::Signature;
     use tempfile::TempDir;
 
-    /// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
-    /// Duplicated in tests module that need it. Moving it to a test helpers crate implies
-    /// too much code to move due to its return type GitBackendType
-    pub fn backend_kind_from_env() -> GitBackendKind {
-        match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
-            Ok("sha256") => GitBackendKind::Sha256,
-            _ => GitBackendKind::Sha1,
-        }
-    }
-
     struct MockBackend {
         should_fail: bool,
     }

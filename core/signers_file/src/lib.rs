@@ -435,7 +435,6 @@ mod tests {
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signatures::keys::AsfaloadSignatureTrait;
     use signatures::signatures_file::TaggedSignature;
-    use signers_file_types::KeyFormat;
     use signers_file_types::SignerKind;
     use signers_file_types::parse_history_file;
     use std::path::PathBuf;
