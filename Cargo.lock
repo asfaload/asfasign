@@ -4282,7 +4282,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "test_helpers",
  "thiserror 2.0.18",
 ]
 
