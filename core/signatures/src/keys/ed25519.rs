@@ -185,10 +185,12 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<Ed25519PublicKey> {
                         format
                     )));
                 }
-                rest
+                Ok(rest)
             }
-            None => s,
-        };
+            None => Err(KeyError::GenericError(
+                format!("Could not split string to extract prefix: {}", s).to_string(),
+            )),
+        }?;
         let bytes = BASE64_STANDARD
             .decode(bare)
             .map_err(|e| KeyError::CreationFailed(format!("Base64 decode failed: {}", e)))?;
