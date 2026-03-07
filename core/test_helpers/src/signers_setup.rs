@@ -23,10 +23,7 @@ pub fn create_signer(test_keys: &TestKeys, index: usize) -> Signer {
     let pubkey = test_keys.pub_key(index).unwrap().clone();
     Signer {
         kind: SignerKind::Key,
-        data: SignerData {
-            format: pubkey.key_format(),
-            pubkey,
-        },
+        data: SignerData { pubkey },
     }
 }
 
@@ -126,10 +123,7 @@ pub fn create_complete_signers_setup(
         let pubkey = test_keys.pub_key(i).unwrap().clone();
         Signer {
             kind: SignerKind::Key,
-            data: SignerData {
-                format: pubkey.key_format(),
-                pubkey,
-            },
+            data: SignerData { pubkey },
         }
     };
 

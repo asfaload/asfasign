@@ -440,7 +440,6 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
     use test_helpers::TestKeys;
-    use test_helpers::default_key_type;
     use test_helpers::test_metadata;
 
     fn assert_metadata_file_valid(root_dir: &Path, is_active: bool) {
@@ -487,9 +486,9 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -497,9 +496,9 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY6_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY5_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY6_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -507,9 +506,9 @@ mod tests {
       "admin_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY7_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY8_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY9_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY7_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY8_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY9_PLACEHOLDER"} }
           ],
           "threshold": 3
         }
@@ -525,10 +524,6 @@ mod tests {
         assert_eq!(
             config.artifact_signers()[0].signers[0].kind,
             SignerKind::Key
-        );
-        assert_eq!(
-            config.artifact_signers()[0].signers[0].data.format,
-            default_key_type()
         );
         assert_eq!(config.master_keys().unwrap_or_default().len(), 1);
         assert_eq!(config.master_keys().unwrap_or_default()[0].threshold, 2);
@@ -548,9 +543,9 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 3
         }
@@ -558,9 +553,9 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -577,10 +572,6 @@ mod tests {
             config.artifact_signers()[0].signers[0].kind,
             SignerKind::Key
         );
-        assert_eq!(
-            config.artifact_signers()[0].signers[0].data.format,
-            default_key_type()
-        );
         assert_eq!(config.admin_keys(), config.artifact_signers());
 
         let json_template = r#"
@@ -590,9 +581,9 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyvinvalid"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyvinvalid"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -600,9 +591,9 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -623,9 +614,9 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 4
         }
@@ -633,9 +624,9 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -659,9 +650,9 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 3
         }
@@ -669,9 +660,9 @@ mod tests {
       "admin_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -698,9 +689,9 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 3
         }
@@ -708,9 +699,9 @@ mod tests {
       "admin_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -731,9 +722,9 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 3
         }
@@ -741,9 +732,9 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY3_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -764,7 +755,7 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} }
+            { "kind": "key", "data": {  "pubkey": "PUBKEY4_PLACEHOLDER"} }
           ],
           "threshold": 0
         }
@@ -772,8 +763,8 @@ mod tests {
       "master_keys": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY4_PLACEHOLDER"} },
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY5_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY4_PLACEHOLDER"} },
+            { "kind": "key", "data": { "pubkey": "PUBKEY5_PLACEHOLDER"} }
           ],
           "threshold": 2
         }
@@ -805,8 +796,8 @@ mod tests {
   "artifact_signers": [
     {
       "signers": [
-        { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-        { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+        { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+        { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} }
       ],
       "threshold": 2
     }
@@ -1029,7 +1020,7 @@ mod tests {
       "artifact_signers": [
         {
           "signers": [
-            { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} }
+            { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} }
           ],
           "threshold": 1
         }
@@ -1037,7 +1028,8 @@ mod tests {
       "master_keys": [],
       "admin_keys": null
     }
-    "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
+    "#
+        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content = render_fixture_template(&json_content, &test_keys);
 
@@ -1464,7 +1456,7 @@ mod tests {
   "artifact_signers": [
     {
       "signers": [
-        { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER" } }
+        { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER" } }
       ],
       "threshold": 1
     }
@@ -1825,7 +1817,7 @@ mod tests {
                 "artifact_signers": [
                     {
                     "signers": [
-                        { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} }
+                        { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} }
                     ],
                     "threshold": 1
                     }
@@ -2782,8 +2774,8 @@ mod tests {
   "artifact_signers": [
     {
       "signers": [
-        { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER" } },
-        { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+        { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER" } },
+        { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER" } }
       ],
       "threshold": 2
     }
@@ -2802,7 +2794,7 @@ mod tests {
 
             for master in 0..master_count {
                 template.push_str(
-                format!(r#"        {{ "kind": "key", "data": {{ "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY{key_index}_PLACEHOLDER" }} }}
+                format!(r#"        {{ "kind": "key", "data": {{ "pubkey": "PUBKEY{key_index}_PLACEHOLDER" }} }}
   "#).as_ref(),
             );
                 if master < master_count - 1 {
@@ -2838,7 +2830,7 @@ mod tests {
 
             for admin in 0..admin_count {
                 template.push_str(
-                format!(r#"        {{ "kind": "key", "data": {{ "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY{key_index}_PLACEHOLDER" }} }}
+                format!(r#"        {{ "kind": "key", "data": {{ "pubkey": "PUBKEY{key_index}_PLACEHOLDER" }} }}
   "#).as_ref(),
             );
                 key_index += 1;
@@ -2942,8 +2934,8 @@ mod tests {
   "artifact_signers": [
     {
       "signers": [
-        { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER" } },
-        { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER" } }
+        { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER" } },
+        { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER" } }
       ],
       "threshold": 2
     }
@@ -3526,8 +3518,8 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+                { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+                { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} }
               ],
               "threshold": 2
             }
@@ -3536,8 +3528,8 @@ mod tests {
           "admin_keys": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} },
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} }
+                { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} },
+                { "kind": "key", "data": { "pubkey": "PUBKEY3_PLACEHOLDER"} }
               ],
               "threshold": 2
             }
@@ -3576,8 +3568,8 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+                { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+                { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} }
               ],
               "threshold": 2
             }
@@ -3618,8 +3610,8 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+                { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+                { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} }
               ],
               "threshold": 2
             }
@@ -3627,7 +3619,7 @@ mod tests {
           "master_keys": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+                { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
               ],
               "threshold": 1
             }
@@ -3635,7 +3627,7 @@ mod tests {
           "admin_keys": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY3_PLACEHOLDER"} }
+                { "kind": "key", "data": { "pubkey": "PUBKEY3_PLACEHOLDER"} }
               ],
               "threshold": 1
             }
@@ -3689,8 +3681,8 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+                { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+                { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} }
               ],
               "threshold": 2
             }
@@ -3698,7 +3690,7 @@ mod tests {
           "master_keys": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY2_PLACEHOLDER"} }
+                { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
               ],
               "threshold": 1
             }
@@ -3748,8 +3740,8 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} },
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY1_PLACEHOLDER"} }
+                { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
+                { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} }
               ],
               "threshold": 2
             }
@@ -3830,7 +3822,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "FORMAT_PLACEHOLDER", "pubkey": "PUBKEY0_PLACEHOLDER"} }
+                { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} }
               ],
               "threshold": 1
             }
@@ -3899,7 +3891,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -3960,7 +3952,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4020,7 +4012,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4074,7 +4066,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4126,7 +4118,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4181,7 +4173,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4235,7 +4227,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4293,7 +4285,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4351,7 +4343,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }
@@ -4399,7 +4391,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "format": "minisign", "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
               ],
               "threshold": 1
             }

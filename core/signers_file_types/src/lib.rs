@@ -358,10 +358,7 @@ impl Signer {
     pub fn from_key(pk: &AsfaloadPublicKeys) -> Result<Self, KeyError> {
         Ok(Self {
             kind: SignerKind::Key,
-            data: SignerData {
-                format: pk.key_format(),
-                pubkey: pk.clone(),
-            },
+            data: SignerData { pubkey: pk.clone() },
         })
     }
 }
@@ -374,7 +371,6 @@ pub enum SignerKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignerData {
-    pub format: KeyFormat,
     pub pubkey: AsfaloadPublicKeys,
 }
 
@@ -385,7 +381,6 @@ impl Serialize for SignerData {
     {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("SignerData", 2)?;
-        state.serialize_field("format", &self.format)?;
         // Write bare base64 (with format prefix)
         let prefixed = self.pubkey.to_base64();
         state.serialize_field("pubkey", &prefixed)?;
@@ -400,7 +395,6 @@ impl<'de> Deserialize<'de> for SignerData {
     {
         #[derive(Deserialize)]
         struct SignerDataHelper {
-            format: KeyFormat,
             pubkey: String,
         }
 
@@ -409,10 +403,7 @@ impl<'de> Deserialize<'de> for SignerData {
         let pubkey = AsfaloadPublicKeys::from_base64(&helper.pubkey).map_err(|_e| {
             serde::de::Error::custom(format!("Problem parsing pubkey base64: {}", helper.pubkey))
         })?;
-        Ok(SignerData {
-            format: helper.format,
-            pubkey,
-        })
+        Ok(SignerData { pubkey })
     }
 }
 
