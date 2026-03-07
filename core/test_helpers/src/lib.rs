@@ -199,8 +199,7 @@ impl TestKeys {
 
     pub fn substitute_keys(&self, tpl: String) -> String {
         let result = self.pub_keys.iter().enumerate().fold(tpl, |t, (i, k)| {
-            // Insert bare base64 (without "format:" prefix) since JSON templates
-            // have a separate "format" field.
+            // Insert bare base64 (with "format:" prefix)
             let prefixed = k.to_base64();
             t.replace(format!("PUBKEY{}_PLACEHOLDER", i).as_str(), &prefixed)
         });
