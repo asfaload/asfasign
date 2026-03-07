@@ -229,7 +229,7 @@ pub trait AsfaloadSignatureTrait: Sized {
         let signed_data = common::sha512_for_file(signed_file_path)?;
         if pub_key.verify(self, &signed_data).is_ok() {
             let key_format = pub_key.key_format();
-            let pubkey_b64 = format!("{}:{}", key_format, pub_key.to_base64());
+            let pubkey_b64 = pub_key.to_base64();
             if sig_file.entries.contains_key(&pubkey_b64) {
                 return Err(SignatureError::DuplicateSignature);
             }
@@ -287,5 +287,18 @@ mod key_format_tests {
             let parsed = KeyFormat::from_str(&s).unwrap();
             assert_eq!(*fmt, parsed);
         }
+    }
+    #[test]
+    fn test_append_pub_extension() {
+        let p = Path::new("/home/asfa/key");
+        let buf_with_ext = append_pub_extension(&p).unwrap();
+        let with_ext = buf_with_ext.as_path();
+        assert_eq!(with_ext.to_str(), Some("/home/asfa/key.pub"));
+
+        // Illustration that the trailing / is dropped. See append_pub_extension comment.
+        let p = Path::new("/home/asfa/key/");
+        let buf_with_ext = append_pub_extension(&p).unwrap();
+        let with_ext = buf_with_ext.as_path();
+        assert_eq!(with_ext.to_str(), Some("/home/asfa/key.pub"));
     }
 }

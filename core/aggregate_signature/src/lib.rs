@@ -901,14 +901,12 @@ mod tests {
         let signer = signers_file_types::Signer {
             kind: SignerKind::Key,
             data: signers_file_types::SignerData {
-                format: pubkey.key_format(),
                 pubkey: pubkey.clone(),
             },
         };
         let signer2 = signers_file_types::Signer {
             kind: SignerKind::Key,
             data: signers_file_types::SignerData {
-                format: pubkey2.key_format(),
                 pubkey: pubkey2.clone(),
             },
         };
@@ -1597,14 +1595,12 @@ mod tests {
                     Signer {
                         kind: SignerKind::Key,
                         data: SignerData {
-                            format: pubkey1.key_format(),
                             pubkey: pubkey1.clone(),
                         },
                     },
                     Signer {
                         kind: SignerKind::Key,
                         data: SignerData {
-                            format: pubkey2.key_format(),
                             pubkey: pubkey2.clone(),
                         },
                     },
@@ -1947,7 +1943,6 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: pubkey.key_format(),
                         pubkey: pubkey.clone(),
                     },
                 }],
@@ -2134,14 +2129,12 @@ mod tests {
                     Signer {
                         kind: SignerKind::Key,
                         data: SignerData {
-                            format: pubkey1.key_format(),
                             pubkey: pubkey1.clone(),
                         },
                     },
                     Signer {
                         kind: SignerKind::Key,
                         data: SignerData {
-                            format: pubkey2.key_format(),
                             pubkey: pubkey2.clone(),
                         },
                     },
@@ -2303,7 +2296,6 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: pubkey1.key_format(),
                         pubkey: pubkey1.clone(),
                     },
                 }],
@@ -2313,7 +2305,6 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: pubkey2.key_format(),
                         pubkey: pubkey2.clone(),
                     },
                 }],
@@ -2336,7 +2327,6 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: pubkey1.key_format(),
                         pubkey: pubkey1.clone(),
                     },
                 }],
@@ -2346,7 +2336,6 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: pubkey3.key_format(),
                         pubkey: pubkey3.clone(),
                     },
                 }],
@@ -2356,7 +2345,6 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: pubkey4.key_format(),
                         pubkey: pubkey4.clone(),
                     },
                 }],
@@ -2566,7 +2554,6 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: pubkey1.key_format(),
                         pubkey: pubkey1.clone(),
                     },
                 }],
@@ -2576,7 +2563,6 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: pubkey2.key_format(),
                         pubkey: pubkey2.clone(),
                     },
                 }],
@@ -2600,7 +2586,6 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: pubkey2.key_format(),
                         pubkey: pubkey2.clone(),
                     },
                 }],
@@ -2610,7 +2595,6 @@ mod tests {
                 signers: vec![Signer {
                     kind: SignerKind::Key,
                     data: SignerData {
-                        format: pubkey1.key_format(),
                         pubkey: pubkey1.clone(),
                     },
                 }],
@@ -2686,10 +2670,7 @@ mod tests {
         // Helper function to create a Signer
         let create_signer = |pubkey: AsfaloadPublicKeys| Signer {
             kind: SignerKind::Key,
-            data: SignerData {
-                format: pubkey.key_format(),
-                pubkey,
-            },
+            data: SignerData { pubkey },
         };
 
         // Helper function to create a SignerGroup
@@ -3202,10 +3183,7 @@ mod tests {
             .into_iter()
             .map(|pubkey| Signer {
                 kind: SignerKind::Key,
-                data: SignerData {
-                    format: pubkey.key_format(),
-                    pubkey,
-                },
+                data: SignerData { pubkey },
             })
             .collect();
 

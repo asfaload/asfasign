@@ -5,20 +5,15 @@ set -euo pipefail
 # run with env var debug=1 to print commands and outputs.
 # If you start the backend separately, send the backend env var the the backedn url,
 # eg http://localhost:3000
+# Signers file generation (minisign
+# ):
+# ----------------------------------
+# cargo run -- new-signers-file --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_0.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_1.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_2.pub -A 2 -o ../../repo_for_e2e_tests/basic_flow/signers_file_1.json
+# cargo run --quiet -- new-signers-file  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_0.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_1.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_2.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_3.pub  -A 3  --revocation-key-file ../core/test_helpers/fixtures/keys/key_4.pub  --revocation-key-file ../core/test_helpers/fixtures/keys/key_5.pub  --revocation-key-file ../core/test_helpers/fixtures/keys/key_6.pub  -R 2  -o ../../repo_for_e2e_tests/basic_flow/signers_file_2.json
 # Signers file generation (ed25519):
 # ----------------------------------
-# cargo run -- new-signers-file --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_0.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_1.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_2.pub -A 2 -o signers_file_1.json
-# cargo run --quiet -- new-signers-file \
-#    --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_0.pub \
-#    --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_1.pub \
-#    --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_2.pub \
-#    --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_3.pub \
-#    -A 3 \
-#    --revocation-key-file ../core/test_helpers/fixtures/keys/ed25519_key_4.pub \
-#    --revocation-key-file ../core/test_helpers/fixtures/keys/ed25519_key_5.pub \
-#    --revocation-key-file ../core/test_helpers/fixtures/keys/ed25519_key_6.pub \
-#    -R 2 \
-#    -o /tmp/signers_file_2_ed25519.json
+# cargo run -- new-signers-file --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_0.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_1.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_2.pub -A 2 -o ../../repo_for_e2e_tests/basic_flowsigners_file_1_ed25519.json
+# cargo run --quiet -- new-signers-file  --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_0.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_1.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_2.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/ed25519_key_3.pub  -A 3  --revocation-key-file ../core/test_helpers/fixtures/keys/ed25519_key_4.pub  --revocation-key-file ../core/test_helpers/fixtures/keys/ed25519_key_5.pub  --revocation-key-file ../core/test_helpers/fixtures/keys/ed25519_key_6.pub  -R 2  -o ../../repo_for_e2e_tests/basic_flow/signers_file_2_ed25519.json
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/helpers.sh"
 
@@ -91,6 +86,7 @@ cd "$base_dir/client-cli/"
 section "Initial Setup and Repo Registration"
 ################################################################################
 
+echo "$(signers_file 1)"
 run_step_json "Register repo with key1" \
     '.success == true' \
     cargo run --quiet -- register-repo --secret-key "$KEY_0" -u $backend --password $key_password $(signers_file 1)
@@ -130,8 +126,7 @@ run_step_json "Sign signers file with key3 (completes signature)" \
 assert_signers_active
 assert_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2"
 
-expect_fail_json "Sign signers file with key1 (already completed)" \
-    '.error | length > 0' \
+expect_fail "Sign signers file with key1 (already completed)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
 
 ################################################################################
@@ -171,8 +166,7 @@ run_step_json "Sign release index with key2 (completes, threshold=2)" \
 assert_release_index_active "0.1"
 assert_release_index_signers "0.1" "$KEY_0" "$KEY_1" "$KEY_2"
 
-expect_fail_json "Sign release index with key3 (already completed)" \
-    '.error | length > 0' \
+expect_fail "Sign release index with key3 (already completed)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_index 0.1)
 
 DOWNLOAD_V01="$(mktemp)"

@@ -10,6 +10,7 @@ use pkcs8::der::pem::PemLabel;
 use pkcs8::{DecodePrivateKey, EncodePrivateKey, EncryptedPrivateKeyInfo};
 use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 
 /// Wrapper holding the signing key and its encrypted PKCS#8 PEM for storage.
 pub struct Ed25519KeyPair {
@@ -87,7 +88,8 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<Ed25519KeyPair> {
 
         // Write public key as plain base64
         let pk_b64 = BASE64_STANDARD.encode(self.key_pair.signing_key.verifying_key().as_bytes());
-        fs::write(&pk_path, &pk_b64)?;
+        let with_prefix = format!("ed25519:{}", pk_b64);
+        fs::write(&pk_path, with_prefix)?;
 
         Ok(self)
     }
@@ -157,7 +159,11 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<Ed25519PublicKey> {
     }
 
     fn to_base64(&self) -> String {
-        BASE64_STANDARD.encode(self.key.as_bytes())
+        format!(
+            "{}:{}",
+            KeyFormat::Ed25519,
+            BASE64_STANDARD.encode(self.key.as_bytes())
+        )
     }
 
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
@@ -169,8 +175,24 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<Ed25519PublicKey> {
     }
 
     fn from_base64(s: &str) -> Result<Self, KeyError> {
+        let bare = match s.split_once(':') {
+            Some((prefix, rest)) => {
+                let format = KeyFormat::from_str(prefix)?;
+                if format != KeyFormat::Ed25519 {
+                    return Err(KeyError::CreationFailed(format!(
+                        "Public key format prefix mismatch: expected {}, got {}",
+                        KeyFormat::Ed25519,
+                        format
+                    )));
+                }
+                Ok(rest)
+            }
+            None => Err(KeyError::GenericError(
+                format!("Could not split string to extract prefix: {}", s).to_string(),
+            )),
+        }?;
         let bytes = BASE64_STANDARD
-            .decode(s)
+            .decode(bare)
             .map_err(|e| KeyError::CreationFailed(format!("Base64 decode failed: {}", e)))?;
         Self::from_bytes(&bytes)
     }
@@ -342,6 +364,28 @@ mod tests {
     fn test_key_format() {
         let (pk, _) = get_key_pair().unwrap();
         assert_eq!(pk.key_format(), KeyFormat::Ed25519);
+    }
+
+    #[test]
+    fn test_from_base64_with_prefix() {
+        let (pk, _sk) = get_key_pair().unwrap();
+        let bare_b64 = BASE64_STANDARD.encode(pk.key().as_bytes());
+        let prefixed = format!("ed25519:{}", bare_b64);
+        let pk2 = AsfaloadPublicKey::<Ed25519PublicKey>::from_base64(&prefixed).unwrap();
+        assert_eq!(pk, pk2);
+    }
+
+    #[test]
+    fn test_from_base64_with_wrong_prefix_fails() {
+        let (pk, _sk) = get_key_pair().unwrap();
+        let bare_b64 = BASE64_STANDARD.encode(pk.key().as_bytes());
+        let prefixed = format!("minisign:{}", bare_b64);
+        let result = AsfaloadPublicKey::<Ed25519PublicKey>::from_base64(&prefixed);
+        match result {
+            Err(KeyError::CreationFailed(_)) => {}
+            Err(e) => panic!("Expected KeyError::CreationFailed, got {}", e),
+            Ok(_) => panic!("Expected KeyError::CreationFailed, got Ok"),
+        }
     }
 
     #[test]

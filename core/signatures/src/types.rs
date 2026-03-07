@@ -145,8 +145,8 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
 
     fn to_base64(&self) -> String {
         match self {
-            Self::Minisign(pk) => format!("{}:{}", KeyFormat::Minisign, pk.to_base64()),
-            Self::Ed25519(pk) => format!("{}:{}", KeyFormat::Ed25519, pk.to_base64()),
+            Self::Minisign(pk) => pk.to_base64(),
+            Self::Ed25519(pk) => pk.to_base64(),
         }
     }
 
@@ -169,7 +169,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
     }
 
     fn from_base64(s: &str) -> Result<Self, KeyError> {
-        let (format_str, key_b64) = s.split_once(':').ok_or_else(|| {
+        let (format_str, _key_b64) = s.split_once(':').ok_or_else(|| {
             KeyError::CreationFailed(format!(
                 "Public key missing format prefix (expected 'format:base64'): {}",
                 s
@@ -178,26 +178,11 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
         let format = KeyFormat::from_str(format_str)?;
         match format {
             KeyFormat::Minisign => {
-                let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(key_b64)?;
+                let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(s)?;
                 Ok(Self::Minisign(pk))
             }
             KeyFormat::Ed25519 => {
-                let pk = AsfaloadPublicKey::<Ed25519PublicKey>::from_base64(key_b64)?;
-                Ok(Self::Ed25519(pk))
-            }
-        }
-    }
-
-    fn from_base64_with_format(s: &str, format: &KeyFormat) -> Result<Self, KeyError> {
-        // Strip prefix if present
-        let key_b64 = s.split_once(':').map(|(_, b64)| b64).unwrap_or(s);
-        match format {
-            KeyFormat::Minisign => {
-                let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(key_b64)?;
-                Ok(Self::Minisign(pk))
-            }
-            KeyFormat::Ed25519 => {
-                let pk = AsfaloadPublicKey::<Ed25519PublicKey>::from_base64(key_b64)?;
+                let pk = AsfaloadPublicKey::<Ed25519PublicKey>::from_base64(s)?;
                 Ok(Self::Ed25519(pk))
             }
         }

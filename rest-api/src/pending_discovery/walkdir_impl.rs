@@ -105,7 +105,7 @@ mod tests {
     };
     use rest_api_types::path_validation::build_normalised_absolute_path;
     use signatures::signatures_file::{SignaturesFile, TaggedSignature};
-    use signers_file_types::{KeyFormat, SignersConfig, parse_signers_config};
+    use signers_file_types::{SignersConfig, parse_signers_config};
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;

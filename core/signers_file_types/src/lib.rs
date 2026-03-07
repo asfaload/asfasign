@@ -358,10 +358,7 @@ impl Signer {
     pub fn from_key(pk: &AsfaloadPublicKeys) -> Result<Self, KeyError> {
         Ok(Self {
             kind: SignerKind::Key,
-            data: SignerData {
-                format: pk.key_format(),
-                pubkey: pk.clone(),
-            },
+            data: SignerData { pubkey: pk.clone() },
         })
     }
 }
@@ -374,7 +371,6 @@ pub enum SignerKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignerData {
-    pub format: KeyFormat,
     pub pubkey: AsfaloadPublicKeys,
 }
 
@@ -385,15 +381,9 @@ impl Serialize for SignerData {
     {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("SignerData", 2)?;
-        state.serialize_field("format", &self.format)?;
-        // Write bare base64 (without format prefix) since the format field already
-        // provides the algorithm context.
+        // Write bare base64 (with format prefix)
         let prefixed = self.pubkey.to_base64();
-        let bare_b64 = prefixed
-            .split_once(':')
-            .map(|(_, b)| b)
-            .unwrap_or(&prefixed);
-        state.serialize_field("pubkey", bare_b64)?;
+        state.serialize_field("pubkey", &prefixed)?;
         state.end()
     }
 }
@@ -405,24 +395,15 @@ impl<'de> Deserialize<'de> for SignerData {
     {
         #[derive(Deserialize)]
         struct SignerDataHelper {
-            format: KeyFormat,
             pubkey: String,
         }
 
         let helper = SignerDataHelper::deserialize(deserializer)?;
-        // Use from_base64_with_format since the format field provides the algorithm
-        // context — no prefix needed on the pubkey string.
-        let pubkey = AsfaloadPublicKeys::from_base64_with_format(&helper.pubkey, &helper.format)
-            .map_err(|_e| {
-                serde::de::Error::custom(format!(
-                    "Problem parsing pubkey base64: {}",
-                    helper.pubkey
-                ))
-            })?;
-        Ok(SignerData {
-            format: helper.format,
-            pubkey,
-        })
+        // base64 includes key format prefix
+        let pubkey = AsfaloadPublicKeys::from_base64(&helper.pubkey).map_err(|_e| {
+            serde::de::Error::custom(format!("Problem parsing pubkey base64: {}", helper.pubkey))
+        })?;
+        Ok(SignerData { pubkey })
     }
 }
 

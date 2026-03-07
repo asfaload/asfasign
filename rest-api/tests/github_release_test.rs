@@ -5,12 +5,10 @@ pub mod tests {
     use constants::{SIGNERS_DIR, SIGNERS_FILE};
     #[cfg(feature = "test-utils")]
     use features_lib::AsfaloadKeyPairTrait;
-    use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignaturesFile};
+    use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
-    use rest_api_test_helpers::{
-        build_test_config, get_random_port, init_git_repo, url_for, wait_for_server,
-    };
+    use rest_api_test_helpers::{build_test_config, get_random_port, url_for, wait_for_server};
     use rest_api_types::rustls::setup_crypto_provider;
     use std::fs;
     use tempfile::TempDir;
@@ -18,6 +16,10 @@ pub mod tests {
 
     #[cfg(feature = "test-utils")]
     use common::fs::names::pending_signatures_path_for;
+    #[cfg(feature = "test-utils")]
+    use features_lib::SignaturesFile;
+    #[cfg(feature = "test-utils")]
+    use rest_api_test_helpers::init_git_repo;
     #[cfg(feature = "test-utils")]
     use rest_api_test_helpers::print_logs;
     #[cfg(feature = "test-utils")]

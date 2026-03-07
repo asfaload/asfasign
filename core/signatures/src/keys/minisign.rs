@@ -21,7 +21,7 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
         let sk_string = self.key_pair.sk.to_box(None)?.into_string();
         fs::write(&sk_path, &sk_string)?;
 
-        let pk_string = self.key_pair.pk.to_box()?.into_string();
+        let pk_string = self.public_key().to_base64();
         fs::write(&pk_path, &pk_string)?;
 
         Ok(self)
@@ -95,23 +95,43 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
     }
 
     fn to_base64(&self) -> String {
-        self.key.to_base64()
+        format!("{}:{}", KeyFormat::Minisign, self.key.to_base64())
     }
 
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
-        let k = minisign::PublicKey::from_bytes(data)?;
-        Ok(AsfaloadPublicKey { key: k })
+        if let Ok(s) = std::str::from_utf8(data) {
+            // If it's a valid string, delegate to from_base64 to handle prefix logic
+            Self::from_base64(s)
+        } else {
+            Err(KeyError::GenericError(
+                "Could not read string from key bytes".to_string(),
+            ))
+        }
     }
     // When saving to a file, we store a PublicKeyBox as encouraged by minisign for storage.
     // Other methods manipulate the PublickKey directly
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError> {
-        let k = minisign::PublicKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
-            .into_public_key()?;
-        Ok(AsfaloadPublicKey { key: k })
+        let content = std::fs::read_to_string(&path)?;
+        Self::from_base64(&content)
     }
 
     fn from_base64(s: &str) -> Result<Self, KeyError> {
-        let k = minisign::PublicKey::from_base64(s)?;
+        let bare = match s.split_once(':') {
+            Some((prefix, rest)) => {
+                if prefix != KeyFormat::Minisign.to_string() {
+                    return Err(KeyError::CreationFailed(format!(
+                        "Public key format prefix mismatch: expected {}, got {}",
+                        KeyFormat::Minisign,
+                        prefix
+                    )));
+                }
+                Ok(rest)
+            }
+            None => Err(KeyError::GenericError(
+                format!("Could not split string to extract prefix: {}", s).to_string(),
+            )),
+        }?;
+        let k = minisign::PublicKey::from_base64(bare)?;
         Ok(AsfaloadPublicKey { key: k })
     }
 
@@ -187,7 +207,6 @@ mod asfaload_index_tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::keys::append_pub_extension;
     //------------------------------------------------------------
     // Keypairs
     //------------------------------------------------------------
@@ -300,64 +319,30 @@ mod asfaload_index_tests {
         Ok(())
     }
 
-    #[test]
-    fn test_append_pub_extension() {
-        let p = Path::new("/home/asfa/key");
-        let buf_with_ext = append_pub_extension(&p).unwrap();
-        let with_ext = buf_with_ext.as_path();
-        assert_eq!(with_ext.to_str(), Some("/home/asfa/key.pub"));
-
-        // Illustration that the trailing / is dropped. See append_pub_extension comment.
-        let p = Path::new("/home/asfa/key/");
-        let buf_with_ext = append_pub_extension(&p).unwrap();
-        let with_ext = buf_with_ext.as_path();
-        assert_eq!(with_ext.to_str(), Some("/home/asfa/key.pub"));
-    }
     //------------------------------------------------------------
     // AsfaloadSecretKey
     //------------------------------------------------------------
     #[test]
-    fn test_keys_methods() -> Result<()> {
-        // Save keypair in temp dir
-        let temp_dir = tempfile::tempdir().unwrap();
-        let kp = AsfaloadKeyPair::<minisign::KeyPair>::new("mypass")?;
-        kp.save(&temp_dir)?;
-
-        // Load secret key from disk
-        let secret_key_path = temp_dir.as_ref().to_path_buf().join("key");
-        let secret_key =
-            AsfaloadSecretKey::<minisign::SecretKey>::from_file(secret_key_path, "mypass")?;
-
-        // Generate signature
-        let bytes_to_sign = common::sha512_for_content(b"My string to sign".to_vec())?;
-        let signature = secret_key.sign(&bytes_to_sign)?;
-
-        // Load public key from disk
-        let public_key_path = temp_dir.as_ref().to_path_buf().join("key.pub");
-        let public_key = AsfaloadPublicKey::<minisign::PublicKey>::from_file(&public_key_path)?;
-
-        // Verify signature
-        public_key.verify(&signature, &bytes_to_sign)?;
-
-        // Load key from base64 and validate
-        let value_read = fs::read_to_string(&public_key_path)?;
-        // When we saved the key to disk using the Box, it wrote a comment
-        // followed by the base64 encoded key. Thus here we only need the second line.
-        let public_key_string = value_read.lines().nth(1).ok_or_else(|| {
-            KeyError::IOError(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Public key file does not contain a second line",
-            ))
-        })?;
-        let public_key_from_string =
-            AsfaloadPublicKey::<minisign::PublicKey>::from_base64(public_key_string)?;
-        public_key_from_string.verify(&signature, &bytes_to_sign)?;
-
-        // Test AsfaloadPublicKey::from_base64
-        let b64 = public_key_from_string.to_base64();
-        assert_eq!(b64, public_key_string);
-
+    fn test_from_base64_with_prefix() -> Result<()> {
+        let (pk, _sk) = get_key_pair()?;
+        let bare_b64 = pk.key().to_base64();
+        let prefixed = format!("minisign:{}", bare_b64);
+        let pk2 = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(&prefixed)?;
+        assert_eq!(pk.to_base64(), pk2.to_base64());
         Ok(())
+    }
+
+    #[test]
+    fn test_from_base64_with_wrong_prefix_fails() -> Result<()> {
+        let (pk, _sk) = get_key_pair()?;
+        let bare_b64 = pk.key().to_base64();
+        let prefixed = format!("ed25519:{}", bare_b64);
+        let result = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(&prefixed);
+        match result {
+            Err(KeyError::CreationFailed(_)) => Ok(()),
+            Err(e) => panic!("Expected KeyError::CreationFailed, got {}", e),
+            Ok(_) => panic!("Expected KeyError::CreationFailed, got Ok"),
+        }
     }
     #[test]
     fn test_signature_from_string_formats() -> Result<()> {
@@ -461,8 +446,8 @@ mod asfaload_index_tests {
         let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
         let sig_file: crate::signatures_file::SignaturesFile =
             serde_json::from_str(&sig_file_content)?;
-        let pubkey_b64 = format!("minisign:{}", pubkey.to_base64());
-        let pubkey2_b64 = format!("minisign:{}", pubkey2.to_base64());
+        let pubkey_b64 = pubkey.to_base64();
+        let pubkey2_b64 = pubkey2.to_base64();
         assert!(
             sig_file.entries.contains_key(&pubkey_b64),
             "Signatures file should contain an entry for the public key"
