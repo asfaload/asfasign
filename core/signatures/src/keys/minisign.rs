@@ -98,10 +98,15 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
         format!("{}:{}", KeyFormat::Minisign, self.key.to_base64())
     }
 
-    // FIXME: what about the prefix here?
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
-        let k = minisign::PublicKey::from_bytes(data)?;
-        Ok(AsfaloadPublicKey { key: k })
+        if let Ok(s) = std::str::from_utf8(data) {
+            // If it's a valid string, delegate to from_base64 to handle prefix logic
+            Self::from_base64(s)
+        } else {
+            Err(KeyError::GenericError(
+                "Could not read string from key bytes".to_string(),
+            ))
+        }
     }
     // When saving to a file, we store a PublicKeyBox as encouraged by minisign for storage.
     // Other methods manipulate the PublickKey directly
@@ -120,10 +125,12 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKey<minisign::PublicKey> {
                         prefix
                     )));
                 }
-                rest
+                Ok(rest)
             }
-            None => s,
-        };
+            None => Err(KeyError::GenericError(
+                format!("Could not split string to extract prefix: {}", s).to_string(),
+            )),
+        }?;
         let k = minisign::PublicKey::from_base64(bare)?;
         Ok(AsfaloadPublicKey { key: k })
     }
