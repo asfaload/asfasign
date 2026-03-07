@@ -350,13 +350,16 @@ mod tests {
         let key_file = fixtures_pub_key(1);
 
         let string_keys = vec![VALID_PUBKEY_B64.to_string()];
-        let file_keys = vec![key_file];
+        let file_keys = vec![key_file.clone()];
 
         let result = combine_key_sources::<AsfaloadPublicKeys>(&string_keys, &file_keys);
         match result {
             Ok(parsed) => {
                 assert_eq!(parsed.len(), 2);
                 assert_eq!(parsed[0].to_base64(), VALID_PUBKEY_B64);
+                let key_from_file = AsfaloadPublicKeys::from_file(&key_file)
+                    .expect("Failed to load key from file for assertion");
+                assert_eq!(parsed[1].to_base64(), key_from_file.to_base64());
             }
             Err(e) => panic!("Expected Ok, but got error: {}", e),
         }
