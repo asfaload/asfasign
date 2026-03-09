@@ -8,3 +8,5 @@ docs/plans
 .codenomad
 .claude
 private
+mutants.out.old/
+mutants.out/

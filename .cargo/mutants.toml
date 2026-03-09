@@ -1,0 +1,2 @@
+examine_re = ["client-cli/.*"]
+exclude_re = [".*test_helpers.*", ".*_test.rs", ".*_tests"]
