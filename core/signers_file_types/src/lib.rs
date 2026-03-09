@@ -245,28 +245,10 @@ impl ForgeOrigin {
     }
 }
 
-// Metadata about the signers file submitted with the CLI
-// (only updates are possible with the CLI so the anchor trust exists for creation)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CliOrigin {
-    submitter: AsfaloadPublicKeys,
-    submitted_at: DateTime<Utc>,
-}
-
-impl CliOrigin {
-    pub fn new(submitter: AsfaloadPublicKeys, submitted_at: DateTime<Utc>) -> Self {
-        Self {
-            submitter,
-            submitted_at,
-        }
-    }
-}
-
 // Enum listing possible origins of a signers file
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum SignersConfigOrigin {
     Forge(ForgeOrigin),
-    Cli(CliOrigin),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -278,11 +260,6 @@ impl SignersConfigMetadata {
     pub fn from_forge(origin: ForgeOrigin) -> Self {
         Self {
             data: SignersConfigOrigin::Forge(origin),
-        }
-    }
-    pub fn from_cli(origin: CliOrigin) -> Self {
-        Self {
-            data: SignersConfigOrigin::Cli(origin),
         }
     }
 }
