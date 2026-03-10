@@ -393,6 +393,27 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
     }
 }
 
+fn validate_signers_update(
+    new_signers_config: &SignersConfig,
+    signers_config: &SignersConfig,
+    signatures: &HashMap<AsfaloadPublicKeys, AsfaloadSignatures>,
+    file_hash: &AsfaloadHashes,
+) -> bool {
+    let added_signers = get_newly_added_signer_keys(signers_config, new_signers_config);
+    (check_groups(signers_config.admin_keys(), signatures, file_hash)
+        || check_groups(
+            &signers_config.master_keys().unwrap_or_default(),
+            signatures,
+            file_hash,
+        ))
+        && (check_groups(new_signers_config.admin_keys(), signatures, file_hash)
+            || check_groups(
+                &new_signers_config.master_keys().unwrap_or_default(),
+                signatures,
+                file_hash,
+            ))
+        && (check_signers(signatures, &added_signers, file_hash))
+}
 /// Check if an aggregate signature for a file is complete
 pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
     file_path: P,
@@ -443,21 +464,12 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
             let signers_config = load_signers_config(&signers_file_path)?;
             let new_signers_config = load_signers_config(file_path)?;
 
-            let added_signers = get_newly_added_signer_keys(&signers_config, &new_signers_config);
-            // existing signers file
-            (check_groups(signers_config.admin_keys(), &signatures, &file_hash)
-                || check_groups(
-                    &signers_config.master_keys().unwrap_or_default(),
-                    &signatures,
-                    &file_hash,
-                ))
-                && (check_groups(new_signers_config.admin_keys(), &signatures, &file_hash)
-                    || check_groups(
-                        &new_signers_config.master_keys().unwrap_or_default(),
-                        &signatures,
-                        &file_hash,
-                    ))
-                && (check_signers(&signatures, &added_signers, &file_hash))
+            validate_signers_update(
+                &new_signers_config,
+                &signers_config,
+                &signatures,
+                &file_hash,
+            )
         }
 
         SignedFileWithKind::InitialSignersFile(_) => {
