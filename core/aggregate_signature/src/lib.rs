@@ -393,7 +393,7 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
     }
 }
 
-fn validate_signers_update(
+pub fn validate_signers_update(
     new_signers_config: &SignersConfig,
     signers_config: &SignersConfig,
     signatures: &HashMap<AsfaloadPublicKeys, AsfaloadSignatures>,

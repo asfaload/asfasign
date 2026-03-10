@@ -424,6 +424,42 @@ where
     Ok(())
 }
 
+/// Validate that every transition in a signers history file is properly authorized.
+///
+/// For each consecutive pair of entries, verifies that the signatures on the
+/// newer entry satisfy `validate_signers_update` against the older entry's config.
+/// An empty or single-entry history is considered valid.
+pub fn validate_history(history: &HistoryFile) -> bool {
+    history.entries().windows(2).all(|pair| {
+        let parent = &pair[0];
+        let updated = &pair[1];
+
+        // Hash the updated signers config JSON (this is what was signed)
+        let json = match updated.signers_file.to_json() {
+            Ok(j) => j,
+            Err(_) => return false,
+        };
+        let file_hash = match common::sha512_for_content(json.as_bytes().to_vec()) {
+            Ok(h) => h,
+            Err(_) => return false,
+        };
+
+        // Parse the tagged signatures into the typed map
+        let signatures =
+            match aggregate_signature::parse_tagged_signatures(&updated.signatures.entries) {
+                Ok(s) => s,
+                Err(_) => return false,
+            };
+
+        aggregate_signature::validate_signers_update(
+            &updated.signers_file,
+            &parent.signers_file,
+            &signatures,
+            &file_hash,
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5176,5 +5212,185 @@ mod tests {
         assert_eq!(actual, expected);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod validate_history_tests {
+    use anyhow::Result;
+    use chrono::Utc;
+    use signatures::keys::{
+        AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+    };
+    use signatures::signatures_file::{SignaturesFile, TaggedSignature};
+    use signers_file_types::{HistoryEntry, HistoryFile, SignersConfig};
+    use test_helpers::{TestKeys, test_metadata};
+
+    use super::validate_history;
+
+    /// Helper: sign a config's JSON with the given secret keys and return a SignaturesFile.
+    fn sign_config(
+        config: &SignersConfig,
+        keys: &TestKeys,
+        indices: &[usize],
+    ) -> Result<SignaturesFile> {
+        let json = serde_json::to_string_pretty(config)?;
+        let hash = common::sha512_for_content(json.as_bytes().to_vec())?;
+        let mut sig_file = SignaturesFile::new();
+        for &i in indices {
+            let pubkey = keys.pub_key(i).unwrap();
+            let seckey = keys.sec_key(i).unwrap();
+            let signature = seckey.sign(&hash)?;
+            sig_file.entries.insert(
+                pubkey.to_base64(),
+                TaggedSignature {
+                    format: pubkey.key_format(),
+                    signature: signature.to_base64(),
+                },
+            );
+        }
+        Ok(sig_file)
+    }
+
+    #[test]
+    fn validate_history_valid_two_entries() -> Result<()> {
+        let keys = TestKeys::new(3);
+
+        // config1: artifact signers = keys 0,1 with threshold 1
+        let config1 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        // config2: artifact signers = keys 0,1,2 with threshold 1 (adds key 2)
+        let config2 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                    keys.pub_key(2).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        // entry1 signatures: signed by admin of config1 (keys 0 and 1)
+        let sig1 = sign_config(&config1, &keys, &[0, 1])?;
+
+        // entry2 signatures: must be signed by admin of old config (config1),
+        // admin of new config (config2), AND newly added signers (key 2).
+        // Keys 0,1 cover old admin. Keys 0,1,2 cover new admin. Key 2 is the new signer.
+        let sig2 = sign_config(&config2, &keys, &[0, 1, 2])?;
+
+        let history = HistoryFile {
+            entries: vec![
+                HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: config1,
+                    signatures: sig1,
+                    metadata: test_metadata(),
+                },
+                HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: config2,
+                    signatures: sig2,
+                    metadata: test_metadata(),
+                },
+            ],
+        };
+
+        assert!(validate_history(&history));
+        Ok(())
+    }
+
+    #[test]
+    fn validate_history_invalid_missing_new_signer_signature() -> Result<()> {
+        let keys = TestKeys::new(3);
+
+        let config1 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        // config2 adds key 2
+        let config2 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                    keys.pub_key(2).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        let sig1 = sign_config(&config1, &keys, &[0, 1])?;
+
+        // Only sign with keys 0,1 — missing key 2 (the newly added signer)
+        let sig2 = sign_config(&config2, &keys, &[0, 1])?;
+
+        let history = HistoryFile {
+            entries: vec![
+                HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: config1,
+                    signatures: sig1,
+                    metadata: test_metadata(),
+                },
+                HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: config2,
+                    signatures: sig2,
+                    metadata: test_metadata(),
+                },
+            ],
+        };
+
+        assert!(!validate_history(&history));
+        Ok(())
+    }
+
+    #[test]
+    fn validate_history_single_entry_is_valid() -> Result<()> {
+        let keys = TestKeys::new(1);
+
+        let config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![keys.pub_key(0).unwrap().clone()], 1),
+        )?;
+
+        let sig = sign_config(&config, &keys, &[0])?;
+
+        let history = HistoryFile {
+            entries: vec![HistoryEntry {
+                obsoleted_at: Utc::now(),
+                signers_file: config,
+                signatures: sig,
+                metadata: test_metadata(),
+            }],
+        };
+
+        assert!(validate_history(&history));
+        Ok(())
+    }
+
+    #[test]
+    fn validate_history_empty_is_valid() {
+        let history = HistoryFile::new();
+        assert!(validate_history(&history));
     }
 }
