@@ -26,9 +26,17 @@ impl NormalisedPaths {
     ) -> Result<Self, ApiError> {
         let base_path = base_repo_path.as_ref().to_path_buf();
         let req_path = requested_path.as_ref().to_path_buf();
-        tokio::task::spawn_blocking(move || build_normalised_absolute_path(base_path, req_path))
+        tokio::task::spawn_blocking(move || Self::new_sync(base_path, req_path))
             .await
             .map_err(ApiError::from)?
+    }
+    pub fn new_sync<P1: AsRef<Path>, P2: AsRef<Path>>(
+        base_repo_path: P1,
+        requested_path: P2,
+    ) -> Result<Self, ApiError> {
+        let base_path = base_repo_path.as_ref();
+        let req_path = requested_path.as_ref();
+        build_normalised_absolute_path(base_path, req_path)
     }
     pub fn base_dir(&self) -> PathBuf {
         self.base_dir.clone()
