@@ -6,6 +6,7 @@ use git2::{Repository, Signature};
 
 use crate::path_validation::NormalisedPaths;
 
+#[derive(Debug)]
 pub struct ArtifactSignersSource {
     // The commit that committed the copy at artifact_signers
     commit: String,
@@ -598,6 +599,226 @@ mod tests {
             Err(e) => panic!("Expected InvalidRequestBody, got {}", e),
             Ok(_) => panic!("Expected rejection for unchanged tree commit"),
         }
+    }
+
+    /// Helper: init a repo, commit a source file, copy it to dest, commit the
+    /// copy.  Returns (TempDir, backend, source path on disk, dest path on disk).
+    /// The TempDir must be kept alive for the duration of the test.
+    fn init_repo_with_copied_file(
+        source_relative: &str,
+        source_content: &str,
+        dest_relative: &str,
+    ) -> (TempDir, Sha1GitBackend, PathBuf, PathBuf) {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        let source_file = repo_path.join(source_relative);
+        if let Some(parent) = source_file.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(&source_file, source_content).unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &source_file)],
+                "add source file",
+            )
+            .unwrap();
+
+        let dest_file = repo_path.join(dest_relative);
+        if let Some(parent) = dest_file.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::copy(&source_file, &dest_file).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &dest_file)],
+                "copy file to destination",
+            )
+            .unwrap();
+
+        (temp_dir, backend, source_file, dest_file)
+    }
+
+    #[test]
+    fn test_artifact_signers_source_finds_copy_source() {
+        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
+            "signers.json",
+            r#"{"signers": ["alice"]}"#,
+            "artifacts/my_artifact.signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        let signers_path = normalise_for_repo(repo_path, &dest);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        assert_eq!(
+            source.path().relative_path(),
+            Path::new("signers.json"),
+            "Source path should be the original signers file"
+        );
+        assert_eq!(
+            source.artifact_signers().relative_path(),
+            Path::new("artifacts/my_artifact.signers.json"),
+            "Artifact signers should be the copied file"
+        );
+        // commit should be a valid 40-char hex SHA-1
+        assert_eq!(source.commit().len(), 40);
+        assert!(source.commit().chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_artifact_signers_source_errors_when_file_not_in_history() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        // File exists on disk but was never committed
+        let file = repo_path.join("never_committed.json");
+        std::fs::write(&file, "content").unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        let signers_path = normalise_for_repo(repo_path, &file);
+        let result = backend.artifact_signers_source(signers_path);
+
+        match result {
+            Err(ApiError::GitError(msg)) => {
+                assert!(
+                    msg.contains("No commit found"),
+                    "Expected 'No commit found' error, got: {}",
+                    msg
+                );
+            }
+            other => panic!("Expected ApiError::GitError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_artifact_signers_source_does_not_panic_for_non_copied_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        // Create and commit a brand new file (no copy source)
+        let file = repo_path.join("original.json");
+        std::fs::write(&file, "unique content that won't match anything").unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        backend
+            .commit_files(&[normalise_for_repo(repo_path, &file)], "add original file")
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &file);
+        // Should not panic — may return Ok or Err depending on diff-tree output
+        let _result = backend.artifact_signers_source(signers_path);
+    }
+
+    #[test]
+    fn test_artifact_signers_source_nested_directories() {
+        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
+            "config/signers.json",
+            r#"{"threshold": 2, "signers": ["a","b","c"]}"#,
+            "releases/v1/artifacts/binary.signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        let signers_path = normalise_for_repo(repo_path, &dest);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        assert_eq!(
+            source.path().relative_path(),
+            Path::new("config/signers.json"),
+        );
+    }
+
+    #[test]
+    fn test_artifact_signers_source_returns_introducing_commit() {
+        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
+            "signers.json",
+            r#"{"signers": ["bob"]}"#,
+            "artifact.signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        let expected_commit = GitCommand::git(
+            repo_path,
+            &[
+                "log",
+                "--diff-filter=A",
+                "--format=%H",
+                "-1",
+                "--",
+                "artifact.signers.json",
+            ],
+        )
+        .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &dest);
+        let result = backend.artifact_signers_source(signers_path).unwrap();
+
+        assert_eq!(result.commit(), expected_commit);
+    }
+
+    #[test]
+    fn test_artifact_signers_source_with_successive_copies() {
+        // Start with a basic repo + first copy (original → deep)
+        let (temp_dir, backend, _original, deep_copy) = init_repo_with_copied_file(
+            "signers.json",
+            r#"{"threshold": 2, "signers": ["alice","bob","carol"]}"#,
+            "sub/dir/subsub/signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        // Record the commit that introduced the deep copy
+        let deep_copy_commit = GitCommand::git(
+            repo_path,
+            &[
+                "log",
+                "--diff-filter=A",
+                "--format=%H",
+                "-1",
+                "--",
+                "sub/dir/subsub/signers.json",
+            ],
+        )
+        .unwrap();
+
+        // Second copy: deep → shallow
+        let shallow_copy = repo_path.join("sub/dir/signers.json");
+        std::fs::copy(&deep_copy, &shallow_copy).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &shallow_copy)],
+                "copy signers to shallow path",
+            )
+            .unwrap();
+
+        // Query the deep copy — should trace back to the original root file
+        let deep_signers = normalise_for_repo(repo_path, &deep_copy);
+        let result = backend.artifact_signers_source(deep_signers);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        assert_eq!(
+            source.path().relative_path(),
+            Path::new("signers.json"),
+            "Deep copy should trace back to the original root file"
+        );
+        assert_eq!(
+            source.artifact_signers().relative_path(),
+            Path::new("sub/dir/subsub/signers.json"),
+        );
+        assert_eq!(
+            source.commit(),
+            deep_copy_commit,
+            "Commit should be the one that introduced the deep copy"
+        );
     }
 }
 
