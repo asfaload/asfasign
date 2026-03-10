@@ -33,6 +33,9 @@ pub mod errors {
         #[error("Git2 error: {0}")]
         GitOperationFailed(#[from] git2::Error),
 
+        #[error("Git error: {0}")]
+        GitError(String),
+
         #[error("Failed to create directories: {0}")]
         DirectoryCreationFailed(String),
 
@@ -228,6 +231,7 @@ pub mod errors {
                 ApiError::DigestMismatch(_) => StatusCode::BAD_REQUEST,
                 ApiError::FileRevoked(_) => StatusCode::BAD_REQUEST,
                 ApiError::ReleaseAlreadyRegistered(_) => StatusCode::CONFLICT,
+                ApiError::GitError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }

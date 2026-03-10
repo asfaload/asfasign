@@ -6,6 +6,29 @@ use git2::{Repository, Signature};
 
 use crate::path_validation::NormalisedPaths;
 
+pub struct ArtifactSignersSource {
+    // The commit that committed the copy at artifact_signers
+    commit: String,
+    // The signers file path the artifact_signers file was copied from
+    path: NormalisedPaths,
+    // copy of signers file taken when artifact signature completed
+    artifact_signers: NormalisedPaths,
+}
+
+impl ArtifactSignersSource {
+    pub fn commit(&self) -> &str {
+        &self.commit
+    }
+
+    pub fn path(&self) -> &NormalisedPaths {
+        &self.path
+    }
+
+    pub fn artifact_signers(&self) -> &NormalisedPaths {
+        &self.artifact_signers
+    }
+}
+
 /// Trait abstracting git commit operations.
 ///
 /// This allows swapping the underlying git implementation (e.g., SHA-1 vs SHA-256)
@@ -25,6 +48,69 @@ pub trait GitBackend: Send + Sync + 'static {
     where
         Self: Sized;
     fn root(&self) -> &PathBuf;
+
+    // When an artifact signature is completed, a copy of the signers file is
+    // stored alongside it. This method traces back to the original source of
+    // that signers file using git copy detection.
+    fn artifact_signers_source(
+        &self,
+        signers: NormalisedPaths,
+    ) -> Result<ArtifactSignersSource, ApiError> {
+        let first_commit = GitCommand::git(
+            self.root(),
+            &[
+                "log",
+                "--diff-filter=A",
+                "--format=%H",
+                "-1",
+                "--",
+                signers.relative_path().to_string_lossy().as_ref(),
+            ],
+        )?;
+
+        if first_commit.is_empty() {
+            return Err(ApiError::GitError(format!(
+                "No commit found introducing {}",
+                signers.relative_path().display()
+            )));
+        }
+
+        let git_output = GitCommand::git(
+            self.root(),
+            &[
+                "diff-tree",
+                "-r",
+                "-C",
+                "--find-copies-harder",
+                &first_commit,
+            ],
+        )?;
+        let found = git_output
+            .lines()
+            .find(|l| l.split('\t').next_back() == Some(&signers.relative_path().to_string_lossy()))
+            .ok_or(ApiError::GitError(
+                "Error extracting signers source from git diff-tree.".to_string(),
+            ))?;
+
+        // diff-tree raw output format:
+        // :100644 100644 <old_hash> <new_hash> C100\tsource_path\tdest_path
+        // The metadata and paths are separated by a tab. `split_whitespace` is not
+        // safe as paths can contain spaces.
+        let source_path_str = found
+            .split_once('\t')
+            .and_then(|(_, paths)| paths.split('\t').next())
+            .ok_or_else(|| {
+                ApiError::GitError(format!("Could not parse source path from: {}", found))
+            })?;
+        let source_path = NormalisedPaths::new_sync(self.root(), source_path_str)?;
+
+        let res = ArtifactSignersSource {
+            commit: first_commit,
+            path: source_path,
+            artifact_signers: signers,
+        };
+        Ok(res)
+    }
 }
 
 const GIT_ACTOR_NAME: &str = "git-actor";
@@ -179,7 +265,8 @@ pub struct Sha256GitBackend {
     root: PathBuf,
 }
 
-impl Sha256GitBackend {
+struct GitCommand;
+impl GitCommand {
     /// Run a git command in the given repo directory. Returns stdout on
     /// success, or a `git2::Error` with combined stderr/stdout on failure.
     fn git(repo_path: &Path, args: &[&str]) -> Result<String, git2::Error> {
@@ -200,10 +287,11 @@ impl Sha256GitBackend {
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
-
+}
+impl Sha256GitBackend {
     /// Validate that the repository uses the SHA-256 object format.
     fn validate_sha256(repo_path: &Path) -> Result<(), git2::Error> {
-        let format = Self::git(repo_path, &["rev-parse", "--show-object-format"])?;
+        let format = GitCommand::git(repo_path, &["rev-parse", "--show-object-format"])?;
         if format != "sha256" {
             return Err(git2::Error::from_str(&format!(
                 "Sha256GitBackend requires a SHA-256 repository, got '{}'",
@@ -234,13 +322,13 @@ impl GitBackend for Sha256GitBackend {
 
         // Stage files one at a time via git add
         for rel_path in &rel_paths {
-            Self::git(
+            GitCommand::git(
                 repo_path.as_path(),
                 &["add", "--", &rel_path.to_string_lossy()],
             )?;
         }
 
-        let staged = Self::git(repo_path.as_path(), &["status", "--porcelain"])?;
+        let staged = GitCommand::git(repo_path.as_path(), &["status", "--porcelain"])?;
         if staged.is_empty() {
             return Err(ApiError::InvalidRequestBody(
                 "No changes to commit".to_string(),
@@ -248,7 +336,7 @@ impl GitBackend for Sha256GitBackend {
         }
 
         // Commit with configured author identity
-        Self::git(
+        GitCommand::git(
             repo_path.as_path(),
             &[
                 "-c",
@@ -567,7 +655,7 @@ mod sha256_tests {
         assert!(result.is_ok(), "SHA-256 commit failed: {:?}", result);
 
         // Verify via git log
-        let log = Sha256GitBackend::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
+        let log = GitCommand::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
         assert!(log.contains("sha256 commit"));
     }
 
@@ -614,7 +702,7 @@ mod sha256_tests {
         assert!(result.is_ok());
 
         // Verify both files are committed
-        let ls = Sha256GitBackend::git(repo_path, &["ls-tree", "--name-only", "HEAD"]).unwrap();
+        let ls = GitCommand::git(repo_path, &["ls-tree", "--name-only", "HEAD"]).unwrap();
         assert!(ls.contains("a.txt"));
         assert!(ls.contains("b.txt"));
     }
@@ -636,8 +724,7 @@ mod sha256_tests {
         );
         assert!(result.is_ok());
 
-        let ls =
-            Sha256GitBackend::git(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]).unwrap();
+        let ls = GitCommand::git(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]).unwrap();
         assert!(ls.contains("nested/deep/file.txt"));
     }
 
@@ -662,7 +749,7 @@ mod sha256_tests {
         );
         assert!(result.is_ok());
 
-        let log = Sha256GitBackend::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
+        let log = GitCommand::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
         assert!(log.contains("initial"));
     }
 
@@ -678,8 +765,7 @@ mod sha256_tests {
         let result = backend.commit_files(&[normalise_for_repo(repo_path, repo_path)], "commit");
         assert!(result.is_ok());
 
-        let ls =
-            Sha256GitBackend::git(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]).unwrap();
+        let ls = GitCommand::git(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]).unwrap();
         assert!(!ls.contains(".git"));
         assert!(ls.contains("real.txt"));
     }
@@ -702,7 +788,7 @@ mod sha256_tests {
         );
         assert!(result.is_ok());
 
-        let log = Sha256GitBackend::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
+        let log = GitCommand::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
         assert!(log.contains("enum dispatch"));
     }
 
