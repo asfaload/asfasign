@@ -6,6 +6,30 @@ use git2::{Repository, Signature};
 
 use crate::path_validation::NormalisedPaths;
 
+#[derive(Debug)]
+pub struct ArtifactSignersSource {
+    // The commit that committed the copy at artifact_signers
+    commit: String,
+    // The signers file path the artifact_signers file was copied from
+    path: NormalisedPaths,
+    // copy of signers file taken when artifact signature completed
+    artifact_signers: NormalisedPaths,
+}
+
+impl ArtifactSignersSource {
+    pub fn commit(&self) -> &str {
+        &self.commit
+    }
+
+    pub fn path(&self) -> &NormalisedPaths {
+        &self.path
+    }
+
+    pub fn artifact_signers(&self) -> &NormalisedPaths {
+        &self.artifact_signers
+    }
+}
+
 /// Trait abstracting git commit operations.
 ///
 /// This allows swapping the underlying git implementation (e.g., SHA-1 vs SHA-256)
@@ -20,6 +44,74 @@ pub trait GitBackend: Send + Sync + 'static {
         file_paths: &[NormalisedPaths],
         commit_message: &str,
     ) -> Result<(), ApiError>;
+
+    fn new<P: AsRef<Path>>(root: P) -> Self
+    where
+        Self: Sized;
+    fn root(&self) -> &PathBuf;
+
+    // When an artifact signature is completed, a copy of the signers file is
+    // stored alongside it. This method traces back to the original source of
+    // that signers file using git copy detection.
+    fn artifact_signers_source(
+        &self,
+        signers: NormalisedPaths,
+    ) -> Result<ArtifactSignersSource, ApiError> {
+        let first_commit = GitCommand::git(
+            self.root(),
+            &[
+                "log",
+                "--diff-filter=A",
+                "--format=%H",
+                "-1",
+                "--",
+                signers.relative_path().to_string_lossy().as_ref(),
+            ],
+        )?;
+
+        if first_commit.is_empty() {
+            return Err(ApiError::GitError(format!(
+                "No commit found introducing {}",
+                signers.relative_path().display()
+            )));
+        }
+
+        let git_output = GitCommand::git(
+            self.root(),
+            &[
+                "diff-tree",
+                "-r",
+                "-C",
+                "--find-copies-harder",
+                &first_commit,
+            ],
+        )?;
+        let found = git_output
+            .lines()
+            .find(|l| l.split('\t').next_back() == Some(&signers.relative_path().to_string_lossy()))
+            .ok_or(ApiError::GitError(
+                "Error extracting signers source from git diff-tree.".to_string(),
+            ))?;
+
+        // diff-tree raw output format:
+        // :100644 100644 <old_hash> <new_hash> C100\tsource_path\tdest_path
+        // The metadata and paths are separated by a tab. `split_whitespace` is not
+        // safe as paths can contain spaces.
+        let source_path_str = found
+            .split_once('\t')
+            .and_then(|(_, paths)| paths.split('\t').next())
+            .ok_or_else(|| {
+                ApiError::GitError(format!("Could not parse source path from: {}", found))
+            })?;
+        let source_path = NormalisedPaths::new_sync(self.root(), source_path_str)?;
+
+        let res = ArtifactSignersSource {
+            commit: first_commit,
+            path: source_path,
+            artifact_signers: signers,
+        };
+        Ok(res)
+    }
 }
 
 const GIT_ACTOR_NAME: &str = "git-actor";
@@ -140,21 +232,27 @@ fn sha1_commit_files(
     Ok(())
 }
 
-pub struct Sha1GitBackend;
+pub struct Sha1GitBackend {
+    root: PathBuf,
+}
 
 impl GitBackend for Sha1GitBackend {
+    fn root(&self) -> &PathBuf {
+        &self.root
+    }
     fn commit_files(
         &self,
         file_paths: &[NormalisedPaths],
         commit_message: &str,
     ) -> Result<(), ApiError> {
-        let repo = Repository::open(
-            file_paths
-                .first()
-                .ok_or(ApiError::FileNotFound("File paths to commit empty".into()))?
-                .base_dir(),
-        )?;
+        let repo = Repository::open(self.root())?;
         sha1_commit_files(&repo, file_paths, commit_message)
+    }
+
+    fn new<P: AsRef<Path>>(root: P) -> Self {
+        Self {
+            root: root.as_ref().to_path_buf(),
+        }
     }
 }
 
@@ -164,9 +262,12 @@ impl GitBackend for Sha1GitBackend {
 /// published release, so this backend shells out to `git` (>= 2.42) for
 /// staging and committing. It validates the repository uses SHA-256 via
 /// `git rev-parse --show-object-format` before every commit.
-pub struct Sha256GitBackend;
+pub struct Sha256GitBackend {
+    root: PathBuf,
+}
 
-impl Sha256GitBackend {
+struct GitCommand;
+impl GitCommand {
     /// Run a git command in the given repo directory. Returns stdout on
     /// success, or a `git2::Error` with combined stderr/stdout on failure.
     fn git(repo_path: &Path, args: &[&str]) -> Result<String, git2::Error> {
@@ -187,10 +288,11 @@ impl Sha256GitBackend {
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
-
+}
+impl Sha256GitBackend {
     /// Validate that the repository uses the SHA-256 object format.
     fn validate_sha256(repo_path: &Path) -> Result<(), git2::Error> {
-        let format = Self::git(repo_path, &["rev-parse", "--show-object-format"])?;
+        let format = GitCommand::git(repo_path, &["rev-parse", "--show-object-format"])?;
         if format != "sha256" {
             return Err(git2::Error::from_str(&format!(
                 "Sha256GitBackend requires a SHA-256 repository, got '{}'",
@@ -207,10 +309,7 @@ impl GitBackend for Sha256GitBackend {
         file_paths: &[NormalisedPaths],
         commit_message: &str,
     ) -> Result<(), ApiError> {
-        let repo_path = file_paths
-            .first()
-            .ok_or(ApiError::FileNotFound("File paths to commit empty".into()))?
-            .base_dir();
+        let repo_path = self.root();
         Self::validate_sha256(repo_path.as_path())?;
 
         let absolute_paths: Vec<PathBuf> = file_paths.iter().map(|p| p.absolute_path()).collect();
@@ -224,13 +323,13 @@ impl GitBackend for Sha256GitBackend {
 
         // Stage files one at a time via git add
         for rel_path in &rel_paths {
-            Self::git(
+            GitCommand::git(
                 repo_path.as_path(),
                 &["add", "--", &rel_path.to_string_lossy()],
             )?;
         }
 
-        let staged = Self::git(repo_path.as_path(), &["status", "--porcelain"])?;
+        let staged = GitCommand::git(repo_path.as_path(), &["status", "--porcelain"])?;
         if staged.is_empty() {
             return Err(ApiError::InvalidRequestBody(
                 "No changes to commit".to_string(),
@@ -238,7 +337,7 @@ impl GitBackend for Sha256GitBackend {
         }
 
         // Commit with configured author identity
-        Self::git(
+        GitCommand::git(
             repo_path.as_path(),
             &[
                 "-c",
@@ -253,29 +352,23 @@ impl GitBackend for Sha256GitBackend {
 
         Ok(())
     }
+
+    fn new<P: AsRef<Path>>(root: P) -> Self {
+        Self {
+            root: root.as_ref().to_path_buf(),
+        }
+    }
+
+    fn root(&self) -> &PathBuf {
+        &self.root
+    }
 }
 
 /// Dispatch enum for GitBackend implementations.
-///
-/// Both backends are zero-size structs, so this enum is `Copy` and can be
-/// moved into `spawn_blocking` closures without `Arc`.
 #[derive(Debug, Clone, Copy)]
 pub enum GitBackendKind {
     Sha1,
     Sha256,
-}
-
-impl GitBackendKind {
-    pub fn commit_files(
-        &self,
-        file_paths: &[NormalisedPaths],
-        commit_message: &str,
-    ) -> Result<(), ApiError> {
-        match self {
-            GitBackendKind::Sha1 => Sha1GitBackend.commit_files(file_paths, commit_message),
-            GitBackendKind::Sha256 => Sha256GitBackend.commit_files(file_paths, commit_message),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -285,6 +378,7 @@ mod tests {
     use tempfile::TempDir;
 
     struct MockBackend {
+        root: PathBuf,
         should_fail: bool,
     }
 
@@ -302,6 +396,29 @@ mod tests {
                 Ok(())
             }
         }
+
+        fn new<P: AsRef<Path>>(root: P) -> Self
+        where
+            Self: Sized,
+        {
+            Self {
+                root: root.as_ref().to_path_buf(),
+                should_fail: false,
+            }
+        }
+
+        fn root(&self) -> &PathBuf {
+            &self.root
+        }
+    }
+
+    impl MockBackend {
+        fn new_failing<P: AsRef<Path>>(root: P) -> Self {
+            Self {
+                root: root.as_ref().to_path_buf(),
+                should_fail: true,
+            }
+        }
     }
 
     #[test]
@@ -309,7 +426,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
         let target_path = repo_path.join("test").join("file.txt");
-        let backend: Box<dyn GitBackend> = Box::new(MockBackend { should_fail: true });
+        let backend = MockBackend::new_failing(repo_path);
         let p = normalise_for_repo(repo_path, &target_path);
         let result = backend.commit_files(&[p], "test commit");
         assert!(result.is_err());
@@ -372,7 +489,7 @@ mod tests {
         let file_path = repo_path.join("test.txt");
         std::fs::write(&file_path, "content").unwrap();
 
-        let backend = Sha1GitBackend;
+        let backend = Sha1GitBackend::new(repo_path);
         let result =
             backend.commit_files(&[normalise_for_repo(repo_path, &file_path)], "test commit");
         assert!(result.is_ok());
@@ -395,7 +512,7 @@ mod tests {
 
         std::fs::write(repo_path.join("real.txt"), "content").unwrap();
 
-        let backend = Sha1GitBackend;
+        let backend = Sha1GitBackend::new(repo_path);
         let result = backend.commit_files(&[normalise_for_repo(repo_path, repo_path)], "commit");
         assert!(result.is_ok());
 
@@ -414,7 +531,7 @@ mod tests {
         std::fs::write(repo_path.join("a.txt"), "a").unwrap();
         std::fs::write(repo_path.join("b.txt"), "b").unwrap();
 
-        let backend = Sha1GitBackend;
+        let backend = Sha1GitBackend::new(repo_path);
         let result = backend.commit_files(
             &[
                 normalise_for_repo(repo_path, &repo_path.join("a.txt")),
@@ -443,7 +560,7 @@ mod tests {
 
         std::fs::write(repo_path.join("first.txt"), "first").unwrap();
 
-        let backend = Sha1GitBackend;
+        let backend = Sha1GitBackend::new(repo_path);
         let result = backend.commit_files(
             &[normalise_for_repo(repo_path, &repo_path.join("first.txt"))],
             "initial",
@@ -469,7 +586,7 @@ mod tests {
         let file = repo_path.join("same.txt");
         std::fs::write(&file, "same content").unwrap();
 
-        let backend = Sha1GitBackend;
+        let backend = Sha1GitBackend::new(repo_path);
         let first = backend.commit_files(&[normalise_for_repo(repo_path, &file)], "first");
         assert!(first.is_ok(), "First commit should succeed: {:?}", first);
 
@@ -482,6 +599,226 @@ mod tests {
             Err(e) => panic!("Expected InvalidRequestBody, got {}", e),
             Ok(_) => panic!("Expected rejection for unchanged tree commit"),
         }
+    }
+
+    /// Helper: init a repo, commit a source file, copy it to dest, commit the
+    /// copy.  Returns (TempDir, backend, source path on disk, dest path on disk).
+    /// The TempDir must be kept alive for the duration of the test.
+    fn init_repo_with_copied_file(
+        source_relative: &str,
+        source_content: &str,
+        dest_relative: &str,
+    ) -> (TempDir, Sha1GitBackend, PathBuf, PathBuf) {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        let source_file = repo_path.join(source_relative);
+        if let Some(parent) = source_file.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(&source_file, source_content).unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &source_file)],
+                "add source file",
+            )
+            .unwrap();
+
+        let dest_file = repo_path.join(dest_relative);
+        if let Some(parent) = dest_file.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::copy(&source_file, &dest_file).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &dest_file)],
+                "copy file to destination",
+            )
+            .unwrap();
+
+        (temp_dir, backend, source_file, dest_file)
+    }
+
+    #[test]
+    fn test_artifact_signers_source_finds_copy_source() {
+        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
+            "signers.json",
+            r#"{"signers": ["alice"]}"#,
+            "artifacts/my_artifact.signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        let signers_path = normalise_for_repo(repo_path, &dest);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        assert_eq!(
+            source.path().relative_path(),
+            Path::new("signers.json"),
+            "Source path should be the original signers file"
+        );
+        assert_eq!(
+            source.artifact_signers().relative_path(),
+            Path::new("artifacts/my_artifact.signers.json"),
+            "Artifact signers should be the copied file"
+        );
+        // commit should be a valid 40-char hex SHA-1
+        assert_eq!(source.commit().len(), 40);
+        assert!(source.commit().chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_artifact_signers_source_errors_when_file_not_in_history() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        // File exists on disk but was never committed
+        let file = repo_path.join("never_committed.json");
+        std::fs::write(&file, "content").unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        let signers_path = normalise_for_repo(repo_path, &file);
+        let result = backend.artifact_signers_source(signers_path);
+
+        match result {
+            Err(ApiError::GitError(msg)) => {
+                assert!(
+                    msg.contains("No commit found"),
+                    "Expected 'No commit found' error, got: {}",
+                    msg
+                );
+            }
+            other => panic!("Expected ApiError::GitError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_artifact_signers_source_does_not_panic_for_non_copied_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        // Create and commit a brand new file (no copy source)
+        let file = repo_path.join("original.json");
+        std::fs::write(&file, "unique content that won't match anything").unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        backend
+            .commit_files(&[normalise_for_repo(repo_path, &file)], "add original file")
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &file);
+        // Should not panic — may return Ok or Err depending on diff-tree output
+        let _result = backend.artifact_signers_source(signers_path);
+    }
+
+    #[test]
+    fn test_artifact_signers_source_nested_directories() {
+        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
+            "config/signers.json",
+            r#"{"threshold": 2, "signers": ["a","b","c"]}"#,
+            "releases/v1/artifacts/binary.signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        let signers_path = normalise_for_repo(repo_path, &dest);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        assert_eq!(
+            source.path().relative_path(),
+            Path::new("config/signers.json"),
+        );
+    }
+
+    #[test]
+    fn test_artifact_signers_source_returns_introducing_commit() {
+        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
+            "signers.json",
+            r#"{"signers": ["bob"]}"#,
+            "artifact.signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        let expected_commit = GitCommand::git(
+            repo_path,
+            &[
+                "log",
+                "--diff-filter=A",
+                "--format=%H",
+                "-1",
+                "--",
+                "artifact.signers.json",
+            ],
+        )
+        .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &dest);
+        let result = backend.artifact_signers_source(signers_path).unwrap();
+
+        assert_eq!(result.commit(), expected_commit);
+    }
+
+    #[test]
+    fn test_artifact_signers_source_with_successive_copies() {
+        // Start with a basic repo + first copy (original → deep)
+        let (temp_dir, backend, _original, deep_copy) = init_repo_with_copied_file(
+            "signers.json",
+            r#"{"threshold": 2, "signers": ["alice","bob","carol"]}"#,
+            "sub/dir/subsub/signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        // Record the commit that introduced the deep copy
+        let deep_copy_commit = GitCommand::git(
+            repo_path,
+            &[
+                "log",
+                "--diff-filter=A",
+                "--format=%H",
+                "-1",
+                "--",
+                "sub/dir/subsub/signers.json",
+            ],
+        )
+        .unwrap();
+
+        // Second copy: deep → shallow
+        let shallow_copy = repo_path.join("sub/dir/signers.json");
+        std::fs::copy(&deep_copy, &shallow_copy).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &shallow_copy)],
+                "copy signers to shallow path",
+            )
+            .unwrap();
+
+        // Query the deep copy — should trace back to the original root file
+        let deep_signers = normalise_for_repo(repo_path, &deep_copy);
+        let result = backend.artifact_signers_source(deep_signers);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        assert_eq!(
+            source.path().relative_path(),
+            Path::new("signers.json"),
+            "Deep copy should trace back to the original root file"
+        );
+        assert_eq!(
+            source.artifact_signers().relative_path(),
+            Path::new("sub/dir/subsub/signers.json"),
+        );
+        assert_eq!(
+            source.commit(),
+            deep_copy_commit,
+            "Commit should be the one that introduced the deep copy"
+        );
     }
 }
 
@@ -531,7 +868,7 @@ mod sha256_tests {
         let file_path = repo_path.join("test.txt");
         std::fs::write(&file_path, "sha256 content").unwrap();
 
-        let backend = Sha256GitBackend;
+        let backend = Sha256GitBackend::new(repo_path);
         let result = backend.commit_files(
             &[normalise_for_repo(repo_path, &file_path)],
             "sha256 commit",
@@ -539,7 +876,7 @@ mod sha256_tests {
         assert!(result.is_ok(), "SHA-256 commit failed: {:?}", result);
 
         // Verify via git log
-        let log = Sha256GitBackend::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
+        let log = GitCommand::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
         assert!(log.contains("sha256 commit"));
     }
 
@@ -552,7 +889,7 @@ mod sha256_tests {
         let file_path = repo_path.join("test.txt");
         std::fs::write(&file_path, "content").unwrap();
 
-        let backend = Sha256GitBackend;
+        let backend = Sha256GitBackend::new(repo_path);
         let result =
             backend.commit_files(&[normalise_for_repo(repo_path, &file_path)], "should fail");
         match result {
@@ -575,7 +912,7 @@ mod sha256_tests {
         std::fs::write(&f1, "a").unwrap();
         std::fs::write(&f2, "b").unwrap();
 
-        let backend = Sha256GitBackend;
+        let backend = Sha256GitBackend::new(repo_path);
         let result = backend.commit_files(
             &[
                 normalise_for_repo(repo_path, &f1),
@@ -586,7 +923,7 @@ mod sha256_tests {
         assert!(result.is_ok());
 
         // Verify both files are committed
-        let ls = Sha256GitBackend::git(repo_path, &["ls-tree", "--name-only", "HEAD"]).unwrap();
+        let ls = GitCommand::git(repo_path, &["ls-tree", "--name-only", "HEAD"]).unwrap();
         assert!(ls.contains("a.txt"));
         assert!(ls.contains("b.txt"));
     }
@@ -601,15 +938,14 @@ mod sha256_tests {
         std::fs::create_dir_all(&subdir).unwrap();
         std::fs::write(subdir.join("file.txt"), "deep content").unwrap();
 
-        let backend = Sha256GitBackend;
+        let backend = Sha256GitBackend::new(repo_path);
         let result = backend.commit_files(
             &[normalise_for_repo(repo_path, &subdir.join("file.txt"))],
             "nested sha256",
         );
         assert!(result.is_ok());
 
-        let ls =
-            Sha256GitBackend::git(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]).unwrap();
+        let ls = GitCommand::git(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]).unwrap();
         assert!(ls.contains("nested/deep/file.txt"));
     }
 
@@ -627,14 +963,14 @@ mod sha256_tests {
 
         std::fs::write(repo_path.join("first.txt"), "first").unwrap();
 
-        let backend = Sha256GitBackend;
+        let backend = Sha256GitBackend::new(repo_path);
         let result = backend.commit_files(
             &[normalise_for_repo(repo_path, &repo_path.join("first.txt"))],
             "initial",
         );
         assert!(result.is_ok());
 
-        let log = Sha256GitBackend::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
+        let log = GitCommand::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
         assert!(log.contains("initial"));
     }
 
@@ -646,12 +982,11 @@ mod sha256_tests {
 
         std::fs::write(repo_path.join("real.txt"), "content").unwrap();
 
-        let backend = Sha256GitBackend;
+        let backend = Sha256GitBackend::new(repo_path);
         let result = backend.commit_files(&[normalise_for_repo(repo_path, repo_path)], "commit");
         assert!(result.is_ok());
 
-        let ls =
-            Sha256GitBackend::git(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]).unwrap();
+        let ls = GitCommand::git(repo_path, &["ls-tree", "-r", "--name-only", "HEAD"]).unwrap();
         assert!(!ls.contains(".git"));
         assert!(ls.contains("real.txt"));
     }
@@ -664,7 +999,7 @@ mod sha256_tests {
 
         std::fs::write(repo_path.join("dispatch.txt"), "via enum").unwrap();
 
-        let backend = GitBackendKind::Sha256;
+        let backend = Sha256GitBackend::new(repo_path);
         let result = backend.commit_files(
             &[normalise_for_repo(
                 repo_path,
@@ -674,7 +1009,7 @@ mod sha256_tests {
         );
         assert!(result.is_ok());
 
-        let log = Sha256GitBackend::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
+        let log = GitCommand::git(repo_path, &["log", "--oneline", "-1"]).unwrap();
         assert!(log.contains("enum dispatch"));
     }
 
@@ -687,7 +1022,7 @@ mod sha256_tests {
         let file = repo_path.join("same.txt");
         std::fs::write(&file, "same content").unwrap();
 
-        let backend = Sha256GitBackend;
+        let backend = Sha256GitBackend::new(repo_path);
         let first = backend.commit_files(&[normalise_for_repo(repo_path, &file)], "first");
         assert!(first.is_ok(), "First commit should succeed: {:?}", first);
 

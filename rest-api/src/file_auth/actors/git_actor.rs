@@ -2,8 +2,9 @@ use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use rest_api_types::git_backend::GitBackendKind;
+use rest_api_types::git_backend::{GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend};
 use rest_api_types::path_validation::NormalisedPaths;
 
 #[derive(Debug, Clone)]
@@ -17,23 +18,29 @@ pub struct CommitFile {
 const ACTOR_NAME: &str = "git-actor";
 
 pub struct GitActor {
-    repo_path: PathBuf,
-    backend: GitBackendKind,
+    backend: Arc<dyn GitBackend>,
 }
 
 impl GitActor {
     pub fn new(repo_path: PathBuf) -> Self {
         tracing::info!(repo_path = %repo_path.display(), "GitActor created");
         Self {
-            repo_path,
-            backend: GitBackendKind::Sha1,
+            backend: Arc::new(Sha1GitBackend::new(&repo_path)),
         }
     }
 
+    pub fn repo_path(&self) -> PathBuf {
+        self.backend.root().clone()
+    }
+
     /// Create a GitActor with a specific backend kind.
-    pub fn with_backend(repo_path: PathBuf, backend: GitBackendKind) -> Self {
-        tracing::info!(repo_path = %repo_path.display(), backend = ?backend, "GitActor created");
-        Self { repo_path, backend }
+    pub fn with_backend(repo_path: PathBuf, backend_kind: GitBackendKind) -> Self {
+        tracing::info!(repo_path = %repo_path.display(), backend = ?backend_kind, "GitActor created");
+        let backend: Arc<dyn GitBackend> = match backend_kind {
+            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(&repo_path)),
+            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(&repo_path)),
+        };
+        Self { backend }
     }
 
     async fn commit_files(
@@ -43,18 +50,18 @@ impl GitActor {
         request_id: &str,
     ) -> Result<(), ApiError> {
         for path in &file_paths {
-            if path.base_dir() != self.repo_path {
+            if path.base_dir() != self.repo_path() {
                 tracing::error!(
                     actor = ACTOR_NAME,
                     path = %path,
                     path_base_dir = %path.base_dir().display(),
-                    repo_path = %self.repo_path.display(),
+                    repo_path = %self.repo_path().display(),
                     "Invalid file path: base dir of path is not repo_path"
                 );
                 return Err(ApiError::InvalidFilePath(format!(
                     "File's base_dir ({}) != actor's git dir ({})",
                     path.base_dir().to_string_lossy(),
-                    self.repo_path.to_string_lossy()
+                    self.repo_path().to_string_lossy()
                 )));
             }
         }
@@ -72,7 +79,7 @@ impl GitActor {
 
         let commit_message = commit_message.to_string();
         let request_id = request_id.to_string();
-        let backend = self.backend; // Copy! No Arc needed.
+        let backend = self.backend.clone();
 
         tokio::task::spawn_blocking(move || backend.commit_files(&file_paths, &commit_message))
             .await??;
