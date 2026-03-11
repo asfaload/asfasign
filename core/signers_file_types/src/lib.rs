@@ -394,16 +394,54 @@ pub fn parse_signers_config_proposal(
     serde_json::from_str(json_str)
 }
 
+/// Serde helpers that base64-encode a `String` on serialization and
+/// base64-decode back to a `String` on deserialization. This makes the
+/// stored bytes completely opaque to any JSON formatter, preventing
+/// accidental modification of the signed content.
+mod base64_serde {
+    use base64::{Engine, prelude::BASE64_STANDARD};
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &String, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&BASE64_STANDARD.encode(value.as_bytes()))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let b64 = String::deserialize(deserializer)?;
+        let bytes = BASE64_STANDARD
+            .decode(&b64)
+            .map_err(serde::de::Error::custom)?;
+        String::from_utf8(bytes).map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HistoryEntry {
     /// ISO8601 formatted UTC date and time
     pub obsoleted_at: DateTime<Utc>,
-    /// Content of the signers file
-    pub signers_file: SignersConfig,
+    /// Content of the signers file as raw JSON, base64-encoded in serialized form.
+    /// Base64 encoding makes the content completely opaque to JSON formatters,
+    /// preventing accidental modification of the signed bytes.
+    /// Use `signers_config()` to parse into a `SignersConfig`.
+    #[serde(with = "base64_serde")]
+    pub signers_file: String,
     /// Signatures collected for the signers file
     pub signatures: SignaturesFile,
     /// Metadata about the origin of the signers file
     pub metadata: SignersConfigMetadata,
+}
+
+impl HistoryEntry {
+    /// Parse the raw JSON into a SignersConfig.
+    pub fn signers_config(&self) -> Result<SignersConfig, serde_json::Error> {
+        parse_signers_config(&self.signers_file)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

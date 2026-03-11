@@ -1,0 +1,58 @@
+{
+  "entries": [
+    {
+      "obsoleted_at": "2026-03-11T12:24:29.935361564Z",
+      "signers_file": "ewogICJ2ZXJzaW9uIjogMSwKICAidGltZXN0YW1wIjogIjIwMjYtMDMtMTFUMTI6MjQ6MjkuOTMwMTIxOTcyWiIsCiAgImFydGlmYWN0X3NpZ25lcnMiOiBbCiAgICB7CiAgICAgICJzaWduZXJzIjogWwogICAgICAgIHsKICAgICAgICAgICJraW5kIjogImtleSIsCiAgICAgICAgICAiZGF0YSI6IHsKICAgICAgICAgICAgInB1YmtleSI6ICJtaW5pc2lnbjpSV1F3dG1UUXlYL3NFaTM3dkgwUzhveVhXTzBDNzczMC9ZNmo1SmlrYzBSTGdISnBzd21QV1VHZSIKICAgICAgICAgIH0KICAgICAgICB9LAogICAgICAgIHsKICAgICAgICAgICJraW5kIjogImtleSIsCiAgICAgICAgICAiZGF0YSI6IHsKICAgICAgICAgICAgInB1YmtleSI6ICJtaW5pc2lnbjpSV1REUFNTaEkzMEtwOVFpV1pidTZDZHNlRk9ZaHk0YmVPTjdhRWVoclNJU2VNWHYwTU1qV2RDMCIKICAgICAgICAgIH0KICAgICAgICB9CiAgICAgIF0sCiAgICAgICJ0aHJlc2hvbGQiOiAxCiAgICB9CiAgXQp9",
+      "signatures": {
+        "entries": {
+          "minisign:RWQwtmTQyX/sEi37vH0S8oyXWO0C7730/Y6j5Jikc0RLgHJpswmPWUGe": {
+            "format": "minisign",
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHJzaWduIHNlY3JldCBrZXkKUlVRd3RtVFF5WC9zRWpmS2daL2ZiV2g2REM0VjRvZG4wWTdRVFBQK2VqbEpIVDE1TkI3NXV5T2V0V3lGcENHNTFDeTVpNFUxU2tkZ1l3MTMyTUZXbmN1Z25tVGNnOTRkVXdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMjMxODY5CldZOG8rOWtyUnBQMzd4aGNGS3BNVTV2dXZLTVhnZm0yVzNhUGN1U2hXRFBwZFFReGZ5MnEwM0t4UVNTR0hoM0V2d25pZ3R3TG9UeC93TTdDNTRRdURRPT0K"
+          },
+          "minisign:RWTDPSShI30Kp9QiWZbu6CdseFOYhy4beON7aEehrSISeMXv0MMjWdC0": {
+            "format": "minisign",
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHJzaWduIHNlY3JldCBrZXkKUlVURFBTU2hJMzBLcHpXTDlOd0tFRnJYYktuSktCVGdOQ2JVOEc2QmFNMk5EYWxtRTM1d1VlZ1JwcVpuYjlCRnNScU9rV2wyZ09ma2t3eGZBeFAyVGdnWkRtSnpuRnkyUWdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMjMxODY5CjdsQmZlK1BVSWkyTGNxSnh0QmthSUpjdTN5UUIvS1doK1RoTTZWSGNyd01YTG16U082YWpJazd0YW8yVGhzdmFQNWh4NnB2eFdiY21uYmtWSU5KeUFnPT0K"
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "Forge": {
+            "kind": "Github",
+            "url": "https://example.com/test",
+            "retrieved_at": "2026-03-11T12:24:29.935362415Z"
+          }
+        }
+      }
+    },
+    {
+      "obsoleted_at": "2026-03-11T12:24:29.935362696Z",
+      "signers_file": "eyJ2ZXJzaW9uIjoxLCJ0aW1lc3RhbXAiOiIyMDI2LTAzLTExVDEyOjI0OjI5LjkzMjMxMTExNVoiLCJhcnRpZmFjdF9zaWduZXJzIjpbeyJzaWduZXJzIjpbeyJraW5kIjoia2V5IiwiZGF0YSI6eyJwdWJrZXkiOiJtaW5pc2lnbjpSV1F3dG1UUXlYL3NFaTM3dkgwUzhveVhXTzBDNzczMC9ZNmo1SmlrYzBSTGdISnBzd21QV1VHZSJ9fSx7ImtpbmQiOiJrZXkiLCJkYXRhIjp7InB1YmtleSI6Im1pbmlzaWduOlJXVERQU1NoSTMwS3A5UWlXWmJ1NkNkc2VGT1loeTRiZU9ON2FFZWhyU0lTZU1YdjBNTWpXZEMwIn19LHsia2luZCI6ImtleSIsImRhdGEiOnsicHVia2V5IjoibWluaXNpZ246UldUVW5hSFh2V040NVM5WjI1K2FnemdjT0g3ZjZzUE1OZ2lod0crWlR5amhKTjI0dy8vd3pQZWQifX1dLCJ0aHJlc2hvbGQiOjF9XX0=",
+      "signatures": {
+        "entries": {
+          "minisign:RWTUnaHXvWN45S9Z25+agzgcOH7f6sPMNgihwG+ZTyjhJN24w//wzPed": {
+            "format": "minisign",
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHJzaWduIHNlY3JldCBrZXkKUlVUVW5hSFh2V040NVdwZ25tUlNlZllpTStnRldXMmdad29yOTk3N2d1RDR0anZZMmUwMEpISmljRGFwczRXNXRtckFIdjhzeW9SODFPNldsZGpNTGN5MnlHUUQ0Y1RhUHdVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMjMxODY5ClczMjJNYTU5RlNRbUtNQ0p1OHA5UUN6UEdqcmd5MmpnSDhsalgyd3k1SUNBZlVuSjhMYlhYNEx5K09raGszakQ5LytWVllVcDYyNm16RTlrSlNwQkR3PT0K"
+          },
+          "minisign:RWQwtmTQyX/sEi37vH0S8oyXWO0C7730/Y6j5Jikc0RLgHJpswmPWUGe": {
+            "format": "minisign",
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHJzaWduIHNlY3JldCBrZXkKUlVRd3RtVFF5WC9zRWlGVmVhVTZsYVpJZzIvb1ZKaVhuc0grRjVCT0ljTDJQaUFIYkplUGxNY2xPbzQ1cnFmaDFZUlFtaUIwMWRDdzRUVGMvZUZlanh2UEVaZTdkeDNSeEFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMjMxODY5CkR6UVBjWjVKVCtwdjBYTVFXZUpYbVMxa0hCSDRCTmpRc253TEJCcXpjUW1ZVjJST2JyaWwvWS9JMStwR0V3cXJEUGtLNTBCOG94VXU1V0hCZnJ6bUFRPT0K"
+          },
+          "minisign:RWTDPSShI30Kp9QiWZbu6CdseFOYhy4beON7aEehrSISeMXv0MMjWdC0": {
+            "format": "minisign",
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHJzaWduIHNlY3JldCBrZXkKUlVURFBTU2hJMzBLcCtxcVZ2b0tqMWFsNDJLNXlOaXdIWTU4cjZRVzZUMXk1akF3OVF0ZGt4TXlNZ1k4NmRXZ1dNUThwZ1BWbjI3Z0JRUkNDd2Q0bndTMTZlNUtqTW55VkEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMjMxODY5CkkwMVhpRmpVZXVHR0ZUN1ovVTR2Y29uRkhnVGxlWkpONFpELzRVaERVMk4xL0hCMS80Njl5b0hjTHNNZWtYT0RNQVBEQVJVYkJjTEFVTGhxRzkwWkFBPT0K"
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "Forge": {
+            "kind": "Github",
+            "url": "https://example.com/test",
+            "retrieved_at": "2026-03-11T12:24:29.935362926Z"
+          }
+        }
+      }
+    }
+  ]
+}

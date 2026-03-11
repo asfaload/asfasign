@@ -333,9 +333,9 @@ fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), Signe
     let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
     let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
 
-    // Read existing active signers configuration
+    // Read existing active signers configuration. This is the content that is signed
+    // and must be kept intact when moved to the history file
     let existing_content = fs::read_to_string(&active_signers_file)?;
-    let existing_config: SignersConfig = parse_signers_config(&existing_content)?;
 
     // Read the signatures file for the active signers
     let signatures_file_path = signatures_path_for(&active_signers_file)?;
@@ -350,10 +350,13 @@ fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), Signe
     // Get current UTC time as ISO8601 string
     let obsoleted_at = chrono::Utc::now();
 
-    // Create the history entry using the dedicated struct
+    // Validate that the existing content is a valid SignersConfig
+    let _existing_config: SignersConfig = parse_signers_config(&existing_content)?;
+
+    // Create the history entry using the raw JSON content (preserves original formatting)
     let history_entry = HistoryEntry {
         obsoleted_at,
-        signers_file: existing_config,
+        signers_file: existing_content,
         signatures,
         metadata,
     };
@@ -422,6 +425,51 @@ where
     fs::rename(pending_dir, &active_signers_dir)?;
 
     Ok(())
+}
+
+/// Validate that every transition in a signers history file is properly authorized.
+///
+/// For each consecutive pair of entries, verifies that the signatures on the
+/// newer entry satisfy `validate_signers_update` against the older entry's config.
+/// An empty or single-entry history is considered valid.
+pub fn validate_history(history: &HistoryFile) -> bool {
+    if !history.entries().is_sorted_by_key(|e| e.obsoleted_at) {
+        return false;
+    };
+    history.entries().windows(2).all(|pair| {
+        let parent = &pair[0];
+        let updated = &pair[1];
+
+        // Parse configs from raw JSON
+        let parent_signers = match parent.signers_config() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        let updated_signers = match updated.signers_config() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        // Hash the raw JSON bytes (exactly what was originally signed)
+        let file_hash = match common::sha512_for_content(updated.signers_file.as_bytes().to_vec()) {
+            Ok(h) => h,
+            Err(_) => return false,
+        };
+
+        // Parse the tagged signatures into the typed map
+        let signatures =
+            match aggregate_signature::parse_tagged_signatures(&updated.signatures.entries) {
+                Ok(s) => s,
+                Err(_) => return false,
+            };
+
+        aggregate_signature::validate_signers_update(
+            &updated_signers,
+            &parent_signers,
+            &signatures,
+            &file_hash,
+        )
+    })
 }
 
 #[cfg(test)]
@@ -1538,7 +1586,7 @@ mod tests {
         assert_eq!(history.entries.len(), 1);
 
         // Verify the old configuration is in the history
-        let old_config_in_history = &history.entries[0].signers_file;
+        let old_config_in_history = history.entries[0].signers_config().unwrap();
         assert_eq!(old_config_in_history.timestamp(), config_timestamp);
 
         // Verify the metadata is preserved in the history
@@ -1795,8 +1843,8 @@ mod tests {
         let entry = history_entries[0].clone();
 
         // Verify signers file content matches original
-        let signers_file_in_history = entry.signers_file;
-        assert_eq!(signers_file_in_history, original_signers_config);
+        let signers_config_in_history = entry.signers_config().unwrap();
+        assert_eq!(signers_config_in_history, original_signers_config);
 
         // Verify signatures content matches original
         let signatures_in_history = entry.signatures;
@@ -1832,23 +1880,12 @@ mod tests {
         // Create existing history file
         // Note the timestamp of the history entry is earlier than its obsoleted_at field,
         // which makes it a consistent entry
-        let existing_entry: HistoryEntry = serde_json::from_str(&format!(
-            r#"{{
-            "obsoleted_at": "2023-01-01T00:00:00Z",
-            "signers_file": {},
-            "signatures": {{"entries": {{}}}},
-            "metadata": {{
-                "data": {{
-                    "Forge": {{
-                        "kind": "Github",
-                        "url": "https://example.com/test",
-                        "retrieved_at": "2023-01-01T00:00:00Z"
-                    }}
-                }}
-            }}
-        }}"#,
-            signers_file_json
-        ))?;
+        let existing_entry = HistoryEntry {
+            obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
+            signers_file: signers_file_json,
+            signatures: SignaturesFile::new(),
+            metadata: test_metadata(),
+        };
 
         let mut existing_history: HistoryFile = HistoryFile::new();
         existing_history.add_entry(existing_entry);
@@ -1895,7 +1932,7 @@ mod tests {
         let second_entry = &history_entries[1];
 
         // Verify signers file content matches original
-        let signers_config_in_history = second_entry.clone().signers_file;
+        let signers_config_in_history = second_entry.signers_config().unwrap();
         assert_eq!(signers_config_in_history, original_signers_config);
 
         // Verify signatures content matches original
@@ -1916,53 +1953,37 @@ mod tests {
         let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
 
         // Create multiple existing history entries
-        let entry1 = serde_json::from_str(
-            r#"{
-            "obsoleted_at": "2023-01-01T00:00:00Z",
-            "signers_file": {
+        let entry1 = HistoryEntry {
+            obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
+            signers_file: serde_json::json!({
                 "version": 1,
-                "timestamp": "TIMESTAMP",
+                "timestamp": chrono::Utc::now().to_string(),
                 "artifact_signers": [],
                 "master_keys": []
-            },
-            "signatures": {"entries": {"key1": {"format": "minisign", "signature": "sig1"}}},
-            "metadata": {
-                "data": {
-                    "Forge": {
-                        "kind": "Github",
-                        "url": "https://example.com/test",
-                        "retrieved_at": "2023-01-01T00:00:00Z"
-                    }
-                }
-            }
-        }"#
-            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
-            .as_str(),
-        )?;
+            })
+            .to_string(),
+            signatures: serde_json::from_str(
+                r#"{"entries":{"key1":{"format":"minisign","signature":"sig1"}}}"#,
+            )
+            .unwrap(),
+            metadata: test_metadata(),
+        };
 
-        let entry2 = serde_json::from_str(
-            r#"{
-            "obsoleted_at": "2023-02-01T00:00:00Z",
-            "signers_file": {
+        let entry2 = HistoryEntry {
+            obsoleted_at: "2023-02-01T00:00:00Z".parse().unwrap(),
+            signers_file: serde_json::json!({
                 "version": 2,
-                "timestamp": "TIMESTAMP",
+                "timestamp": chrono::Utc::now().to_string(),
                 "artifact_signers": [],
                 "master_keys": []
-            },
-            "signatures": {"entries": {"key2": {"format": "minisign", "signature": "sig2"}}},
-            "metadata": {
-                "data": {
-                    "Forge": {
-                        "kind": "Github",
-                        "url": "https://example.com/test",
-                        "retrieved_at": "2023-01-01T00:00:00Z"
-                    }
-                }
-            }
-        }"#
-            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
-            .as_str(),
-        )?;
+            })
+            .to_string(),
+            signatures: serde_json::from_str(
+                r#"{"entries":{"key2":{"format":"minisign","signature":"sig2"}}}"#,
+            )
+            .unwrap(),
+            metadata: test_metadata(),
+        };
 
         let mut existing_history: HistoryFile = HistoryFile::new();
         existing_history.add_entry(entry1);
@@ -2004,8 +2025,8 @@ mod tests {
         let new_entry = &history.entries[2];
 
         // Verify signers file content matches original
-        let signers_file_in_history = new_entry.signers_file.clone();
-        assert_eq!(signers_file_in_history, original_signers_config);
+        let signers_config_in_history = new_entry.signers_config().unwrap();
+        assert_eq!(signers_config_in_history, original_signers_config);
 
         // Verify signatures content matches original
         let signatures_in_history = new_entry.signatures.clone();
@@ -2213,7 +2234,7 @@ mod tests {
         let entry = &history.entries[0];
 
         // Verify signers file content matches original
-        assert_eq!(entry.signers_file, original_signers_config);
+        assert_eq!(entry.signers_config().unwrap(), original_signers_config);
 
         // Verify signatures content matches original
         assert_eq!(entry.signatures, original_signatures);
@@ -2272,7 +2293,7 @@ mod tests {
     fn create_test_history_entry(test_keys: &TestKeys, timestamp: DateTime<Utc>) -> HistoryEntry {
         HistoryEntry {
             obsoleted_at: timestamp,
-            signers_file: create_test_signers_config(test_keys),
+            signers_file: create_test_signers_config(test_keys).to_json().unwrap(),
             signatures: create_test_signatures(test_keys),
             metadata: test_metadata(),
         }
@@ -2284,12 +2305,13 @@ mod tests {
         let timestamp: DateTime<Utc> = "2023-01-01T00:00:00Z".parse().unwrap();
 
         let entry = create_test_history_entry(&test_keys, timestamp);
+        let config = entry.signers_config().unwrap();
 
         assert_eq!(entry.obsoleted_at, timestamp);
-        assert_eq!(entry.signers_file.version(), 1);
-        assert_eq!(entry.signers_file.artifact_signers().len(), 1);
-        assert_eq!(entry.signers_file.artifact_signers()[0].threshold, 2);
-        assert_eq!(entry.signers_file.artifact_signers()[0].signers.len(), 2);
+        assert_eq!(config.version(), 1);
+        assert_eq!(config.artifact_signers().len(), 1);
+        assert_eq!(config.artifact_signers()[0].threshold, 2);
+        assert_eq!(config.artifact_signers()[0].signers.len(), 2);
         assert_eq!(entry.signatures.entries.len(), 2);
     }
 
@@ -2391,72 +2413,8 @@ mod tests {
     fn test_history_file_from_json() {
         let test_keys = TestKeys::new(2);
 
-        // Create a JSON template with placeholders
-        let json_template = r#"
-{
-  "entries": [
-    {
-      "obsoleted_at": "2023-01-01T00:00:00Z",
-      "signers_file": {
-        "version": 1,
-        "timestamp": "TIMESTAMP",
-        "artifact_signers": [
-          {
-            "signers": [
-              {
-                "kind": "key",
-                "data": {
-                  "format": "FORMAT_PLACEHOLDER",
-                  "pubkey": "PUBKEY0_PLACEHOLDER"
-                }
-              },
-              {
-                "kind": "key",
-                "data": {
-                  "format": "FORMAT_PLACEHOLDER",
-                  "pubkey": "PUBKEY1_PLACEHOLDER"
-                }
-              }
-            ],
-            "threshold": 2
-          }
-        ],
-        "master_keys": [],
-        "admin_keys": null
-      },
-      "signatures": {
-        "entries": {
-          "PUBKEY0_PLACEHOLDER": {
-            "format": "FORMAT_PLACEHOLDER",
-            "signature": "SIGNATURE0_PLACEHOLDER"
-          },
-          "PUBKEY1_PLACEHOLDER": {
-            "format": "FORMAT_PLACEHOLDER",
-            "signature": "SIGNATURE1_PLACEHOLDER"
-          }
-        }
-      },
-      "metadata": {
-        "data": {
-          "Forge": {
-            "kind": "Github",
-            "url": "https://example.com/test",
-            "retrieved_at": "2023-01-01T00:00:00Z"
-          }
-        }
-      }
-    }
-  ]
-}
-"#;
-
-        // Get the actual public keys from test_keys
         let pubkey0 = test_keys.pub_key(0).unwrap().to_base64();
         let pubkey1 = test_keys.pub_key(1).unwrap().to_base64();
-        let format_str = serde_json::to_string(&test_keys.pub_key(0).unwrap().key_format())
-            .unwrap()
-            .trim_matches('"')
-            .to_string();
 
         // Compute actual signatures
         let test_data = b"test data for signing";
@@ -2468,16 +2426,47 @@ mod tests {
         let signature0_b64 = signature0.to_base64();
         let signature1_b64 = signature1.to_base64();
 
-        // Replace placeholders in the template
-        let json_content = json_template
-            .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str())
-            .replace("FORMAT_PLACEHOLDER", &format_str)
-            .replace("PUBKEY0_PLACEHOLDER", &pubkey0)
-            .replace("PUBKEY1_PLACEHOLDER", &pubkey1)
-            .replace("SIGNATURE0_PLACEHOLDER", &signature0_b64)
-            .replace("SIGNATURE1_PLACEHOLDER", &signature1_b64);
+        // Build signers config with both keys
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
+                ],
+                2,
+            ),
+        )
+        .unwrap();
 
-        // Parse the history file
+        // Build signatures
+        let mut signatures = SignaturesFile::new();
+        signatures.entries.insert(
+            pubkey0.clone(),
+            TaggedSignature {
+                format: test_keys.pub_key(0).unwrap().key_format(),
+                signature: signature0_b64.clone(),
+            },
+        );
+        signatures.entries.insert(
+            pubkey1.clone(),
+            TaggedSignature {
+                format: test_keys.pub_key(1).unwrap().key_format(),
+                signature: signature1_b64.clone(),
+            },
+        );
+
+        // Build the history file programmatically
+        let mut original_history = HistoryFile::new();
+        original_history.add_entry(HistoryEntry {
+            obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
+            signers_file: signers_config.to_json().unwrap(),
+            signatures,
+            metadata: test_metadata(),
+        });
+
+        // Serialize and parse back via parse_history_file
+        let json_content = serde_json::to_string_pretty(&original_history).unwrap();
         let history_file: HistoryFile = parse_history_file(&json_content).unwrap();
 
         // Verify the content
@@ -2486,35 +2475,22 @@ mod tests {
             history_file.entries()[0].obsoleted_at,
             "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
-        assert_eq!(history_file.entries()[0].signers_file.version(), 1);
-        assert_eq!(
-            history_file.entries()[0]
-                .signers_file
-                .artifact_signers()
-                .len(),
-            1
-        );
-        assert_eq!(
-            history_file.entries()[0].signers_file.artifact_signers()[0].threshold,
-            2
-        );
-        assert_eq!(
-            history_file.entries()[0].signers_file.artifact_signers()[0]
-                .signers
-                .len(),
-            2
-        );
+        let config = history_file.entries()[0].signers_config().unwrap();
+        assert_eq!(config.version(), 1);
+        assert_eq!(config.artifact_signers().len(), 1);
+        assert_eq!(config.artifact_signers()[0].threshold, 2);
+        assert_eq!(config.artifact_signers()[0].signers.len(), 2);
 
         // Verify the public keys in the signers file
         assert_eq!(
-            history_file.entries()[0].signers_file.artifact_signers()[0].signers[0]
+            config.artifact_signers()[0].signers[0]
                 .data
                 .pubkey
                 .to_base64(),
             pubkey0
         );
         assert_eq!(
-            history_file.entries()[0].signers_file.artifact_signers()[0].signers[1]
+            config.artifact_signers()[0].signers[1]
                 .data
                 .pubkey
                 .to_base64(),
@@ -2610,7 +2586,13 @@ mod tests {
             loaded_history_file.entries()[0].obsoleted_at,
             "2023-01-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
         );
-        assert_eq!(loaded_history_file.entries()[0].signers_file.version(), 1);
+        assert_eq!(
+            loaded_history_file.entries()[0]
+                .signers_config()
+                .unwrap()
+                .version(),
+            1
+        );
         assert_eq!(loaded_history_file.entries()[0].signatures.entries.len(), 2);
     }
 
@@ -2731,7 +2713,7 @@ mod tests {
         // Create an entry with empty signatures
         let entry = HistoryEntry {
             obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
-            signers_file: create_test_signers_config(&test_keys),
+            signers_file: create_test_signers_config(&test_keys).to_json().unwrap(),
             signatures: SignaturesFile::new(),
             metadata: test_metadata(),
         };
@@ -5175,6 +5157,330 @@ mod tests {
         // Verify round-trip: re-serialize and compare
         assert_eq!(actual, expected);
 
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod validate_history_tests {
+    use anyhow::Result;
+    use chrono::Utc;
+    use signatures::keys::{
+        AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+    };
+    use signatures::signatures_file::{SignaturesFile, TaggedSignature};
+    use signers_file_types::{HistoryEntry, HistoryFile, SignersConfig};
+    use test_helpers::{TestKeys, test_metadata};
+
+    use super::validate_history;
+
+    /// Helper: sign a config's JSON with the given secret keys.
+    /// Returns the JSON string that was signed and the corresponding SignaturesFile.
+    fn sign_config(
+        config: &SignersConfig,
+        keys: &TestKeys,
+        indices: &[usize],
+    ) -> Result<(String, SignaturesFile)> {
+        let json = serde_json::to_string_pretty(config)?;
+        let sig_file = sign_json_bytes(json.as_bytes(), keys, indices)?;
+        Ok((json, sig_file))
+    }
+
+    #[test]
+    fn validate_history_valid_two_entries() -> Result<()> {
+        let keys = TestKeys::new(3);
+
+        // config1: artifact signers = keys 0,1 with threshold 1
+        let config1 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        // config2: artifact signers = keys 0,1,2 with threshold 1 (adds key 2)
+        let config2 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                    keys.pub_key(2).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        // entry1 signatures: signed by admin of config1 (keys 0 and 1)
+        let (json1, sig1) = sign_config(&config1, &keys, &[0, 1])?;
+
+        // entry2 signatures: must be signed by admin of old config (config1),
+        // admin of new config (config2), AND newly added signers (key 2).
+        // Keys 0,1 cover old admin. Keys 0,1,2 cover new admin. Key 2 is the new signer.
+        let (json2, sig2) = sign_config(&config2, &keys, &[0, 1, 2])?;
+
+        let history = HistoryFile {
+            entries: vec![
+                HistoryEntry {
+                    obsoleted_at: Utc::now() - chrono::Duration::seconds(1),
+                    signers_file: json1,
+                    signatures: sig1,
+                    metadata: test_metadata(),
+                },
+                HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json2,
+                    signatures: sig2,
+                    metadata: test_metadata(),
+                },
+            ],
+        };
+
+        assert!(validate_history(&history));
+        Ok(())
+    }
+
+    #[test]
+    fn validate_history_invalid_missing_new_signer_signature() -> Result<()> {
+        let keys = TestKeys::new(3);
+
+        let config1 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        // config2 adds key 2
+        let config2 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                    keys.pub_key(2).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        let (json1, sig1) = sign_config(&config1, &keys, &[0, 1])?;
+
+        // Only sign with keys 0,1 — missing key 2 (the newly added signer)
+        let (json2, sig2) = sign_config(&config2, &keys, &[0, 1])?;
+
+        let history = HistoryFile {
+            entries: vec![
+                HistoryEntry {
+                    obsoleted_at: Utc::now() - chrono::Duration::seconds(1),
+                    signers_file: json1,
+                    signatures: sig1,
+                    metadata: test_metadata(),
+                },
+                HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json2,
+                    signatures: sig2,
+                    metadata: test_metadata(),
+                },
+            ],
+        };
+
+        assert!(!validate_history(&history));
+        Ok(())
+    }
+
+    #[test]
+    fn validate_history_single_entry_is_valid() -> Result<()> {
+        let keys = TestKeys::new(1);
+
+        let config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![keys.pub_key(0).unwrap().clone()], 1),
+        )?;
+
+        let (json, sig) = sign_config(&config, &keys, &[0])?;
+
+        let history = HistoryFile {
+            entries: vec![HistoryEntry {
+                obsoleted_at: Utc::now(),
+                signers_file: json,
+                signatures: sig,
+                metadata: test_metadata(),
+            }],
+        };
+
+        assert!(validate_history(&history));
+        Ok(())
+    }
+
+    #[test]
+    fn validate_history_empty_is_valid() {
+        let history = HistoryFile::new();
+        assert!(validate_history(&history));
+    }
+
+    #[test]
+    fn validate_history_rejects_unsorted_entries() -> Result<()> {
+        let keys = TestKeys::new(3);
+
+        let config1 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        let config2 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                    keys.pub_key(2).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        let (json1, sig1) = sign_config(&config1, &keys, &[0, 1])?;
+        let (json2, sig2) = sign_config(&config2, &keys, &[0, 1, 2])?;
+
+        let now = Utc::now();
+        let earlier = now - chrono::Duration::hours(1);
+
+        // Place the later timestamp first — entries are not sorted by obsoleted_at
+        let history = HistoryFile {
+            entries: vec![
+                HistoryEntry {
+                    obsoleted_at: now,
+                    signers_file: json1,
+                    signatures: sig1,
+                    metadata: test_metadata(),
+                },
+                HistoryEntry {
+                    obsoleted_at: earlier,
+                    signers_file: json2,
+                    signatures: sig2,
+                    metadata: test_metadata(),
+                },
+            ],
+        };
+
+        assert!(!validate_history(&history));
+        Ok(())
+    }
+
+    /// Helper: sign arbitrary JSON bytes with the given secret keys and return a SignaturesFile.
+    fn sign_json_bytes(
+        json_bytes: &[u8],
+        keys: &TestKeys,
+        indices: &[usize],
+    ) -> Result<SignaturesFile> {
+        let hash = common::sha512_for_content(json_bytes.to_vec())?;
+        let mut sig_file = SignaturesFile::new();
+        for &i in indices {
+            let pubkey = keys.pub_key(i).unwrap();
+            let seckey = keys.sec_key(i).unwrap();
+            let signature = seckey.sign(&hash)?;
+            sig_file.entries.insert(
+                pubkey.to_base64(),
+                TaggedSignature {
+                    format: pubkey.key_format(),
+                    signature: signature.to_base64(),
+                },
+            );
+        }
+        Ok(sig_file)
+    }
+
+    /// Generator test: creates a fixture file with a history entry whose signatures
+    /// were computed over compact JSON, but the HistoryFile serialization produces
+    /// pretty-printed JSON for the signers_file field.
+    ///
+    /// Run with: cargo test --package signers_file generate_fixture_history_with_non_canonical_json -- --ignored
+    #[test]
+    #[ignore]
+    fn generate_fixture_history_with_non_canonical_json() -> Result<()> {
+        let keys = TestKeys::new(3);
+
+        // config1: the "parent" entry, signed with pretty JSON (canonical)
+        let config1 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+        let pretty_json1 = serde_json::to_string_pretty(&config1)?;
+        let sig1 = sign_json_bytes(pretty_json1.as_bytes(), &keys, &[0, 1])?;
+
+        // config2: the "updated" entry, signed with COMPACT JSON
+        let config2 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                    keys.pub_key(2).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+        let compact_json2 = serde_json::to_string(&config2)?;
+        let sig2 = sign_json_bytes(compact_json2.as_bytes(), &keys, &[0, 1, 2])?;
+
+        let history = HistoryFile {
+            entries: vec![
+                HistoryEntry {
+                    obsoleted_at: Utc::now() - chrono::Duration::seconds(1),
+                    signers_file: pretty_json1,
+                    signatures: sig1,
+                    metadata: test_metadata(),
+                },
+                HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: compact_json2,
+                    signatures: sig2,
+                    metadata: test_metadata(),
+                },
+            ],
+        };
+
+        let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../test_helpers/fixtures/history_with_non_canonical_json.json");
+        history.save_to_file(&fixture_path)?;
+        println!("Fixture written to: {}", fixture_path.display());
+
+        Ok(())
+    }
+
+    /// Test that loads the fixture with non-canonical JSON and validates it.
+    #[test]
+    fn validate_history_from_fixture_with_non_canonical_json() -> Result<()> {
+        let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../test_helpers/fixtures/history_with_non_canonical_json.json");
+        let history = HistoryFile::load_from_file(&fixture_path)?;
+
+        assert!(
+            validate_history(&history),
+            "validate_history should accept valid signatures regardless of JSON formatting"
+        );
         Ok(())
     }
 }
