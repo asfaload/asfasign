@@ -5451,4 +5451,107 @@ mod validate_history_tests {
         assert!(!validate_history(&history));
         Ok(())
     }
+    /// Helper: sign arbitrary JSON bytes with the given secret keys and return a SignaturesFile.
+    fn sign_json_bytes(
+        json_bytes: &[u8],
+        keys: &TestKeys,
+        indices: &[usize],
+    ) -> Result<SignaturesFile> {
+        let hash = common::sha512_for_content(json_bytes.to_vec())?;
+        let mut sig_file = SignaturesFile::new();
+        for &i in indices {
+            let pubkey = keys.pub_key(i).unwrap();
+            let seckey = keys.sec_key(i).unwrap();
+            let signature = seckey.sign(&hash)?;
+            sig_file.entries.insert(
+                pubkey.to_base64(),
+                TaggedSignature {
+                    format: pubkey.key_format(),
+                    signature: signature.to_base64(),
+                },
+            );
+        }
+        Ok(sig_file)
+    }
+
+    /// Generator test: creates a fixture file with a history entry whose signatures
+    /// were computed over compact JSON, but the HistoryFile serialization produces
+    /// pretty-printed JSON for the signers_file field.
+    ///
+    /// Run with: cargo test --package signers_file generate_fixture_history_with_non_canonical_json -- --ignored
+    #[test]
+    #[ignore]
+    fn generate_fixture_history_with_non_canonical_json() -> Result<()> {
+        let keys = TestKeys::new(3);
+
+        // config1: the "parent" entry, signed with pretty JSON (canonical)
+        let config1 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+        let pretty_json1 = serde_json::to_string_pretty(&config1)?;
+        let sig1 = sign_json_bytes(pretty_json1.as_bytes(), &keys, &[0, 1])?;
+
+        // config2: the "updated" entry, signed with COMPACT JSON
+        let config2 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                    keys.pub_key(2).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+        let compact_json2 = serde_json::to_string(&config2)?;
+        let sig2 = sign_json_bytes(compact_json2.as_bytes(), &keys, &[0, 1, 2])?;
+
+        let history = HistoryFile {
+            entries: vec![
+                HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: config1,
+                    signatures: sig1,
+                    metadata: test_metadata(),
+                },
+                HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: config2,
+                    signatures: sig2,
+                    metadata: test_metadata(),
+                },
+            ],
+        };
+
+        let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../test_helpers/fixtures/history_with_non_canonical_json.json");
+        history.save_to_file(&fixture_path)?;
+        println!("Fixture written to: {}", fixture_path.display());
+
+        Ok(())
+    }
+
+    /// Test that loads the fixture with non-canonical JSON and validates it.
+    /// This test FAILS with the current implementation because validate_history
+    /// re-serializes via to_json() (to_string_pretty), producing different bytes
+    /// than the compact JSON that was originally signed for entry 2.
+    #[test]
+    fn validate_history_from_fixture_with_non_canonical_json() -> Result<()> {
+        let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../test_helpers/fixtures/history_with_non_canonical_json.json");
+        let history = HistoryFile::load_from_file(&fixture_path)?;
+
+        assert!(
+            validate_history(&history),
+            "validate_history should accept valid signatures regardless of JSON formatting"
+        );
+        Ok(())
+    }
 }

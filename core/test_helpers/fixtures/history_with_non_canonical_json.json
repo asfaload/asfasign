@@ -1,0 +1,108 @@
+{
+  "entries": [
+    {
+      "obsoleted_at": "2026-03-11T07:32:07.800404577Z",
+      "signers_file": {
+        "version": 1,
+        "timestamp": "2026-03-11T07:32:07.795112260Z",
+        "artifact_signers": [
+          {
+            "signers": [
+              {
+                "kind": "key",
+                "data": {
+                  "pubkey": "minisign:RWQwtmTQyX/sEi37vH0S8oyXWO0C7730/Y6j5Jikc0RLgHJpswmPWUGe"
+                }
+              },
+              {
+                "kind": "key",
+                "data": {
+                  "pubkey": "minisign:RWTDPSShI30Kp9QiWZbu6CdseFOYhy4beON7aEehrSISeMXv0MMjWdC0"
+                }
+              }
+            ],
+            "threshold": 1
+          }
+        ]
+      },
+      "signatures": {
+        "entries": {
+          "minisign:RWQwtmTQyX/sEi37vH0S8oyXWO0C7730/Y6j5Jikc0RLgHJpswmPWUGe": {
+            "format": "minisign",
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHJzaWduIHNlY3JldCBrZXkKUlVRd3RtVFF5WC9zRW9PY0xaRHJzbEJMTWkydy9iVmJIVnNrazR2MWRCVGZhRDBFOEEvK253MWo3N0I5MVBQYzhvY2xxeDF2S0xiWmZEVytIa0xPYzMxcElVVWhrNHEwdndZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMjE0MzI3CkVQbkt0L1BkMHU4VmpHZktDdWZZNEtnaHZPNnE5Zlp6S09QRWF2aFJsd0FsU3l3T3BVd09GZHF1eS9yYVg0eDNva3FvRWRGckdqdk1yZjBOWUZWUkFRPT0K"
+          },
+          "minisign:RWTDPSShI30Kp9QiWZbu6CdseFOYhy4beON7aEehrSISeMXv0MMjWdC0": {
+            "format": "minisign",
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHJzaWduIHNlY3JldCBrZXkKUlVURFBTU2hJMzBLcDk4dWpHR29DZDlraFZIaEhiTVVUNlFoeEhtVWFkMmpkWXArUXB5akVWelY3bXZJTnJDTWU4ZTdEYzI0NW84THBXblQwT2hRajB0MmFwT2NZZjJEcWdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMjE0MzI3Cm8zZldDbWJxR2dpMnhxSldYTmIrb2tNdFl5TWJibjB1QXJxNXZzcVhlbENaZjI2VHlEZ0tXMmNQQlhKL1JOc1ZvbnpobWFVb09oRGp4WFdRMzg5WUJ3PT0K"
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "Forge": {
+            "kind": "Github",
+            "url": "https://example.com/test",
+            "retrieved_at": "2026-03-11T07:32:07.800405399Z"
+          }
+        }
+      }
+    },
+    {
+      "obsoleted_at": "2026-03-11T07:32:07.800405740Z",
+      "signers_file": {
+        "version": 1,
+        "timestamp": "2026-03-11T07:32:07.797339870Z",
+        "artifact_signers": [
+          {
+            "signers": [
+              {
+                "kind": "key",
+                "data": {
+                  "pubkey": "minisign:RWQwtmTQyX/sEi37vH0S8oyXWO0C7730/Y6j5Jikc0RLgHJpswmPWUGe"
+                }
+              },
+              {
+                "kind": "key",
+                "data": {
+                  "pubkey": "minisign:RWTDPSShI30Kp9QiWZbu6CdseFOYhy4beON7aEehrSISeMXv0MMjWdC0"
+                }
+              },
+              {
+                "kind": "key",
+                "data": {
+                  "pubkey": "minisign:RWTUnaHXvWN45S9Z25+agzgcOH7f6sPMNgihwG+ZTyjhJN24w//wzPed"
+                }
+              }
+            ],
+            "threshold": 1
+          }
+        ]
+      },
+      "signatures": {
+        "entries": {
+          "minisign:RWTDPSShI30Kp9QiWZbu6CdseFOYhy4beON7aEehrSISeMXv0MMjWdC0": {
+            "format": "minisign",
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHJzaWduIHNlY3JldCBrZXkKUlVURFBTU2hJMzBLcDJ0VFJFNkt4T3VDL2hoV0tUa2R0d2JpRmcycVFIdVhNS2xxR0Q0YmoxSGVSek1lQVA2TTRNNTNIWHdoMEl1ZnJkMExZam9BTGE5MnhBN1hoTCtGU0E0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMjE0MzI3CjFxcXg0bjIxUWZuZmtDZnlUczFGYWVYbmpKNjMzSFJLMjVRUnRRVlgxT1R5WjlwZ2VIbEo4N0RVdDJlaEdDNG1FYStiUlBMSE4xOGk3b2ZwdXlRSENRPT0K"
+          },
+          "minisign:RWQwtmTQyX/sEi37vH0S8oyXWO0C7730/Y6j5Jikc0RLgHJpswmPWUGe": {
+            "format": "minisign",
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHJzaWduIHNlY3JldCBrZXkKUlVRd3RtVFF5WC9zRXBlTXFUWmJhZkdKTGVPd2xLTFlhR1NyaU9UNWZRQnZzbHpJWmFiMXFsVEp6YWhaTmwway9NUjdpR3BHUVYzVjAvSTZHdGFvR2dWeDdKZHJYc2tFblE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMjE0MzI3ClN5WjBkYkFaRGVPZzlJQkNPdmVwU2NCcTE3c1J5Wll3UXl3d3dOcmZOUCtxNFZLUnJIR0dmeVo0MTZ2R045T0Q2ZWx2Sk84RkhMOHFIYXJGdlZRZUNRPT0K"
+          },
+          "minisign:RWTUnaHXvWN45S9Z25+agzgcOH7f6sPMNgihwG+ZTyjhJN24w//wzPed": {
+            "format": "minisign",
+            "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHJzaWduIHNlY3JldCBrZXkKUlVUVW5hSFh2V040NVVKQnF6bkszcWdPN3Q2amVxNmF3WTU5QVhrMllCemM3UExmSWJkelhLREV4TXROck5pOTRBWFRxL2RyVUtJU3BsVE8razBxQlZmbXh5Ym5XVm5uSFFNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzczMjE0MzI3Cit2eEFWQUJWcU1qcG8rSG1QYW9NL3IvY2I3TVBRZlk5TjI0L25JYVVZR1VwZWhFUUk0aWhYamFoSk5maU8vWmNLbHljcE9oSWNCeCtvTmZsa011cURnPT0K"
+          }
+        }
+      },
+      "metadata": {
+        "data": {
+          "Forge": {
+            "kind": "Github",
+            "url": "https://example.com/test",
+            "retrieved_at": "2026-03-11T07:32:07.800405980Z"
+          }
+        }
+      }
+    }
+  ]
+}
