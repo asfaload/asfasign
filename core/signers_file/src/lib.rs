@@ -430,6 +430,9 @@ where
 /// newer entry satisfy `validate_signers_update` against the older entry's config.
 /// An empty or single-entry history is considered valid.
 pub fn validate_history(history: &HistoryFile) -> bool {
+    if !history.entries().is_sorted_by_key(|e| e.obsoleted_at) {
+        return false;
+    };
     history.entries().windows(2).all(|pair| {
         let parent = &pair[0];
         let updated = &pair[1];
@@ -5392,5 +5395,60 @@ mod validate_history_tests {
     fn validate_history_empty_is_valid() {
         let history = HistoryFile::new();
         assert!(validate_history(&history));
+    }
+
+    #[test]
+    fn validate_history_rejects_unsorted_entries() -> Result<()> {
+        let keys = TestKeys::new(3);
+
+        let config1 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        let config2 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                    keys.pub_key(2).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        let sig1 = sign_config(&config1, &keys, &[0, 1])?;
+        let sig2 = sign_config(&config2, &keys, &[0, 1, 2])?;
+
+        let now = Utc::now();
+        let earlier = now - chrono::Duration::hours(1);
+
+        // Place the later timestamp first — entries are not sorted by obsoleted_at
+        let history = HistoryFile {
+            entries: vec![
+                HistoryEntry {
+                    obsoleted_at: now,
+                    signers_file: config1,
+                    signatures: sig1,
+                    metadata: test_metadata(),
+                },
+                HistoryEntry {
+                    obsoleted_at: earlier,
+                    signers_file: config2,
+                    signatures: sig2,
+                    metadata: test_metadata(),
+                },
+            ],
+        };
+
+        assert!(!validate_history(&history));
+        Ok(())
     }
 }
