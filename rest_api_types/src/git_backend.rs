@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
+
 use crate::errors::ApiError;
 use git2::{Repository, Signature};
 
@@ -10,6 +12,8 @@ use crate::path_validation::NormalisedPaths;
 pub struct ArtifactSignersSource {
     // The commit that committed the copy at artifact_signers
     commit: String,
+    // The timestamp of the commit that introduced the copy
+    commit_time: DateTime<Utc>,
     // The signers file path the artifact_signers file was copied from
     path: NormalisedPaths,
     // copy of signers file taken when artifact signature completed
@@ -19,6 +23,10 @@ pub struct ArtifactSignersSource {
 impl ArtifactSignersSource {
     pub fn commit(&self) -> &str {
         &self.commit
+    }
+
+    pub fn commit_time(&self) -> DateTime<Utc> {
+        self.commit_time
     }
 
     pub fn path(&self) -> &NormalisedPaths {
@@ -76,6 +84,15 @@ pub trait GitBackend: Send + Sync + 'static {
             )));
         }
 
+        let commit_time_str =
+            GitCommand::git(self.root(), &["log", "--format=%cI", "-1", &first_commit])?;
+        let commit_time: DateTime<Utc> = commit_time_str.parse().map_err(|e| {
+            ApiError::GitError(format!(
+                "Failed to parse commit time '{}': {}",
+                commit_time_str, e
+            ))
+        })?;
+
         let git_output = GitCommand::git(
             self.root(),
             &[
@@ -107,6 +124,7 @@ pub trait GitBackend: Send + Sync + 'static {
 
         let res = ArtifactSignersSource {
             commit: first_commit,
+            commit_time,
             path: source_path,
             artifact_signers: signers,
         };
@@ -763,6 +781,31 @@ mod tests {
         let result = backend.artifact_signers_source(signers_path).unwrap();
 
         assert_eq!(result.commit(), expected_commit);
+    }
+
+    #[test]
+    fn test_artifact_signers_source_has_commit_time() {
+        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
+            "signers.json",
+            r#"{"signers": ["alice"]}"#,
+            "artifacts/my_artifact.signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        let signers_path = normalise_for_repo(repo_path, &dest);
+        let result = backend.artifact_signers_source(signers_path).unwrap();
+
+        // commit_time should be a valid recent timestamp
+        let commit_time = result.commit_time();
+        let now = chrono::Utc::now();
+        assert!(
+            commit_time <= now,
+            "Commit time should not be in the future"
+        );
+        assert!(
+            (now - commit_time).num_seconds() < 60,
+            "Commit time should be recent (within 60s)"
+        );
     }
 
     #[test]
