@@ -3,8 +3,9 @@ use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
-    GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
-    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse, RegisterRepoRequest,
+    RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest,
+    SubmitSignatureResponse,
 };
 
 use std::{path::PathBuf, str::FromStr};
@@ -1038,4 +1039,161 @@ async fn register_checksums(
                 .to_string(),
         ),
     }))
+}
+
+/// Handler to fetch the signers chain for a signed artifact.
+///
+/// Traces the artifact's local signers copy back to its source,
+/// retrieves the history file, and returns entries up to and including
+/// the active config at the time the artifact's signature was completed.
+pub async fn get_signers_chain_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(artifact_path): axum::extract::Path<String>,
+) -> Result<Json<GetSignersChainResponse>, ApiError> {
+    use common::fs::names::{local_signers_path_for, signatures_path_for};
+    use constants::{METADATA_FILE, SIGNERS_HISTORY_FILE};
+    use rest_api_types::git_backend::{
+        GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend,
+    };
+
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        artifact_path = %artifact_path,
+        "Received get_signers_chain request"
+    );
+
+    // Derive the local signers copy path from the artifact path
+    let local_signers_relative = local_signers_path_for(std::path::Path::new(&artifact_path))
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                artifact_path = %artifact_path,
+                error = %e,
+                "Cannot derive signers path for artifact"
+            );
+            ApiError::InvalidFilePath(format!("Cannot derive signers path for artifact: {}", e))
+        })?;
+
+    let local_signers = NormalisedPaths::new(state.git_repo_path.clone(), local_signers_relative)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                artifact_path = %artifact_path,
+                error = %e,
+                "Invalid signers path"
+            );
+            ApiError::InvalidFilePath(format!("Invalid signers path: {}", e))
+        })?;
+
+    // Trace back to the original signers file source
+    let git_repo_path = state.git_repo_path.clone();
+    let git_backend_kind = state.git_backend_kind;
+
+    let source = tokio::task::spawn_blocking({
+        let local_signers = local_signers.clone();
+        let git_repo_path = git_repo_path.clone();
+        move || {
+            let backend: Box<dyn GitBackend> = match git_backend_kind {
+                GitBackendKind::Sha1 => Box::new(Sha1GitBackend::new(&git_repo_path)),
+                GitBackendKind::Sha256 => Box::new(Sha256GitBackend::new(&git_repo_path)),
+            };
+            backend.artifact_signers_source(local_signers)
+        }
+    })
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
+
+    let commit = source.commit().to_string();
+    let commit_time = source.commit_time();
+
+    // source.path() points to the original signers file,
+    // e.g. "asfaload.signers/asfaload.signers.json"
+    // The parent is the signers directory
+    let source_signers_file = source.path().relative_path();
+    let signers_dir = source_signers_file.parent().ok_or_else(|| {
+        ApiError::InternalServerError("Signers file has no parent directory".to_string())
+    })?;
+    let signers_root = signers_dir.parent().unwrap_or(std::path::Path::new(""));
+
+    // Build relative paths for files to read at the commit
+    let history_rel = signers_root.join(SIGNERS_HISTORY_FILE);
+    let signers_file_rel = source_signers_file.to_path_buf();
+    let signatures_rel = signatures_path_for(&signers_file_rel).map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            signers_file = %signers_file_rel.display(),
+            error = %e,
+            "Cannot derive signatures path"
+        );
+        ApiError::InternalServerError(format!("Cannot derive signatures path: {}", e))
+    })?;
+    let metadata_rel = signers_dir.join(METADATA_FILE);
+
+    // Read all needed files from git history
+    let (history_result, active_signers_json, active_signatures_json, active_metadata_json) =
+        tokio::task::spawn_blocking({
+            let commit = commit.clone();
+            let history_rel = history_rel.clone();
+            let signers_file_rel = signers_file_rel.clone();
+            let signatures_rel = signatures_rel.clone();
+            let metadata_rel = metadata_rel.clone();
+            let git_repo_path = git_repo_path.clone();
+            move || -> Result<(Result<String, ApiError>, String, String, String), ApiError> {
+                let backend: Box<dyn GitBackend> = match git_backend_kind {
+                    GitBackendKind::Sha1 => Box::new(Sha1GitBackend::new(&git_repo_path)),
+                    GitBackendKind::Sha256 => Box::new(Sha256GitBackend::new(&git_repo_path)),
+                };
+                // History file may not exist if no rotations happened
+                let history = backend.file_content_at_commit(&commit, &history_rel);
+                let signers = backend.file_content_at_commit(&commit, &signers_file_rel)?;
+                let sigs = backend.file_content_at_commit(&commit, &signatures_rel)?;
+                let meta = backend.file_content_at_commit(&commit, &metadata_rel)?;
+                Ok((history, signers, sigs, meta))
+            }
+        })
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
+
+    // Parse history (may be empty if no rotations happened)
+    let history = match history_result {
+        Ok(history_json) => signers_file_types::parse_history_file(&history_json).map_err(|e| {
+            ApiError::InternalServerError(format!("Failed to parse history file: {}", e))
+        })?,
+        Err(_) => signers_file_types::HistoryFile::new(),
+    };
+
+    let active_signatures: signatures::signatures_file::SignaturesFile =
+        serde_json::from_str(&active_signatures_json).map_err(|e| {
+            ApiError::InternalServerError(format!("Failed to parse signatures file: {}", e))
+        })?;
+    let active_metadata: signers_file_types::SignersConfigMetadata =
+        serde_json::from_str(&active_metadata_json).map_err(|e| {
+            ApiError::InternalServerError(format!("Failed to parse metadata file: {}", e))
+        })?;
+
+    // Build the filtered chain
+    let chain = signers_file::signers_chain_for_artifact(
+        &history,
+        &active_signers_json,
+        &active_signatures,
+        &active_metadata,
+        commit_time,
+    )
+    .map_err(|e| ApiError::InternalServerError(format!("Failed to build signers chain: {}", e)))?;
+
+    tracing::info!(
+        request_id = %request_id,
+        artifact_path = %artifact_path,
+        chain_length = chain.entries().len(),
+        "Successfully built signers chain"
+    );
+
+    Ok(Json(GetSignersChainResponse { history: chain }))
 }
