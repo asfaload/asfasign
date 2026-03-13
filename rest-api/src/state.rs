@@ -20,6 +20,7 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     pub git_repo_path: PathBuf,
+    pub git_backend_kind: GitBackendKind,
     pub git_actor: ActorRef<GitActor>,
     pub nonce_cache_actor: ActorRef<NonceCacheActor>,
     pub nonce_cleanup_actor: ActorRef<NonceCleanupActor>,
@@ -64,6 +65,7 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
 
     AppState {
         git_repo_path,
+        git_backend_kind: git_backend,
         git_actor,
         nonce_cache_actor,
         nonce_cleanup_actor,
