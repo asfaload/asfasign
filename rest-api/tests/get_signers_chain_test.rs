@@ -203,3 +203,97 @@ async fn test_get_signers_chain_no_history() -> Result<()> {
 
     Ok(())
 }
+
+/// Test get_signers_chain returns an error for a nonexistent artifact path.
+#[tokio::test]
+async fn test_get_signers_chain_nonexistent_artifact() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let repo_path = temp_dir.path().to_path_buf();
+    init_git_repo(&repo_path)?;
+
+    let port = get_random_port().await?;
+    let config = build_test_config(&repo_path, port);
+    let config_clone = config.clone();
+    let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+    wait_for_server(&config, None).await?;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(format!(
+            "http://127.0.0.1:{}/v1/get_signers_chain/nonexistent/file.bin",
+            port
+        ))
+        .send()
+        .await?;
+
+    assert_ne!(
+        response.status(),
+        200,
+        "Should fail for nonexistent artifact"
+    );
+
+    server_handle.abort();
+    Ok(())
+}
+
+/// Test get_signers_chain returns an error for an artifact that exists but was never signed.
+#[tokio::test]
+async fn test_get_signers_chain_unsigned_artifact() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let repo_path = temp_dir.path().to_path_buf();
+    init_git_repo(&repo_path)?;
+
+    // Create an artifact file but don't sign it
+    let artifact_rel = "releases/unsigned.bin";
+    let artifact_abs = repo_path.join(artifact_rel);
+    fs::create_dir_all(artifact_abs.parent().unwrap())?;
+    fs::write(&artifact_abs, "unsigned content")?;
+
+    let port = get_random_port().await?;
+    let config = build_test_config(&repo_path, port);
+    let config_clone = config.clone();
+    let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+    wait_for_server(&config, None).await?;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(format!(
+            "http://127.0.0.1:{}/v1/get_signers_chain/{}",
+            port, artifact_rel
+        ))
+        .send()
+        .await?;
+
+    assert_ne!(response.status(), 200, "Should fail for unsigned artifact");
+
+    server_handle.abort();
+    Ok(())
+}
+
+/// Test get_signers_chain blocks path traversal attempts.
+#[tokio::test]
+async fn test_get_signers_chain_path_traversal() -> Result<()> {
+    let temp_dir = TempDir::new()?;
+    let repo_path = temp_dir.path().to_path_buf();
+    init_git_repo(&repo_path)?;
+
+    let port = get_random_port().await?;
+    let config = build_test_config(&repo_path, port);
+    let config_clone = config.clone();
+    let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+    wait_for_server(&config, None).await?;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(format!(
+            "http://127.0.0.1:{}/v1/get_signers_chain/../../../etc/passwd",
+            port
+        ))
+        .send()
+        .await?;
+
+    assert_ne!(response.status(), 200, "Path traversal should be blocked");
+
+    server_handle.abort();
+    Ok(())
+}
