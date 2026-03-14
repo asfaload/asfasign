@@ -1049,13 +1049,10 @@ async fn register_checksums(
 pub async fn get_signers_chain_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    axum::extract::Path(artifact_path): axum::extract::Path<String>,
+    axum::extract::Path(artifact_path_in): axum::extract::Path<String>,
 ) -> Result<Json<GetSignersChainResponse>, ApiError> {
     use common::fs::names::{
         history_file_path_for, local_signers_path_for, metadata_path_for, signatures_path_for,
-    };
-    use rest_api_types::git_backend::{
-        GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend,
     };
 
     let request_id = headers
@@ -1065,13 +1062,25 @@ pub async fn get_signers_chain_handler(
 
     tracing::info!(
         request_id = %request_id,
-        artifact_path = %artifact_path,
+        artifact_path = %artifact_path_in,
         "Received get_signers_chain request"
     );
 
-    // Derive the local signers copy path from the artifact path
-    let local_signers_relative = local_signers_path_for(std::path::Path::new(&artifact_path))
+    let artifact_path = NormalisedPaths::new(&state.git_repo_path, &artifact_path_in)
+        .await
         .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                artifact_path = %artifact_path_in,
+                error = %e,
+                "Invalid artifact path"
+            );
+            ApiError::InvalidFilePath(format!("Invalid artifact path: {}", e))
+        })?;
+
+    // Derive the local signers copy path from the artifact path
+    let local_signers_relative =
+        local_signers_path_for(artifact_path.relative_path()).map_err(|e| {
             tracing::error!(
                 request_id = %request_id,
                 artifact_path = %artifact_path,
@@ -1101,7 +1110,16 @@ pub async fn get_signers_chain_handler(
         move || backend.artifact_signers_source(local_signers)
     })
     .await
-    .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
+    .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))?
+    .map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            artifact_path = %artifact_path,
+            error = %e,
+            "Could not identify artifact signers source"
+        );
+        ApiError::InvalidFilePath(format!("Could not identify artifact signers source: {}", e))
+    })?;
 
     let commit = source.commit().to_string();
     let commit_time = source.commit_time();
@@ -1116,11 +1134,10 @@ pub async fn get_signers_chain_handler(
 
     // Build relative paths for files to read at the commit
     let history_rel = history_file_path_for(signers_dir);
-    let signers_file_rel = source_signers_file.to_path_buf();
-    let signatures_rel = signatures_path_for(&signers_file_rel).map_err(|e| {
+    let signatures_rel = signatures_path_for(&source_signers_file).map_err(|e| {
         tracing::error!(
             request_id = %request_id,
-            signers_file = %signers_file_rel.display(),
+            signers_file = %source_signers_file.display(),
             error = %e,
             "Cannot derive signatures path"
         );
@@ -1134,13 +1151,12 @@ pub async fn get_signers_chain_handler(
         tokio::task::spawn_blocking({
             let commit = commit.clone();
             let history_rel = history_rel.clone();
-            let signers_file_rel = signers_file_rel.clone();
             let signatures_rel = signatures_rel.clone();
             let metadata_rel = metadata_rel.clone();
             move || -> Result<(Result<String, ApiError>, String, String, String), ApiError> {
                 // History file may not exist if no rotations happened
                 let history = backend.file_content_at_commit(&commit, &history_rel);
-                let signers = backend.file_content_at_commit(&commit, &signers_file_rel)?;
+                let signers = backend.file_content_at_commit(&commit, &source_signers_file)?;
                 let sigs = backend.file_content_at_commit(&commit, &signatures_rel)?;
                 let meta = backend.file_content_at_commit(&commit, &metadata_rel)?;
                 Ok((history, signers, sigs, meta))
@@ -1168,7 +1184,9 @@ pub async fn get_signers_chain_handler(
 
     // Build the filtered chain
     let chain = signers_file::signers_chain_for_artifact(
+        // Data from the history file on disk
         &history,
+        // The artifact's signers copy which is not included in the history.
         &active_signers_json,
         &active_signatures,
         &active_metadata,
