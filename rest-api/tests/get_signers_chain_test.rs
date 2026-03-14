@@ -11,15 +11,13 @@ use rest_api_auth::{
     AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP,
 };
 use rest_api_test_helpers::{
-    build_test_config, get_random_port, init_git_repo, wait_for_commit, wait_for_server,
+    build_test_config, get_random_port, git_commit, init_git_repo, wait_for_commit, wait_for_server,
 };
 use rest_api_types::{GetSignersChainResponse, SubmitSignatureResponse};
 use signers_file_types::{
     Forge, ForgeOrigin, HistoryEntry, HistoryFile, SignersConfig, SignersConfigMetadata,
 };
 use std::fs;
-use std::path::Path;
-use std::process::Command;
 use tempfile::TempDir;
 use tokio::task::JoinHandle;
 
@@ -34,21 +32,6 @@ impl Drop for TestSetup {
     fn drop(&mut self) {
         self.server_handle.abort();
     }
-}
-
-/// Helper to stage paths and commit in a test git repo.
-fn git_commit(repo_path: &Path, paths: &[&str], message: &str) -> Result<()> {
-    for path in paths {
-        let output = Command::new("git")
-            .args(["-C", &repo_path.to_string_lossy(), "add", path])
-            .output()?;
-        anyhow::ensure!(output.status.success(), "git add failed: {:?}", output);
-    }
-    let output = Command::new("git")
-        .args(["-C", &repo_path.to_string_lossy(), "commit", "-m", message])
-        .output()?;
-    anyhow::ensure!(output.status.success(), "git commit failed: {:?}", output);
-    Ok(())
 }
 
 /// Sets up a git repo with signers config+metadata, creates an artifact,
