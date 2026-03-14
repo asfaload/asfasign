@@ -1,8 +1,9 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use kameo::actor::{ActorRef, Spawn};
 
-use rest_api_types::git_backend::GitBackendKind;
+use rest_api_types::git_backend::{GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend};
 
 use crate::{
     actors::{
@@ -20,7 +21,7 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     pub git_repo_path: PathBuf,
-    pub git_backend_kind: GitBackendKind,
+    pub git_backend: Arc<dyn GitBackend>,
     pub git_actor: ActorRef<GitActor>,
     pub nonce_cache_actor: ActorRef<NonceCacheActor>,
     pub nonce_cleanup_actor: ActorRef<NonceCleanupActor>,
@@ -63,9 +64,14 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
     let release_actor = ReleaseActor::spawn((git_actor.clone(), config.clone()));
     let checksums_actor = ChecksumsActor::spawn((git_actor.clone(), config));
 
+    let git_backend_arc: Arc<dyn GitBackend> = match git_backend {
+        GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(&git_repo_path)),
+        GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(&git_repo_path)),
+    };
+
     AppState {
         git_repo_path,
-        git_backend_kind: git_backend,
+        git_backend: git_backend_arc,
         git_actor,
         nonce_cache_actor,
         nonce_cleanup_actor,

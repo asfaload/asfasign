@@ -1094,19 +1094,11 @@ pub async fn get_signers_chain_handler(
         })?;
 
     // Trace back to the original signers file source
-    let git_repo_path = state.git_repo_path.clone();
-    let git_backend_kind = state.git_backend_kind;
+    let backend = state.git_backend.clone();
 
     let source = tokio::task::spawn_blocking({
         let local_signers = local_signers.clone();
-        let git_repo_path = git_repo_path.clone();
-        move || {
-            let backend: Box<dyn GitBackend> = match git_backend_kind {
-                GitBackendKind::Sha1 => Box::new(Sha1GitBackend::new(&git_repo_path)),
-                GitBackendKind::Sha256 => Box::new(Sha256GitBackend::new(&git_repo_path)),
-            };
-            backend.artifact_signers_source(local_signers)
-        }
+        move || backend.artifact_signers_source(local_signers)
     })
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
@@ -1137,6 +1129,7 @@ pub async fn get_signers_chain_handler(
     let metadata_rel = metadata_path_for(signers_dir);
 
     // Read all needed files from git history
+    let backend = state.git_backend.clone();
     let (history_result, active_signers_json, active_signatures_json, active_metadata_json) =
         tokio::task::spawn_blocking({
             let commit = commit.clone();
@@ -1144,12 +1137,7 @@ pub async fn get_signers_chain_handler(
             let signers_file_rel = signers_file_rel.clone();
             let signatures_rel = signatures_rel.clone();
             let metadata_rel = metadata_rel.clone();
-            let git_repo_path = git_repo_path.clone();
             move || -> Result<(Result<String, ApiError>, String, String, String), ApiError> {
-                let backend: Box<dyn GitBackend> = match git_backend_kind {
-                    GitBackendKind::Sha1 => Box::new(Sha1GitBackend::new(&git_repo_path)),
-                    GitBackendKind::Sha256 => Box::new(Sha256GitBackend::new(&git_repo_path)),
-                };
                 // History file may not exist if no rotations happened
                 let history = backend.file_content_at_commit(&commit, &history_rel);
                 let signers = backend.file_content_at_commit(&commit, &signers_file_rel)?;
