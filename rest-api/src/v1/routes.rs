@@ -40,7 +40,7 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
             get(get_signature_status_handler),
         );
     let files_router = Router::new().route("/files/{*file_path}", get(get_file_handler));
-    let signers_router = Router::new().route("/get-signers/{*file_path}", get(get_signers_handler));
+    let signers_router = Router::new().route("/get_signers/{*file_path}", get(get_signers_handler));
     let signers_chain_router = Router::new().route(
         "/get_signers_chain/{*artifact_path}",
         get(get_signers_chain_handler),
