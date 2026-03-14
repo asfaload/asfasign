@@ -1051,8 +1051,9 @@ pub async fn get_signers_chain_handler(
     headers: HeaderMap,
     axum::extract::Path(artifact_path): axum::extract::Path<String>,
 ) -> Result<Json<GetSignersChainResponse>, ApiError> {
-    use common::fs::names::{local_signers_path_for, signatures_path_for};
-    use constants::{METADATA_FILE, SIGNERS_HISTORY_FILE};
+    use common::fs::names::{
+        history_file_path_for, local_signers_path_for, metadata_path_for, signatures_path_for,
+    };
     use rest_api_types::git_backend::{
         GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend,
     };
@@ -1120,10 +1121,9 @@ pub async fn get_signers_chain_handler(
     let signers_dir = source_signers_file.parent().ok_or_else(|| {
         ApiError::InternalServerError("Signers file has no parent directory".to_string())
     })?;
-    let signers_root = signers_dir.parent().unwrap_or(std::path::Path::new(""));
 
     // Build relative paths for files to read at the commit
-    let history_rel = signers_root.join(SIGNERS_HISTORY_FILE);
+    let history_rel = history_file_path_for(signers_dir);
     let signers_file_rel = source_signers_file.to_path_buf();
     let signatures_rel = signatures_path_for(&signers_file_rel).map_err(|e| {
         tracing::error!(
@@ -1134,7 +1134,7 @@ pub async fn get_signers_chain_handler(
         );
         ApiError::InternalServerError(format!("Cannot derive signatures path: {}", e))
     })?;
-    let metadata_rel = signers_dir.join(METADATA_FILE);
+    let metadata_rel = metadata_path_for(signers_dir);
 
     // Read all needed files from git history
     let (history_result, active_signers_json, active_signatures_json, active_metadata_json) =
