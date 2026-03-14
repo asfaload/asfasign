@@ -115,6 +115,15 @@ pub fn build_test_config(git_repo_path: &Path, server_port: u16) -> rest_api::co
     }
 }
 
+/// Stage the given paths and create a commit in a test git repo.
+pub fn git_commit(repo_path: &Path, paths: &[&str], message: &str) -> Result<(), ApiError> {
+    for path in paths {
+        run_git(repo_path, &["add", path])?;
+    }
+    run_git(repo_path, &["commit", "-m", message])?;
+    Ok(())
+}
+
 fn run_git(repo_path: &Path, args: &[&str]) -> Result<String, ApiError> {
     let output = Command::new("git")
         .args(["-C", &repo_path.to_string_lossy()])

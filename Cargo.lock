@@ -3774,6 +3774,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "chrono",
  "common",
  "config",
  "git2",
@@ -3784,6 +3785,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "signers_file_types",
  "sled",
  "tempfile",
  "thiserror 2.0.18",

@@ -374,6 +374,15 @@ pub mod models {
         pub message: String,
         pub index_file_path: Option<String>,
     }
+
+    /// Response for the get_signers_chain endpoint.
+    ///
+    /// Contains the signers history chain applicable to a signed artifact,
+    /// filtered to entries up to and including the active config at signing time.
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct GetSignersChainResponse {
+        pub history: signers_file_types::HistoryFile,
+    }
 }
 
 pub mod github_helpers {
@@ -436,9 +445,9 @@ pub mod rustls {
 
 // Re-export commonly used types at the module level
 pub use models::{
-    GetSignatureStatusResponse, ListPendingResponse, RegisterAssetsRequest, RegisterAssetsResponse,
-    RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
-    SubmitSignatureRequest, SubmitSignatureResponse,
+    GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
+    RegisterAssetsRequest, RegisterAssetsResponse, RegisterRepoRequest, RegisterRepoResponse,
+    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 
 // ********************

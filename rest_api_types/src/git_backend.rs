@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
+
 use crate::errors::ApiError;
 use git2::{Repository, Signature};
 
@@ -10,6 +12,8 @@ use crate::path_validation::NormalisedPaths;
 pub struct ArtifactSignersSource {
     // The commit that committed the copy at artifact_signers
     commit: String,
+    // The timestamp of the commit that introduced the copy
+    commit_time: DateTime<Utc>,
     // The signers file path the artifact_signers file was copied from
     path: NormalisedPaths,
     // copy of signers file taken when artifact signature completed
@@ -19,6 +23,10 @@ pub struct ArtifactSignersSource {
 impl ArtifactSignersSource {
     pub fn commit(&self) -> &str {
         &self.commit
+    }
+
+    pub fn commit_time(&self) -> DateTime<Utc> {
+        self.commit_time
     }
 
     pub fn path(&self) -> &NormalisedPaths {
@@ -50,6 +58,26 @@ pub trait GitBackend: Send + Sync + 'static {
         Self: Sized;
     fn root(&self) -> &PathBuf;
 
+    /// Read file content at a specific git commit.
+    ///
+    /// Uses `git show {commit}:{path}` to retrieve file content from history.
+    fn file_content_at_commit(
+        &self,
+        commit: &str,
+        relative_path: &Path,
+    ) -> Result<String, ApiError> {
+        let spec = format!("{}:{}", commit, relative_path.to_string_lossy());
+        let content = GitCommand::git(self.root(), &["show", &spec]).map_err(|e| {
+            ApiError::GitError(format!(
+                "Failed to read {} at commit {}: {}",
+                relative_path.display(),
+                commit,
+                e
+            ))
+        })?;
+        Ok(content)
+    }
+
     // When an artifact signature is completed, a copy of the signers file is
     // stored alongside it. This method traces back to the original source of
     // that signers file using git copy detection.
@@ -75,6 +103,15 @@ pub trait GitBackend: Send + Sync + 'static {
                 signers.relative_path().display()
             )));
         }
+
+        let commit_time_str =
+            GitCommand::git(self.root(), &["log", "--format=%cI", "-1", &first_commit])?;
+        let commit_time: DateTime<Utc> = commit_time_str.parse().map_err(|e| {
+            ApiError::GitError(format!(
+                "Failed to parse commit time '{}': {}",
+                commit_time_str, e
+            ))
+        })?;
 
         let git_output = GitCommand::git(
             self.root(),
@@ -107,6 +144,7 @@ pub trait GitBackend: Send + Sync + 'static {
 
         let res = ArtifactSignersSource {
             commit: first_commit,
+            commit_time,
             path: source_path,
             artifact_signers: signers,
         };
@@ -763,6 +801,87 @@ mod tests {
         let result = backend.artifact_signers_source(signers_path).unwrap();
 
         assert_eq!(result.commit(), expected_commit);
+    }
+
+    #[test]
+    fn test_artifact_signers_source_has_commit_time() {
+        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
+            "signers.json",
+            r#"{"signers": ["alice"]}"#,
+            "artifacts/my_artifact.signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        let signers_path = normalise_for_repo(repo_path, &dest);
+        let result = backend.artifact_signers_source(signers_path).unwrap();
+
+        // commit_time should be a valid recent timestamp
+        let commit_time = result.commit_time();
+        let now = chrono::Utc::now();
+        assert!(
+            commit_time <= now,
+            "Commit time should not be in the future"
+        );
+        assert!(
+            (now - commit_time).num_seconds() < 60,
+            "Commit time should be recent (within 60s)"
+        );
+    }
+
+    #[test]
+    fn test_file_content_at_commit() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        let file_path = repo_path.join("data.json");
+        std::fs::write(&file_path, r#"{"version": 1}"#).unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &file_path)],
+                "add data.json",
+            )
+            .unwrap();
+
+        let first_commit = GitCommand::git(repo_path, &["log", "--format=%H", "-1"]).unwrap();
+
+        std::fs::write(&file_path, r#"{"version": 2}"#).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &file_path)],
+                "update data.json",
+            )
+            .unwrap();
+
+        let content = backend
+            .file_content_at_commit(&first_commit, Path::new("data.json"))
+            .unwrap();
+        assert_eq!(content, r#"{"version": 1}"#);
+
+        let current = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(current, r#"{"version": 2}"#);
+    }
+
+    #[test]
+    fn test_file_content_at_commit_file_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        let file_path = repo_path.join("exists.txt");
+        std::fs::write(&file_path, "content").unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        backend
+            .commit_files(&[normalise_for_repo(repo_path, &file_path)], "add file")
+            .unwrap();
+
+        let commit = GitCommand::git(repo_path, &["log", "--format=%H", "-1"]).unwrap();
+
+        let result = backend.file_content_at_commit(&commit, Path::new("nonexistent.txt"));
+        assert!(result.is_err());
     }
 
     #[test]

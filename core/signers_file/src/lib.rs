@@ -472,6 +472,37 @@ pub fn validate_history(history: &HistoryFile) -> bool {
     })
 }
 
+/// Build a HistoryFile representing the signers chain applicable to an artifact.
+///
+/// Filters history entries to those with `obsoleted_at <= cutoff`, then appends
+/// the active signers configuration (the one in effect when the artifact was signed)
+/// as the final entry with `obsoleted_at` set to the cutoff timestamp.
+pub fn signers_chain_for_artifact(
+    history: &HistoryFile,
+    active_signers_content: &str,
+    active_signatures: &SignaturesFile,
+    active_metadata: &SignersConfigMetadata,
+    cutoff: chrono::DateTime<chrono::Utc>,
+) -> Result<HistoryFile, SignersFileError> {
+    let mut chain = HistoryFile::new();
+
+    for entry in history.entries() {
+        if entry.obsoleted_at <= cutoff {
+            chain.add_entry(entry.clone());
+        }
+    }
+
+    // Append the active-at-that-time signers config as the final entry
+    chain.add_entry(HistoryEntry {
+        obsoleted_at: cutoff,
+        signers_file: active_signers_content.to_string(),
+        signatures: active_signatures.clone(),
+        metadata: active_metadata.clone(),
+    });
+
+    Ok(chain)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5157,6 +5188,80 @@ mod tests {
         // Verify round-trip: re-serialize and compare
         assert_eq!(actual, expected);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_signers_chain_for_artifact_filters_by_cutoff() -> Result<()> {
+        let test_keys = TestKeys::new(2);
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_json = signers_config.to_json()?;
+
+        let t1: DateTime<Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
+        let t2: DateTime<Utc> = "2024-06-01T00:00:00Z".parse().unwrap();
+        let t3: DateTime<Utc> = "2025-01-01T00:00:00Z".parse().unwrap();
+        let cutoff: DateTime<Utc> = "2024-08-01T00:00:00Z".parse().unwrap();
+
+        let mut history = HistoryFile::new();
+        history.add_entry(HistoryEntry {
+            obsoleted_at: t1,
+            signers_file: signers_json.clone(),
+            signatures: SignaturesFile::new(),
+            metadata: test_metadata(),
+        });
+        history.add_entry(HistoryEntry {
+            obsoleted_at: t2,
+            signers_file: signers_json.clone(),
+            signatures: SignaturesFile::new(),
+            metadata: test_metadata(),
+        });
+        history.add_entry(HistoryEntry {
+            obsoleted_at: t3,
+            signers_file: signers_json.clone(),
+            signatures: SignaturesFile::new(),
+            metadata: test_metadata(),
+        });
+
+        let active_signers = signers_json.clone();
+        let active_signatures = SignaturesFile::new();
+        let active_metadata = test_metadata();
+
+        let chain = signers_chain_for_artifact(
+            &history,
+            &active_signers,
+            &active_signatures,
+            &active_metadata,
+            cutoff,
+        )?;
+
+        // Should include entries at t1 and t2 (both <= cutoff), plus the appended active entry
+        assert_eq!(chain.entries().len(), 3);
+        assert_eq!(chain.entries()[0].obsoleted_at, t1);
+        assert_eq!(chain.entries()[1].obsoleted_at, t2);
+        assert_eq!(chain.entries()[2].obsoleted_at, cutoff);
+        Ok(())
+    }
+
+    #[test]
+    fn test_signers_chain_for_artifact_empty_history() -> Result<()> {
+        let test_keys = TestKeys::new(2);
+        let signers_config = create_test_signers_config(&test_keys);
+        let signers_json = signers_config.to_json()?;
+        let cutoff: DateTime<Utc> = "2024-08-01T00:00:00Z".parse().unwrap();
+
+        let history = HistoryFile::new();
+
+        let chain = signers_chain_for_artifact(
+            &history,
+            &signers_json,
+            &SignaturesFile::new(),
+            &test_metadata(),
+            cutoff,
+        )?;
+
+        // Only the appended active entry
+        assert_eq!(chain.entries().len(), 1);
+        assert_eq!(chain.entries()[0].obsoleted_at, cutoff);
         Ok(())
     }
 }

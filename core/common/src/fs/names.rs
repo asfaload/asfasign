@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use constants::{
-    PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX, REVOCATION_SUFFIX,
-    REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_SUFFIX,
+    METADATA_FILE, PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX,
+    REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE,
+    SIGNERS_HISTORY_FILE, SIGNERS_SUFFIX,
 };
 
 /// Find the active signers file by traversing parent directories
@@ -150,6 +151,18 @@ pub fn subject_path_from_pending_signatures<P: AsRef<Path>>(
 // procedure for the file at path_in.
 pub fn local_signers_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     file_path_with_suffix(path_in, SIGNERS_SUFFIX)
+}
+
+/// Get the history file path for a signers directory.
+/// The history file lives in the parent of the signers directory.
+pub fn history_file_path_for<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
+    let parent = signers_dir.as_ref().parent().unwrap_or(Path::new(""));
+    parent.join(SIGNERS_HISTORY_FILE)
+}
+
+/// Get the metadata file path inside a signers directory.
+pub fn metadata_path_for<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
+    signers_dir.as_ref().join(METADATA_FILE)
 }
 
 pub fn revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
