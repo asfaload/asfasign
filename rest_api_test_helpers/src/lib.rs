@@ -639,20 +639,21 @@ impl TestSetupBuilder {
         let signers_config =
             SignersConfig::with_artifact_signers_only(1, (pub_keys, self.threshold as u32))?;
         let signers_dir = repo_path.join(SIGNERS_DIR);
-        fs::create_dir_all(&signers_dir)?;
-        fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?)?;
+        tokio::fs::create_dir_all(&signers_dir).await?;
+        tokio::fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?).await?;
 
         // Create metadata file
         let metadata = test_helpers::test_metadata();
-        fs::write(
+        tokio::fs::write(
             signers_dir.join(METADATA_FILE),
             serde_json::to_string_pretty(&metadata)?,
-        )?;
+        )
+        .await?;
 
         // Create a signatures file for the signers config (sign with first key)
         let first_pub_key = test_keys.pub_key(0).unwrap();
         let first_sec_key = test_keys.sec_key(0).unwrap();
-        let signers_file_content = fs::read(signers_dir.join(SIGNERS_FILE))?;
+        let signers_file_content = tokio::fs::read(signers_dir.join(SIGNERS_FILE)).await?;
         let signers_hash = sha512_for_content(signers_file_content)?;
         let signers_sig = first_sec_key.sign(&signers_hash)?;
         let mut signers_signatures = SignaturesFile::new();
@@ -665,10 +666,11 @@ impl TestSetupBuilder {
         );
         let signers_file_path = signers_dir.join(SIGNERS_FILE);
         let signers_sig_path = signatures_path_for(&signers_file_path)?;
-        fs::write(
+        tokio::fs::write(
             &signers_sig_path,
             serde_json::to_string(&signers_signatures)?,
-        )?;
+        )
+        .await?;
 
         // Write history file if provided
         if let Some(ref history) = self.history {
@@ -687,15 +689,16 @@ impl TestSetupBuilder {
 
         // Create artifact file
         let artifact_abs = repo_path.join(&self.artifact_path);
-        fs::create_dir_all(artifact_abs.parent().unwrap())?;
-        fs::write(&artifact_abs, &self.artifact_content)?;
+        tokio::fs::create_dir_all(artifact_abs.parent().unwrap()).await?;
+        tokio::fs::write(&artifact_abs, &self.artifact_content).await?;
 
         // Create empty pending signatures file
         let pending_sig_path = pending_signatures_path_for(&artifact_abs)?;
-        fs::write(
+        tokio::fs::write(
             &pending_sig_path,
             serde_json::to_string(&SignaturesFile::new())?,
-        )?;
+        )
+        .await?;
 
         // Start server
         let port = get_random_port().await?;
