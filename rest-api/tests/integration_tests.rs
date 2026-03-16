@@ -3,7 +3,6 @@ pub mod tests {
 
     use anyhow::Result;
     use axum::http::StatusCode;
-    use constants::SIGNERS_DIR;
     use constants::SIGNERS_FILE;
     use constants::SIGNERS_HISTORY_FILE;
     use rest_api::file_auth::actors::forge_signers_validator::SignersInfo;
@@ -539,47 +538,28 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_get_signature_status() -> Result<(), anyhow::Error> {
+        use rest_api_test_helpers::TestSetupBuilder;
         use rest_api_types::GetSignatureStatusResponse;
 
-        let temp_dir = TempDir::new()?;
-        let git_repo_path = temp_dir.path().join("git_repo");
+        let setup = TestSetupBuilder::new()
+            .with_artifact("data.txt")
+            .with_artifact_content(b"test data".to_vec())
+            .build()
+            .await?;
 
-        init_git_repo(&git_repo_path)?;
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!(
+                "http://127.0.0.1:{}/v1/signatures/{}",
+                setup.port(),
+                setup.artifact_path()
+            ))
+            .send()
+            .await?;
 
-        // Create signers config
-        let test_keys = test_helpers::TestKeys::new(1);
-        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
-            1,
-            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
-        )?;
+        assert_eq!(response.status(), StatusCode::OK);
 
-        let signers_json = serde_json::to_string_pretty(&signers_config)?;
-
-        // Create artifact file (without signatures)
-        let signers_dir = git_repo_path.join(SIGNERS_DIR);
-        tokio::fs::create_dir_all(&signers_dir).await?;
-        tokio::fs::write(signers_dir.join(SIGNERS_FILE), &signers_json).await?;
-
-        let artifact_file = git_repo_path.join("data.txt");
-        tokio::fs::write(&artifact_file, "test data").await?;
-
-        let port = get_random_port().await?;
-        let config = build_test_config(&git_repo_path, port);
-        let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
-
-        let inner = axum::Router::new().route(
-            "/signatures/{*file_path}",
-            axum::routing::get(rest_api::handlers::get_signature_status_handler),
-        );
-        let app = axum::Router::new().nest("/v1", inner).with_state(app_state);
-
-        let server = axum_test::TestServer::new(app)?;
-
-        let response = server.get("/v1/signatures/data.txt").await;
-
-        response.assert_status_ok();
-
-        let status_body = response.json::<GetSignatureStatusResponse>();
+        let status_body: GetSignatureStatusResponse = response.json().await?;
 
         assert_eq!(status_body.file_path, "data.txt");
         assert!(!status_body.is_complete);
@@ -592,8 +572,6 @@ pub mod tests {
 pub mod test_utils_tests {
 
     use axum::http::StatusCode;
-    use constants::SIGNERS_DIR;
-    use constants::SIGNERS_FILE;
     use rest_api::server::run_server;
     use rest_api_auth::{HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP};
     use rest_api_test_helpers::setup_file_logging;
@@ -1119,7 +1097,7 @@ pub mod test_utils_tests {
     #[tokio::test]
     async fn test_submit_signature_file_not_found() -> Result<(), anyhow::Error> {
         use features_lib::AsfaloadPublicKeyTrait;
-        use rest_api_types::SubmitSignatureRequest;
+        use rest_api_test_helpers::create_auth_headers;
 
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
@@ -1131,28 +1109,32 @@ pub mod test_utils_tests {
 
         let port = get_random_port().await?;
         let config = build_test_config(&git_repo_path, port);
-        let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        rest_api_test_helpers::wait_for_server(&config, None).await?;
 
-        let inner = axum::Router::new().route(
-            "/signatures",
-            axum::routing::post(rest_api::handlers::submit_signature_handler),
-        );
-        let app = axum::Router::new().nest("/v1", inner).with_state(app_state);
+        let payload = json!({
+            "file_path": "nonexistent.txt",
+            "public_key": public_key.to_base64(),
+            "signature": "invalid_signature",
+        });
+        let payload_string = payload.to_string();
+        let auth = create_auth_headers(&payload_string).await;
 
-        let server = axum_test::TestServer::new(app)?;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(url_for("signatures", port))
+            .header(HEADER_TIMESTAMP, &auth.timestamp)
+            .header(HEADER_NONCE, &auth.nonce)
+            .header(HEADER_SIGNATURE, &auth.signature)
+            .header(HEADER_PUBLIC_KEY, &auth.public_key)
+            .json(&payload)
+            .send()
+            .await?;
 
-        let response = server
-            .post("/v1/signatures")
-            .json(&SubmitSignatureRequest {
-                file_path: "nonexistent.txt".to_string(),
-                public_key: public_key.to_base64(),
-                signature: "invalid_signature".to_string(),
-            })
-            .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
-        response.assert_status(axum::http::StatusCode::BAD_REQUEST);
-
-        let body: serde_json::Value = response.json();
+        let body: serde_json::Value = response.json().await?;
 
         assert!(body.get("error").is_some());
         assert!(
@@ -1162,6 +1144,7 @@ pub mod test_utils_tests {
                 .contains("File not found")
         );
 
+        server_handle.abort();
         Ok(())
     }
 
@@ -1171,82 +1154,19 @@ pub mod test_utils_tests {
             AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
             sha512_for_content, sha512_for_file,
         };
-        use rest_api_types::{
-            RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
-        };
+        use rest_api_test_helpers::{TestSetupBuilder, send_authenticated_request_with_key};
+        use rest_api_types::RevokeFileResponse;
 
-        let temp_dir = TempDir::new()?;
-        let git_repo_path = temp_dir.path().join("git_repo");
+        let setup = TestSetupBuilder::new()
+            .with_artifact("releases/release.txt")
+            .build_and_sign()
+            .await?;
 
-        init_git_repo(&git_repo_path)?;
-
-        // Create signers config
-        let test_keys = test_helpers::TestKeys::new(1);
-        let public_key = test_keys.pub_key(0).unwrap();
-
-        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
-            1,
-            (vec![public_key.clone()], 1),
-        )?;
-
-        let signers_json = serde_json::to_string_pretty(&signers_config)?;
-
-        // Create signers directory and file
-        let signers_dir = git_repo_path.join(SIGNERS_DIR);
-        tokio::fs::create_dir_all(&signers_dir).await?;
-        tokio::fs::write(signers_dir.join(SIGNERS_FILE), &signers_json).await?;
-
-        // Create artifact file
-        let artifact_file = git_repo_path.join("releases/release.txt");
-        tokio::fs::create_dir_all(artifact_file.parent().unwrap()).await?;
-        tokio::fs::write(&artifact_file, "artifact content").await?;
-
-        // Sign the artifact
-        let digest = sha512_for_file(&artifact_file)?;
-        let secret_key = test_keys.sec_key(0).unwrap();
-        let signature = secret_key.sign(&digest)?;
-
-        let port = get_random_port().await?;
-        let config = build_test_config(&git_repo_path, port);
-        let app_state = rest_api::state::init_state(git_repo_path.clone(), config);
-
-        let inner = axum::Router::new()
-            .route(
-                "/signatures",
-                axum::routing::post(rest_api::handlers::submit_signature_handler),
-            )
-            .route(
-                "/revoke",
-                axum::routing::post(rest_api::handlers::revoke_handler),
-            );
-        let app = axum::Router::new().nest("/v1", inner).with_state(app_state);
-
-        let server = axum_test::TestServer::new(app)?;
-
-        // Step 1: Submit signature to complete signing
-        let sign_response = server
-            .post("/v1/signatures")
-            .json(&SubmitSignatureRequest {
-                file_path: "releases/release.txt".to_string(),
-                public_key: public_key.to_base64(),
-                signature: signature.to_base64(),
-            })
-            .await;
-
-        sign_response.assert_status_ok();
-        let sign_body = sign_response.json::<SubmitSignatureResponse>();
-        assert!(sign_body.is_complete);
-
-        // Wait for the signing commit to be processed
-        wait_for_commit(
-            git_repo_path.clone(),
-            "completed signature collection for releases/release.txt",
-            None,
-        )
-        .await?;
-
-        // Step 2: Build and submit revocation
+        // Build and submit revocation
+        let artifact_file = setup.repo_path().join(setup.artifact_path());
         let subject_digest = sha512_for_file(&artifact_file)?;
+        let public_key = setup.test_keys().pub_key(0).unwrap();
+        let secret_key = setup.test_keys().sec_key(0).unwrap();
 
         let revocation = signers_file_types::revocation::RevocationInfo {
             timestamp: chrono::Utc::now(),
@@ -1258,19 +1178,21 @@ pub mod test_utils_tests {
         let revocation_hash = sha512_for_content(revocation_json.as_bytes().to_vec())?;
         let revoke_signature = secret_key.sign(&revocation_hash)?;
 
-        let revoke_response = server
-            .post("/v1/revoke")
-            .json(&RevokeFileRequest {
-                file_path: "releases/release.txt".to_string(),
-                revocation_json,
-                signature: revoke_signature.to_base64(),
-                public_key: public_key.to_base64(),
-            })
-            .await;
+        let revoke_payload = json!({
+            "file_path": "releases/release.txt",
+            "revocation_json": revocation_json,
+            "signature": revoke_signature.to_base64(),
+            "public_key": public_key.to_base64(),
+        });
 
-        revoke_response.assert_status_ok();
+        let client = reqwest::Client::new();
+        let response =
+            send_authenticated_request_with_key(&client, setup.port(), secret_key, &revoke_payload)
+                .await;
 
-        let revoke_body = revoke_response.json::<RevokeFileResponse>();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let revoke_body: RevokeFileResponse = response.json().await?;
         assert!(revoke_body.success);
         assert_eq!(revoke_body.message, "File revoked successfully");
 
