@@ -1,6 +1,8 @@
 # --- Local file server URL builders ---
 # Provides the same interface as urls.sh but using a local file server.
 # Requires FILE_SERVER_URL to be set (e.g., http://localhost:9090).
+# Requires helpers.sh (which sources urls.sh) to be sourced first, as it
+# sets _SIGNERS_SUFFIX based on KEY_TYPE (empty for minisign, "_ed25519" for ed25519).
 
 _FS_PROJECT="e2e_project"
 
