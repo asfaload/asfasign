@@ -18,6 +18,7 @@ members = [
   "core/constants",
   "client-lib",
   "tests/client-server-integration-tests",
+  "tests/test-file-server",
   "file-auth/forge-url",
 ]
 exclude = ["rest_api_auth", "client_cli"]
