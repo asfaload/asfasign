@@ -406,6 +406,15 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
             .any(|s| s.data.pubkey.to_base64() == current_key_base64),
         "Active entry should still contain key 1 (not the post-rotation key 2)"
     );
+    let new_key_base64 = new_public_key.to_base64();
+    assert!(
+        !active_config_after
+            .artifact_signers()
+            .iter()
+            .flat_map(|g| g.signers.iter())
+            .any(|s| s.data.pubkey.to_base64() == new_key_base64),
+        "Post-rotation key 2 should NOT appear in the chain"
+    );
 
     // Also verify the serialized chain is byte-identical before and after rotation
     assert_eq!(
