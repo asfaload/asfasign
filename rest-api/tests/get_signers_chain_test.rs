@@ -279,9 +279,11 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
     let repo_path = setup.repo_path();
     let signers_dir = repo_path.join(SIGNERS_DIR);
 
-    // Create a new signers config with ONLY key 2 (clearly different from pre-rotation)
-    let new_public_key = setup.test_keys().pub_key(2).unwrap();
-    let new_secret_key = setup.test_keys().sec_key(2).unwrap();
+    // Use a separate key (not part of the builder's config) for post-rotation,
+    // so we can assert it does NOT appear in the signing-time chain.
+    let rotation_keys = test_helpers::TestKeys::new_from(3, 1);
+    let new_public_key = rotation_keys.pub_key(0).unwrap();
+    let new_secret_key = rotation_keys.sec_key(0).unwrap();
     let new_signers_config =
         SignersConfig::with_artifact_signers_only(1, (vec![new_public_key.clone()], 1))?;
 
