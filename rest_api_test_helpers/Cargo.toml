@@ -18,9 +18,12 @@ test_helpers = { path = "../core/test_helpers/" }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tracing = "0.1.44"
+tempfile = "3"
+constants = { path = "../core/constants/" }
+common = { path = "../core/common/" }
+signers_file_types = { path = "../core/signers_file_types/" }
 
 [dev-dependencies]
-tempfile = "3"
 
 [lints]
 workspace = true
