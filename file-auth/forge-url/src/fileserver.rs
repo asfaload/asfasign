@@ -15,13 +15,7 @@ pub struct FileServerRepoInfo {
 
 impl ForgeTrait for FileServerRepoInfo {
     fn new(url: &Url) -> Result<Self, ForgeUrlError> {
-        let host = {
-            let h = url.host_str().unwrap_or("").to_string();
-            match url.port() {
-                Some(port) => format!("{}:{}", h, port),
-                None => h,
-            }
-        };
+        let host = url.host_str().unwrap_or("").to_string();
 
         if host.is_empty() {
             return Err(ForgeUrlError::InvalidFormat(
@@ -108,8 +102,8 @@ mod tests {
     fn test_basic_url() {
         let url = Url::parse("http://localhost:8080/myproject/signers.json").unwrap();
         let info = FileServerRepoInfo::new(&url).unwrap();
-        assert_eq!(info.project_id(), "localhost:8080/myproject");
-        assert_eq!(info.owner(), "localhost:8080");
+        assert_eq!(info.project_id(), "localhost/myproject");
+        assert_eq!(info.owner(), "localhost");
         assert_eq!(info.repo(), "myproject");
         assert_eq!(info.branch(), "");
         assert_eq!(info.file_path(), Path::new("myproject/signers.json"));
@@ -121,7 +115,7 @@ mod tests {
         let url =
             Url::parse("http://localhost:8080/myproject/.asfaload_signers/signers1.json").unwrap();
         let info = FileServerRepoInfo::new(&url).unwrap();
-        assert_eq!(info.project_id(), "localhost:8080/myproject");
+        assert_eq!(info.project_id(), "localhost/myproject");
     }
 
     #[test]
@@ -142,8 +136,8 @@ mod tests {
     fn test_root_file() {
         let url = Url::parse("http://localhost:8080/signers.json").unwrap();
         let info = FileServerRepoInfo::new(&url).unwrap();
-        assert_eq!(info.project_id(), "localhost:8080");
-        assert_eq!(info.owner(), "localhost:8080");
+        assert_eq!(info.project_id(), "localhost");
+        assert_eq!(info.owner(), "localhost");
         assert_eq!(info.repo(), "");
         assert_eq!(info.file_path(), Path::new("signers.json"));
     }
@@ -159,6 +153,6 @@ mod tests {
     fn test_only_asfaload_signers_parent() {
         let url = Url::parse("http://localhost:8080/.asfaload_signers/signers.json").unwrap();
         let info = FileServerRepoInfo::new(&url).unwrap();
-        assert_eq!(info.project_id(), "localhost:8080");
+        assert_eq!(info.project_id(), "localhost");
     }
 }
