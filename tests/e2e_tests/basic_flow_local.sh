@@ -122,7 +122,7 @@ if [[ -n $debug ]]; then
 fi
 
 # --- Set backend assertion overrides ---
-export PROJECT_DIR_OVERRIDE="localhost:${FILE_SERVER_PORT}/e2e_project"
+export PROJECT_DIR_OVERRIDE="localhost/e2e_project"
 export RELEASE_DIR_TEMPLATE="releases/v%s"
 
 # --- Detect or start backend ---

@@ -28,7 +28,9 @@ artifact_url() {
     echo "${FILE_SERVER_URL}/${_FS_PROJECT}/releases/v${version}/artifact.bin"
 }
 
-# Helper: extract host:port from FILE_SERVER_URL for use in backend paths
+# Helper: extract host from FILE_SERVER_URL for use in backend paths
+# Strips scheme and port to match how forge-url and checksum_file_registrar
+# derive paths (using url.host_str() which excludes the port).
 file_server_host() {
-    echo "$FILE_SERVER_URL" | sed 's|^https\?://||'
+    echo "$FILE_SERVER_URL" | sed 's|^https\?://||; s|:[0-9]*$||'
 }
