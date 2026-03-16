@@ -1,0 +1,67 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "labels": ["dependencies"],
+  "automerge": true,
+  "automergeType": "pr",
+  "platformAutomerge": true,
+  "packageRules": [
+    {
+      "description": "Group all minor and patch Cargo updates",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Cargo minor/patch updates"
+    },
+    {
+      "description": "Group RustCrypto crates together",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": [
+        "/^aes/",
+        "/^block-buffer/",
+        "/^block-padding/",
+        "/^cbc$/",
+        "/^cipher/",
+        "/^const-oid/",
+        "/^crypto-bigint/",
+        "/^crypto-common/",
+        "/^der$/",
+        "/^digest$/",
+        "/^ecdsa/",
+        "/^ed25519/",
+        "/^elliptic-curve/",
+        "/^ff$/",
+        "/^generic-array/",
+        "/^group$/",
+        "/^hkdf/",
+        "/^hmac/",
+        "/^inout/",
+        "/^p256/",
+        "/^p384/",
+        "/^password-hash/",
+        "/^pbkdf2$/",
+        "/^pkcs[0-9]+/",
+        "/^primeorder/",
+        "/^rand/",
+        "/^rfc6979/",
+        "/^rsa/",
+        "/^salsa20/",
+        "/^scrypt$/",
+        "/^sec1/",
+        "/^sha[0-9]+$/",
+        "/^signature$/",
+        "/^spki/",
+        "/^subtle/",
+        "/^typenum/",
+        "/^zeroize/"
+      ],
+      "groupName": "RustCrypto dependencies"
+    },
+    {
+      "description": "Major updates get individual PRs for review",
+      "matchManagers": ["cargo"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "groupName": null
+    }
+  ]
+}
