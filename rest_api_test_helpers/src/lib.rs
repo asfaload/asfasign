@@ -448,6 +448,7 @@ pub struct TestSetup {
     artifact_path: String,
     test_keys: test_helpers::TestKeys,
     repo_path: PathBuf,
+    client: reqwest::Client,
 }
 
 impl TestSetup {
@@ -469,6 +470,11 @@ impl TestSetup {
     /// Returns a reference to the test keys.
     pub fn test_keys(&self) -> &test_helpers::TestKeys {
         &self.test_keys
+    }
+
+    /// Returns a reference to the shared HTTP client.
+    pub fn client(&self) -> &reqwest::Client {
+        &self.client
     }
 
     /// Submit a signature for the artifact using the key at the given index.
@@ -497,8 +503,8 @@ impl TestSetup {
         let auth_info = AuthInfo::new(submit_payload_str);
         let auth_sig = AuthSignature::new(&auth_info, secret_key)?;
 
-        let client = reqwest::Client::new();
-        let response = client
+        let response = self
+            .client
             .post(format!("http://127.0.0.1:{}/v1/signatures", self.port))
             .header(
                 HEADER_TIMESTAMP,
@@ -705,6 +711,7 @@ impl TestSetupBuilder {
             artifact_path: self.artifact_path,
             test_keys,
             repo_path,
+            client: reqwest::Client::new(),
         })
     }
 
