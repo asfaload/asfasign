@@ -877,6 +877,7 @@ pub mod test_utils_tests {
 
     #[tokio::test]
     async fn test_submit_signature_for_artifact_file() -> Result<(), anyhow::Error> {
+        use constants::SIGNATURES_SUFFIX;
         use rest_api_test_helpers::{
             TestSetupBuilder, file_exists_in_latest_commit, file_is_tracked_in_git,
             get_latest_commit,
@@ -892,33 +893,32 @@ pub mod test_utils_tests {
         assert!(response.is_complete);
 
         // Verify the commit was created with correct message
-        let expected_commit_message = "completed signature collection for releases/release.txt";
+        let expected_commit_message = format!(
+            "completed signature collection for {}",
+            setup.artifact_path()
+        );
         let commit_msg = get_latest_commit(setup.repo_path())?;
         assert!(
-            commit_msg.contains(expected_commit_message),
+            commit_msg.contains(&expected_commit_message),
             "Commit message doesn't match expected format"
         );
 
+        let sig_rel_path = format!("{}.{}", setup.artifact_path(), SIGNATURES_SUFFIX);
+
         // Verify the signature file was created
         assert!(
-            setup
-                .repo_path()
-                .join("releases/release.txt.signatures.json")
-                .exists(),
+            setup.repo_path().join(&sig_rel_path).exists(),
             "Signature file should be created"
         );
 
         assert!(
-            file_exists_in_latest_commit(
-                setup.repo_path(),
-                "releases/release.txt.signatures.json"
-            )?,
+            file_exists_in_latest_commit(setup.repo_path(), &sig_rel_path)?,
             "Signature file should be in the latest git commit"
         );
 
         // Verify the signature file is tracked in git
         assert!(
-            file_is_tracked_in_git(setup.repo_path(), "releases/release.txt.signatures.json")?,
+            file_is_tracked_in_git(setup.repo_path(), &sig_rel_path)?,
             "Signature file should be tracked in git"
         );
 
@@ -1042,6 +1042,7 @@ pub mod test_utils_tests {
 
     #[tokio::test]
     async fn test_submit_partial_signature() -> Result<(), anyhow::Error> {
+        use constants::SIGNATURES_SUFFIX;
         use rest_api_test_helpers::{
             TestSetupBuilder, file_exists_in_latest_commit, file_is_tracked_in_git,
             get_latest_commit,
@@ -1061,7 +1062,10 @@ pub mod test_utils_tests {
         // Verify partial commit message
         let commit_msg = get_latest_commit(setup.repo_path())?;
         assert!(
-            commit_msg.contains("added partial signature for releases/release.txt"),
+            commit_msg.contains(&format!(
+                "added partial signature for {}",
+                setup.artifact_path()
+            )),
             "Partial commit message doesn't match"
         );
 
@@ -1072,22 +1076,24 @@ pub mod test_utils_tests {
         // Verify completion commit message
         let commit_msg2 = get_latest_commit(setup.repo_path())?;
         assert!(
-            commit_msg2.contains("completed signature collection for releases/release.txt"),
+            commit_msg2.contains(&format!(
+                "completed signature collection for {}",
+                setup.artifact_path()
+            )),
             "Completion commit message doesn't match"
         );
 
+        let sig_rel_path = format!("{}.{}", setup.artifact_path(), SIGNATURES_SUFFIX);
+
         // Verify the signature file is tracked in git
         assert!(
-            file_is_tracked_in_git(setup.repo_path(), "releases/release.txt.signatures.json")?,
+            file_is_tracked_in_git(setup.repo_path(), &sig_rel_path)?,
             "Signature file should be tracked in git"
         );
 
         // Verify the signature file is in the latest git commit
         assert!(
-            file_exists_in_latest_commit(
-                setup.repo_path(),
-                "releases/release.txt.signatures.json"
-            )?,
+            file_exists_in_latest_commit(setup.repo_path(), &sig_rel_path)?,
             "Signature file should be in the latest git commit"
         );
 
