@@ -109,6 +109,7 @@ pub async fn register_repo_handler(
     let forge_kind = match &repo_info {
         ForgeInfo::Github(_) => signers_file_types::Forge::Github,
         ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
+        ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
     };
     let metadata = signers_file_types::SignersConfigMetadata::from_forge(
         signers_file_types::ForgeOrigin::new(
@@ -289,6 +290,7 @@ pub async fn update_signers_handler(
     let forge_kind = match &repo_info {
         ForgeInfo::Github(_) => signers_file_types::Forge::Github,
         ForgeInfo::Gitlab(_) => signers_file_types::Forge::Gitlab,
+        ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
     };
     let metadata = signers_file_types::SignersConfigMetadata::from_forge(
         signers_file_types::ForgeOrigin::new(
