@@ -442,12 +442,12 @@ pub fn setup_file_logging(
 }
 
 pub struct TestSetup {
-    pub _temp_dir: TempDir,
-    pub port: u16,
-    pub server_handle: JoinHandle<std::result::Result<(), ApiError>>,
-    pub artifact_path: String,
-    pub test_keys: test_helpers::TestKeys,
-    pub repo_path: PathBuf,
+    _temp_dir: TempDir,
+    port: u16,
+    server_handle: JoinHandle<std::result::Result<(), ApiError>>,
+    artifact_path: String,
+    test_keys: test_helpers::TestKeys,
+    repo_path: PathBuf,
 }
 
 impl TestSetup {
