@@ -1,3 +1,4 @@
+use crate::fileserver::FileServerRepoInfo;
 use crate::github::{GITHUB_HOSTS, GitHubRepoInfo};
 use crate::gitlab::{GITLAB_HOSTS, GitLabRepoInfo};
 use crate::{ForgeTrait, ForgeUrlError};
@@ -6,6 +7,7 @@ use crate::{ForgeTrait, ForgeUrlError};
 pub enum ForgeInfo {
     Github(GitHubRepoInfo),
     Gitlab(GitLabRepoInfo),
+    FileServer(FileServerRepoInfo),
 }
 
 impl ForgeTrait for ForgeInfo {
@@ -17,12 +19,7 @@ impl ForgeTrait for ForgeInfo {
         } else if GITLAB_HOSTS.contains(&host) {
             Ok(Self::Gitlab(GitLabRepoInfo::new(url)?))
         } else {
-            Err(ForgeUrlError::InvalidFormat(format!(
-                "Unsupported forge host: {}. Supported hosts: GitHub ({}), GitLab ({})",
-                host,
-                GITHUB_HOSTS.join(","),
-                GITLAB_HOSTS.join(",")
-            )))
+            Ok(Self::FileServer(FileServerRepoInfo::new(url)?))
         }
     }
 
@@ -30,6 +27,7 @@ impl ForgeTrait for ForgeInfo {
         match self {
             Self::Github(info) => info.project_id(),
             Self::Gitlab(info) => info.project_id(),
+            Self::FileServer(info) => info.project_id(),
         }
     }
 
@@ -37,6 +35,7 @@ impl ForgeTrait for ForgeInfo {
         match self {
             Self::Github(info) => info.owner(),
             Self::Gitlab(info) => info.owner(),
+            Self::FileServer(info) => info.owner(),
         }
     }
 
@@ -44,6 +43,7 @@ impl ForgeTrait for ForgeInfo {
         match self {
             Self::Github(info) => info.repo(),
             Self::Gitlab(info) => info.repo(),
+            Self::FileServer(info) => info.repo(),
         }
     }
 
@@ -51,6 +51,7 @@ impl ForgeTrait for ForgeInfo {
         match self {
             Self::Github(info) => info.branch(),
             Self::Gitlab(info) => info.branch(),
+            Self::FileServer(info) => info.branch(),
         }
     }
 
@@ -58,6 +59,7 @@ impl ForgeTrait for ForgeInfo {
         match self {
             Self::Github(info) => info.file_path(),
             Self::Gitlab(info) => info.file_path(),
+            Self::FileServer(info) => info.file_path(),
         }
     }
 
@@ -65,6 +67,7 @@ impl ForgeTrait for ForgeInfo {
         match self {
             Self::Github(info) => info.raw_url(),
             Self::Gitlab(info) => info.raw_url(),
+            Self::FileServer(info) => info.raw_url(),
         }
     }
 }
@@ -96,7 +99,7 @@ mod tests {
                     &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/asfaload.initial_signers.json").unwrap()
                 );
             }
-            ForgeInfo::Gitlab(_) => panic!("Expected GitHub variant"),
+            _ => panic!("Expected GitHub variant"),
         }
     }
 
@@ -116,7 +119,7 @@ mod tests {
                 assert_eq!(info.file_path(), PathBuf::from("path/to/file.json"));
                 assert_eq!(info.raw_url(), &url);
             }
-            ForgeInfo::Gitlab(_) => panic!("Expected GitHub variant"),
+            _ => panic!("Expected GitHub variant"),
         }
     }
 
@@ -142,7 +145,7 @@ mod tests {
                     &url::Url::parse("https://gitlab.com/namespace/project/-/raw/main/asfaload.initial_signers.json").unwrap()
                 );
             }
-            ForgeInfo::Github(_) => panic!("Expected GitLab variant"),
+            _ => panic!("Expected GitLab variant"),
         }
     }
 
@@ -161,20 +164,23 @@ mod tests {
                 assert_eq!(info.file_path(), PathBuf::from("path/to/file.json"));
                 assert_eq!(info.raw_url(), &url);
             }
-            ForgeInfo::Github(_) => panic!("Expected GitLab variant"),
+            _ => panic!("Expected GitLab variant"),
         }
     }
 
     #[test]
-    fn test_unsupported_domain() {
+    fn test_unsupported_domain_falls_back_to_fileserver() {
         let url = url::Url::parse("https://bitbucket.org/owner/repo/src/main/file.json").unwrap();
-        let result = ForgeInfo::new(&url);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ForgeUrlError::InvalidFormat(msg) => {
-                assert!(msg.contains("Unsupported forge host"));
+        let result = ForgeInfo::new(&url).unwrap();
+        match result {
+            ForgeInfo::FileServer(info) => {
+                assert_eq!(info.owner(), "bitbucket.org");
+                assert_eq!(
+                    info.file_path(),
+                    PathBuf::from("owner/repo/src/main/file.json")
+                );
             }
-            e => panic!("Expected InvalidFormat error, got {}", e),
+            _ => panic!("Expected FileServer variant"),
         }
     }
 
@@ -390,7 +396,7 @@ mod tests {
                 assert_eq!(info.raw_url(), github.raw_url());
                 assert_eq!(info.project_id(), github.project_id());
             }
-            ForgeInfo::Gitlab(_) => panic!("Expected GitHub variant"),
+            _ => panic!("Expected GitHub variant"),
         }
     }
 
@@ -420,7 +426,7 @@ mod tests {
                 assert_eq!(info.raw_url(), gitlab.raw_url());
                 assert_eq!(info.project_id(), gitlab.project_id());
             }
-            ForgeInfo::Github(_) => panic!("Expected GitLab variant"),
+            _ => panic!("Expected GitLab variant"),
         }
     }
 }
