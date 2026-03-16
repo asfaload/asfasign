@@ -806,4 +806,65 @@ mod tests {
             .unwrap();
         assert_ne!(resp.status(), 200);
     }
+
+    #[tokio::test]
+    async fn test_builder_with_keys_and_threshold() {
+        let setup = TestSetupBuilder::new()
+            .with_keys(2)
+            .with_threshold(2)
+            .build()
+            .await
+            .unwrap();
+
+        // First signature should be partial (threshold is 2)
+        let first = setup.submit_signature_and_wait(0).await.unwrap();
+        assert!(
+            !first.is_complete,
+            "First signature should be partial when threshold is 2"
+        );
+
+        // Second signature should complete the signing
+        let second = setup.submit_signature_and_wait(1).await.unwrap();
+        assert!(
+            second.is_complete,
+            "Second signature should complete signing when threshold is 2"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_builder_build_and_sign() {
+        let setup = TestSetupBuilder::new().build_and_sign().await.unwrap();
+
+        // The artifact should be fully signed; GET signers_chain should return 200
+        let client = reqwest::Client::new();
+        let resp = client
+            .get(format!(
+                "http://127.0.0.1:{}/v1/get_signers_chain/{}",
+                setup.port(),
+                setup.artifact_path()
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            200,
+            "get_signers_chain should return 200 for a fully signed artifact"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_builder_custom_artifact_path() {
+        let setup = TestSetupBuilder::new()
+            .with_artifact("custom/path/file.bin")
+            .build()
+            .await
+            .unwrap();
+
+        assert_eq!(setup.artifact_path(), "custom/path/file.bin");
+        assert!(
+            setup.repo_path().join("custom/path/file.bin").exists(),
+            "Custom artifact file should exist on disk"
+        );
+    }
 }
