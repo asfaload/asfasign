@@ -7,7 +7,6 @@ use rest_api_auth::{
 };
 use rest_api_test_helpers::TestSetupBuilder;
 use rest_api_types::{ListPendingResponse, SubmitSignatureResponse};
-use std::fs;
 
 /// End-to-end test for the complete pending workflow:
 /// 1. Setup backend with signers config
@@ -62,7 +61,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
 
     // ===== Test 2: key1 submits signature =====
     let artifact_path = setup.repo_path().join(file_path_str);
-    let content = fs::read(&artifact_path)?;
+    let content = tokio::fs::read(&artifact_path).await?;
     let hash = sha512_for_content(content)?;
     let sig = secret_key1.sign(&hash)?;
 
