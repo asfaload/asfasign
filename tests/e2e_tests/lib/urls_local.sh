@@ -6,7 +6,7 @@ _FS_PROJECT="e2e_project"
 
 signers_file() {
     local n="$1"
-    echo "${FILE_SERVER_URL}/${_FS_PROJECT}/.asfaload_signers/signers_file_${n}${_SIGNERS_SUFFIX}.json"
+    echo "${FILE_SERVER_URL}/${_FS_PROJECT}/.asfaload.signers/signers_file_${n}${_SIGNERS_SUFFIX}.json"
 }
 
 pending_signers_file() {

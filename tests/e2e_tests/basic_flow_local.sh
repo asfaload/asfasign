@@ -43,7 +43,7 @@ base_dir="$(git rev-parse --show-toplevel)"
 
 FILE_SERVER_DIR=$(mktemp -d)
 FS_PROJECT_DIR="$FILE_SERVER_DIR/e2e_project"
-mkdir -p "$FS_PROJECT_DIR/.asfaload_signers"
+mkdir -p "$FS_PROJECT_DIR/.asfaload.signers"
 mkdir -p "$FS_PROJECT_DIR/releases/v0.1"
 mkdir -p "$FS_PROJECT_DIR/releases/v0.2"
 
@@ -55,7 +55,7 @@ cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signe
     --artifact-signer-file "$KEY_1.pub" \
     --artifact-signer-file "$KEY_2.pub" \
     -A 2 \
-    -o "$FS_PROJECT_DIR/.asfaload_signers/signers_file_1${_SIGNERS_SUFFIX}.json"
+    -o "$FS_PROJECT_DIR/.asfaload.signers/signers_file_1${_SIGNERS_SUFFIX}.json"
 
 # Generate signers file 2 (4 artifact signers threshold 3, 3 revocation keys threshold 2)
 cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
@@ -68,7 +68,7 @@ cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signe
     --revocation-key-file "$KEY_5.pub" \
     --revocation-key-file "$KEY_6.pub" \
     -R 2 \
-    -o "$FS_PROJECT_DIR/.asfaload_signers/signers_file_2${_SIGNERS_SUFFIX}.json"
+    -o "$FS_PROJECT_DIR/.asfaload.signers/signers_file_2${_SIGNERS_SUFFIX}.json"
 
 # Generate artifact binaries
 dd if=/dev/urandom of="$FS_PROJECT_DIR/releases/v0.1/artifact.bin" bs=1024 count=4 2>/dev/null

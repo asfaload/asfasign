@@ -1,10 +1,15 @@
 use std::path::{Path, PathBuf};
 
+use constants::{HIDDEN_SIGNERS_DIR, SIGNERS_DIR};
 use url::Url;
 
 use crate::{ForgeTrait, ForgeUrlError};
 
-const ASFALOAD_SIGNERS_DIR: &str = ".asfaload_signers";
+/// Directory names on the file server that are transparent for project_id computation.
+/// Both the hidden (dot-prefixed) and visible variants of the canonical signers directory
+/// name are supported. URLs containing either directory in their path have it stripped
+/// when computing the project root.
+const SIGNERS_DIRS_ON_SERVER: &[&str] = &[HIDDEN_SIGNERS_DIR, SIGNERS_DIR];
 
 #[derive(Debug, Clone)]
 pub struct FileServerRepoInfo {
@@ -49,7 +54,12 @@ impl ForgeTrait for FileServerRepoInfo {
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
 
-                let effective_parent = if parent_name == ASFALOAD_SIGNERS_DIR {
+                // Signers directories on the file server are organisational — they
+                // should not affect the project root. Strip them so that
+                // e.g. host/project/.asfaload.signers/file.json and
+                //      host/project/releases/v1/SHA256SUMS
+                // both resolve to the same project_id "host/project".
+                let effective_parent = if SIGNERS_DIRS_ON_SERVER.contains(&parent_name.as_str()) {
                     match parent.parent() {
                         Some(grandparent) if !grandparent.as_os_str().is_empty() => grandparent,
                         _ => return self.host.clone(),
@@ -73,12 +83,11 @@ impl ForgeTrait for FileServerRepoInfo {
 
     fn repo(&self) -> &str {
         let path_str = self.file_path.to_str().unwrap_or("");
-        let first_segment = path_str.split('/').next().unwrap_or("");
         // If file_path has no directory component, there's no "repo"
         if !path_str.contains('/') {
             return "";
         }
-        first_segment
+        path_str.split('/').next().unwrap_or("")
     }
 
     fn branch(&self) -> &str {
@@ -111,9 +120,17 @@ mod tests {
     }
 
     #[test]
-    fn test_asfaload_signers_stripped() {
+    fn test_hidden_signers_dir_stripped() {
         let url =
-            Url::parse("http://localhost:8080/myproject/.asfaload_signers/signers1.json").unwrap();
+            Url::parse("http://localhost:8080/myproject/.asfaload.signers/signers1.json").unwrap();
+        let info = FileServerRepoInfo::new(&url).unwrap();
+        assert_eq!(info.project_id(), "localhost/myproject");
+    }
+
+    #[test]
+    fn test_visible_signers_dir_stripped() {
+        let url =
+            Url::parse("http://localhost:8080/myproject/asfaload.signers/signers1.json").unwrap();
         let info = FileServerRepoInfo::new(&url).unwrap();
         assert_eq!(info.project_id(), "localhost/myproject");
     }
@@ -150,8 +167,15 @@ mod tests {
     }
 
     #[test]
-    fn test_only_asfaload_signers_parent() {
-        let url = Url::parse("http://localhost:8080/.asfaload_signers/signers.json").unwrap();
+    fn test_only_hidden_signers_dir_parent() {
+        let url = Url::parse("http://localhost:8080/.asfaload.signers/signers.json").unwrap();
+        let info = FileServerRepoInfo::new(&url).unwrap();
+        assert_eq!(info.project_id(), "localhost");
+    }
+
+    #[test]
+    fn test_only_visible_signers_dir_parent() {
+        let url = Url::parse("http://localhost:8080/asfaload.signers/signers.json").unwrap();
         let info = FileServerRepoInfo::new(&url).unwrap();
         assert_eq!(info.project_id(), "localhost");
     }

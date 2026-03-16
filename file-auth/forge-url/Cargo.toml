@@ -7,6 +7,7 @@ edition = "2024"
 test-utils = []
 
 [dependencies]
+constants = { path = "../../core/constants/" }
 thiserror = "2.0"
 url = "2.5"
 
