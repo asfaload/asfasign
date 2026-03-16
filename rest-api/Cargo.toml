@@ -57,7 +57,7 @@ async-trait = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
-axum-test = "18.5.0"
+axum-test = "19.0.0"
 tower = "0.5"
 tokio = { version = "1.0", features = [
   "macros",
