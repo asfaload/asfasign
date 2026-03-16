@@ -511,7 +511,15 @@ impl TestSetup {
             .send()
             .await?;
 
-        assert_eq!(response.status(), 200);
+        let status = response.status();
+        if status != 200 {
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Signature submission failed with status {}: {}",
+                status,
+                body
+            );
+        }
         let body: SubmitSignatureResponse = response.json().await?;
         Ok(body)
     }
@@ -622,10 +630,8 @@ impl TestSetupBuilder {
             .collect();
 
         // Create signers config with the configured threshold
-        let signers_config = SignersConfig::with_artifact_signers_only(
-            1,
-            (pub_keys.clone(), self.threshold as u32),
-        )?;
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (pub_keys, self.threshold as u32))?;
         let signers_dir = repo_path.join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir)?;
         fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?)?;
