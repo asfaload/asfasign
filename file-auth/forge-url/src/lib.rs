@@ -1,4 +1,5 @@
 mod error;
+pub mod fileserver;
 mod forge_info;
 pub mod github;
 pub mod gitlab;

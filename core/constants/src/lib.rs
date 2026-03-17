@@ -10,6 +10,7 @@ pub const PENDING_REVOCATION_SUFFIX: &str = "revocation.json.pending";
 pub const REVOKED_SUFFIX: &str = "revoked";
 pub const SIGNERS_SUFFIX: &str = "signers.json";
 pub const SIGNERS_DIR: &str = "asfaload.signers";
+pub const HIDDEN_SIGNERS_DIR: &str = ".asfaload.signers";
 pub const PENDING_SIGNERS_DIR: &str = "asfaload.signers.pending";
 pub const SIGNERS_FILE: &str = "index.json";
 pub const METADATA_FILE: &str = "metadata.json";

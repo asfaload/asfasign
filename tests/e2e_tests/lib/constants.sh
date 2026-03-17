@@ -3,6 +3,7 @@
 # If the Rust constants change, update these accordingly.
 
 SIGNERS_DIR="asfaload.signers"
+HIDDEN_SIGNERS_DIR=".asfaload.signers"
 PENDING_SIGNERS_DIR="asfaload.signers.pending"
 SIGNERS_FILE="index.json"
 INDEX_FILE="asfaload.index.json"

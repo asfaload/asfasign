@@ -6,7 +6,11 @@
 # Compute the project directory inside the backend git repo.
 # Called lazily (not at source time) because E2E_GIT_REPO_PATH isn't set yet.
 _project_dir() {
-    echo "$E2E_GIT_REPO_PATH/github.com/${E2E_REPO}"
+    if [[ -n "${PROJECT_DIR_OVERRIDE:-}" ]]; then
+        echo "$E2E_GIT_REPO_PATH/$PROJECT_DIR_OVERRIDE"
+    else
+        echo "$E2E_GIT_REPO_PATH/github.com/${E2E_REPO}"
+    fi
 }
 
 # Extract bare base64 public key string from a key file path.
@@ -164,7 +168,12 @@ assert_signers_history_entries() {
 
 _release_dir() {
     local version="$1"
-    echo "$(_project_dir)/releases/tag/v${version}"
+    if [[ -n "${RELEASE_DIR_TEMPLATE:-}" ]]; then
+        # shellcheck disable=SC2059
+        echo "$(_project_dir)/$(printf "$RELEASE_DIR_TEMPLATE" "$version")"
+    else
+        echo "$(_project_dir)/releases/tag/v${version}"
+    fi
 }
 
 assert_release_index_exists() {

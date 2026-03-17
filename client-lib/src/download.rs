@@ -53,7 +53,7 @@ impl Forges {
         } else if GITLAB_HOSTS.contains(&host) {
             Ok(Self::Gitlab(GitlabForge))
         } else {
-            Err(ClientLibError::UnsupportedForge(host.to_string()))
+            Ok(Self::FileServer(FileServerForge))
         }
     }
 
@@ -138,10 +138,10 @@ mod tests {
     }
 
     #[test]
-    fn forges_from_host_unknown_unsupported() {
+    fn forges_from_host_unknown_falls_back_to_fileserver() {
         assert!(matches!(
             Forges::from_host("example.com"),
-            Err(ClientLibError::UnsupportedForge(_))
+            Ok(Forges::FileServer(_))
         ));
     }
 
@@ -184,10 +184,15 @@ mod tests {
     }
 
     #[test]
-    fn construct_index_file_path_unsupported_forge() {
+    fn construct_index_file_path_unknown_host_uses_fileserver() {
         let url = Url::parse("https://example.com/owner/repo/-/releases/file.tar.gz").unwrap();
-        let result = get_forge(&url);
-        assert!(matches!(result, Err(ClientLibError::UnsupportedForge(_))));
+        let forge = get_forge(&url).unwrap();
+        assert!(matches!(forge, Forges::FileServer(_)));
+        let result = forge.construct_index_file_path(&url).unwrap();
+        assert_eq!(
+            result,
+            format!("example.com/owner/repo/-/releases/{}", INDEX_FILE)
+        );
     }
 
     #[test]
@@ -208,7 +213,7 @@ mod tests {
             },
             TestCase {
                 url: "https://example.com/some/file.tar.gz",
-                expected: "err_unsupported",
+                expected: "ok_fileserver",
             },
             TestCase {
                 url: "file:///some/path/file.txt",
@@ -230,9 +235,9 @@ mod tests {
                     "Expected Ok(Forges::Gitlab(_)) for URL: {}",
                     case.url
                 ),
-                "err_unsupported" => assert!(
-                    matches!(result, Err(ClientLibError::UnsupportedForge(_))),
-                    "Expected Err(UnsupportedForge) for URL: {}",
+                "ok_fileserver" => assert!(
+                    matches!(result, Ok(Forges::FileServer(_))),
+                    "Expected Ok(Forges::FileServer(_)) for URL: {}",
                     case.url
                 ),
                 "err_invalid_url" => assert!(
