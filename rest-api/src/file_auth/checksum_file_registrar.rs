@@ -23,7 +23,7 @@ impl ChecksumFileRegistrar {
         let base = validate_common_parent(&urls)
             .map_err(|e| ApiError::InvalidRequestBody(e.to_string()))?;
 
-        let dir_path = format!("{}{}", base.host, base.parent_path);
+        let dir_path = format!("{}{}", base.prefix, base.parent_path);
         let directory_path = NormalisedPaths::new(git_repo_path, PathBuf::from(&dir_path)).await?;
 
         Ok(Self {
@@ -209,7 +209,7 @@ mod tests {
         let registrar = result.unwrap();
         assert_eq!(
             registrar.directory_path.relative_path(),
-            PathBuf::from("files.example.com/releases/v1.0")
+            PathBuf::from("https/files.example.com/443/releases/v1.0")
         );
         assert_eq!(registrar.urls.len(), 1);
     }
@@ -273,7 +273,7 @@ mod tests {
             .unwrap();
         let expected = temp_dir
             .path()
-            .join("files.example.com/projects/myapp/v2.0");
+            .join("https/files.example.com/443/projects/myapp/v2.0");
         assert_eq!(registrar.signers_file_path(), expected);
     }
 
@@ -288,7 +288,7 @@ mod tests {
         let relative = index_path.relative_path();
         assert_eq!(
             relative,
-            PathBuf::from("files.example.com/releases/v1.0").join(INDEX_FILE)
+            PathBuf::from("https/files.example.com/443/releases/v1.0").join(INDEX_FILE)
         );
     }
 }
