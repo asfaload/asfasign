@@ -48,7 +48,7 @@ impl ForgeTrait for FileServerRepoInfo {
         let path = &self.file_path;
         match path.parent() {
             Some(parent) if !parent.as_os_str().is_empty() => {
-                // If the immediate parent is .asfaload_signers, go up one more level
+                // If the immediate parent is a signers directory, go up one more level
                 let parent_name = parent
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
