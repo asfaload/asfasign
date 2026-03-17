@@ -31,7 +31,7 @@ artifact_url() {
 }
 
 # Helper: build origin prefix from FILE_SERVER_URL for backend paths.
-# Matches forge-url's url_origin_prefix: scheme/host/port
+# Matches forge-url's path_prefix_from_url: scheme/host/port
 file_server_origin() {
     local scheme host port
     scheme=$(echo "$FILE_SERVER_URL" | sed 's|^\(https\?\)://.*|\1|')
