@@ -763,26 +763,28 @@ mod tests {
         assert_eq!(inside, "true");
     }
 
-    /// Mutex to serialise tests that mutate `ASFALOAD_GIT_BACKEND`.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    fn is_sha256_backend() -> bool {
+        std::env::var("ASFALOAD_GIT_BACKEND").as_deref() == Ok("sha256")
+    }
 
     #[test]
     fn test_init_git_repo_uses_sha256_object_format() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        // SAFETY: Access to the env var is serialised by ENV_LOCK.
-        unsafe { std::env::set_var("ASFALOAD_GIT_BACKEND", "sha256") };
+        if !is_sha256_backend() {
+            eprintln!("skipping: requires ASFALOAD_GIT_BACKEND=sha256");
+            return;
+        }
         let temp_dir = tempfile::tempdir().unwrap();
         init_git_repo(temp_dir.path()).unwrap();
         let fmt = run_git(temp_dir.path(), &["rev-parse", "--show-object-format"]).unwrap();
         assert_eq!(fmt, "sha256");
-        unsafe { std::env::remove_var("ASFALOAD_GIT_BACKEND") };
     }
 
     #[test]
     fn test_build_test_config_defaults_to_sha1() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        // SAFETY: Access to the env var is serialised by ENV_LOCK.
-        unsafe { std::env::remove_var("ASFALOAD_GIT_BACKEND") };
+        if is_sha256_backend() {
+            eprintln!("skipping: requires ASFALOAD_GIT_BACKEND unset or sha1");
+            return;
+        }
         let temp_dir = tempfile::tempdir().unwrap();
         let cfg = build_test_config(temp_dir.path(), 3000);
         assert_eq!(cfg.git_backend, rest_api::config::GitBackendConfig::Sha1);
@@ -790,13 +792,13 @@ mod tests {
 
     #[test]
     fn test_build_test_config_reads_sha256_env() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        // SAFETY: Access to the env var is serialised by ENV_LOCK.
-        unsafe { std::env::set_var("ASFALOAD_GIT_BACKEND", "sha256") };
+        if !is_sha256_backend() {
+            eprintln!("skipping: requires ASFALOAD_GIT_BACKEND=sha256");
+            return;
+        }
         let temp_dir = tempfile::tempdir().unwrap();
         let cfg = build_test_config(temp_dir.path(), 3000);
         assert_eq!(cfg.git_backend, rest_api::config::GitBackendConfig::Sha256);
-        unsafe { std::env::remove_var("ASFALOAD_GIT_BACKEND") };
     }
 
     #[tokio::test]
