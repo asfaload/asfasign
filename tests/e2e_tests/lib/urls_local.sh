@@ -12,12 +12,12 @@ signers_file() {
 }
 
 pending_signers_file() {
-    echo "$(file_server_host)/${_FS_PROJECT}/asfaload.signers.pending/index.json"
+    echo "$(file_server_host)/${_FS_PROJECT}/${PENDING_SIGNERS_DIR}/${SIGNERS_FILE}"
 }
 
 release_index() {
     local version="$1"
-    echo "$(file_server_host)/${_FS_PROJECT}/releases/v${version}/asfaload.index.json"
+    echo "$(file_server_host)/${_FS_PROJECT}/releases/v${version}/${INDEX_FILE}"
 }
 
 csum_file_url() {
