@@ -76,9 +76,10 @@ mod tests {
     }
 
     #[test]
-    fn no_host_returns_error() {
+    fn unsupported_scheme_file_url_returns_error() {
         let url = Url::parse("file:///some/path").unwrap();
-        assert!(path_prefix_from_url(&url).is_err());
+        let err = path_prefix_from_url(&url).unwrap_err();
+        assert!(err.to_string().contains("Unsupported URL scheme"));
     }
 
     #[test]
