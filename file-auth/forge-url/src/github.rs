@@ -11,6 +11,7 @@ pub struct GitHubRepoInfo {
     branch: String,
     file_path: PathBuf,
     raw_url: Url,
+    path_prefix: String,
 }
 
 #[cfg(not(feature = "test-utils"))]
@@ -112,17 +113,25 @@ impl ForgeTrait for GitHubRepoInfo {
             return Err(ForgeUrlError::MissingFilePath);
         }
 
+        let path_prefix = match url.host_str() {
+            Some("github.com") | Some("raw.githubusercontent.com") => {
+                "https/github.com/443".to_string()
+            }
+            _ => crate::path_prefix_from_url(url)?,
+        };
+
         Ok(GitHubRepoInfo {
             owner,
             repo,
             branch,
             file_path,
             raw_url,
+            path_prefix,
         })
     }
 
     fn project_id(&self) -> String {
-        format!("github.com/{}/{}", self.owner, self.repo)
+        format!("{}/{}/{}", self.path_prefix, self.owner, self.repo)
     }
 
     fn owner(&self) -> &str {

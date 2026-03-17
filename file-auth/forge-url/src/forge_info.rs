@@ -240,7 +240,7 @@ mod tests {
                 "https://raw.githubusercontent.com/example-org/my-repo/develop/docs/config.json",
             )
             .unwrap(),
-            "github.com/example-org/my-repo",
+            "https/github.com/443/example-org/my-repo",
         );
     }
 
@@ -257,7 +257,7 @@ mod tests {
             "v1.0",
             "data.json",
             &url,
-            "github.com/user/repo",
+            "https/github.com/443/user/repo",
         );
     }
 
@@ -276,7 +276,7 @@ mod tests {
             "main",
             "path/to/deeply/nested/config.yml",
             &url::Url::parse("https://raw.githubusercontent.com/org/complex-repo/main/path/to/deeply/nested/config.yml").unwrap(),
-            "github.com/org/complex-repo",
+            "https/github.com/443/org/complex-repo",
         );
     }
 
@@ -295,7 +295,7 @@ mod tests {
             "feature-auth-v2",
             "src/auth/provider.ts",
             &url::Url::parse("https://raw.githubusercontent.com/acme/projects/feature-auth-v2/src/auth/provider.ts").unwrap(),
-            "github.com/acme/projects",
+            "https/github.com/443/acme/projects",
         );
     }
 
@@ -385,7 +385,7 @@ mod tests {
             &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/file.json")
                 .unwrap()
         );
-        assert_eq!(github.project_id(), "github.com/owner/repo");
+        assert_eq!(github.project_id(), "https/github.com/443/owner/repo");
 
         match &github {
             ForgeInfo::Github(info) => {
