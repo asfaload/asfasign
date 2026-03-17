@@ -36,6 +36,6 @@ file_server_origin() {
     local scheme host port
     scheme=$(echo "$FILE_SERVER_URL" | sed 's|^\(https\?\)://.*|\1|')
     host=$(echo "$FILE_SERVER_URL" | sed 's|^https\?://||; s|:[0-9]*$||')
-    port=$(echo "$FILE_SERVER_URL" | grep -oP ':\K[0-9]+$' || echo "80")
+    port=$(echo "$FILE_SERVER_URL" | grep -oP ':\K[0-9]+$' || { [ "$scheme" = "https" ] && echo "443" || echo "80"; })
     echo "${scheme}/${host}/${port}"
 }
