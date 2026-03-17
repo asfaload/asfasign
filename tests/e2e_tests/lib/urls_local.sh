@@ -12,12 +12,12 @@ signers_file() {
 }
 
 pending_signers_file() {
-    echo "$(file_server_host)/${_FS_PROJECT}/${PENDING_SIGNERS_DIR}/${SIGNERS_FILE}"
+    echo "$(file_server_origin)/${_FS_PROJECT}/${PENDING_SIGNERS_DIR}/${SIGNERS_FILE}"
 }
 
 release_index() {
     local version="$1"
-    echo "$(file_server_host)/${_FS_PROJECT}/releases/v${version}/${INDEX_FILE}"
+    echo "$(file_server_origin)/${_FS_PROJECT}/releases/v${version}/${INDEX_FILE}"
 }
 
 csum_file_url() {
@@ -30,9 +30,12 @@ artifact_url() {
     echo "${FILE_SERVER_URL}/${_FS_PROJECT}/releases/v${version}/artifact.bin"
 }
 
-# Helper: extract host from FILE_SERVER_URL for use in backend paths
-# Strips scheme and port to match how forge-url and checksum_file_registrar
-# derive paths (using url.host_str() which excludes the port).
-file_server_host() {
-    echo "$FILE_SERVER_URL" | sed 's|^https\?://||; s|:[0-9]*$||'
+# Helper: build origin prefix from FILE_SERVER_URL for backend paths.
+# Matches forge-url's url_origin_prefix: scheme/host/port
+file_server_origin() {
+    local scheme host port
+    scheme=$(echo "$FILE_SERVER_URL" | sed 's|^\(https\?\)://.*|\1|')
+    host=$(echo "$FILE_SERVER_URL" | sed 's|^https\?://||; s|:[0-9]*$||')
+    port=$(echo "$FILE_SERVER_URL" | grep -oP ':\K[0-9]+$' || echo "80")
+    echo "${scheme}/${host}/${port}"
 }
