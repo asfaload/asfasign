@@ -578,6 +578,40 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_same_host_different_scheme() -> anyhow::Result<()> {
+        let urls = vec![
+            Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?,
+            Url::parse("http://example.com/releases/v1.0/archive.tar.gz")?,
+        ];
+        match validate_common_parent(&urls) {
+            Err(UrlValidationError::DifferentOrigins(a, b)) => {
+                assert_eq!(a, "https/example.com/443");
+                assert_eq!(b, "http/example.com/80");
+            }
+            Err(e) => panic!("Expected DifferentOrigins error, got: {e}"),
+            Ok(_) => panic!("Expected DifferentOrigins error, got Ok"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_same_host_different_port() -> anyhow::Result<()> {
+        let urls = vec![
+            Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?,
+            Url::parse("https://example.com:8443/releases/v1.0/archive.tar.gz")?,
+        ];
+        match validate_common_parent(&urls) {
+            Err(UrlValidationError::DifferentOrigins(a, b)) => {
+                assert_eq!(a, "https/example.com/443");
+                assert_eq!(b, "https/example.com/8443");
+            }
+            Err(e) => panic!("Expected DifferentOrigins error, got: {e}"),
+            Ok(_) => panic!("Expected DifferentOrigins error, got Ok"),
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_validate_different_parents() -> anyhow::Result<()> {
         let urls = vec![
             Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?,
