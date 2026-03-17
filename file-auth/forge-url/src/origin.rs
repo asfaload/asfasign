@@ -23,6 +23,8 @@ pub fn path_prefix_from_url(url: &Url) -> Result<String, ForgeUrlError> {
         .host_str()
         .ok_or_else(|| ForgeUrlError::InvalidFormat("URL has no host".to_string()))?;
 
+    // After validating scheme is http or https, port_or_known_default() always
+    // returns Some(80) or Some(443). This branch is defensive only.
     let port = url.port_or_known_default().ok_or_else(|| {
         ForgeUrlError::InvalidFormat(format!(
             "Cannot determine port for URL with scheme '{}'",
