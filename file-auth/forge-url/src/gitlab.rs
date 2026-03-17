@@ -9,6 +9,7 @@ pub struct GitLabRepoInfo {
     branch: String,
     file_path: PathBuf,
     raw_url: url::Url,
+    path_prefix: String,
 }
 
 #[cfg(not(feature = "test-utils"))]
@@ -105,17 +106,20 @@ impl ForgeTrait for GitLabRepoInfo {
             .map_err(|e| ForgeUrlError::InvalidFormat(e.to_string()))?
         };
 
+        let path_prefix = crate::path_prefix_from_url(url)?;
+
         Ok(GitLabRepoInfo {
             namespace,
             project,
             branch,
             file_path: PathBuf::from(file_path),
             raw_url,
+            path_prefix,
         })
     }
 
     fn project_id(&self) -> String {
-        format!("gitlab.com/{}/{}", self.namespace, self.project)
+        format!("{}/{}/{}", self.path_prefix, self.namespace, self.project)
     }
 
     fn owner(&self) -> &str {
