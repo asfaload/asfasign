@@ -57,8 +57,6 @@ async-trait = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
-axum-test = "18.5.0"
-tower = "0.5"
 tokio = { version = "1.0", features = [
   "macros",
   "rt-multi-thread",

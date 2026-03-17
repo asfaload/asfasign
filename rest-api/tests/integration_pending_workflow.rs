@@ -1,19 +1,12 @@
 use anyhow::Result;
-use common::fs::names::pending_signatures_path_for;
-use constants::{SIGNERS_DIR, SIGNERS_FILE};
 use features_lib::{
-    AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, SignaturesFile,
-    sha512_for_content,
+    AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_content,
 };
-use rest_api::server::run_server;
 use rest_api_auth::{
     AuthInfo, AuthSignature, HEADER_NONCE, HEADER_PUBLIC_KEY, HEADER_SIGNATURE, HEADER_TIMESTAMP,
 };
-use rest_api_test_helpers::{build_test_config, get_random_port, init_git_repo, wait_for_server};
+use rest_api_test_helpers::TestSetupBuilder;
 use rest_api_types::{ListPendingResponse, SubmitSignatureResponse};
-use signers_file_types::SignersConfig;
-use std::fs;
-use tempfile::TempDir;
 
 /// End-to-end test for the complete pending workflow:
 /// 1. Setup backend with signers config
@@ -24,55 +17,19 @@ use tempfile::TempDir;
 /// 6. List pending again (empty for key1)
 #[tokio::test]
 async fn test_pending_workflow_end_to_end() -> Result<()> {
-    // Setup backend
-    let temp_dir = TempDir::new()?;
-    let repo_path_buf = temp_dir.path().to_path_buf();
+    // Setup backend using the builder
+    let setup = TestSetupBuilder::new()
+        .with_keys(2)
+        .with_threshold(2)
+        .with_artifact("myartifact/release.txt")
+        .build()
+        .await?;
 
-    // Initialize git repo
-    init_git_repo(&repo_path_buf)?;
-
-    let port = get_random_port().await?;
-    let config = build_test_config(&repo_path_buf, port);
-
-    // Load pre-generated key pairs from fixtures
-    let test_keys = test_helpers::TestKeys::new(2);
+    let port = setup.port();
+    let test_keys = setup.test_keys();
+    let file_path_str = setup.artifact_path();
     let secret_key1 = test_keys.sec_key(0).unwrap();
     let secret_key2 = test_keys.sec_key(1).unwrap();
-
-    // Setup signers configuration: require 2 out of 2 signatures
-    let signers_config = SignersConfig::with_artifact_signers_only(
-        2,
-        (
-            vec![
-                test_keys.pub_key(0).unwrap().clone(),
-                test_keys.pub_key(1).unwrap().clone(),
-            ],
-            2,
-        ),
-    )?;
-
-    // Create signers directory and write config
-    let signers_dir = repo_path_buf.join(SIGNERS_DIR);
-    fs::create_dir_all(&signers_dir)?;
-    fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?)?;
-
-    // Create artifact file (simpler path for test)
-    let file_path_str = "myartifact/release.txt";
-    let artifact_path = repo_path_buf.join(file_path_str);
-    fs::create_dir_all(artifact_path.parent().unwrap())?;
-    fs::write(&artifact_path, "artifact content")?;
-
-    // Create empty pending signatures file to indicate this file needs signatures
-    let pending_sig_path = pending_signatures_path_for(&artifact_path)?;
-    fs::write(
-        &pending_sig_path,
-        serde_json::to_string(&SignaturesFile::new())?,
-    )?;
-
-    // Start server
-    let config_clone = config.clone();
-    let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
-    wait_for_server(&config, None).await?;
 
     // Create HTTP client
     let client = reqwest::Client::new();
@@ -103,7 +60,8 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     assert_eq!(response1_body.file_paths[0], file_path_str);
 
     // ===== Test 2: key1 submits signature =====
-    let content = fs::read(&artifact_path)?;
+    let artifact_path = setup.repo_path().join(file_path_str);
+    let content = tokio::fs::read(&artifact_path).await?;
     let hash = sha512_for_content(content)?;
     let sig = secret_key1.sign(&hash)?;
 
@@ -187,9 +145,6 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     println!("Pending files for key2: {:?}", response4_body.file_paths);
     assert_eq!(response4_body.file_paths.len(), 1);
     assert_eq!(response4_body.file_paths[0], file_path_str);
-
-    // Clean up
-    server_handle.abort();
 
     Ok(())
 }

@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::Result;
 use common::fs::names::{pending_signatures_path_for, signatures_path_for};
-use constants::{METADATA_FILE, SIGNERS_DIR, SIGNERS_FILE};
+use constants::{METADATA_FILE, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSecretKeys, AsfaloadSignatureTrait,
     SignaturesFile, TaggedSignature, sha512_for_content,
@@ -442,10 +442,111 @@ pub fn setup_file_logging(
 }
 
 pub struct TestSetup {
-    pub _temp_dir: TempDir,
-    pub port: u16,
-    pub server_handle: JoinHandle<std::result::Result<(), ApiError>>,
-    pub artifact_path: String,
+    _temp_dir: TempDir,
+    port: u16,
+    server_handle: JoinHandle<std::result::Result<(), ApiError>>,
+    artifact_path: String,
+    test_keys: test_helpers::TestKeys,
+    repo_path: PathBuf,
+    client: reqwest::Client,
+}
+
+impl TestSetup {
+    /// Returns the server port.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// Returns the relative artifact path.
+    pub fn artifact_path(&self) -> &str {
+        &self.artifact_path
+    }
+
+    /// Returns the repository root path.
+    pub fn repo_path(&self) -> &Path {
+        &self.repo_path
+    }
+
+    /// Returns a reference to the test keys.
+    pub fn test_keys(&self) -> &test_helpers::TestKeys {
+        &self.test_keys
+    }
+
+    /// Returns a reference to the shared HTTP client.
+    pub fn client(&self) -> &reqwest::Client {
+        &self.client
+    }
+
+    /// Submit a signature for the artifact using the key at the given index.
+    pub async fn submit_signature(&self, key_index: usize) -> Result<SubmitSignatureResponse> {
+        let public_key = self
+            .test_keys
+            .pub_key(key_index)
+            .ok_or_else(|| anyhow::anyhow!("key index {} out of range", key_index))?;
+        let secret_key = self
+            .test_keys
+            .sec_key(key_index)
+            .ok_or_else(|| anyhow::anyhow!("key index {} out of range", key_index))?;
+
+        let artifact_abs = self.repo_path.join(&self.artifact_path);
+        let content = fs::read(&artifact_abs)?;
+        let hash = sha512_for_content(content)?;
+        let sig = secret_key.sign(&hash)?;
+
+        let submit_payload = serde_json::json!({
+            "file_path": self.artifact_path,
+            "public_key": public_key.to_base64(),
+            "signature": sig.to_base64(),
+        });
+
+        let submit_payload_str = submit_payload.to_string();
+        let auth_info = AuthInfo::new(submit_payload_str);
+        let auth_sig = AuthSignature::new(&auth_info, secret_key)?;
+
+        let response = self
+            .client
+            .post(format!("http://127.0.0.1:{}/v1/signatures", self.port))
+            .header(
+                HEADER_TIMESTAMP,
+                auth_sig.auth_info().timestamp().to_rfc3339(),
+            )
+            .header(HEADER_NONCE, auth_sig.auth_info().nonce())
+            .header(HEADER_SIGNATURE, auth_sig.signature().to_base64())
+            .header(HEADER_PUBLIC_KEY, public_key.to_base64())
+            .json(&submit_payload)
+            .send()
+            .await?;
+
+        let status = response.status();
+        if status != 200 {
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Signature submission failed with status {}: {}",
+                status,
+                body
+            );
+        }
+        let body: SubmitSignatureResponse = response.json().await?;
+        Ok(body)
+    }
+
+    /// Submit a signature and wait for the server to commit.
+    pub async fn submit_signature_and_wait(
+        &self,
+        key_index: usize,
+    ) -> Result<SubmitSignatureResponse> {
+        let body = self.submit_signature(key_index).await?;
+
+        let commit_prefix = if body.is_complete {
+            "completed signature collection for"
+        } else {
+            "added partial signature for"
+        };
+        let expected_msg = format!("{} {}", commit_prefix, self.artifact_path);
+        wait_for_commit(self.repo_path.clone(), &expected_msg, None).await?;
+
+        Ok(body)
+    }
 }
 
 impl Drop for TestSetup {
@@ -454,119 +555,187 @@ impl Drop for TestSetup {
     }
 }
 
+/// Builder for creating configurable test setups for REST API integration tests.
+pub struct TestSetupBuilder {
+    num_keys: usize,
+    threshold: usize,
+    artifact_path: String,
+    artifact_content: Vec<u8>,
+    commit_signers: bool,
+    history: Option<signers_file_types::HistoryFile>,
+}
+
+impl Default for TestSetupBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TestSetupBuilder {
+    /// Create a new builder with default settings.
+    pub fn new() -> Self {
+        Self {
+            num_keys: 1,
+            threshold: 1,
+            artifact_path: "releases/artifact.bin".to_string(),
+            artifact_content: b"artifact content".to_vec(),
+            commit_signers: true,
+            history: None,
+        }
+    }
+
+    /// Set the number of keys. Also sets threshold to the same value.
+    pub fn with_keys(mut self, n: usize) -> Self {
+        self.num_keys = n;
+        self.threshold = n;
+        self
+    }
+
+    /// Override the threshold independently of the number of keys.
+    pub fn with_threshold(mut self, t: usize) -> Self {
+        self.threshold = t;
+        self
+    }
+
+    /// Set the relative artifact path.
+    pub fn with_artifact(mut self, path: impl Into<String>) -> Self {
+        self.artifact_path = path.into();
+        self
+    }
+
+    /// Set the artifact file content.
+    pub fn with_artifact_content(mut self, content: impl Into<Vec<u8>>) -> Self {
+        self.artifact_content = content.into();
+        self
+    }
+
+    /// Do not commit the signers directory during setup.
+    pub fn without_signers_committed(mut self) -> Self {
+        self.commit_signers = false;
+        self
+    }
+
+    /// Set a history file to write during setup.
+    pub fn with_history(mut self, history: signers_file_types::HistoryFile) -> Self {
+        self.history = Some(history);
+        self
+    }
+
+    /// Build the test setup: creates repo, signers, artifact, and starts the
+    /// server, but does NOT submit any signatures.
+    pub async fn build(self) -> Result<TestSetup> {
+        let temp_dir = TempDir::new()?;
+        let repo_path = temp_dir.path().to_path_buf();
+        init_git_repo(&repo_path)?;
+
+        let test_keys = test_helpers::TestKeys::new(self.num_keys);
+
+        // Collect all public keys
+        let pub_keys: Vec<_> = (0..self.num_keys)
+            .map(|i| test_keys.pub_key(i).unwrap().clone())
+            .collect();
+
+        // Create signers config with the configured threshold
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (pub_keys, self.threshold as u32))?;
+        let signers_dir = repo_path.join(SIGNERS_DIR);
+        tokio::fs::create_dir_all(&signers_dir).await?;
+        tokio::fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?).await?;
+
+        // Create metadata file
+        let metadata = test_helpers::test_metadata();
+        tokio::fs::write(
+            signers_dir.join(METADATA_FILE),
+            serde_json::to_string_pretty(&metadata)?,
+        )
+        .await?;
+
+        // Create a signatures file for the signers config (sign with first key)
+        let first_pub_key = test_keys.pub_key(0).unwrap();
+        let first_sec_key = test_keys.sec_key(0).unwrap();
+        let signers_file_content = tokio::fs::read(signers_dir.join(SIGNERS_FILE)).await?;
+        let signers_hash = sha512_for_content(signers_file_content)?;
+        let signers_sig = first_sec_key.sign(&signers_hash)?;
+        let mut signers_signatures = SignaturesFile::new();
+        signers_signatures.entries.insert(
+            first_pub_key.to_base64(),
+            TaggedSignature {
+                format: first_pub_key.key_format(),
+                signature: signers_sig.to_base64(),
+            },
+        );
+        let signers_file_path = signers_dir.join(SIGNERS_FILE);
+        let signers_sig_path = signatures_path_for(&signers_file_path)?;
+        tokio::fs::write(
+            &signers_sig_path,
+            serde_json::to_string(&signers_signatures)?,
+        )
+        .await?;
+
+        // Write history file if provided
+        if let Some(ref history) = self.history {
+            let history_path = repo_path.join(SIGNERS_HISTORY_FILE);
+            history.save_to_file(&history_path)?;
+        }
+
+        // Commit the signers directory (and history file) if requested
+        if self.commit_signers {
+            let mut paths_to_commit: Vec<&str> = vec![SIGNERS_DIR];
+            if self.history.is_some() {
+                paths_to_commit.push(SIGNERS_HISTORY_FILE);
+            }
+            git_commit(&repo_path, &paths_to_commit, "initial signers config")?;
+        }
+
+        // Create artifact file
+        let artifact_abs = repo_path.join(&self.artifact_path);
+        tokio::fs::create_dir_all(artifact_abs.parent().unwrap()).await?;
+        tokio::fs::write(&artifact_abs, &self.artifact_content).await?;
+
+        // Create empty pending signatures file
+        let pending_sig_path = pending_signatures_path_for(&artifact_abs)?;
+        tokio::fs::write(
+            &pending_sig_path,
+            serde_json::to_string(&SignaturesFile::new())?,
+        )
+        .await?;
+
+        // Start server
+        let port = get_random_port().await?;
+        let config = build_test_config(&repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        Ok(TestSetup {
+            _temp_dir: temp_dir,
+            port,
+            server_handle,
+            artifact_path: self.artifact_path,
+            test_keys,
+            repo_path,
+            client: reqwest::Client::new(),
+        })
+    }
+
+    /// Build the test setup and submit signatures for key indices 0..threshold,
+    /// waiting for each commit.
+    pub async fn build_and_sign(self) -> Result<TestSetup> {
+        let threshold = self.threshold;
+        let setup = self.build().await?;
+
+        for key_index in 0..threshold {
+            setup.submit_signature_and_wait(key_index).await?;
+        }
+
+        Ok(setup)
+    }
+}
+
 /// Sets up a git repo with signers config+metadata, creates an artifact,
 /// submits a signature to complete the signing workflow, and waits for commit.
 pub async fn setup_signed_artifact() -> Result<TestSetup> {
-    let temp_dir = TempDir::new()?;
-    let repo_path = temp_dir.path().to_path_buf();
-    init_git_repo(&repo_path)?;
-
-    let test_keys = test_helpers::TestKeys::new(1);
-    let public_key = test_keys.pub_key(0).unwrap();
-    let secret_key = test_keys.sec_key(0).unwrap();
-
-    // Create signers config: 1-of-1 for simple completion
-    let signers_config =
-        SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1))?;
-    let signers_dir = repo_path.join(SIGNERS_DIR);
-    tokio::fs::create_dir_all(&signers_dir).await?;
-    tokio::fs::write(signers_dir.join(SIGNERS_FILE), signers_config.to_json()?).await?;
-
-    // Create metadata file
-    let metadata = test_helpers::test_metadata();
-    tokio::fs::write(
-        signers_dir.join(METADATA_FILE),
-        serde_json::to_string_pretty(&metadata)?,
-    )
-    .await?;
-
-    // Create a signatures file for the signers config (required by the handler)
-    let signers_file_content = tokio::fs::read(signers_dir.join(SIGNERS_FILE)).await?;
-    let signers_hash = sha512_for_content(signers_file_content)?;
-    let signers_sig = secret_key.sign(&signers_hash)?;
-    let mut signers_signatures = SignaturesFile::new();
-    signers_signatures.entries.insert(
-        public_key.to_base64(),
-        TaggedSignature {
-            format: public_key.key_format(),
-            signature: signers_sig.to_base64(),
-        },
-    );
-    let signers_file_path = signers_dir.join(SIGNERS_FILE);
-    let signers_sig_path = signatures_path_for(&signers_file_path)?;
-    tokio::fs::write(
-        &signers_sig_path,
-        serde_json::to_string(&signers_signatures)?,
-    )
-    .await?;
-
-    // Commit the signers directory so git copy detection works later
-    git_commit(&repo_path, &[SIGNERS_DIR], "initial signers config")?;
-
-    // Create artifact file
-    let artifact_rel = "releases/artifact.bin";
-    let artifact_abs = repo_path.join(artifact_rel);
-    tokio::fs::create_dir_all(artifact_abs.parent().unwrap()).await?;
-    tokio::fs::write(&artifact_abs, "artifact content").await?;
-
-    // Create empty pending signatures file
-    let pending_sig_path = pending_signatures_path_for(&artifact_abs)?;
-    tokio::fs::write(
-        &pending_sig_path,
-        serde_json::to_string(&SignaturesFile::new())?,
-    )
-    .await?;
-
-    // Start server
-    let port = get_random_port().await?;
-    let config = build_test_config(&repo_path, port);
-    let config_clone = config.clone();
-    let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
-    wait_for_server(&config, None).await?;
-
-    // Submit signature to complete the signing workflow
-    let content = tokio::fs::read(&artifact_abs).await?;
-    let hash = sha512_for_content(content)?;
-    let sig = secret_key.sign(&hash)?;
-
-    let submit_payload = serde_json::json!({
-        "file_path": artifact_rel,
-        "public_key": public_key.to_base64(),
-        "signature": sig.to_base64(),
-    });
-
-    let submit_payload_str = submit_payload.to_string();
-    let auth_info = AuthInfo::new(submit_payload_str);
-    let auth_sig = AuthSignature::new(&auth_info, secret_key)?;
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(format!("http://127.0.0.1:{}/v1/signatures", port))
-        .header(
-            HEADER_TIMESTAMP,
-            auth_sig.auth_info().timestamp().to_rfc3339(),
-        )
-        .header(HEADER_NONCE, auth_sig.auth_info().nonce())
-        .header(HEADER_SIGNATURE, auth_sig.signature().to_base64())
-        .header(HEADER_PUBLIC_KEY, public_key.to_base64())
-        .json(&submit_payload)
-        .send()
-        .await?;
-
-    assert_eq!(response.status(), 200);
-    let body: SubmitSignatureResponse = response.json().await?;
-    assert!(body.is_complete, "Signature collection should be complete");
-
-    // Wait for the server to commit
-    let expected_msg = format!("completed signature collection for {}", artifact_rel);
-    wait_for_commit(repo_path.clone(), &expected_msg, None).await?;
-
-    Ok(TestSetup {
-        _temp_dir: temp_dir,
-        port,
-        server_handle,
-        artifact_path: artifact_rel.to_string(),
-    })
+    TestSetupBuilder::new().build_and_sign().await
 }
 
 #[cfg(test)]
@@ -628,5 +797,84 @@ mod tests {
         let cfg = build_test_config(temp_dir.path(), 3000);
         assert_eq!(cfg.git_backend, rest_api::config::GitBackendConfig::Sha256);
         unsafe { std::env::remove_var("ASFALOAD_GIT_BACKEND") };
+    }
+
+    #[tokio::test]
+    async fn test_builder_default_creates_server_and_artifact() {
+        let setup = TestSetupBuilder::new().build().await.unwrap();
+        assert!(setup.port() > 0);
+        assert_eq!(setup.artifact_path(), "releases/artifact.bin");
+        assert!(setup.repo_path().join("releases/artifact.bin").exists());
+        let client = reqwest::Client::new();
+        let resp = client
+            .get(format!(
+                "http://127.0.0.1:{}/v1/get_signers_chain/nonexistent",
+                setup.port()
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_ne!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_builder_with_keys_and_threshold() {
+        let setup = TestSetupBuilder::new()
+            .with_keys(2)
+            .with_threshold(2)
+            .build()
+            .await
+            .unwrap();
+
+        // First signature should be partial (threshold is 2)
+        let first = setup.submit_signature_and_wait(0).await.unwrap();
+        assert!(
+            !first.is_complete,
+            "First signature should be partial when threshold is 2"
+        );
+
+        // Second signature should complete the signing
+        let second = setup.submit_signature_and_wait(1).await.unwrap();
+        assert!(
+            second.is_complete,
+            "Second signature should complete signing when threshold is 2"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_builder_build_and_sign() {
+        let setup = TestSetupBuilder::new().build_and_sign().await.unwrap();
+
+        // The artifact should be fully signed; GET signers_chain should return 200
+        let client = reqwest::Client::new();
+        let resp = client
+            .get(format!(
+                "http://127.0.0.1:{}/v1/get_signers_chain/{}",
+                setup.port(),
+                setup.artifact_path()
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            200,
+            "get_signers_chain should return 200 for a fully signed artifact"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_builder_custom_artifact_path() {
+        let setup = TestSetupBuilder::new()
+            .with_artifact("custom/path/file.bin")
+            .build()
+            .await
+            .unwrap();
+
+        assert_eq!(setup.artifact_path(), "custom/path/file.bin");
+        assert!(
+            setup.repo_path().join("custom/path/file.bin").exists(),
+            "Custom artifact file should exist on disk"
+        );
     }
 }
