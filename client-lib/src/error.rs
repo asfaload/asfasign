@@ -1,3 +1,4 @@
+use admin_lib::AdminLibError;
 use features_lib::errors::{AggregateSignatureError, SignersFileError};
 use std::str::Utf8Error;
 use thiserror::Error;
@@ -78,6 +79,27 @@ pub enum ClientLibError {
 
     #[error("An error occured: {0}")]
     GenericError(String),
+
+    #[error("Admin lib error: {0}")]
+    AdminLib(#[from] AdminLibError),
+
+    #[error("Failed to fetch signers chain: {0}")]
+    SignersChainFetchError(String),
+
+    #[error("Failed to fetch signers file from forge: {0}")]
+    SignersChainForgeFetchError(String),
+
+    #[error("Signers chain is empty")]
+    SignersChainEmpty,
+
+    #[error("First entry content does not match forge source")]
+    SignersChainFirstEntryMismatch,
+
+    #[error("First entry signatures are invalid (not all signers signed)")]
+    SignersChainFirstEntrySignatureInvalid,
+
+    #[error("Signers chain transition is invalid")]
+    SignersChainTransitionInvalid,
 }
 
 pub type AsfaloadLibResult<T> = std::result::Result<T, ClientLibError>;

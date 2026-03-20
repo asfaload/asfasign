@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+admin-lib = { path = "../admin-lib/" }
 thiserror = "2.0"
 features_lib = { path = "../core/features_lib/" }
 forge-url = { path = "../file-auth/forge-url" }
