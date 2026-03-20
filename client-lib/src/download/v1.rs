@@ -130,13 +130,14 @@ pub async fn download_file_with_verification(
     callbacks.emit_file_download_started(filename, None);
 
     if full_check {
-        // Construct the artifact's repo path for the chain validation API.
-        let artifact_path = forge.construct_file_repo_path(&url, filename)?;
+        // The signed entity is the index file (not the individual artifact binary).
+        // The index_file_path is already computed above and is the correct path for
+        // the signers chain endpoint (it has a .signers.json copy in the git repo).
 
         // Run file download and chain validation in parallel
         let algorithm = expected_hash.algorithm();
         let download_future = download_file_to_temp(&client, file_url, &algorithm, callbacks);
-        let chain_future = verify_signers_chain(backend_url, &artifact_path);
+        let chain_future = verify_signers_chain(backend_url, &index_file_path);
 
         let (download_result, chain_result) = tokio::join!(download_future, chain_future);
 
