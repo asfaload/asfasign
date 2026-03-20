@@ -140,7 +140,33 @@ pub trait GitBackend: Send + Sync + 'static {
             .ok_or_else(|| {
                 ApiError::GitError(format!("Could not parse source path from: {}", found))
             })?;
-        let source_path = NormalisedPaths::new_sync(self.root(), source_path_str)?;
+
+        // The signers copy is always taken from the active signers dir,
+        // never from the pending dir. However, git copy detection can be
+        // ambiguous when both directories contain the same file content
+        // (same blob). If git reports the pending dir as the source,
+        // verify the active dir has the same file at that commit and use
+        // it instead. If the active dir doesn't have it, that's an error.
+        use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR};
+        let pending_component = format!("/{}/", PENDING_SIGNERS_DIR);
+        let source_path_str = if source_path_str.contains(&pending_component) {
+            let active_candidate =
+                source_path_str.replace(&pending_component, &format!("/{}/", SIGNERS_DIR));
+            // Verify the active signers file exists at this commit
+            let active_path = Path::new(&active_candidate);
+            self.file_content_at_commit(&first_commit, active_path)
+                .map_err(|_| {
+                    ApiError::GitError(format!(
+                        "Signers copy source is in pending dir ({}) \
+                         but no matching active signers file found at commit {}",
+                        source_path_str, first_commit
+                    ))
+                })?;
+            active_candidate
+        } else {
+            source_path_str.to_string()
+        };
+        let source_path = NormalisedPaths::new_sync(self.root(), &source_path_str)?;
 
         let res = ArtifactSignersSource {
             commit: first_commit,

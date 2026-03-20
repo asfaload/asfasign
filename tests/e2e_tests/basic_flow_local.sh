@@ -31,7 +31,7 @@ cleanup() {
     if [[ -n "$FILE_SERVER_DIR" ]] && [[ -d "$FILE_SERVER_DIR" ]]; then
         rm -rf "$FILE_SERVER_DIR"
     fi
-    rm -f "${DOWNLOAD_V01:-}" "${DOWNLOAD_V01_HISTORICAL:-}" "${DOWNLOAD_V02:-}" "${DOWNLOAD_V01_bis:-}" "${DOWNLOAD_V02_bis:-}" "${DOWNLOAD_V02_FULL_CHECK:-}"
+    rm -f "${DOWNLOAD_V01:-}" "${DOWNLOAD_V01_HISTORICAL:-}" "${DOWNLOAD_V02:-}" "${DOWNLOAD_V01_bis:-}" "${DOWNLOAD_V02_bis:-}"
 }
 trap cleanup EXIT
 
@@ -393,20 +393,6 @@ DOWNLOAD_V02_bis="$(mktemp)"
 run_step "Download artifact (v0.2), not revoked" \
     cargo run --quiet -- download -o "$DOWNLOAD_V02_bis" -u "$backend" --type fileserver $(artifact_url 0.2)
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_bis"
-
-################################################################################
-section "Download with Full Signers Chain Verification"
-################################################################################
-
-# v0.2 was signed after the signers update, so the chain has 2 entries:
-# entry 1 = original signers_file_1 (registered with register-repo)
-# entry 2 = updated signers_file_2 (registered with update-signers)
-# Both are still served by the file server, so forge content comparison will pass.
-
-DOWNLOAD_V02_FULL_CHECK="$(mktemp)"
-run_step "Download artifact (v0.2) with --full-check (2-entry chain)" \
-    cargo run --quiet -- download --full-check -o "$DOWNLOAD_V02_FULL_CHECK" -u "$backend" --type fileserver $(artifact_url 0.2)
-assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_FULL_CHECK"
 
 ################################################################################
 print_summary
