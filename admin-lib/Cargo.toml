@@ -16,6 +16,8 @@ rest_api_auth = { path = "../rest_api_auth/" }
 http = "0.2"
 mockito = "1.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+signers_file_types = { path = "../core/signers_file_types/" }
+serde_json = "1.0"
 
 [lints]
 workspace = true
