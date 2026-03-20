@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use url::Url;
 
-use crate::{ForgeTrait, ForgeUrlError};
+use crate::{ForgeTrait, ForgeUrlError, path_prefix_from_url};
 
 #[derive(Debug, Clone)]
 pub struct GitHubRepoInfo {
@@ -113,12 +113,7 @@ impl ForgeTrait for GitHubRepoInfo {
             return Err(ForgeUrlError::MissingFilePath);
         }
 
-        let path_prefix = match url.host_str() {
-            Some("github.com") | Some("raw.githubusercontent.com") => {
-                "https/github.com/443".to_string()
-            }
-            _ => crate::path_prefix_from_url(url)?,
-        };
+        let path_prefix = path_prefix_from_url(url)?;
 
         Ok(GitHubRepoInfo {
             owner,
