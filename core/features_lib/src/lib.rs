@@ -31,6 +31,10 @@ pub use signatures::types::AsfaloadSignatures;
 
 pub use signers_file::activate_signers_file;
 use signers_file::sign_signers_file;
+pub use signers_file::validate_history;
+pub use signers_file_types::{
+    Forge, ForgeOrigin, HistoryEntry, HistoryFile, SignersConfigMetadata, SignersConfigOrigin,
+};
 pub use signers_file_types::{SignersConfig, parse_signers_config};
 
 // In this type argument we use AsfaloadPublicKeys and AsfaloadSignatures directly.
@@ -246,7 +250,8 @@ pub mod aggregate_signature_helpers {
     use std::{collections::HashMap, path::Path};
 
     pub use aggregate_signature::{
-        check_groups, get_authorized_signers_for_file, get_missing_signers, load_signers_config,
+        check_all_signers, check_groups, get_authorized_signers_for_file, get_missing_signers,
+        load_signers_config,
     };
     use aggregate_signature::{
         get_individual_signatures_from_bytes as get_individual_signatures_from_bytes_ori,
