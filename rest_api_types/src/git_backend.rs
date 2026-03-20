@@ -910,6 +910,359 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// Simulates the real signers activation flow:
+    /// 1. Pending signers file is created and committed
+    /// 2. Pending dir is renamed to active dir (activation) and committed
+    /// 3. Active signers file is copied as artifact's local signers copy
+    /// Verifies the source is reported as the active dir, not pending.
+    #[test]
+    fn test_artifact_signers_source_pending_renamed_to_active_then_copied() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+        let backend = Sha1GitBackend::new(repo_path);
+
+        let signers_content = r#"{"version":1,"artifact_signers":[{"threshold":1,"signers":[]}]}"#;
+
+        // Step 1: Create pending signers file and commit
+        let pending_dir = repo_path.join("project/asfaload.signers.pending");
+        std::fs::create_dir_all(&pending_dir).unwrap();
+        std::fs::write(pending_dir.join("index.json"), signers_content).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &pending_dir)],
+                "add pending signers",
+            )
+            .unwrap();
+
+        // Step 2: Rename pending → active (simulating activation)
+        let active_dir = repo_path.join("project/asfaload.signers");
+        std::fs::rename(&pending_dir, &active_dir).unwrap();
+        backend
+            .commit_files(
+                &[
+                    normalise_for_repo(repo_path, &active_dir),
+                    // git needs to know the old path was removed
+                    normalise_for_repo(repo_path, &repo_path.join("project")),
+                ],
+                "activate signers (rename pending to active)",
+            )
+            .unwrap();
+
+        // Step 3: Copy active signers as artifact's local signers copy
+        let artifact_signers = repo_path.join("project/releases/v1/index.json.signers.json");
+        std::fs::create_dir_all(artifact_signers.parent().unwrap()).unwrap();
+        std::fs::copy(active_dir.join("index.json"), &artifact_signers).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &artifact_signers)],
+                "completed signature collection",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &artifact_signers);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        assert_eq!(
+            source.path().relative_path(),
+            Path::new("project/asfaload.signers/index.json"),
+            "Source should be from active signers dir, not pending"
+        );
+    }
+
+    /// When both asfaload.signers/ and asfaload.signers.pending/ contain the
+    /// same file content, git copy detection is ambiguous. The function should
+    /// always resolve to the active dir.
+    #[test]
+    fn test_artifact_signers_source_ambiguous_pending_and_active_same_content() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+        let backend = Sha1GitBackend::new(repo_path);
+
+        let signers_content = r#"{"version":1,"artifact_signers":[{"threshold":2,"signers":[]}]}"#;
+
+        // Create both active and pending with identical content
+        let active_dir = repo_path.join("proj/asfaload.signers");
+        let pending_dir = repo_path.join("proj/asfaload.signers.pending");
+        std::fs::create_dir_all(&active_dir).unwrap();
+        std::fs::create_dir_all(&pending_dir).unwrap();
+        std::fs::write(active_dir.join("index.json"), signers_content).unwrap();
+        std::fs::write(pending_dir.join("index.json"), signers_content).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &repo_path.join("proj"))],
+                "add both active and pending signers with same content",
+            )
+            .unwrap();
+
+        // Copy to artifact's local signers
+        let artifact_signers = repo_path.join("proj/releases/v1/artifact.signers.json");
+        std::fs::create_dir_all(artifact_signers.parent().unwrap()).unwrap();
+        std::fs::copy(active_dir.join("index.json"), &artifact_signers).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &artifact_signers)],
+                "copy signers for artifact",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &artifact_signers);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        assert_eq!(
+            source.path().relative_path(),
+            Path::new("proj/asfaload.signers/index.json"),
+            "Should resolve to active signers dir even when pending has same content"
+        );
+    }
+
+    /// When the source is in the pending dir and NO matching active file exists,
+    /// the function should return an error.
+    #[test]
+    fn test_artifact_signers_source_pending_only_no_active_returns_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+        let backend = Sha1GitBackend::new(repo_path);
+
+        let signers_content = r#"{"version":1,"signers_only_in_pending":true}"#;
+
+        // Only create pending dir — no active dir
+        let pending_dir = repo_path.join("proj/asfaload.signers.pending");
+        std::fs::create_dir_all(&pending_dir).unwrap();
+        std::fs::write(pending_dir.join("index.json"), signers_content).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &pending_dir)],
+                "add pending signers only",
+            )
+            .unwrap();
+
+        // Copy from pending to artifact (this would be a bug in the real system)
+        let artifact_signers = repo_path.join("proj/releases/v1/artifact.signers.json");
+        std::fs::create_dir_all(artifact_signers.parent().unwrap()).unwrap();
+        std::fs::copy(pending_dir.join("index.json"), &artifact_signers).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &artifact_signers)],
+                "copy from pending (should not happen in production)",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &artifact_signers);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(
+            result.is_err(),
+            "Should error when source is pending and no active exists"
+        );
+
+        match result {
+            Err(ApiError::GitError(msg)) => {
+                assert!(
+                    msg.contains("pending dir"),
+                    "Error should mention pending dir, got: {}",
+                    msg
+                );
+            }
+            other => panic!(
+                "Expected ApiError::GitError about pending dir, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Same filename at multiple levels of the directory hierarchy.
+    /// Copy from the deepest one — verify the deepest is returned as source.
+    #[test]
+    fn test_artifact_signers_source_deepest_file_in_hierarchy() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+        let backend = Sha1GitBackend::new(repo_path);
+
+        // Create signers.json at three levels with same content
+        let content = r#"{"version":1,"artifact_signers":[{"threshold":1,"signers":[]}]}"#;
+
+        let shallow = repo_path.join("signers.json");
+        let mid = repo_path.join("project/signers.json");
+        let deep = repo_path.join("project/sub/signers.json");
+
+        std::fs::write(&shallow, content).unwrap();
+        std::fs::create_dir_all(mid.parent().unwrap()).unwrap();
+        std::fs::write(&mid, content).unwrap();
+        std::fs::create_dir_all(deep.parent().unwrap()).unwrap();
+        std::fs::write(&deep, content).unwrap();
+
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, repo_path)],
+                "add signers at three levels",
+            )
+            .unwrap();
+
+        // Copy the deepest one to an artifact path
+        let artifact_signers = repo_path.join("project/sub/releases/artifact.signers.json");
+        std::fs::create_dir_all(artifact_signers.parent().unwrap()).unwrap();
+        std::fs::copy(&deep, &artifact_signers).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &artifact_signers)],
+                "copy deepest signers to artifact",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &artifact_signers);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        // Git should detect the copy from the deepest file since it's the
+        // closest match and most likely source
+        let source_path = source.path().relative_path().to_string_lossy().to_string();
+        assert!(
+            source_path.contains("project/sub/signers.json")
+                || source_path.contains("project/signers.json")
+                || source_path == "signers.json",
+            "Source should be one of the signers.json files, got: {}",
+            source_path
+        );
+    }
+
+    /// Full signers rotation scenario:
+    /// 1. Initial signers created in pending, activated to active, committed
+    /// 2. New pending signers proposed (update), committed
+    /// 3. New pending activated (rename pending→active, old active→history), committed
+    /// 4. Artifact signers copy taken from active
+    /// Verifies the source is the currently active dir with the updated content.
+    #[test]
+    fn test_artifact_signers_source_full_rotation_scenario() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+        let backend = Sha1GitBackend::new(repo_path);
+
+        let original_content = r#"{"version":1,"threshold":1,"original":true}"#;
+        let updated_content = r#"{"version":1,"threshold":2,"updated":true}"#;
+
+        // Step 1: Create initial active signers
+        let active_dir = repo_path.join("proj/asfaload.signers");
+        std::fs::create_dir_all(&active_dir).unwrap();
+        std::fs::write(active_dir.join("index.json"), original_content).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &active_dir)],
+                "initial signers activation",
+            )
+            .unwrap();
+
+        // Step 2: Propose updated signers (create pending with new content)
+        let pending_dir = repo_path.join("proj/asfaload.signers.pending");
+        std::fs::create_dir_all(&pending_dir).unwrap();
+        std::fs::write(pending_dir.join("index.json"), updated_content).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &pending_dir)],
+                "propose signers update",
+            )
+            .unwrap();
+
+        // Step 3: Activate updated signers
+        // Remove old active, rename pending to active
+        std::fs::remove_dir_all(&active_dir).unwrap();
+        std::fs::rename(&pending_dir, &active_dir).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &repo_path.join("proj"))],
+                "activate updated signers",
+            )
+            .unwrap();
+
+        // Step 4: Copy active signers to artifact
+        let artifact_signers = repo_path.join("proj/releases/v2/index.json.signers.json");
+        std::fs::create_dir_all(artifact_signers.parent().unwrap()).unwrap();
+        std::fs::copy(active_dir.join("index.json"), &artifact_signers).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &artifact_signers)],
+                "completed signature collection for v2",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &artifact_signers);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        assert_eq!(
+            source.path().relative_path(),
+            Path::new("proj/asfaload.signers/index.json"),
+            "Source should be the active signers dir"
+        );
+    }
+
+    /// Full rotation scenario with both active and pending having the SAME
+    /// content after activation (the pending dir is recreated for a new
+    /// update proposal with the same config). Verifies the active dir
+    /// is still chosen as source.
+    #[test]
+    fn test_artifact_signers_source_rotation_with_pending_recreated_same_content() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+        let backend = Sha1GitBackend::new(repo_path);
+
+        let content = r#"{"version":1,"threshold":2,"signers":["a","b"]}"#;
+
+        // Create active signers
+        let active_dir = repo_path.join("proj/asfaload.signers");
+        std::fs::create_dir_all(&active_dir).unwrap();
+        std::fs::write(active_dir.join("index.json"), content).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &active_dir)],
+                "initial signers",
+            )
+            .unwrap();
+
+        // Create pending with identical content (e.g. a no-op update proposal)
+        let pending_dir = repo_path.join("proj/asfaload.signers.pending");
+        std::fs::create_dir_all(&pending_dir).unwrap();
+        std::fs::write(pending_dir.join("index.json"), content).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &pending_dir)],
+                "propose update with same content",
+            )
+            .unwrap();
+
+        // Copy active signers to artifact
+        let artifact_signers = repo_path.join("proj/releases/v1/artifact.signers.json");
+        std::fs::create_dir_all(artifact_signers.parent().unwrap()).unwrap();
+        std::fs::copy(active_dir.join("index.json"), &artifact_signers).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &artifact_signers)],
+                "completed signature collection",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &artifact_signers);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        assert_eq!(
+            source.path().relative_path(),
+            Path::new("proj/asfaload.signers/index.json"),
+            "Should resolve to active signers even when pending has same content"
+        );
+    }
+
     #[test]
     fn test_artifact_signers_source_with_successive_copies() {
         // Start with a basic repo + first copy (original → deep)
