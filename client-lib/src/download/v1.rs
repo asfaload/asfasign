@@ -1,4 +1,5 @@
 use crate::backend::{download_file, download_file_to_temp};
+use crate::signers_chain::verify_signers_chain;
 use crate::types::DownloadCallbacks;
 use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
 use crate::{AsfaloadLibResult, ClientLibError, DownloadResult};
@@ -11,12 +12,53 @@ use std::path::PathBuf;
 
 use super::{ForgeTrait, Forges, get_forge};
 
+/// Complete the download: verify hash, persist temp file, emit callbacks.
+#[allow(clippy::too_many_arguments)]
+fn finalize_download(
+    temp_file: tempfile::NamedTempFile,
+    bytes_downloaded: u64,
+    computed_hash: crate::types::ComputedHash,
+    expected_hash: &crate::types::ComputedHash,
+    output: Option<&PathBuf>,
+    filename: &str,
+    valid_count: usize,
+    invalid_count: usize,
+    callbacks: &DownloadCallbacks,
+) -> AsfaloadLibResult<DownloadResult> {
+    callbacks.emit_file_download_completed(bytes_downloaded);
+
+    verify_file_hash(expected_hash, &computed_hash)?;
+    callbacks.emit_file_hash_verified(computed_hash.algorithm());
+
+    let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
+    temp_file.persist(&output_path).map_err(|e| {
+        ClientLibError::PersistError(format!(
+            "Failed to move temp file to {:?}: {}",
+            output_path, e
+        ))
+    })?;
+
+    callbacks.emit_file_saved(&output_path);
+
+    let result = DownloadResult {
+        file_path: output_path,
+        bytes_downloaded,
+        signatures_verified: valid_count,
+        signatures_invalid: invalid_count,
+        computed_hash,
+    };
+
+    callbacks.emit_completed(&result);
+    Ok(result)
+}
+
 /// Handle the download command
 pub async fn download_file_with_verification(
     file_url: &str,
     output: Option<&PathBuf>,
     backend_url: &str,
     forge_type: Option<&str>,
+    full_check: bool,
     callbacks: &DownloadCallbacks,
 ) -> AsfaloadLibResult<DownloadResult> {
     callbacks.emit_starting(file_url);
@@ -87,37 +129,56 @@ pub async fn download_file_with_verification(
 
     callbacks.emit_file_download_started(filename, None);
 
-    // Download file to temp location with incremental hash computation
-    let (temp_file, bytes_downloaded, computed_hash) =
-        download_file_to_temp(&client, file_url, &expected_hash.algorithm(), callbacks).await?;
+    if full_check {
+        // Construct the artifact's repo path for the chain validation API.
+        let artifact_path = forge.construct_file_repo_path(&url, filename)?;
 
-    callbacks.emit_file_download_completed(bytes_downloaded);
+        // Run file download and chain validation in parallel
+        let algorithm = expected_hash.algorithm();
+        let download_future = download_file_to_temp(&client, file_url, &algorithm, callbacks);
+        let chain_future = verify_signers_chain(backend_url, &artifact_path);
 
-    // Verify hash (algorithm + value)
-    verify_file_hash(&expected_hash, &computed_hash)?;
+        let (download_result, chain_result) = tokio::join!(download_future, chain_future);
 
-    callbacks.emit_file_hash_verified(computed_hash.algorithm());
+        // Check chain validation result and emit callbacks
+        match &chain_result {
+            Ok(chain) => {
+                callbacks.emit_signers_chain_verified(chain.entries_count);
+            }
+            Err(e) => {
+                callbacks.emit_signers_chain_failed(&e.to_string());
+            }
+        }
+        chain_result?;
 
-    // Move temp file to final destination (only happens if hash verification succeeded)
-    let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
-    temp_file.persist(&output_path).map_err(|e| {
-        ClientLibError::PersistError(format!(
-            "Failed to move temp file to {:?}: {}",
-            output_path, e
-        ))
-    })?;
+        let (temp_file, bytes_downloaded, computed_hash) = download_result?;
 
-    callbacks.emit_file_saved(&output_path);
+        finalize_download(
+            temp_file,
+            bytes_downloaded,
+            computed_hash,
+            &expected_hash,
+            output,
+            filename,
+            valid_count,
+            invalid_count,
+            callbacks,
+        )
+    } else {
+        // Existing sequential download path (no chain validation)
+        let (temp_file, bytes_downloaded, computed_hash) =
+            download_file_to_temp(&client, file_url, &expected_hash.algorithm(), callbacks).await?;
 
-    let result = DownloadResult {
-        file_path: output_path,
-        bytes_downloaded,
-        signatures_verified: valid_count,
-        signatures_invalid: invalid_count,
-        computed_hash,
-    };
-
-    callbacks.emit_completed(&result);
-
-    Ok(result)
+        finalize_download(
+            temp_file,
+            bytes_downloaded,
+            computed_hash,
+            &expected_hash,
+            output,
+            filename,
+            valid_count,
+            invalid_count,
+            callbacks,
+        )
+    }
 }
