@@ -672,7 +672,8 @@ pub mod test_utils_tests {
 
         let response_body = response.json::<RegisterRepoResponse>().await?;
         assert!(response_body.success);
-        assert_eq!(response_body.project_id, "github.com/owner/repo");
+        let expected_project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        assert_eq!(response_body.project_id, expected_project_id);
         assert_eq!(
             response_body.message,
             "Project registered successfully. Collect signatures to activate."
@@ -767,7 +768,8 @@ pub mod test_utils_tests {
 
         let response_body = response.json::<RegisterRepoResponse>().await?;
         assert!(response_body.success);
-        assert_eq!(response_body.project_id, "github.com/owner/repo");
+        let expected_project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        assert_eq!(response_body.project_id, expected_project_id);
         assert_eq!(
             response_body.message,
             "Project registered successfully. Collect signatures to activate."
@@ -798,10 +800,12 @@ pub mod test_utils_tests {
 
         init_git_repo(&git_repo_path)?;
 
-        let project_dir = git_repo_path.join("github.com/owner/repo");
-        tokio::fs::create_dir_all(&project_dir).await?;
-
         let mock_server = httpmock::MockServer::start();
+
+        // Create the project dir using the new path prefix format (scheme/host/port/owner/repo)
+        let project_dir =
+            git_repo_path.join(format!("http/127.0.0.1/{}/owner/repo", mock_server.port()));
+        tokio::fs::create_dir_all(&project_dir).await?;
 
         let test_keys = test_helpers::TestKeys::new(1);
         let public_key = test_keys.pub_key(0).unwrap();

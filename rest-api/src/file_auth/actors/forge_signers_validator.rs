@@ -453,7 +453,8 @@ mod test_utils_tests {
             result
         );
         let auth_result = result.unwrap();
-        assert_eq!(auth_result.project_id, "github.com/owner/repo");
+        let expected_project_id = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        assert_eq!(auth_result.project_id, expected_project_id);
 
         mock.assert();
     }
