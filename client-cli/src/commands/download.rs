@@ -7,6 +7,7 @@ pub async fn handle_download_command(
     output: Option<&PathBuf>,
     backend_url: &str,
     forge_type: Option<&str>,
+    full_check: bool,
 ) -> Result<()> {
     let callbacks = DownloadCallbacks::default()
         .with_starting(|args| {
@@ -34,6 +35,15 @@ pub async fn handle_download_command(
             eprintln!("This file has been revoked.");
             eprintln!("  Revoked at: {}", args.timestamp);
             eprintln!("  Revoked by: {}", args.initiator);
+        })
+        .with_signers_chain_verified(|args| {
+            println!(
+                "✓ Signers chain history verified ({} entries)",
+                args.entries_count
+            );
+        })
+        .with_signers_chain_failed(|args| {
+            eprintln!("✗ Signers chain verification failed: {}", args.reason);
         })
         .with_file_hash_verified(|args| {
             println!(
@@ -81,7 +91,15 @@ pub async fn handle_download_command(
             );
         });
 
-    download_file_with_verification(file_url, output, backend_url, forge_type, &callbacks).await?;
+    download_file_with_verification(
+        file_url,
+        output,
+        backend_url,
+        forge_type,
+        full_check,
+        &callbacks,
+    )
+    .await?;
 
     Ok(())
 }
