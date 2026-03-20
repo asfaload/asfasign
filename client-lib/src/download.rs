@@ -21,9 +21,8 @@ trait ForgeTrait {
         file_url: &Url,
         filename: &str,
     ) -> AsfaloadLibResult<String> {
-        let host = file_url
-            .host_str()
-            .ok_or_else(|| ClientLibError::InvalidUrl("URL has no host".to_string()))?;
+        let prefix = forge_url::path_prefix_from_url(file_url)
+            .map_err(|e| ClientLibError::InvalidUrl(e.to_string()))?;
         let path = file_url.path();
 
         let path = path.strip_prefix('/').unwrap_or(path);
@@ -32,7 +31,7 @@ trait ForgeTrait {
 
         let translated_path = self.translate_download_to_release_path(dir_path);
 
-        Ok(format!("{}/{}/{}", host, translated_path, filename))
+        Ok(format!("{}/{}/{}", prefix, translated_path, filename))
     }
     fn translate_download_to_release_path(&self, path: &str) -> String;
 }
@@ -153,7 +152,10 @@ mod tests {
             Url::parse("https://github.com/owner/repo/releases/download/v1.0/file.tar.gz").unwrap();
         let forge = get_forge(&url).unwrap();
         let result = forge.construct_file_repo_path(&url, "index.json").unwrap();
-        assert_eq!(result, "github.com/owner/repo/releases/tag/v1.0/index.json");
+        assert_eq!(
+            result,
+            "https/github.com/443/owner/repo/releases/tag/v1.0/index.json"
+        );
     }
 
     #[test]
@@ -173,7 +175,7 @@ mod tests {
         let forge = get_forge(&url).unwrap();
         let result = forge.construct_index_file_path(&url).unwrap();
         assert!(result.ends_with(INDEX_FILE));
-        assert!(result.starts_with("github.com/owner/repo/releases/tag/v2.0/"));
+        assert!(result.starts_with("https/github.com/443/owner/repo/releases/tag/v2.0/"));
     }
 
     #[test]
@@ -191,7 +193,7 @@ mod tests {
         let result = forge.construct_index_file_path(&url).unwrap();
         assert_eq!(
             result,
-            format!("example.com/owner/repo/-/releases/{}", INDEX_FILE)
+            format!("https/example.com/443/owner/repo/-/releases/{}", INDEX_FILE)
         );
     }
 
@@ -263,7 +265,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             result,
-            "github.com/owner/repo/releases/tag/v1.0/asfaload.index.json.signers.json"
+            "https/github.com/443/owner/repo/releases/tag/v1.0/asfaload.index.json.signers.json"
         );
     }
 
@@ -350,7 +352,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             result,
-            "files.example.com/public/releases/v1.0/asfaload.index.json"
+            "https/files.example.com/443/public/releases/v1.0/asfaload.index.json"
         );
     }
 
@@ -364,7 +366,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             result,
-            "gitlab.com/ns/project/-/releases/v1.0/downloads/asfaload.index.json"
+            "https/gitlab.com/443/ns/project/-/releases/v1.0/downloads/asfaload.index.json"
         );
     }
 }

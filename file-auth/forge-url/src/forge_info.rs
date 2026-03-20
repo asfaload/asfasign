@@ -240,7 +240,7 @@ mod tests {
                 "https://raw.githubusercontent.com/example-org/my-repo/develop/docs/config.json",
             )
             .unwrap(),
-            "github.com/example-org/my-repo",
+            "https/github.com/443/example-org/my-repo",
         );
     }
 
@@ -257,7 +257,7 @@ mod tests {
             "v1.0",
             "data.json",
             &url,
-            "github.com/user/repo",
+            "https/github.com/443/user/repo",
         );
     }
 
@@ -276,7 +276,7 @@ mod tests {
             "main",
             "path/to/deeply/nested/config.yml",
             &url::Url::parse("https://raw.githubusercontent.com/org/complex-repo/main/path/to/deeply/nested/config.yml").unwrap(),
-            "github.com/org/complex-repo",
+            "https/github.com/443/org/complex-repo",
         );
     }
 
@@ -295,7 +295,7 @@ mod tests {
             "feature-auth-v2",
             "src/auth/provider.ts",
             &url::Url::parse("https://raw.githubusercontent.com/acme/projects/feature-auth-v2/src/auth/provider.ts").unwrap(),
-            "github.com/acme/projects",
+            "https/github.com/443/acme/projects",
         );
     }
 
@@ -314,7 +314,7 @@ mod tests {
             "src/main.rs",
             &url::Url::parse("https://gitlab.com/group/subgroup/project/-/raw/dev/src/main.rs")
                 .unwrap(),
-            "gitlab.com/group/subgroup/project",
+            "https/gitlab.com/443/group/subgroup/project",
         );
     }
 
@@ -330,7 +330,7 @@ mod tests {
             "main",
             "file.txt",
             &url,
-            "gitlab.com/group/project",
+            "https/gitlab.com/443/group/project",
         );
     }
 
@@ -346,7 +346,7 @@ mod tests {
             "production",
             "config/settings.toml",
             &url::Url::parse("https://gitlab.com/enterprise/engineering/platform/app/-/raw/production/config/settings.toml").unwrap(),
-            "gitlab.com/enterprise/engineering/platform/app",
+            "https/gitlab.com/443/enterprise/engineering/platform/app",
         );
     }
 
@@ -365,7 +365,7 @@ mod tests {
             "lib/utils/helpers.js",
             &url::Url::parse("https://gitlab.com/group/project/-/raw/deploy/lib/utils/helpers.js")
                 .unwrap(),
-            "gitlab.com/group/project",
+            "https/gitlab.com/443/group/project",
         );
     }
 
@@ -385,7 +385,7 @@ mod tests {
             &url::Url::parse("https://raw.githubusercontent.com/owner/repo/main/file.json")
                 .unwrap()
         );
-        assert_eq!(github.project_id(), "github.com/owner/repo");
+        assert_eq!(github.project_id(), "https/github.com/443/owner/repo");
 
         match &github {
             ForgeInfo::Github(info) => {
@@ -415,7 +415,7 @@ mod tests {
             gitlab.raw_url(),
             &url::Url::parse("https://gitlab.com/ns/proj/-/raw/main/file.json").unwrap()
         );
-        assert_eq!(gitlab.project_id(), "gitlab.com/ns/proj");
+        assert_eq!(gitlab.project_id(), "https/gitlab.com/443/ns/proj");
 
         match &gitlab {
             ForgeInfo::Gitlab(info) => {

@@ -59,10 +59,13 @@ mod tests {
         let github_info = GitHubRepoInfo::new(&url::Url::parse(github_url).unwrap()).unwrap();
         let gitlab_info = GitLabRepoInfo::new(&url::Url::parse(gitlab_url).unwrap()).unwrap();
 
-        assert_eq!(github_info.project_id(), "github.com/my-org/my-repo");
+        assert_eq!(
+            github_info.project_id(),
+            "https/github.com/443/my-org/my-repo"
+        );
         assert_eq!(
             gitlab_info.project_id(),
-            "gitlab.com/group/subgroup/my-project"
+            "https/gitlab.com/443/group/subgroup/my-project"
         );
     }
 
@@ -153,8 +156,8 @@ mod tests {
         )
         .unwrap();
 
-        validate_trait_impl(&github, "github.com/org/repo");
-        validate_trait_impl(&gitlab, "gitlab.com/ns/proj");
+        validate_trait_impl(&github, "https/github.com/443/org/repo");
+        validate_trait_impl(&gitlab, "https/gitlab.com/443/ns/proj");
     }
 
     #[test]

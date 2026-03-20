@@ -9,7 +9,7 @@ _project_dir() {
     if [[ -n "${PROJECT_DIR_OVERRIDE:-}" ]]; then
         echo "$E2E_GIT_REPO_PATH/$PROJECT_DIR_OVERRIDE"
     else
-        echo "$E2E_GIT_REPO_PATH/github.com/${E2E_REPO}"
+        echo "$E2E_GIT_REPO_PATH/https/github.com/443/${E2E_REPO}"
     fi
 }
 

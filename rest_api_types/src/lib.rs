@@ -455,7 +455,7 @@ pub use models::{
 // ********************
 /// Represents a validated common base path shared by a set of URLs.
 pub struct CommonBasePath {
-    pub host: String,
+    pub prefix: String,
     pub parent_path: String,
 }
 
@@ -464,10 +464,10 @@ pub struct CommonBasePath {
 pub enum UrlValidationError {
     #[error("At least one URL must be provided")]
     EmptyUrls,
-    #[error("URL missing host: {0}")]
-    MissingHost(String),
-    #[error("All URLs must have the same host. Found '{0}' and '{1}'")]
-    DifferentHosts(String, String),
+    #[error("Invalid URL origin: {0}")]
+    InvalidOrigin(String),
+    #[error("All URLs must have the same origin (scheme, host, and port). Found '{0}' and '{1}'")]
+    DifferentOrigins(String, String),
     #[error("All URLs must be in the same directory. Found '{0}' and '{1}'")]
     DifferentParents(String, String),
 }
@@ -483,27 +483,23 @@ pub fn parent_path(path: &str) -> String {
     }
 }
 
-/// Validates that all URLs share the same host and parent directory.
+/// Validates that all URLs share the same origin (scheme, host, port) and parent directory.
 ///
-/// Returns the common host and parent path on success.
+/// Returns the common origin prefix and parent path on success.
 pub fn validate_common_parent(urls: &[Url]) -> Result<CommonBasePath, UrlValidationError> {
     let first = urls.first().ok_or(UrlValidationError::EmptyUrls)?;
 
-    let first_host = first
-        .host_str()
-        .ok_or_else(|| UrlValidationError::MissingHost(first.to_string()))?
-        .to_string();
+    let first_prefix = forge_url::path_prefix_from_url(first)
+        .map_err(|e| UrlValidationError::InvalidOrigin(e.to_string()))?;
 
     let first_parent = parent_path(first.path());
 
     for url in &urls[1..] {
-        let host = url
-            .host_str()
-            .ok_or_else(|| UrlValidationError::MissingHost(url.to_string()))?
-            .to_string();
+        let prefix = forge_url::path_prefix_from_url(url)
+            .map_err(|e| UrlValidationError::InvalidOrigin(e.to_string()))?;
 
-        if host != first_host {
-            return Err(UrlValidationError::DifferentHosts(first_host, host));
+        if prefix != first_prefix {
+            return Err(UrlValidationError::DifferentOrigins(first_prefix, prefix));
         }
 
         let parent = parent_path(url.path());
@@ -513,7 +509,7 @@ pub fn validate_common_parent(urls: &[Url]) -> Result<CommonBasePath, UrlValidat
     }
 
     Ok(CommonBasePath {
-        host: first_host,
+        prefix: first_prefix,
         parent_path: first_parent,
     })
 }
@@ -547,7 +543,7 @@ mod tests {
     fn test_validate_single_url() -> anyhow::Result<()> {
         let urls = vec![Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?];
         let result = validate_common_parent(&urls)?;
-        assert_eq!(result.host, "example.com");
+        assert_eq!(result.prefix, "https/example.com/443");
         assert_eq!(result.parent_path, "/releases/v1.0/");
         Ok(())
     }
@@ -559,24 +555,58 @@ mod tests {
             Url::parse("https://example.com/releases/v1.0/archive.tar.gz")?,
         ];
         let result = validate_common_parent(&urls)?;
-        assert_eq!(result.host, "example.com");
+        assert_eq!(result.prefix, "https/example.com/443");
         assert_eq!(result.parent_path, "/releases/v1.0/");
         Ok(())
     }
 
     #[test]
-    fn test_validate_different_hosts() -> anyhow::Result<()> {
+    fn test_validate_different_origins() -> anyhow::Result<()> {
         let urls = vec![
             Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?,
             Url::parse("https://other.com/releases/v1.0/archive.tar.gz")?,
         ];
         match validate_common_parent(&urls) {
-            Err(UrlValidationError::DifferentHosts(a, b)) => {
-                assert_eq!(a, "example.com");
-                assert_eq!(b, "other.com");
+            Err(UrlValidationError::DifferentOrigins(a, b)) => {
+                assert_eq!(a, "https/example.com/443");
+                assert_eq!(b, "https/other.com/443");
             }
-            Err(e) => panic!("Expected DifferentHosts error, got: {e}"),
-            Ok(_) => panic!("Expected DifferentHosts error, got Ok"),
+            Err(e) => panic!("Expected DifferentOrigins error, got: {e}"),
+            Ok(_) => panic!("Expected DifferentOrigins error, got Ok"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_same_host_different_scheme() -> anyhow::Result<()> {
+        let urls = vec![
+            Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?,
+            Url::parse("http://example.com/releases/v1.0/archive.tar.gz")?,
+        ];
+        match validate_common_parent(&urls) {
+            Err(UrlValidationError::DifferentOrigins(a, b)) => {
+                assert_eq!(a, "https/example.com/443");
+                assert_eq!(b, "http/example.com/80");
+            }
+            Err(e) => panic!("Expected DifferentOrigins error, got: {e}"),
+            Ok(_) => panic!("Expected DifferentOrigins error, got Ok"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_validate_same_host_different_port() -> anyhow::Result<()> {
+        let urls = vec![
+            Url::parse("https://example.com/releases/v1.0/SHA256SUMS")?,
+            Url::parse("https://example.com:8443/releases/v1.0/archive.tar.gz")?,
+        ];
+        match validate_common_parent(&urls) {
+            Err(UrlValidationError::DifferentOrigins(a, b)) => {
+                assert_eq!(a, "https/example.com/443");
+                assert_eq!(b, "https/example.com/8443");
+            }
+            Err(e) => panic!("Expected DifferentOrigins error, got: {e}"),
+            Ok(_) => panic!("Expected DifferentOrigins error, got Ok"),
         }
         Ok(())
     }
@@ -609,15 +639,15 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_missing_host() -> anyhow::Result<()> {
-        // file:// URLs have no host
+    fn test_validate_invalid_origin() -> anyhow::Result<()> {
+        // file:// URLs have an unsupported scheme
         let urls = vec![Url::parse("file:///tmp/test.txt")?];
         match validate_common_parent(&urls) {
-            Err(UrlValidationError::MissingHost(url_str)) => {
-                assert!(url_str.starts_with("file:///"));
+            Err(UrlValidationError::InvalidOrigin(msg)) => {
+                assert!(msg.contains("Unsupported URL scheme"));
             }
-            Err(e) => panic!("Expected MissingHost error, got: {e}"),
-            Ok(_) => panic!("Expected MissingHost error, got Ok"),
+            Err(e) => panic!("Expected InvalidOrigin error, got: {e}"),
+            Ok(_) => panic!("Expected InvalidOrigin error, got Ok"),
         }
         Ok(())
     }

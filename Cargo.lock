@@ -3644,6 +3644,7 @@ dependencies = [
  "chrono",
  "common",
  "config",
+ "forge-url",
  "git2",
  "hyper 1.8.1",
  "normalize-path",

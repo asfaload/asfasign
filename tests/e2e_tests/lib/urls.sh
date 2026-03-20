@@ -22,7 +22,7 @@ signers_file() {
 }
 
 pending_signers_file() {
-    echo "github.com/${E2E_REPO}/asfaload.signers.pending/index.json"
+    echo "https/github.com/443/${E2E_REPO}/asfaload.signers.pending/index.json"
 }
 
 release_url() {
@@ -32,7 +32,7 @@ release_url() {
 
 release_index() {
     local version="$1"
-    echo "github.com/${E2E_REPO}/releases/tag/v${version}/asfaload.index.json"
+    echo "https/github.com/443/${E2E_REPO}/releases/tag/v${version}/asfaload.index.json"
 }
 
 artifact_url() {
