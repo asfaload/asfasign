@@ -12,43 +12,57 @@ use std::path::PathBuf;
 
 use super::{ForgeTrait, Forges, get_forge};
 
-/// Complete the download: verify hash, persist temp file, emit callbacks.
-#[allow(clippy::too_many_arguments)]
-fn finalize_download(
+struct DownloadedData {
     temp_file: tempfile::NamedTempFile,
     bytes_downloaded: u64,
     computed_hash: crate::types::ComputedHash,
-    expected_hash: &crate::types::ComputedHash,
-    output: Option<&PathBuf>,
-    filename: &str,
+}
+
+struct FinalizeContext<'a> {
+    expected_hash: &'a crate::types::ComputedHash,
+    output: Option<&'a PathBuf>,
+    filename: &'a str,
     valid_count: usize,
     invalid_count: usize,
-    callbacks: &DownloadCallbacks,
+    callbacks: &'a DownloadCallbacks,
+}
+
+/// Complete the download: verify hash, persist temp file, emit callbacks.
+fn finalize_download(
+    data: DownloadedData,
+    context: &FinalizeContext,
 ) -> AsfaloadLibResult<DownloadResult> {
-    callbacks.emit_file_download_completed(bytes_downloaded);
+    context
+        .callbacks
+        .emit_file_download_completed(data.bytes_downloaded);
 
-    verify_file_hash(expected_hash, &computed_hash)?;
-    callbacks.emit_file_hash_verified(computed_hash.algorithm());
+    verify_file_hash(context.expected_hash, &data.computed_hash)?;
+    context
+        .callbacks
+        .emit_file_hash_verified(data.computed_hash.algorithm());
 
-    let output_path = output.cloned().unwrap_or_else(|| PathBuf::from(filename));
-    temp_file.persist(&output_path).map_err(|e| {
+    let output_path = context
+        .output
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from(context.filename));
+    data.temp_file.persist(&output_path).map_err(|e| {
         ClientLibError::PersistError(format!(
             "Failed to move temp file to {:?}: {}",
             output_path, e
         ))
     })?;
 
-    callbacks.emit_file_saved(&output_path);
+    context.callbacks.emit_file_saved(&output_path);
 
     let result = DownloadResult {
         file_path: output_path,
-        bytes_downloaded,
-        signatures_verified: valid_count,
-        signatures_invalid: invalid_count,
-        computed_hash,
+        bytes_downloaded: data.bytes_downloaded,
+        signatures_verified: context.valid_count,
+        signatures_invalid: context.invalid_count,
+        computed_hash: data.computed_hash,
     };
 
-    callbacks.emit_completed(&result);
+    context.callbacks.emit_completed(&result);
     Ok(result)
 }
 
@@ -159,15 +173,21 @@ pub async fn download_file_with_verification(
 
     let (temp_file, bytes_downloaded, computed_hash) = download_result?;
 
-    finalize_download(
-        temp_file,
-        bytes_downloaded,
-        computed_hash,
-        &expected_hash,
+    let context = FinalizeContext {
+        expected_hash: &expected_hash,
         output,
         filename,
         valid_count,
         invalid_count,
         callbacks,
+    };
+
+    finalize_download(
+        DownloadedData {
+            temp_file,
+            bytes_downloaded,
+            computed_hash,
+        },
+        &context,
     )
 }
