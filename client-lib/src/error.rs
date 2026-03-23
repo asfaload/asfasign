@@ -1,4 +1,3 @@
-use admin_lib::AdminLibError;
 use features_lib::errors::{AggregateSignatureError, SignersFileError};
 use std::str::Utf8Error;
 use thiserror::Error;
@@ -79,9 +78,6 @@ pub enum ClientLibError {
 
     #[error("An error occured: {0}")]
     GenericError(String),
-
-    #[error("Admin lib error: {0}")]
-    AdminLib(#[from] AdminLibError),
 
     #[error("Failed to fetch signers chain: {0}")]
     SignersChainFetchError(String),

@@ -14,7 +14,6 @@ dependencies = [
  "rest_api_types",
  "serde",
  "serde_json",
- "signers_file_types",
  "thiserror 2.0.18",
  "tokio",
 ]
@@ -742,7 +741,6 @@ dependencies = [
 name = "client-lib"
 version = "0.1.0"
 dependencies = [
- "admin-lib",
  "chrono",
  "digest",
  "features_lib",
@@ -751,6 +749,7 @@ dependencies = [
  "hex",
  "mockito",
  "reqwest 0.11.27",
+ "rest_api_types",
  "serde",
  "serde_json",
  "sha2",

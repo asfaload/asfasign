@@ -7,8 +7,8 @@ use features_lib::{
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
-    GetSignersChainResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
-    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest,
+    RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use serde::de::DeserializeOwned;
 
@@ -106,19 +106,6 @@ impl Client {
         let content = response.bytes().await?;
 
         Ok(content.to_vec())
-    }
-
-    /// Fetch the signers chain for a signed artifact.
-    ///
-    /// Makes an unauthenticated GET request to `/v1/get_signers_chain/{artifact_path}`.
-    pub async fn get_signers_chain(
-        &self,
-        artifact_path: &str,
-    ) -> AdminLibResult<GetSignersChainResponse> {
-        let url = format!("{}/v1/get_signers_chain/{}", self.base_url, artifact_path);
-        let response = self.client.get(&url).send().await?;
-        let response = Self::check_response_status(response).await?;
-        Self::parse_json_response(response).await
     }
 
     /// Submit a signature for a file to the backend.
@@ -432,56 +419,6 @@ mod tests {
         let result = client
             .fetch_external_url(&format!("{}/missing", server.url()))
             .await;
-
-        mock.assert_async().await;
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            AdminLibError::RequestFailed(msg) => {
-                assert!(msg.contains("404"));
-            }
-            other => panic!("Expected RequestFailed, got: {:?}", other),
-        }
-    }
-
-    #[tokio::test]
-    async fn get_signers_chain_returns_parsed_response() {
-        use signers_file_types::HistoryFile;
-
-        let mut server = mockito::Server::new_async().await;
-        let history = HistoryFile::new();
-        let response_body = serde_json::to_string(&rest_api_types::GetSignersChainResponse {
-            history: history.clone(),
-        })
-        .unwrap();
-
-        let mock = server
-            .mock("GET", "/v1/get_signers_chain/some/artifact/path")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(&response_body)
-            .create_async()
-            .await;
-
-        let client = Client::new(server.url());
-        let result = client.get_signers_chain("some/artifact/path").await;
-
-        mock.assert_async().await;
-        let response = result.unwrap();
-        assert_eq!(response.history.entries().len(), 0);
-    }
-
-    #[tokio::test]
-    async fn get_signers_chain_returns_error_on_404() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/v1/get_signers_chain/nonexistent")
-            .with_status(404)
-            .with_body("Not Found")
-            .create_async()
-            .await;
-
-        let client = Client::new(server.url());
-        let result = client.get_signers_chain("nonexistent").await;
 
         mock.assert_async().await;
         assert!(result.is_err());

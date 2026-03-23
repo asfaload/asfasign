@@ -1,10 +1,44 @@
 use crate::{AsfaloadLibResult, ClientLibError};
+use rest_api_types::GetSignersChainResponse;
 
 /// Result of a successful signers chain validation.
 #[derive(Debug)]
 pub struct SignersChainResult {
     /// Number of entries in the validated chain.
     pub entries_count: usize,
+}
+
+/// Fetch the signers chain for a signed artifact from the backend.
+///
+/// Makes an unauthenticated GET request to `/v1/get_signers_chain/{artifact_path}`.
+async fn get_signers_chain(
+    client: &reqwest::Client,
+    backend_url: &str,
+    artifact_path: &str,
+) -> AsfaloadLibResult<GetSignersChainResponse> {
+    let url = format!("{}/v1/get_signers_chain/{}", backend_url, artifact_path);
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| ClientLibError::SignersChainFetchError(e.to_string()))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "(failed to read response body)".to_string());
+        return Err(ClientLibError::SignersChainFetchError(format!(
+            "{}: {}",
+            status, body
+        )));
+    }
+
+    response
+        .json::<GetSignersChainResponse>()
+        .await
+        .map_err(|e| ClientLibError::SignersChainFetchError(e.to_string()))
 }
 
 /// Validate the signers chain for a signed artifact.
@@ -18,14 +52,10 @@ pub async fn verify_signers_chain(
     backend_url: &str,
     artifact_path: &str,
 ) -> AsfaloadLibResult<SignersChainResult> {
-    let admin_client = admin_lib::v1::Client::new(backend_url);
     let http_client = reqwest::Client::new();
 
     // Step 1: Fetch the chain
-    let chain_response = admin_client
-        .get_signers_chain(artifact_path)
-        .await
-        .map_err(|e| ClientLibError::SignersChainFetchError(e.to_string()))?;
+    let chain_response = get_signers_chain(&http_client, backend_url, artifact_path).await?;
 
     let history = chain_response.history;
 
