@@ -129,7 +129,7 @@ pub async fn download_file_with_verification(
 
     callbacks.emit_file_download_started(filename, None);
 
-    if full_check {
+    let download_result = if full_check {
         // The signed entity is the index file (not the individual artifact binary).
         // The index_file_path is already computed above and is the correct path for
         // the signers chain endpoint (it has a .signers.json copy in the git repo).
@@ -152,34 +152,22 @@ pub async fn download_file_with_verification(
         }
         chain_result?;
 
-        let (temp_file, bytes_downloaded, computed_hash) = download_result?;
-
-        finalize_download(
-            temp_file,
-            bytes_downloaded,
-            computed_hash,
-            &expected_hash,
-            output,
-            filename,
-            valid_count,
-            invalid_count,
-            callbacks,
-        )
+        download_result
     } else {
-        // Existing sequential download path (no chain validation)
-        let (temp_file, bytes_downloaded, computed_hash) =
-            download_file_to_temp(&client, file_url, &expected_hash.algorithm(), callbacks).await?;
+        download_file_to_temp(&client, file_url, &expected_hash.algorithm(), callbacks).await
+    };
 
-        finalize_download(
-            temp_file,
-            bytes_downloaded,
-            computed_hash,
-            &expected_hash,
-            output,
-            filename,
-            valid_count,
-            invalid_count,
-            callbacks,
-        )
-    }
+    let (temp_file, bytes_downloaded, computed_hash) = download_result?;
+
+    finalize_download(
+        temp_file,
+        bytes_downloaded,
+        computed_hash,
+        &expected_hash,
+        output,
+        filename,
+        valid_count,
+        invalid_count,
+        callbacks,
+    )
 }
