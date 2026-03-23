@@ -54,23 +54,23 @@ pub async fn verify_signers_chain(
 ) -> AsfaloadLibResult<SignersChainResult> {
     let http_client = reqwest::Client::new();
 
-    // Step 1: Fetch the chain
+    // Fetch the chain
     let chain_response = get_signers_chain(&http_client, backend_url, artifact_path).await?;
 
     let history = chain_response.history;
 
-    // Step 2: Check non-empty
+    // Check non-empty
     if history.entries().is_empty() {
         return Err(ClientLibError::SignersChainEmpty);
     }
 
-    // Step 3: Validate first entry
-    validate_first_entry(&http_client, history.entries().first().unwrap()).await?;
-
-    // Step 4: Validate chain transitions (if more than 1 entry)
+    // Validate chain transitions (if more than 1 entry)
     if history.entries().len() > 1 && !features_lib::validate_history(&history) {
         return Err(ClientLibError::SignersChainTransitionInvalid);
     }
+
+    // Validate first entry
+    validate_first_entry(&http_client, history.entries().first().unwrap()).await?;
 
     Ok(SignersChainResult {
         entries_count: history.entries().len(),
