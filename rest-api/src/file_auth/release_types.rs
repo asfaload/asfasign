@@ -1,4 +1,5 @@
 use crate::file_auth::releasers::ReleaseInfos;
+use common::fs::names::find_global_signers_for;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use std::path::PathBuf;
@@ -26,7 +27,7 @@ pub enum ReleaseUrlError {
 }
 
 pub trait ReleaseInfo: std::fmt::Debug + Send + Sync {
-    fn host(&self) -> &str;
+    fn origin_prefix(&self) -> &str;
     fn owner(&self) -> &str;
     fn repo(&self) -> &str;
     fn tag(&self) -> &str;
@@ -55,18 +56,14 @@ pub trait ReleaseAdder: ReleaseIndexWriter {
     where
         Self: Sized;
 
-    fn signers_file_path(&self) -> PathBuf;
-
     async fn index_path(&self) -> Result<NormalisedPaths, ApiError>;
     async fn index_content(&self) -> Result<String, ApiError>;
 
     // Error if index already exists
     async fn create_index(&self) -> Result<NormalisedPaths, ApiError> {
-        let signers_file_path = self.signers_file_path();
-        if !signers_file_path.exists() {
-            return Err(ApiError::NoActiveSignersFile);
-        }
         let index_path = self.index_path().await?;
+        find_global_signers_for(&index_path.absolute_path())
+            .map_err(|_| ApiError::NoActiveSignersFile)?;
         let abs_path = index_path.absolute_path();
         if let Some(parent) = abs_path.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {

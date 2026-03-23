@@ -1280,4 +1280,162 @@ pub mod test_utils_tests {
         server_handle.abort();
         Ok(())
     }
+
+    /// Test that register-assets (checksums mode) can find signers created by register-repo.
+    ///
+    /// This exercises the full cross-flow path:
+    /// 1. register-repo creates signers via ForgeInfo (FileServer type) at `http/127.0.0.1/<port>/owner/repo/`
+    /// 2. register-assets with csum_files uses path_prefix_from_url + find_global_signers_for
+    ///    to locate those signers from a checksums URL under the same origin
+    ///
+    /// This test would have caught the bug where register-assets used bare `host` paths
+    /// instead of `scheme/host/port` origin prefix paths.
+    #[tokio::test]
+    async fn test_register_assets_finds_signers_created_by_register_repo()
+    -> Result<(), anyhow::Error> {
+        use features_lib::{
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
+            sha512_for_content,
+        };
+        use httpmock::Method;
+        use rest_api_types::{RegisterAssetsResponse, RegisterRepoRequest, RegisterRepoResponse};
+
+        let temp_dir = TempDir::new()?;
+        let git_repo_path = temp_dir.path().join("git_repo");
+        init_git_repo(&git_repo_path)?;
+
+        let mock_server = httpmock::MockServer::start();
+
+        let test_keys = test_helpers::TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap();
+        let secret_key = test_keys.sec_key(0).unwrap();
+
+        // --- Step 1: Set up mock signers file and register repo ---
+
+        let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![public_key.clone()], 1),
+        )?;
+        let signers_json = serde_json::to_string_pretty(&signers_config)?;
+
+        let hash = sha512_for_content(signers_json.as_bytes().to_vec())?;
+        let signature = secret_key.sign(&hash)?;
+
+        let signers_json_clone = signers_json.clone();
+        let signers_mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/main/signers.json");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(signers_json_clone);
+        });
+
+        let signers_url = format!("{}/owner/repo/main/signers.json", mock_server.url(""));
+
+        let port = get_random_port().await?;
+        let config = build_test_config(&git_repo_path, port);
+        let config_clone = config.clone();
+        let server_handle = tokio::spawn(async move { run_server(&config_clone).await });
+        wait_for_server(&config, None).await?;
+
+        let client = reqwest::Client::new();
+
+        // Register the repo (creates signers at http/127.0.0.1/<mock_port>/owner/repo/)
+        let register_body = RegisterRepoRequest {
+            signers_file_url: signers_url,
+            signature: signature.to_base64(),
+            public_key: public_key.to_base64(),
+        };
+        let payload_string = serde_json::to_string(&register_body)?;
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
+
+        let response = client
+            .post(format!("http://localhost:{}/v1/register_repo", port))
+            .header(HEADER_TIMESTAMP, &timestamp)
+            .header(HEADER_NONCE, &nonce)
+            .header(HEADER_SIGNATURE, &auth_signature)
+            .header(HEADER_PUBLIC_KEY, &auth_public_key)
+            .json(&register_body)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let register_response = response.json::<RegisterRepoResponse>().await?;
+        assert!(register_response.success);
+        signers_mock.assert();
+
+        // --- Step 2: Set up mock checksums file and register assets ---
+
+        let sha256_hex = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let checksums_content = format!("{}  artifact.bin", sha256_hex);
+
+        let checksums_content_clone = checksums_content.clone();
+        let checksums_mock = mock_server.mock(|when, then| {
+            when.method(Method::GET)
+                .path("/owner/repo/releases/v1.0/SHA256SUMS");
+            then.status(200)
+                .header("Content-Type", "text/plain")
+                .body(checksums_content_clone);
+        });
+
+        let checksums_url = format!(
+            "{}/owner/repo/releases/v1.0/SHA256SUMS",
+            mock_server.url("")
+        );
+
+        let assets_body = json!({
+            "csum_files": [checksums_url]
+        });
+        let assets_payload_string = serde_json::to_string(&assets_body)?;
+
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(secret_key, &assets_payload_string).await;
+
+        let response = client
+            .post(format!("http://localhost:{}/v1/assets", port))
+            .header(HEADER_TIMESTAMP, &timestamp)
+            .header(HEADER_NONCE, &nonce)
+            .header(HEADER_SIGNATURE, &auth_signature)
+            .header(HEADER_PUBLIC_KEY, &auth_public_key)
+            .json(&assets_body)
+            .send()
+            .await?;
+
+        // This is the key assertion: if path prefixes mismatch between register-repo
+        // and register-assets, this returns 400 "No active signers file found"
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "register-assets should find signers created by register-repo"
+        );
+
+        let assets_response = response.json::<RegisterAssetsResponse>().await?;
+        assert!(assets_response.success);
+
+        // Verify the index file was created at the expected origin-prefix path
+        let index_path_str = assets_response
+            .index_file_path
+            .expect("index_file_path should be present");
+        let expected_prefix = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+        assert!(
+            index_path_str.starts_with(&expected_prefix),
+            "Index path '{}' should start with origin prefix '{}'",
+            index_path_str,
+            expected_prefix
+        );
+
+        checksums_mock.assert();
+        server_handle.abort();
+
+        Ok(())
+    }
 }

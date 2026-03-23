@@ -47,7 +47,7 @@ pub mod tests {
         let public_key_b64 = test_public_key.to_base64();
 
         let signers_dir = git_repo_path
-            .join("github.com/testowner/testrepo")
+            .join("https/github.com/443/testowner/testrepo")
             .join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
 
@@ -114,7 +114,7 @@ pub mod tests {
 
         assert_eq!(
             index_path_str,
-            "github.com/testowner/testrepo/releases/tag/v1.0.0/asfaload.index.json"
+            "https/github.com/443/testowner/testrepo/releases/tag/v1.0.0/asfaload.index.json"
         );
 
         // The response gives a relative path, so we need to join it with git_repo_path
@@ -243,7 +243,7 @@ pub mod tests {
         let public_key_b64 = test_public_key.to_base64();
 
         let signers_dir = git_repo_path
-            .join("github.com/testowner/testrepo")
+            .join("https/github.com/443/testowner/testrepo")
             .join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
 
@@ -300,7 +300,7 @@ pub mod tests {
         let port = get_random_port().await?;
 
         let signers_dir = git_repo_path
-            .join("github.com/testowner/testrepo")
+            .join("https/github.com/443/testowner/testrepo")
             .join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir).expect("Failed to create signers directory");
 
