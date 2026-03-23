@@ -1,3 +1,4 @@
+pub mod history_helpers;
 pub mod scenarios;
 pub mod signers_setup;
 

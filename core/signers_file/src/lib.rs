@@ -510,7 +510,6 @@ mod tests {
     use common::fs::names::local_signers_path_for;
     use common::sha512_for_file;
     use constants::{PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
-    use signatures::keys::AsfaloadPublicKey;
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signatures::keys::AsfaloadSignatureTrait;
     use signatures::signatures_file::TaggedSignature;
@@ -519,6 +518,7 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
     use test_helpers::TestKeys;
+    use test_helpers::history_helpers::{create_test_history_entry, create_test_signers_config};
     use test_helpers::test_metadata;
 
     fn assert_metadata_file_valid(root_dir: &Path, is_active: bool) {
@@ -2278,57 +2278,6 @@ mod tests {
     }
     // History file serialisation tests
     // --------------------------------
-
-    // Helper function to create a test signers config
-    fn create_test_signers_config(test_keys: &TestKeys) -> SignersConfig
-    where
-        AsfaloadPublicKey<minisign::PublicKey>: AsfaloadPublicKeyTrait,
-    {
-        SignersConfig::with_keys(
-            1,
-            (
-                vec![
-                    test_keys.pub_key(0).unwrap().clone(),
-                    test_keys.pub_key(1).unwrap().clone(),
-                ],
-                2,
-            ),
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-    }
-
-    // Helper function to create a test signatures file
-    fn create_test_signatures(test_keys: &TestKeys) -> SignaturesFile {
-        let mut sig_file = SignaturesFile::new();
-        sig_file.entries.insert(
-            test_keys.pub_key(0).unwrap().to_base64(),
-            TaggedSignature {
-                format: test_keys.pub_key(0).unwrap().key_format(),
-                signature: "test_signature_0".to_string(),
-            },
-        );
-        sig_file.entries.insert(
-            test_keys.pub_key(1).unwrap().to_base64(),
-            TaggedSignature {
-                format: test_keys.pub_key(1).unwrap().key_format(),
-                signature: "test_signature_1".to_string(),
-            },
-        );
-        sig_file
-    }
-
-    // Helper function to create a test history entry
-    fn create_test_history_entry(test_keys: &TestKeys, timestamp: DateTime<Utc>) -> HistoryEntry {
-        HistoryEntry {
-            obsoleted_at: timestamp,
-            signers_file: create_test_signers_config(test_keys).to_json().unwrap(),
-            signatures: create_test_signatures(test_keys),
-            metadata: test_metadata(),
-        }
-    }
 
     #[test]
     fn test_history_entry_creation() {
@@ -5270,26 +5219,11 @@ mod tests {
 mod validate_history_tests {
     use anyhow::Result;
     use chrono::Utc;
-    use signatures::keys::{
-        AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
-    };
-    use signatures::signatures_file::{SignaturesFile, TaggedSignature};
     use signers_file_types::{HistoryEntry, HistoryFile, SignersConfig};
+    use test_helpers::history_helpers::{sign_config, sign_json_bytes};
     use test_helpers::{TestKeys, test_metadata};
 
     use super::validate_history;
-
-    /// Helper: sign a config's JSON with the given secret keys.
-    /// Returns the JSON string that was signed and the corresponding SignaturesFile.
-    fn sign_config(
-        config: &SignersConfig,
-        keys: &TestKeys,
-        indices: &[usize],
-    ) -> Result<(String, SignaturesFile)> {
-        let json = serde_json::to_string_pretty(config)?;
-        let sig_file = sign_json_bytes(json.as_bytes(), keys, indices)?;
-        Ok((json, sig_file))
-    }
 
     #[test]
     fn validate_history_valid_two_entries() -> Result<()> {
@@ -5486,29 +5420,6 @@ mod validate_history_tests {
 
         assert!(!validate_history(&history));
         Ok(())
-    }
-
-    /// Helper: sign arbitrary JSON bytes with the given secret keys and return a SignaturesFile.
-    fn sign_json_bytes(
-        json_bytes: &[u8],
-        keys: &TestKeys,
-        indices: &[usize],
-    ) -> Result<SignaturesFile> {
-        let hash = common::sha512_for_content(json_bytes.to_vec())?;
-        let mut sig_file = SignaturesFile::new();
-        for &i in indices {
-            let pubkey = keys.pub_key(i).unwrap();
-            let seckey = keys.sec_key(i).unwrap();
-            let signature = seckey.sign(&hash)?;
-            sig_file.entries.insert(
-                pubkey.to_base64(),
-                TaggedSignature {
-                    format: pubkey.key_format(),
-                    signature: signature.to_base64(),
-                },
-            );
-        }
-        Ok(sig_file)
     }
 
     /// Generator test: creates a fixture file with a history entry whose signatures
