@@ -665,6 +665,62 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_file_content_at_commit() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        let file_path = repo_path.join("data.json");
+        std::fs::write(&file_path, r#"{"version": 1}"#).unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &file_path)],
+                "add data.json",
+            )
+            .unwrap();
+
+        let first_commit = GitCommand::git(repo_path, &["log", "--format=%H", "-1"]).unwrap();
+
+        std::fs::write(&file_path, r#"{"version": 2}"#).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &file_path)],
+                "update data.json",
+            )
+            .unwrap();
+
+        let content = backend
+            .file_content_at_commit(&first_commit, Path::new("data.json"))
+            .unwrap();
+        assert_eq!(content, r#"{"version": 1}"#);
+
+        let current = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(current, r#"{"version": 2}"#);
+    }
+
+    #[test]
+    fn test_file_content_at_commit_file_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        let file_path = repo_path.join("exists.txt");
+        std::fs::write(&file_path, "content").unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        backend
+            .commit_files(&[normalise_for_repo(repo_path, &file_path)], "add file")
+            .unwrap();
+
+        let commit = GitCommand::git(repo_path, &["log", "--format=%H", "-1"]).unwrap();
+
+        let result = backend.file_content_at_commit(&commit, Path::new("nonexistent.txt"));
+        assert!(result.is_err());
+    }
+
     /// Helper: init a repo, commit a source file, copy it to dest, commit the
     /// copy.  Returns (TempDir, backend, source path on disk, dest path on disk).
     /// The TempDir must be kept alive for the duration of the test.
@@ -775,62 +831,6 @@ mod tests {
             (now - commit_time).num_seconds() < 60,
             "Commit time should be recent (within 60s)"
         );
-    }
-
-    #[test]
-    fn test_file_content_at_commit() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-        init_test_repo(repo_path);
-
-        let file_path = repo_path.join("data.json");
-        std::fs::write(&file_path, r#"{"version": 1}"#).unwrap();
-
-        let backend = Sha1GitBackend::new(repo_path);
-        backend
-            .commit_files(
-                &[normalise_for_repo(repo_path, &file_path)],
-                "add data.json",
-            )
-            .unwrap();
-
-        let first_commit = GitCommand::git(repo_path, &["log", "--format=%H", "-1"]).unwrap();
-
-        std::fs::write(&file_path, r#"{"version": 2}"#).unwrap();
-        backend
-            .commit_files(
-                &[normalise_for_repo(repo_path, &file_path)],
-                "update data.json",
-            )
-            .unwrap();
-
-        let content = backend
-            .file_content_at_commit(&first_commit, Path::new("data.json"))
-            .unwrap();
-        assert_eq!(content, r#"{"version": 1}"#);
-
-        let current = std::fs::read_to_string(&file_path).unwrap();
-        assert_eq!(current, r#"{"version": 2}"#);
-    }
-
-    #[test]
-    fn test_file_content_at_commit_file_not_found() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-        init_test_repo(repo_path);
-
-        let file_path = repo_path.join("exists.txt");
-        std::fs::write(&file_path, "content").unwrap();
-
-        let backend = Sha1GitBackend::new(repo_path);
-        backend
-            .commit_files(&[normalise_for_repo(repo_path, &file_path)], "add file")
-            .unwrap();
-
-        let commit = GitCommand::git(repo_path, &["log", "--format=%H", "-1"]).unwrap();
-
-        let result = backend.file_content_at_commit(&commit, Path::new("nonexistent.txt"));
-        assert!(result.is_err());
     }
 
     /// When the source is in the pending dir and NO matching active file exists,
@@ -1161,6 +1161,61 @@ mod sha256_tests {
             Ok(_) => panic!("Expected rejection for unchanged tree commit"),
         }
     }
+}
+
+#[cfg(test)]
+mod artifact_signers_source_scenarios {
+    use super::*;
+    use std::path::Path;
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    fn normalise_for_repo(repo_path: &Path, file_path: &Path) -> NormalisedPaths {
+        let relative_or_requested = file_path.strip_prefix(repo_path).unwrap_or(file_path);
+        crate::path_validation::build_normalised_absolute_path(repo_path, relative_or_requested)
+            .unwrap()
+    }
+
+    fn init_sha1_repo(path: &Path) {
+        let repo = git2::Repository::init(path).unwrap();
+        let signature = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let tree_oid = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        repo.commit(Some("HEAD"), &signature, &signature, "Initial", &tree, &[])
+            .unwrap();
+        // Configure user for CLI-based CommitDir operations
+        let run_git = |args: &[&str]| {
+            let s = Command::new("git")
+                .args(["-C", &path.to_string_lossy()])
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(s.success(), "git {:?} failed", args);
+        };
+        run_git(&["config", "user.name", "Test User"]);
+        run_git(&["config", "user.email", "test@test.com"]);
+    }
+
+    fn init_sha256_repo(path: &Path) {
+        let status = Command::new("git")
+            .args(["init", "--object-format=sha256"])
+            .arg(path)
+            .status()
+            .expect("git CLI must be available for SHA-256 tests");
+        assert!(status.success(), "git init --object-format=sha256 failed");
+
+        let run_git = |args: &[&str]| {
+            let s = Command::new("git")
+                .args(["-C", &path.to_string_lossy()])
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(s.success(), "git {:?} failed", args);
+        };
+        run_git(&["config", "user.name", "Test User"]);
+        run_git(&["config", "user.email", "test@test.com"]);
+        run_git(&["commit", "--allow-empty", "-m", "Initial"]);
+    }
 
     enum GitAction {
         /// Create file at path relative to repo with content, then commit.
@@ -1182,7 +1237,7 @@ mod sha256_tests {
         ExpectSourceCommit(&'static str),
     }
 
-    fn run_action(backend: &Sha256GitBackend, action: &GitAction) -> anyhow::Result<()> {
+    fn run_action<B: GitBackend>(backend: &B, action: &GitAction) -> anyhow::Result<()> {
         let repo_path = backend.root();
         let resolve = |p: &str| -> PathBuf {
             let stripped = p.trim_start_matches('/');
@@ -1306,10 +1361,10 @@ mod sha256_tests {
         }
     }
 
-    #[test]
-    fn test_artifact_signers_source() {
-        let scenarios: Vec<(&str, Vec<GitAction>)> = vec![
+    fn scenarios() -> Vec<(&'static str, Vec<GitAction>)> {
+        vec![
             // -- Was: test_artifact_signers_source_finds_copy_source
+            //    + test_artifact_signers_source_returns_introducing_commit
             (
                 "finds_copy_source",
                 vec![
@@ -1319,6 +1374,7 @@ mod sha256_tests {
                         "artifacts/my_artifact.signers.json",
                         "signers.json",
                     ),
+                    GitAction::ExpectSourceCommit("artifacts/my_artifact.signers.json"),
                 ],
             ),
             // -- Was: test_artifact_signers_source_nested_directories
@@ -1337,15 +1393,6 @@ mod sha256_tests {
                         "releases/v1/artifacts/binary.signers.json",
                         "config/signers.json",
                     ),
-                ],
-            ),
-            // -- Was: test_artifact_signers_source_returns_introducing_commit
-            (
-                "returns_introducing_commit",
-                vec![
-                    GitAction::Create("signers.json", r#"{"signers": ["bob"]}"#),
-                    GitAction::Copy("signers.json", "artifact.signers.json"),
-                    GitAction::ExpectSourceCommit("artifact.signers.json"),
                 ],
             ),
             // -- Was: test_artifact_signers_source_pending_renamed_to_active_then_copied
@@ -1473,18 +1520,35 @@ mod sha256_tests {
                     GitAction::ExpectSourceIdentification("/dir1/dir2/dir3/file3", "/dir1/file1"),
                 ],
             ),
-        ];
+        ]
+    }
 
-        for (name, scenario) in &scenarios {
+    fn run_scenario<B: GitBackend>(name: &str, scenario: &[GitAction], backend: &B) {
+        for (i, action) in scenario.iter().enumerate() {
+            run_action(backend, action)
+                .unwrap_or_else(|e| panic!("Scenario '{}' failed at step {}: {}", name, i, e));
+        }
+    }
+
+    #[test]
+    fn test_artifact_signers_source_sha1() {
+        for (name, scenario) in scenarios() {
+            let temp_dir = TempDir::new().unwrap();
+            let repo_path = temp_dir.path();
+            init_sha1_repo(repo_path);
+            let backend = Sha1GitBackend::new(repo_path);
+            run_scenario(name, &scenario, &backend);
+        }
+    }
+
+    #[test]
+    fn test_artifact_signers_source_sha256() {
+        for (name, scenario) in scenarios() {
             let temp_dir = TempDir::new().unwrap();
             let repo_path = temp_dir.path();
             init_sha256_repo(repo_path);
             let backend = Sha256GitBackend::new(repo_path);
-
-            for (i, action) in scenario.iter().enumerate() {
-                run_action(&backend, action)
-                    .unwrap_or_else(|e| panic!("Scenario '{}' failed at step {}: {}", name, i, e));
-            }
+            run_scenario(name, &scenario, &backend);
         }
     }
 }
