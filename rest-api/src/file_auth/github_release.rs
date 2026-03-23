@@ -413,9 +413,10 @@ mod tests {
         assert_eq!(result.owner, "asfaload");
         assert_eq!(result.repo, "asfald");
         assert_eq!(result.tag, "v0.9.0");
+        assert_eq!(result.origin_prefix, "https/github.com/443");
         assert_eq!(
             result.release_path.relative_path(),
-            PathBuf::from("github.com/asfaload/asfald/releases/tag/v0.9.0")
+            PathBuf::from("https/github.com/443/asfaload/asfald/releases/tag/v0.9.0")
         );
     }
 

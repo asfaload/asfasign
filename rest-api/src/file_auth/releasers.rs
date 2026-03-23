@@ -144,7 +144,7 @@ mod test_utils_tests {
         let git_repo_path = temp_dir.path().to_path_buf();
 
         let signers_dir = git_repo_path
-            .join("github.com/testowner/testrepo")
+            .join("https/github.com/443/testowner/testrepo")
             .join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir).await.unwrap();
 
@@ -195,6 +195,88 @@ mod test_utils_tests {
         assert_eq!(
             files[0]["hash"],
             "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_index_finds_signers_at_origin_prefix_path() {
+        use crate::file_auth::release_types::ReleaseAdder;
+        use constants::{SIGNERS_DIR, SIGNERS_FILE};
+        use tempfile::TempDir;
+        use tokio::fs;
+
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let signers_dir = git_repo_path
+            .join("https/github.com/443/testowner/testrepo")
+            .join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir).await.unwrap();
+        fs::write(signers_dir.join(SIGNERS_FILE), "{}")
+            .await
+            .unwrap();
+
+        let release_url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+
+        let port = get_random_port().await.unwrap();
+        let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => crate::config::GitBackendConfig::Sha256,
+            _ => crate::config::GitBackendConfig::Sha1,
+        };
+        let mock_config = crate::config::AppConfig {
+            server_port: port,
+            git_repo_path: temp_dir.path().to_path_buf(),
+            log_level: "info".to_string(),
+            git_backend,
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
+            .await
+            .unwrap();
+
+        let result = adder.create_index().await;
+        assert!(
+            result.is_ok(),
+            "create_index should succeed when signers file exists at origin prefix path"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_index_fails_without_signers() {
+        use crate::file_auth::release_types::ReleaseAdder;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let release_url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+
+        let port = get_random_port().await.unwrap();
+        let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
+            Ok("sha256") => crate::config::GitBackendConfig::Sha256,
+            _ => crate::config::GitBackendConfig::Sha1,
+        };
+        let mock_config = crate::config::AppConfig {
+            server_port: port,
+            git_repo_path: temp_dir.path().to_path_buf(),
+            log_level: "info".to_string(),
+            git_backend,
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let adder = ReleaseAdders::new(&release_url, git_repo_path.clone(), &mock_config)
+            .await
+            .unwrap();
+
+        let result = adder.create_index().await;
+        assert!(
+            result.is_err(),
+            "create_index should fail when no signers file exists"
         );
     }
 }
