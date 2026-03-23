@@ -3,8 +3,8 @@ use crate::file_auth::release_types::{
     ReleaseAdder, ReleaseError, ReleaseIndexWriter, ReleaseInfo, ReleaseUrlError,
 };
 use crate::file_auth::releasers::ReleaseInfos;
-use constants::{SIGNERS_DIR, SIGNERS_FILE};
 use features_lib::{AsfaloadIndex, FileChecksum, HashAlgorithm};
+use forge_url::path_prefix_from_url;
 use octocrab::models::repos::Release;
 use rest_api_types::errors::ApiError;
 use rest_api_types::github_helpers::validate_github_url;
@@ -95,7 +95,7 @@ pub struct GithubReleaseAdder<C: GithubClientTrait> {
 
 #[derive(Debug, Clone)]
 pub struct GithubReleaseInfo {
-    pub host: String,
+    pub origin_prefix: String,
     pub owner: String,
     pub repo: String,
     pub tag: String,
@@ -103,8 +103,8 @@ pub struct GithubReleaseInfo {
 }
 
 impl ReleaseInfo for GithubReleaseInfo {
-    fn host(&self) -> &str {
-        &self.host
+    fn origin_prefix(&self) -> &str {
+        &self.origin_prefix
     }
 
     fn owner(&self) -> &str {
@@ -153,15 +153,6 @@ impl ReleaseAdder for GithubReleaseAdder<GithubClient> {
             client,
             release_info,
         })
-    }
-
-    fn signers_file_path(&self) -> PathBuf {
-        self.git_repo_path
-            .join(&self.release_info.host)
-            .join(&self.release_info.owner)
-            .join(&self.release_info.repo)
-            .join(SIGNERS_DIR)
-            .join(SIGNERS_FILE)
     }
 
     async fn index_path(&self) -> Result<NormalisedPaths, ApiError> {
@@ -263,13 +254,15 @@ pub async fn parse_release_url(
     url: &url::Url,
     git_repo: &Path,
 ) -> Result<GithubReleaseInfo, ApiError> {
-    let (host, owner, repo, tag) = validate_github_url(url)?;
-    let url_path = format!("{}/{}", host, url.path());
+    let (_host, owner, repo, tag) = validate_github_url(url)?;
+    let origin_prefix =
+        path_prefix_from_url(url).map_err(|e| ApiError::InvalidReleaseUrl(e.to_string()))?;
+    let url_path = format!("{}{}", origin_prefix, url.path());
     let release_path =
         NormalisedPaths::new(git_repo.to_path_buf(), PathBuf::from(&url_path)).await?;
 
     Ok(GithubReleaseInfo {
-        host,
+        origin_prefix,
         owner,
         repo,
         tag,

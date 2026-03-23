@@ -55,12 +55,6 @@ impl ReleaseAdder for ReleaseAdders {
         }
     }
 
-    fn signers_file_path(&self) -> PathBuf {
-        match self {
-            Self::Github(github) => github.signers_file_path(),
-        }
-    }
-
     async fn index_content(&self) -> Result<String, ApiError> {
         match self {
             Self::Github(github) => github.as_ref().index_content().await,
@@ -86,9 +80,9 @@ pub enum ReleaseInfos {
 }
 
 impl ReleaseInfo for ReleaseInfos {
-    fn host(&self) -> &str {
+    fn origin_prefix(&self) -> &str {
         match self {
-            Self::Github(github) => github.host(),
+            Self::Github(github) => github.origin_prefix(),
         }
     }
 
