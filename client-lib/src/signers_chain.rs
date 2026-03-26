@@ -86,9 +86,9 @@ pub(crate) async fn validate_first_entry(
     client: &reqwest::Client,
     entry: &features_lib::HistoryEntry,
 ) -> AsfaloadLibResult<()> {
-    // Extract forge URL from metadata
+    // Extract retrieval URL from metadata (serves actual file content, not HTML)
     let forge_url = match entry.metadata.origin() {
-        features_lib::SignersConfigOrigin::Forge(forge) => forge.url(),
+        features_lib::SignersConfigOrigin::Forge(forge) => forge.retrieval_url(),
     };
 
     // Fetch from forge
