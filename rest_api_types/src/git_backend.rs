@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 
@@ -148,23 +148,36 @@ pub trait GitBackend: Send + Sync + 'static {
         // verify the active dir has the same file at that commit and use
         // it instead. If the active dir doesn't have it, that's an error.
         use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR};
-        let pending_component = format!("/{}/", PENDING_SIGNERS_DIR);
-        let source_path_str = if source_path_str.contains(&pending_component) {
-            let active_candidate =
-                source_path_str.replace(&pending_component, &format!("/{}/", SIGNERS_DIR));
-            // Verify the active signers file exists at this commit
-            let active_path = Path::new(&active_candidate);
-            self.file_content_at_commit(&first_commit, active_path)
-                .map_err(|_| {
-                    ApiError::GitError(format!(
-                        "Signers copy source is in pending dir ({}) \
-                         but no matching active signers file found at commit {}",
-                        source_path_str, first_commit
-                    ))
-                })?;
-            active_candidate
-        } else {
-            source_path_str.to_string()
+        let source_path_str = {
+            let source_path = Path::new(source_path_str);
+            if source_path
+                .components()
+                .any(|c| c.as_os_str() == PENDING_SIGNERS_DIR)
+            {
+                let components: Vec<_> = source_path
+                    .components()
+                    .map(|c| {
+                        if c.as_os_str() == PENDING_SIGNERS_DIR {
+                            Component::Normal(SIGNERS_DIR.as_ref())
+                        } else {
+                            c
+                        }
+                    })
+                    .collect();
+                let active_candidate_path: PathBuf = components.iter().collect();
+
+                // Verify the active signers file exists at this commit
+                self.file_content_at_commit(&first_commit, &active_candidate_path)
+                    .map_err(|_|
+                        ApiError::GitError(format!(
+                            "Signers copy source is in pending dir ({}) but no matching active signers file found at commit {}",
+                            source_path_str, first_commit
+                        ))
+                    )?;
+                active_candidate_path.to_string_lossy().into_owned()
+            } else {
+                source_path_str.to_string()
+            }
         };
         let source_path = NormalisedPaths::new_sync(self.root(), &source_path_str)?;
 
