@@ -320,4 +320,6 @@ run_step "Download artifact (v0.2) with --full-check (2-entry chain)" \
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_FULL_CHECK"
 
 ################################################################################
+#
+#
 print_summary

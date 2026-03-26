@@ -409,4 +409,28 @@ run_step "Download artifact (v0.2) with --full-check (2-entry chain)" \
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_FULL_CHECK"
 
 ################################################################################
+section "Full Check Failure: Tampered/Missing Initial Signers File"
+################################################################################
+
+# The first entry in the signers chain is the trust anchor. It cannot be
+# validated cryptographically (no previous entry to sign it). The only way
+# to validate it is to confirm the forge still serves the original content.
+
+INITIAL_SIGNERS_FILE="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_1${_SIGNERS_SUFFIX}.json"
+
+# --- Tamper: overwrite initial signers file with signers_file_2 content ---
+# The file is still valid JSON, but the content no longer matches what was
+# registered in the backend history.
+cp "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json" "$INITIAL_SIGNERS_FILE"
+
+expect_fail "Download with --full-check (tampered initial signers file)" \
+    cargo run --quiet -- download --full-check -o "$(mktemp)" -u "$backend" --type fileserver $(artifact_url 0.2)
+
+# --- Delete: remove initial signers file entirely ---
+rm "$INITIAL_SIGNERS_FILE"
+
+expect_fail "Download with --full-check (missing initial signers file, 404)" \
+    cargo run --quiet -- download --full-check -o "$(mktemp)" -u "$backend" --type fileserver $(artifact_url 0.2)
+
+################################################################################
 print_summary
