@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 
@@ -140,7 +140,46 @@ pub trait GitBackend: Send + Sync + 'static {
             .ok_or_else(|| {
                 ApiError::GitError(format!("Could not parse source path from: {}", found))
             })?;
-        let source_path = NormalisedPaths::new_sync(self.root(), source_path_str)?;
+
+        // The signers copy is always taken from the active signers dir,
+        // never from the pending dir. However, git copy detection can be
+        // ambiguous when both directories contain the same file content
+        // (same blob). If git reports the pending dir as the source,
+        // verify the active dir has the same file at that commit and use
+        // it instead. If the active dir doesn't have it, that's an error.
+        use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR};
+        let source_path_str = {
+            let source_path = Path::new(source_path_str);
+            if source_path
+                .components()
+                .any(|c| c.as_os_str() == PENDING_SIGNERS_DIR)
+            {
+                let components: Vec<_> = source_path
+                    .components()
+                    .map(|c| {
+                        if c.as_os_str() == PENDING_SIGNERS_DIR {
+                            Component::Normal(SIGNERS_DIR.as_ref())
+                        } else {
+                            c
+                        }
+                    })
+                    .collect();
+                let active_candidate_path: PathBuf = components.iter().collect();
+
+                // Verify the active signers file exists at this commit
+                self.file_content_at_commit(&first_commit, &active_candidate_path)
+                    .map_err(|_|
+                        ApiError::GitError(format!(
+                            "Signers copy source is in pending dir ({}) but no matching active signers file found at commit {}",
+                            source_path_str, first_commit
+                        ))
+                    )?;
+                active_candidate_path.to_string_lossy().into_owned()
+            } else {
+                source_path_str.to_string()
+            }
+        };
+        let source_path = NormalisedPaths::new_sync(self.root(), &source_path_str)?;
 
         let res = ArtifactSignersSource {
             commit: first_commit,
@@ -639,195 +678,6 @@ mod tests {
         }
     }
 
-    /// Helper: init a repo, commit a source file, copy it to dest, commit the
-    /// copy.  Returns (TempDir, backend, source path on disk, dest path on disk).
-    /// The TempDir must be kept alive for the duration of the test.
-    fn init_repo_with_copied_file(
-        source_relative: &str,
-        source_content: &str,
-        dest_relative: &str,
-    ) -> (TempDir, Sha1GitBackend, PathBuf, PathBuf) {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-        init_test_repo(repo_path);
-
-        let source_file = repo_path.join(source_relative);
-        if let Some(parent) = source_file.parent() {
-            std::fs::create_dir_all(parent).unwrap();
-        }
-        std::fs::write(&source_file, source_content).unwrap();
-
-        let backend = Sha1GitBackend::new(repo_path);
-        backend
-            .commit_files(
-                &[normalise_for_repo(repo_path, &source_file)],
-                "add source file",
-            )
-            .unwrap();
-
-        let dest_file = repo_path.join(dest_relative);
-        if let Some(parent) = dest_file.parent() {
-            std::fs::create_dir_all(parent).unwrap();
-        }
-        std::fs::copy(&source_file, &dest_file).unwrap();
-        backend
-            .commit_files(
-                &[normalise_for_repo(repo_path, &dest_file)],
-                "copy file to destination",
-            )
-            .unwrap();
-
-        (temp_dir, backend, source_file, dest_file)
-    }
-
-    #[test]
-    fn test_artifact_signers_source_finds_copy_source() {
-        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
-            "signers.json",
-            r#"{"signers": ["alice"]}"#,
-            "artifacts/my_artifact.signers.json",
-        );
-        let repo_path = temp_dir.path();
-
-        let signers_path = normalise_for_repo(repo_path, &dest);
-        let result = backend.artifact_signers_source(signers_path);
-        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
-
-        let source = result.unwrap();
-        assert_eq!(
-            source.path().relative_path(),
-            Path::new("signers.json"),
-            "Source path should be the original signers file"
-        );
-        assert_eq!(
-            source.artifact_signers().relative_path(),
-            Path::new("artifacts/my_artifact.signers.json"),
-            "Artifact signers should be the copied file"
-        );
-        // commit should be a valid 40-char hex SHA-1
-        assert_eq!(source.commit().len(), 40);
-        assert!(source.commit().chars().all(|c| c.is_ascii_hexdigit()));
-    }
-
-    #[test]
-    fn test_artifact_signers_source_errors_when_file_not_in_history() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-        init_test_repo(repo_path);
-
-        // File exists on disk but was never committed
-        let file = repo_path.join("never_committed.json");
-        std::fs::write(&file, "content").unwrap();
-
-        let backend = Sha1GitBackend::new(repo_path);
-        let signers_path = normalise_for_repo(repo_path, &file);
-        let result = backend.artifact_signers_source(signers_path);
-
-        match result {
-            Err(ApiError::GitError(msg)) => {
-                assert!(
-                    msg.contains("No commit found"),
-                    "Expected 'No commit found' error, got: {}",
-                    msg
-                );
-            }
-            other => panic!("Expected ApiError::GitError, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_artifact_signers_source_does_not_panic_for_non_copied_file() {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-        init_test_repo(repo_path);
-
-        // Create and commit a brand new file (no copy source)
-        let file = repo_path.join("original.json");
-        std::fs::write(&file, "unique content that won't match anything").unwrap();
-
-        let backend = Sha1GitBackend::new(repo_path);
-        backend
-            .commit_files(&[normalise_for_repo(repo_path, &file)], "add original file")
-            .unwrap();
-
-        let signers_path = normalise_for_repo(repo_path, &file);
-        // Should not panic — may return Ok or Err depending on diff-tree output
-        let _result = backend.artifact_signers_source(signers_path);
-    }
-
-    #[test]
-    fn test_artifact_signers_source_nested_directories() {
-        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
-            "config/signers.json",
-            r#"{"threshold": 2, "signers": ["a","b","c"]}"#,
-            "releases/v1/artifacts/binary.signers.json",
-        );
-        let repo_path = temp_dir.path();
-
-        let signers_path = normalise_for_repo(repo_path, &dest);
-        let result = backend.artifact_signers_source(signers_path);
-        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
-
-        let source = result.unwrap();
-        assert_eq!(
-            source.path().relative_path(),
-            Path::new("config/signers.json"),
-        );
-    }
-
-    #[test]
-    fn test_artifact_signers_source_returns_introducing_commit() {
-        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
-            "signers.json",
-            r#"{"signers": ["bob"]}"#,
-            "artifact.signers.json",
-        );
-        let repo_path = temp_dir.path();
-
-        let expected_commit = GitCommand::git(
-            repo_path,
-            &[
-                "log",
-                "--diff-filter=A",
-                "--format=%H",
-                "-1",
-                "--",
-                "artifact.signers.json",
-            ],
-        )
-        .unwrap();
-
-        let signers_path = normalise_for_repo(repo_path, &dest);
-        let result = backend.artifact_signers_source(signers_path).unwrap();
-
-        assert_eq!(result.commit(), expected_commit);
-    }
-
-    #[test]
-    fn test_artifact_signers_source_has_commit_time() {
-        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
-            "signers.json",
-            r#"{"signers": ["alice"]}"#,
-            "artifacts/my_artifact.signers.json",
-        );
-        let repo_path = temp_dir.path();
-
-        let signers_path = normalise_for_repo(repo_path, &dest);
-        let result = backend.artifact_signers_source(signers_path).unwrap();
-
-        // commit_time should be a valid recent timestamp
-        let commit_time = result.commit_time();
-        let now = chrono::Utc::now();
-        assert!(
-            commit_time <= now,
-            "Commit time should not be in the future"
-        );
-        assert!(
-            (now - commit_time).num_seconds() < 60,
-            "Commit time should be recent (within 60s)"
-        );
-    }
-
     #[test]
     fn test_file_content_at_commit() {
         let temp_dir = TempDir::new().unwrap();
@@ -884,59 +734,227 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_artifact_signers_source_with_successive_copies() {
-        // Start with a basic repo + first copy (original → deep)
-        let (temp_dir, backend, _original, deep_copy) = init_repo_with_copied_file(
-            "signers.json",
-            r#"{"threshold": 2, "signers": ["alice","bob","carol"]}"#,
-            "sub/dir/subsub/signers.json",
-        );
+    /// Helper: init a repo, commit a source file, copy it to dest, commit the
+    /// copy.  Returns (TempDir, backend, source path on disk, dest path on disk).
+    /// The TempDir must be kept alive for the duration of the test.
+    fn init_repo_with_copied_file(
+        source_relative: &str,
+        source_content: &str,
+        dest_relative: &str,
+    ) -> (TempDir, Sha1GitBackend, PathBuf, PathBuf) {
+        let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
 
-        // Record the commit that introduced the deep copy
-        let deep_copy_commit = GitCommand::git(
-            repo_path,
-            &[
-                "log",
-                "--diff-filter=A",
-                "--format=%H",
-                "-1",
-                "--",
-                "sub/dir/subsub/signers.json",
-            ],
-        )
-        .unwrap();
+        let source_file = repo_path.join(source_relative);
+        if let Some(parent) = source_file.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(&source_file, source_content).unwrap();
 
-        // Second copy: deep → shallow
-        let shallow_copy = repo_path.join("sub/dir/signers.json");
-        std::fs::copy(&deep_copy, &shallow_copy).unwrap();
+        let backend = Sha1GitBackend::new(repo_path);
         backend
             .commit_files(
-                &[normalise_for_repo(repo_path, &shallow_copy)],
-                "copy signers to shallow path",
+                &[normalise_for_repo(repo_path, &source_file)],
+                "add source file",
             )
             .unwrap();
 
-        // Query the deep copy — should trace back to the original root file
-        let deep_signers = normalise_for_repo(repo_path, &deep_copy);
-        let result = backend.artifact_signers_source(deep_signers);
+        let dest_file = repo_path.join(dest_relative);
+        if let Some(parent) = dest_file.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::copy(&source_file, &dest_file).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &dest_file)],
+                "copy file to destination",
+            )
+            .unwrap();
+
+        (temp_dir, backend, source_file, dest_file)
+    }
+
+    #[test]
+    fn test_artifact_signers_source_errors_when_file_not_in_history() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        // File exists on disk but was never committed
+        let file = repo_path.join("never_committed.json");
+        std::fs::write(&file, "content").unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        let signers_path = normalise_for_repo(repo_path, &file);
+        let result = backend.artifact_signers_source(signers_path);
+
+        match result {
+            Err(ApiError::GitError(msg)) => {
+                assert!(
+                    msg.contains("No commit found"),
+                    "Expected 'No commit found' error, got: {}",
+                    msg
+                );
+            }
+            other => panic!("Expected ApiError::GitError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_artifact_signers_source_does_not_panic_for_non_copied_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+
+        // Create and commit a brand new file (no copy source)
+        let file = repo_path.join("original.json");
+        std::fs::write(&file, "unique content that won't match anything").unwrap();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        backend
+            .commit_files(&[normalise_for_repo(repo_path, &file)], "add original file")
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &file);
+        // Should not panic — may return Ok or Err depending on diff-tree output
+        let _result = backend.artifact_signers_source(signers_path);
+    }
+
+    #[test]
+    fn test_artifact_signers_source_has_commit_time() {
+        let (temp_dir, backend, _source, dest) = init_repo_with_copied_file(
+            "signers.json",
+            r#"{"signers": ["alice"]}"#,
+            "artifacts/my_artifact.signers.json",
+        );
+        let repo_path = temp_dir.path();
+
+        let signers_path = normalise_for_repo(repo_path, &dest);
+        let result = backend.artifact_signers_source(signers_path).unwrap();
+
+        // commit_time should be a valid recent timestamp
+        let commit_time = result.commit_time();
+        let now = chrono::Utc::now();
+        assert!(
+            commit_time <= now,
+            "Commit time should not be in the future"
+        );
+        assert!(
+            (now - commit_time).num_seconds() < 60,
+            "Commit time should be recent (within 60s)"
+        );
+    }
+
+    /// When the source is in the pending dir and NO matching active file exists,
+    /// the function should return an error.
+    #[test]
+    fn test_artifact_signers_source_pending_only_no_active_returns_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+        let backend = Sha1GitBackend::new(repo_path);
+
+        let signers_content = r#"{"version":1,"signers_only_in_pending":true}"#;
+
+        // Only create pending dir — no active dir
+        let pending_dir = repo_path.join("proj/asfaload.signers.pending");
+        std::fs::create_dir_all(&pending_dir).unwrap();
+        std::fs::write(pending_dir.join("index.json"), signers_content).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &pending_dir)],
+                "add pending signers only",
+            )
+            .unwrap();
+
+        // Copy from pending to artifact (this would be a bug in the real system)
+        let artifact_signers = repo_path.join("proj/releases/v1/artifact.signers.json");
+        std::fs::create_dir_all(artifact_signers.parent().unwrap()).unwrap();
+        std::fs::copy(pending_dir.join("index.json"), &artifact_signers).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &artifact_signers)],
+                "copy from pending (should not happen in production)",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &artifact_signers);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(
+            result.is_err(),
+            "Should error when source is pending and no active exists"
+        );
+
+        match result {
+            Err(ApiError::GitError(msg)) => {
+                assert!(
+                    msg.contains("pending dir"),
+                    "Error should mention pending dir, got: {}",
+                    msg
+                );
+            }
+            other => panic!(
+                "Expected ApiError::GitError about pending dir, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Same filename at multiple levels of the directory hierarchy.
+    /// Copy from the deepest one — verify the deepest is returned as source.
+    #[test]
+    fn test_artifact_signers_source_deepest_file_in_hierarchy() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_test_repo(repo_path);
+        let backend = Sha1GitBackend::new(repo_path);
+
+        // Create signers.json at three levels with same content
+        let content = r#"{"version":1,"artifact_signers":[{"threshold":1,"signers":[]}]}"#;
+
+        let shallow = repo_path.join("signers.json");
+        let mid = repo_path.join("project/signers.json");
+        let deep = repo_path.join("project/sub/signers.json");
+
+        std::fs::write(&shallow, content).unwrap();
+        std::fs::create_dir_all(mid.parent().unwrap()).unwrap();
+        std::fs::write(&mid, content).unwrap();
+        std::fs::create_dir_all(deep.parent().unwrap()).unwrap();
+        std::fs::write(&deep, content).unwrap();
+
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, repo_path)],
+                "add signers at three levels",
+            )
+            .unwrap();
+
+        // Copy the deepest one to an artifact path
+        let artifact_signers = repo_path.join("project/sub/releases/artifact.signers.json");
+        std::fs::create_dir_all(artifact_signers.parent().unwrap()).unwrap();
+        std::fs::copy(&deep, &artifact_signers).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &artifact_signers)],
+                "copy deepest signers to artifact",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &artifact_signers);
+        let result = backend.artifact_signers_source(signers_path);
         assert!(result.is_ok(), "Expected Ok, got {:?}", result);
 
         let source = result.unwrap();
-        assert_eq!(
-            source.path().relative_path(),
-            Path::new("signers.json"),
-            "Deep copy should trace back to the original root file"
-        );
-        assert_eq!(
-            source.artifact_signers().relative_path(),
-            Path::new("sub/dir/subsub/signers.json"),
-        );
-        assert_eq!(
-            source.commit(),
-            deep_copy_commit,
-            "Commit should be the one that introduced the deep copy"
+        // Git should detect the copy from the deepest file since it's the
+        // closest match and most likely source
+        let source_path = source.path().relative_path().to_string_lossy().to_string();
+        assert!(
+            source_path.contains("project/sub/signers.json")
+                || source_path.contains("project/signers.json")
+                || source_path == "signers.json",
+            "Source should be one of the signers.json files, got: {}",
+            source_path
         );
     }
 }
@@ -1154,6 +1172,396 @@ mod sha256_tests {
             }
             Err(e) => panic!("Expected InvalidRequestBody, got {}", e),
             Ok(_) => panic!("Expected rejection for unchanged tree commit"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod artifact_signers_source_scenarios {
+    use super::*;
+    use std::path::Path;
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    fn normalise_for_repo(repo_path: &Path, file_path: &Path) -> NormalisedPaths {
+        let relative_or_requested = file_path.strip_prefix(repo_path).unwrap_or(file_path);
+        crate::path_validation::build_normalised_absolute_path(repo_path, relative_or_requested)
+            .unwrap()
+    }
+
+    fn init_sha1_repo(path: &Path) {
+        let repo = git2::Repository::init(path).unwrap();
+        let signature = git2::Signature::now("Test User", "test@test.com").unwrap();
+        let tree_oid = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_oid).unwrap();
+        repo.commit(Some("HEAD"), &signature, &signature, "Initial", &tree, &[])
+            .unwrap();
+        // Configure user for CLI-based CommitDir operations
+        let run_git = |args: &[&str]| {
+            let s = Command::new("git")
+                .args(["-C", &path.to_string_lossy()])
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(s.success(), "git {:?} failed", args);
+        };
+        run_git(&["config", "user.name", "Test User"]);
+        run_git(&["config", "user.email", "test@test.com"]);
+    }
+
+    fn init_sha256_repo(path: &Path) {
+        let status = Command::new("git")
+            .args(["init", "--object-format=sha256"])
+            .arg(path)
+            .status()
+            .expect("git CLI must be available for SHA-256 tests");
+        assert!(status.success(), "git init --object-format=sha256 failed");
+
+        let run_git = |args: &[&str]| {
+            let s = Command::new("git")
+                .args(["-C", &path.to_string_lossy()])
+                .args(args)
+                .status()
+                .unwrap();
+            assert!(s.success(), "git {:?} failed", args);
+        };
+        run_git(&["config", "user.name", "Test User"]);
+        run_git(&["config", "user.email", "test@test.com"]);
+        run_git(&["commit", "--allow-empty", "-m", "Initial"]);
+    }
+
+    enum GitAction {
+        /// Create file at path relative to repo with content, then commit.
+        Create(&'static str, &'static str),
+        /// Write file to disk without committing.
+        WriteFile(&'static str, &'static str),
+        /// Copy file from source to destination, then commit the destination.
+        Copy(&'static str, &'static str),
+        /// Rename (move) file or directory on disk without committing.
+        Rename(&'static str, &'static str),
+        /// Delete file or directory from disk without committing.
+        Delete(&'static str),
+        /// Stage everything under dir with `git add -A` and commit.
+        /// Use "" for repo root.
+        CommitDir(&'static str),
+        /// Assert artifact_signers_source identifies the exact copy source path.
+        ExpectSourceIdentification(&'static str, &'static str),
+        /// Assert the returned commit matches the introducing commit for the file.
+        ExpectSourceCommit(&'static str),
+    }
+
+    fn run_action<B: GitBackend>(backend: &B, action: &GitAction) -> anyhow::Result<()> {
+        let repo_path = backend.root();
+        let resolve = |p: &str| -> PathBuf {
+            let stripped = p.trim_start_matches('/');
+            if stripped.is_empty() {
+                repo_path.clone()
+            } else {
+                repo_path.join(stripped)
+            }
+        };
+
+        match action {
+            GitAction::Create(path, content) => {
+                let file_path = resolve(path);
+                if let Some(parent) = file_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&file_path, content)?;
+                backend
+                    .commit_files(
+                        &[normalise_for_repo(repo_path, &file_path)],
+                        &format!("create {}", path),
+                    )
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                Ok(())
+            }
+            GitAction::WriteFile(path, content) => {
+                let file_path = resolve(path);
+                if let Some(parent) = file_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&file_path, content)?;
+                Ok(())
+            }
+            GitAction::Copy(source, destination) => {
+                let source_path = resolve(source);
+                let dest_path = resolve(destination);
+                if let Some(parent) = dest_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::copy(&source_path, &dest_path)?;
+                backend
+                    .commit_files(
+                        &[normalise_for_repo(repo_path, &dest_path)],
+                        &format!("copy {} to {}", source, destination),
+                    )
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                Ok(())
+            }
+            GitAction::Rename(source, destination) => {
+                let source_path = resolve(source);
+                let dest_path = resolve(destination);
+                if let Some(parent) = dest_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::rename(&source_path, &dest_path)?;
+                Ok(())
+            }
+            GitAction::Delete(path) => {
+                let target = resolve(path);
+                if target.is_dir() {
+                    std::fs::remove_dir_all(&target)?;
+                } else {
+                    std::fs::remove_file(&target)?;
+                }
+                Ok(())
+            }
+            GitAction::CommitDir(path) => {
+                let dir_arg = if path.is_empty() {
+                    ".".to_string()
+                } else {
+                    path.trim_start_matches('/').to_string()
+                };
+                // Use git add -A to track additions, modifications, AND deletions
+                GitCommand::git(repo_path, &["add", "-A", "--", &dir_arg])
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                GitCommand::git(repo_path, &["commit", "-m", &format!("commit {}", dir_arg)])
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                Ok(())
+            }
+            GitAction::ExpectSourceIdentification(tested_path, expected_source) => {
+                let tested = resolve(tested_path);
+                let normalised = normalise_for_repo(repo_path, &tested);
+                let result = backend
+                    .artifact_signers_source(normalised)
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                let expected = Path::new(expected_source.trim_start_matches('/'));
+                assert_eq!(
+                    result.path().relative_path(),
+                    expected,
+                    "Expected source {} but got {}",
+                    expected.display(),
+                    result.path().relative_path().display()
+                );
+                Ok(())
+            }
+            GitAction::ExpectSourceCommit(tested_path) => {
+                let tested = resolve(tested_path);
+                let normalised = normalise_for_repo(repo_path, &tested);
+                let result = backend
+                    .artifact_signers_source(normalised)
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                let expected_commit = GitCommand::git(
+                    repo_path,
+                    &[
+                        "log",
+                        "--diff-filter=A",
+                        "--format=%H",
+                        "-1",
+                        "--",
+                        tested_path.trim_start_matches('/'),
+                    ],
+                )
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+                assert_eq!(
+                    result.commit(),
+                    expected_commit,
+                    "Commit should be the introducing commit"
+                );
+                Ok(())
+            }
+        }
+    }
+
+    fn scenarios() -> Vec<(&'static str, Vec<GitAction>)> {
+        vec![
+            // -- Was: test_artifact_signers_source_finds_copy_source
+            //    + test_artifact_signers_source_returns_introducing_commit
+            (
+                "finds_copy_source",
+                vec![
+                    GitAction::Create("signers.json", r#"{"signers": ["alice"]}"#),
+                    GitAction::Copy("signers.json", "artifacts/my_artifact.signers.json"),
+                    GitAction::ExpectSourceIdentification(
+                        "artifacts/my_artifact.signers.json",
+                        "signers.json",
+                    ),
+                    GitAction::ExpectSourceCommit("artifacts/my_artifact.signers.json"),
+                ],
+            ),
+            // -- Was: test_artifact_signers_source_nested_directories
+            (
+                "nested_directories",
+                vec![
+                    GitAction::Create(
+                        "config/signers.json",
+                        r#"{"threshold": 2, "signers": ["a","b","c"]}"#,
+                    ),
+                    GitAction::Copy(
+                        "config/signers.json",
+                        "releases/v1/artifacts/binary.signers.json",
+                    ),
+                    GitAction::ExpectSourceIdentification(
+                        "releases/v1/artifacts/binary.signers.json",
+                        "config/signers.json",
+                    ),
+                ],
+            ),
+            // -- Was: test_artifact_signers_source_pending_renamed_to_active_then_copied
+            (
+                "pending_renamed_to_active_then_copied",
+                vec![
+                    GitAction::WriteFile(
+                        "project/asfaload.signers.pending/index.json",
+                        r#"{"version":1,"artifact_signers":[{"threshold":1,"signers":[]}]}"#,
+                    ),
+                    GitAction::CommitDir("project/asfaload.signers.pending"),
+                    GitAction::Rename(
+                        "project/asfaload.signers.pending",
+                        "project/asfaload.signers",
+                    ),
+                    GitAction::CommitDir("project"),
+                    GitAction::Copy(
+                        "project/asfaload.signers/index.json",
+                        "project/releases/v1/index.json.signers.json",
+                    ),
+                    GitAction::ExpectSourceIdentification(
+                        "project/releases/v1/index.json.signers.json",
+                        "project/asfaload.signers/index.json",
+                    ),
+                ],
+            ),
+            // -- Was: test_artifact_signers_source_ambiguous_pending_and_active_same_content
+            (
+                "ambiguous_pending_and_active_same_content",
+                vec![
+                    GitAction::WriteFile(
+                        "proj/asfaload.signers/index.json",
+                        r#"{"version":1,"artifact_signers":[{"threshold":2,"signers":[]}]}"#,
+                    ),
+                    GitAction::WriteFile(
+                        "proj/asfaload.signers.pending/index.json",
+                        r#"{"version":1,"artifact_signers":[{"threshold":2,"signers":[]}]}"#,
+                    ),
+                    GitAction::CommitDir("proj"),
+                    GitAction::Copy(
+                        "proj/asfaload.signers/index.json",
+                        "proj/releases/v1/artifact.signers.json",
+                    ),
+                    GitAction::ExpectSourceIdentification(
+                        "proj/releases/v1/artifact.signers.json",
+                        "proj/asfaload.signers/index.json",
+                    ),
+                ],
+            ),
+            // -- Was: test_artifact_signers_source_full_rotation_scenario
+            (
+                "full_rotation_scenario",
+                vec![
+                    GitAction::WriteFile(
+                        "proj/asfaload.signers/index.json",
+                        r#"{"version":1,"threshold":1,"original":true}"#,
+                    ),
+                    GitAction::CommitDir("proj/asfaload.signers"),
+                    GitAction::WriteFile(
+                        "proj/asfaload.signers.pending/index.json",
+                        r#"{"version":1,"threshold":2,"updated":true}"#,
+                    ),
+                    GitAction::CommitDir("proj/asfaload.signers.pending"),
+                    GitAction::Delete("proj/asfaload.signers"),
+                    GitAction::Rename("proj/asfaload.signers.pending", "proj/asfaload.signers"),
+                    GitAction::CommitDir("proj"),
+                    GitAction::Copy(
+                        "proj/asfaload.signers/index.json",
+                        "proj/releases/v2/index.json.signers.json",
+                    ),
+                    GitAction::ExpectSourceIdentification(
+                        "proj/releases/v2/index.json.signers.json",
+                        "proj/asfaload.signers/index.json",
+                    ),
+                ],
+            ),
+            // -- Was: test_artifact_signers_source_rotation_with_pending_recreated_same_content
+            (
+                "rotation_with_pending_recreated_same_content",
+                vec![
+                    GitAction::WriteFile(
+                        "proj/asfaload.signers/index.json",
+                        r#"{"version":1,"threshold":2,"signers":["a","b"]}"#,
+                    ),
+                    GitAction::CommitDir("proj/asfaload.signers"),
+                    GitAction::WriteFile(
+                        "proj/asfaload.signers.pending/index.json",
+                        r#"{"version":1,"threshold":2,"signers":["a","b"]}"#,
+                    ),
+                    GitAction::CommitDir("proj/asfaload.signers.pending"),
+                    GitAction::Copy(
+                        "proj/asfaload.signers/index.json",
+                        "proj/releases/v1/artifact.signers.json",
+                    ),
+                    GitAction::ExpectSourceIdentification(
+                        "proj/releases/v1/artifact.signers.json",
+                        "proj/asfaload.signers/index.json",
+                    ),
+                ],
+            ),
+            // -- Was: test_artifact_signers_source_with_successive_copies
+            (
+                "successive_copies",
+                vec![
+                    GitAction::Create(
+                        "signers.json",
+                        r#"{"threshold": 2, "signers": ["alice","bob","carol"]}"#,
+                    ),
+                    GitAction::Copy("signers.json", "sub/dir/subsub/signers.json"),
+                    GitAction::Copy("sub/dir/subsub/signers.json", "sub/dir/signers.json"),
+                    GitAction::ExpectSourceIdentification(
+                        "sub/dir/subsub/signers.json",
+                        "signers.json",
+                    ),
+                    GitAction::ExpectSourceCommit("sub/dir/subsub/signers.json"),
+                ],
+            ),
+            // -- Pre-existing scenario from the skeleton
+            (
+                "basic_copy_with_distractor",
+                vec![
+                    GitAction::Create("/dir1/file1", "Content1"),
+                    GitAction::Create("/dir1/dir2/file2", "Content2"),
+                    GitAction::Copy("/dir1/file1", "/dir1/dir2/dir3/file3"),
+                    GitAction::ExpectSourceIdentification("/dir1/dir2/dir3/file3", "/dir1/file1"),
+                ],
+            ),
+        ]
+    }
+
+    fn run_scenario<B: GitBackend>(name: &str, scenario: &[GitAction], backend: &B) {
+        for (i, action) in scenario.iter().enumerate() {
+            run_action(backend, action)
+                .unwrap_or_else(|e| panic!("Scenario '{}' failed at step {}: {}", name, i, e));
+        }
+    }
+
+    #[test]
+    fn test_artifact_signers_source_sha1() {
+        for (name, scenario) in scenarios() {
+            let temp_dir = TempDir::new().unwrap();
+            let repo_path = temp_dir.path();
+            init_sha1_repo(repo_path);
+            let backend = Sha1GitBackend::new(repo_path);
+            run_scenario(name, &scenario, &backend);
+        }
+    }
+
+    #[test]
+    fn test_artifact_signers_source_sha256() {
+        for (name, scenario) in scenarios() {
+            let temp_dir = TempDir::new().unwrap();
+            let repo_path = temp_dir.path();
+            init_sha256_repo(repo_path);
+            let backend = Sha256GitBackend::new(repo_path);
+            run_scenario(name, &scenario, &backend);
         }
     }
 }

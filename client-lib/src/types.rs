@@ -129,6 +129,16 @@ pub struct RevocationDetectedArgs {
 }
 
 #[derive(Clone)]
+pub struct SignersChainVerifiedArgs {
+    pub entries_count: usize,
+}
+
+#[derive(Clone)]
+pub struct SignersChainFailedArgs {
+    pub reason: String,
+}
+
+#[derive(Clone)]
 pub struct CompletedArgs {
     pub result: DownloadResult,
 }
@@ -159,6 +169,8 @@ pub struct DownloadCallbacks {
     pub on_file_hash_verified: Option<Box<dyn Fn(&FileHashVerifiedArgs) + Send>>,
     pub on_file_saved: Option<Box<dyn Fn(&FileSavedArgs) + Send>>,
     pub on_revocation_detected: Option<Box<dyn Fn(&RevocationDetectedArgs) + Send>>,
+    pub on_signers_chain_verified: Option<Box<dyn Fn(&SignersChainVerifiedArgs) + Send>>,
+    pub on_signers_chain_failed: Option<Box<dyn Fn(&SignersChainFailedArgs) + Send>>,
     pub on_completed: Option<Box<dyn Fn(&CompletedArgs) + Send>>,
 }
 
@@ -247,6 +259,22 @@ impl DownloadCallbacks {
         f: F,
     ) -> Self {
         self.on_revocation_detected = Some(Box::new(f));
+        self
+    }
+
+    pub fn with_signers_chain_verified<F: Fn(&SignersChainVerifiedArgs) + Send + 'static>(
+        mut self,
+        f: F,
+    ) -> Self {
+        self.on_signers_chain_verified = Some(Box::new(f));
+        self
+    }
+
+    pub fn with_signers_chain_failed<F: Fn(&SignersChainFailedArgs) + Send + 'static>(
+        mut self,
+        f: F,
+    ) -> Self {
+        self.on_signers_chain_failed = Some(Box::new(f));
         self
     }
 
@@ -360,6 +388,22 @@ impl DownloadCallbacks {
             let args = RevocationDetectedArgs {
                 timestamp: timestamp.to_string(),
                 initiator: initiator.to_string(),
+            };
+            f(&args);
+        }
+    }
+
+    pub(crate) fn emit_signers_chain_verified(&self, entries_count: usize) {
+        if let Some(ref f) = self.on_signers_chain_verified {
+            let args = SignersChainVerifiedArgs { entries_count };
+            f(&args);
+        }
+    }
+
+    pub(crate) fn emit_signers_chain_failed(&self, reason: &str) {
+        if let Some(ref f) = self.on_signers_chain_failed {
+            let args = SignersChainFailedArgs {
+                reason: reason.to_string(),
             };
             f(&args);
         }

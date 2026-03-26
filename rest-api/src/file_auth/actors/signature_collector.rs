@@ -241,14 +241,23 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                     "Successfully activated signers file"
                 );
 
-                let new_dir = msg.file_path.parent().parent().join(SIGNERS_DIR).await?;
+                let project_dir = msg.file_path.parent().parent();
+                let new_dir = project_dir.join(SIGNERS_DIR).await?;
+
+                // Include the history file in the commit if it exists (created
+                // by move_current_signers_to_history during signers rotation).
+                let mut paths = vec![new_dir.clone()];
+                let history_file = project_dir.join(constants::SIGNERS_HISTORY_FILE).await?;
+                if history_file.absolute_path().exists() {
+                    paths.push(history_file);
+                }
 
                 let commit_message = format!(
                     "completed signature collection for {}",
                     new_dir.relative_path().display()
                 );
                 CommitFile {
-                    file_paths: vec![new_dir],
+                    file_paths: paths,
                     commit_message,
                     request_id: msg.request_id.to_string(),
                 }

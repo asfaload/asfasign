@@ -243,6 +243,14 @@ impl ForgeOrigin {
             retrieved_at,
         }
     }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub fn kind(&self) -> &Forge {
+        &self.kind
+    }
 }
 
 // Enum listing possible origins of a signers file
@@ -261,6 +269,10 @@ impl SignersConfigMetadata {
         Self {
             data: SignersConfigOrigin::Forge(origin),
         }
+    }
+
+    pub fn origin(&self) -> &SignersConfigOrigin {
+        &self.data
     }
 }
 
@@ -600,5 +612,42 @@ mod tests {
         // No revocation → admin_keys() → empty admin → artifact_signers
         let result = pubkeys_from_groups(config.revocation_keys());
         assert_eq!(result, artifact);
+    }
+}
+
+#[cfg(test)]
+mod accessor_tests {
+    use super::*;
+    use chrono::Utc;
+
+    #[test]
+    fn forge_origin_url_returns_url() {
+        let origin = ForgeOrigin::new(
+            Forge::Github,
+            "https://example.com/signers.json".to_string(),
+            Utc::now(),
+        );
+        assert_eq!(origin.url(), "https://example.com/signers.json");
+    }
+
+    #[test]
+    fn forge_origin_kind_returns_forge() {
+        let origin = ForgeOrigin::new(
+            Forge::Gitlab,
+            "https://gitlab.com/signers.json".to_string(),
+            Utc::now(),
+        );
+        assert!(matches!(origin.kind(), Forge::Gitlab));
+    }
+
+    #[test]
+    fn signers_config_metadata_origin_returns_origin() {
+        let forge = ForgeOrigin::new(Forge::Github, "https://example.com".to_string(), Utc::now());
+        let metadata = SignersConfigMetadata::from_forge(forge.clone());
+        match metadata.origin() {
+            SignersConfigOrigin::Forge(f) => {
+                assert_eq!(f.url(), forge.url());
+            }
+        }
     }
 }
