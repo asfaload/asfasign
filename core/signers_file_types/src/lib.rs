@@ -232,20 +232,50 @@ pub enum Forge {
 pub struct ForgeOrigin {
     kind: Forge,
     url: String,
+    /// URL to use when fetching file content (e.g. raw.githubusercontent.com for GitHub).
+    /// Defaults to `url` when not explicitly provided.
+    #[serde(default)]
+    retrieval_url: Option<String>,
     retrieved_at: DateTime<Utc>,
 }
 
 impl ForgeOrigin {
+    /// Create a ForgeOrigin where retrieval_url defaults to url.
+    /// Use this in tests or when the URL already serves raw content (e.g. file servers).
     pub fn new(kind: Forge, url: String, retrieved_at: DateTime<Utc>) -> Self {
         Self {
             kind,
+            url,
+            retrieval_url: None,
+            retrieved_at,
+        }
+    }
+
+    /// Create a ForgeOrigin with an explicit retrieval URL for fetching content.
+    /// Use this when registering from a forge where the user-facing URL differs
+    /// from the URL that serves raw file content.
+    pub fn new_with_retrieval_url(
+        kind: Forge,
+        url: String,
+        retrieval_url: String,
+        retrieved_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            kind,
+            retrieval_url: Some(retrieval_url),
             url,
             retrieved_at,
         }
     }
 
+    /// The original URL as provided by the user.
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// URL to use when fetching file content. Falls back to `url` if not set.
+    pub fn retrieval_url(&self) -> &str {
+        self.retrieval_url.as_deref().unwrap_or(&self.url)
     }
 
     pub fn kind(&self) -> &Forge {

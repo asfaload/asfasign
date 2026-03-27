@@ -320,4 +320,49 @@ run_step "Download artifact (v0.2) with --full-check (2-entry chain)" \
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_FULL_CHECK"
 
 ################################################################################
+section "Full Check Failure: Tampered Metadata"
+################################################################################
+
+# The first entry in the signers chain is the trust anchor. It cannot be
+# validated cryptographically (no previous entry). The only validation is
+# to fetch the signers file from the forge URL stored in metadata and compare.
+#
+# The chain for v0.2 has 2 entries:
+#   entry[0] = original signers_file_1 (trust anchor, metadata in history file)
+#   entry[1] = updated signers_file_2  (active, metadata in metadata.json)
+#
+# validate_first_entry checks entry[0], whose metadata is embedded in the
+# history file blob. The backend reads this blob via `git show COMMIT:path`,
+# so we use `git replace` to transparently swap the blob without rewriting
+# history. This simulates a compromised trust anchor.
+
+HISTORY_REL_PATH="$(_project_dir)/$SIGNERS_HISTORY_FILE"
+HISTORY_REL_PATH="${HISTORY_REL_PATH#"$E2E_GIT_REPO_PATH/"}"
+HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" rev-parse "HEAD:$HISTORY_REL_PATH")
+
+# Build the raw.githubusercontent.com URL for signers_file_2 (valid but different content)
+TAMPERED_RAW_URL="https://raw.githubusercontent.com/${E2E_REPO}/master/${TEST_NAME}/signers_file_2${_SIGNERS_SUFFIX}.json"
+TAMPERED_HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
+    jq --arg url "$TAMPERED_RAW_URL" '.entries[0].metadata.data.Forge.retrieval_url = $url' | \
+    git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
+git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$TAMPERED_HISTORY_BLOB"
+
+expect_fail "Download with --full-check (tampered metadata URL, content mismatch)" \
+    cargo run --quiet -- download --full-check -o "$(mktemp)" -u "$backend" $(artifact_url 0.2)
+
+git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
+
+# --- Tamper: point metadata URL to non-existent file (404) ---
+NONEXISTENT_RAW_URL="https://raw.githubusercontent.com/${E2E_REPO}/master/${TEST_NAME}/signers_file_nonexistent.json"
+NOTFOUND_HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
+    jq --arg url "$NONEXISTENT_RAW_URL" '.entries[0].metadata.data.Forge.retrieval_url = $url' | \
+    git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
+git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$NOTFOUND_HISTORY_BLOB"
+
+expect_fail "Download with --full-check (tampered metadata URL, 404)" \
+    cargo run --quiet -- download --full-check -o "$(mktemp)" -u "$backend" $(artifact_url 0.2)
+
+git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
+
+################################################################################
 print_summary
