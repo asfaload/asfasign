@@ -8,7 +8,7 @@ signatures = { path = "../signatures" }
 minisign = "0.8.0"
 constants = { path = "../constants/" }
 common = { path = "../common/" }
-signers_file_types = { path = "../signers_file_types/" }
+signers_file_types = { path = "../signers_file_types/", features = ["test-utils"] }
 anyhow = "1.0.100"
 chrono = "0.4.43"
 tempfile = "3.15.0"

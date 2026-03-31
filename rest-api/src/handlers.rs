@@ -112,10 +112,14 @@ pub async fn register_repo_handler(
         ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
     };
     let metadata = signers_file_types::SignersConfigMetadata::from_forge(
-        signers_file_types::ForgeOrigin::new_with_retrieval_url(
+        signers_file_types::ForgeOrigin::new(
             forge_kind,
             request.signers_file_url.clone(),
-            repo_info.raw_url().to_string(),
+            signers_file_types::VerifiedForgeContent::new(repo_info.raw_url().to_string())
+                .await
+                .map_err(|e| {
+                    ApiError::InternalServerError(format!("Failed to verify forge content: {}", e))
+                })?,
             chrono::Utc::now(),
         ),
     );
@@ -294,10 +298,14 @@ pub async fn update_signers_handler(
         ForgeInfo::FileServer(_) => signers_file_types::Forge::FileServer,
     };
     let metadata = signers_file_types::SignersConfigMetadata::from_forge(
-        signers_file_types::ForgeOrigin::new_with_retrieval_url(
+        signers_file_types::ForgeOrigin::new(
             forge_kind,
             request.signers_file_url.clone(),
-            repo_info.raw_url().to_string(),
+            signers_file_types::VerifiedForgeContent::new(repo_info.raw_url().to_string())
+                .await
+                .map_err(|e| {
+                    ApiError::InternalServerError(format!("Failed to verify forge content: {}", e))
+                })?,
             chrono::Utc::now(),
         ),
     );

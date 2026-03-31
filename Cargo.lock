@@ -4173,6 +4173,8 @@ dependencies = [
  "chrono",
  "common",
  "minisign",
+ "mockito",
+ "reqwest 0.13.2",
  "serde",
  "serde_json",
  "sha2",
@@ -4180,6 +4182,7 @@ dependencies = [
  "tempfile",
  "test_helpers",
  "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

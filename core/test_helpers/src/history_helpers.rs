@@ -2,7 +2,9 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
 use signatures::signatures_file::{SignaturesFile, TaggedSignature};
-use signers_file_types::{Forge, ForgeOrigin, HistoryEntry, SignersConfig, SignersConfigMetadata};
+use signers_file_types::{
+    Forge, ForgeOrigin, HistoryEntry, SignersConfig, SignersConfigMetadata, VerifiedForgeContent,
+};
 
 use crate::TestKeys;
 
@@ -111,6 +113,10 @@ pub fn make_history_entry(
     let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
         Forge::Github,
         forge_url.to_string(),
+        VerifiedForgeContent::new_for_test(
+            forge_url.to_string(),
+            "test_hash_placeholder".to_string(),
+        ),
         Utc::now(),
     ));
     Ok(HistoryEntry {

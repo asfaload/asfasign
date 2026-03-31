@@ -13,6 +13,9 @@ signers_file_types = { path = "../signers_file_types/" }
 aggregate_signature = { path = "../aggregate_signature/" }
 thiserror = "2.0.17"
 
+[features]
+test-utils = ["signers_file_types/test-utils"]
+
 [dev-dependencies]
 anyhow = "1.0.99"
 chrono = "0.4.42"
