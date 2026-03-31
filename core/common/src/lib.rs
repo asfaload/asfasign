@@ -1,6 +1,7 @@
 pub mod checksums_parser;
 pub mod errors;
 pub mod fs;
+pub mod http;
 pub mod index_types;
 
 use constants::{
@@ -76,6 +77,14 @@ impl TryFrom<String> for AsfaloadHashes {
     type Error = String;
     fn try_from(s: String) -> Result<Self, Self::Error> {
         AsfaloadHashes::from_str(&s)
+    }
+}
+
+impl AsfaloadHashes {
+    pub fn to_hex(&self) -> String {
+        match self {
+            AsfaloadHashes::Sha512(digest) => digest.iter().map(|b| format!("{:02x}", b)).collect(),
+        }
     }
 }
 
@@ -380,11 +389,6 @@ mod asfaload_common_tests {
     use std::path::Path;
     use tempfile::{NamedTempFile, TempDir};
     use test_helpers::scenarios::setup_asfald_project_registered;
-    //
-    // Helper to convert byte array to hex string
-    fn to_hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{:02x}", b)).collect()
-    }
 
     #[test]
     fn test_sha512_for_content() -> Result<()> {
@@ -437,9 +441,9 @@ mod asfaload_common_tests {
 
         let hash = sha512_for_file(temp_file.path())?;
         match hash {
-            AsfaloadHashes::Sha512(arr) => {
+            AsfaloadHashes::Sha512(_) => {
                 let expected = "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f";
-                assert_eq!(to_hex(arr.as_slice()), expected);
+                assert_eq!(hash.to_hex(), expected);
             }
         }
 
@@ -868,5 +872,20 @@ mod asfaload_common_tests {
 
         let AsfaloadHashes::Sha512(bytes) = result;
         assert_eq!(bytes[0], 0x6c);
+    }
+
+    #[test]
+    fn asfaload_hashes_to_hex_produces_128_char_hex_string() {
+        let hash = sha512_for_content(b"test data".to_vec()).unwrap();
+        let hex = hash.to_hex();
+        assert_eq!(hex.len(), 128, "SHA-512 hex should be 128 characters");
+        assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn asfaload_hashes_to_hex_is_deterministic() {
+        let hash1 = sha512_for_content(b"message".to_vec()).unwrap();
+        let hash2 = sha512_for_content(b"message".to_vec()).unwrap();
+        assert_eq!(hash1.to_hex(), hash2.to_hex());
     }
 }

@@ -34,6 +34,7 @@ use signers_file::sign_signers_file;
 pub use signers_file::validate_history;
 pub use signers_file_types::{
     Forge, ForgeOrigin, HistoryEntry, HistoryFile, SignersConfigMetadata, SignersConfigOrigin,
+    VerifiedForgeContent,
 };
 pub use signers_file_types::{SignersConfig, parse_signers_config};
 

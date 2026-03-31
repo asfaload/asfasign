@@ -220,6 +220,95 @@ impl SignersConfig {
             .collect()
     }
 }
+/// Errors that can occur when creating a [`VerifiedForgeContent`].
+#[derive(Debug, thiserror::Error)]
+pub enum VerifiedForgeContentError {
+    #[error("Failed to fetch content: {0}")]
+    FetchError(String),
+    #[error("Failed to compute hash: {0}")]
+    HashError(String),
+}
+
+/// A retrieval URL paired with the SHA-512 hash of the content at that URL.
+///
+/// Enforces that URL and hash are always consistent. In production, the only
+/// way to create one is [`VerifiedForgeContent::new`], which fetches the URL
+/// and computes the hash internally, eliminating any possibility of
+/// URL/content mismatch.
+#[derive(Debug, Clone, Serialize, Deserialize, Eq)]
+pub struct VerifiedForgeContent {
+    retrieval_url: String,
+    content_hash: String,
+    /// Cached fetched content. Present after `new()`, absent after deserialization.
+    #[serde(skip)]
+    content: Option<String>,
+}
+
+/// Equality compares only `retrieval_url` and `content_hash` — the `content`
+/// field is transient (skipped in serde) and must not affect equality.
+impl PartialEq for VerifiedForgeContent {
+    fn eq(&self, other: &Self) -> bool {
+        self.retrieval_url == other.retrieval_url && self.content_hash == other.content_hash
+    }
+}
+
+impl VerifiedForgeContent {
+    /// URL used to fetch the raw file content.
+    pub fn retrieval_url(&self) -> &str {
+        &self.retrieval_url
+    }
+
+    /// SHA-512 hex digest of the content at `retrieval_url`.
+    pub fn content_hash(&self) -> &str {
+        &self.content_hash
+    }
+
+    /// Returns the fetched content. If not cached (e.g. after deserialization),
+    /// re-fetches from `retrieval_url`. Does not cache the re-fetched result, but
+    /// impact is null or minimal in our scenario as we don't call it multiple times on
+    /// an instance that was deserialized.
+    pub async fn content(&self) -> Result<String, VerifiedForgeContentError> {
+        if let Some(ref c) = self.content {
+            return Ok(c.clone());
+        }
+        common::http::fetch_with_retry(&self.retrieval_url)
+            .await
+            .map_err(|e| VerifiedForgeContentError::FetchError(e.to_string()))
+    }
+
+    /// Production constructor: fetches content from the URL and computes the hash.
+    /// This is the only way to create a `VerifiedForgeContent` in production,
+    /// guaranteeing that the URL and content hash are always consistent.
+    /// Retries with exponential backoff on HTTP 429 (rate limiting).
+    pub async fn new(retrieval_url: String) -> Result<Self, VerifiedForgeContentError> {
+        let content = common::http::fetch_with_retry(&retrieval_url)
+            .await
+            .map_err(|e| VerifiedForgeContentError::FetchError(e.to_string()))?;
+
+        let hash = common::sha512_for_content(content.as_bytes())
+            .map_err(|e| VerifiedForgeContentError::HashError(e.to_string()))?;
+
+        Ok(Self {
+            retrieval_url,
+            content_hash: hash.to_hex(),
+            content: Some(content),
+        })
+    }
+
+    /// Test-only constructor that bypasses the fetch+hash guarantee.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_for_test(retrieval_url: String, content: String) -> Self {
+        let content_hash = common::sha512_for_content(content.as_bytes())
+            .unwrap()
+            .to_hex();
+        Self {
+            retrieval_url,
+            content_hash,
+            content: Some(content),
+        }
+    }
+}
+
 // Supported forges
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Forge {
@@ -232,38 +321,21 @@ pub enum Forge {
 pub struct ForgeOrigin {
     kind: Forge,
     url: String,
-    /// URL to use when fetching file content (e.g. raw.githubusercontent.com for GitHub).
-    /// Defaults to `url` when not explicitly provided.
-    #[serde(default)]
-    retrieval_url: Option<String>,
+    verified_content: VerifiedForgeContent,
     retrieved_at: DateTime<Utc>,
 }
 
 impl ForgeOrigin {
-    /// Create a ForgeOrigin where retrieval_url defaults to url.
-    /// Use this in tests or when the URL already serves raw content (e.g. file servers).
-    pub fn new(kind: Forge, url: String, retrieved_at: DateTime<Utc>) -> Self {
-        Self {
-            kind,
-            url,
-            retrieval_url: None,
-            retrieved_at,
-        }
-    }
-
-    /// Create a ForgeOrigin with an explicit retrieval URL for fetching content.
-    /// Use this when registering from a forge where the user-facing URL differs
-    /// from the URL that serves raw file content.
-    pub fn new_with_retrieval_url(
+    pub fn new(
         kind: Forge,
         url: String,
-        retrieval_url: String,
+        verified_content: VerifiedForgeContent,
         retrieved_at: DateTime<Utc>,
     ) -> Self {
         Self {
             kind,
-            retrieval_url: Some(retrieval_url),
             url,
+            verified_content,
             retrieved_at,
         }
     }
@@ -273,9 +345,14 @@ impl ForgeOrigin {
         &self.url
     }
 
-    /// URL to use when fetching file content. Falls back to `url` if not set.
+    /// URL to use when fetching file content. Delegates to `verified_content`.
     pub fn retrieval_url(&self) -> &str {
-        self.retrieval_url.as_deref().unwrap_or(&self.url)
+        self.verified_content.retrieval_url()
+    }
+
+    /// The verified content metadata (retrieval URL + content hash).
+    pub fn verified_content(&self) -> &VerifiedForgeContent {
+        &self.verified_content
     }
 
     pub fn kind(&self) -> &Forge {
@@ -651,10 +728,37 @@ mod accessor_tests {
     use chrono::Utc;
 
     #[test]
+    fn forge_origin_retrieval_url_delegates_to_verified_content() {
+        let verified = VerifiedForgeContent::new_for_test(
+            "https://raw.githubusercontent.com/org/repo/main/signers.json".to_string(),
+            "content".to_string(),
+        );
+        let origin = ForgeOrigin::new(
+            Forge::Github,
+            "https://github.com/org/repo/blob/main/signers.json".to_string(),
+            verified,
+            chrono::Utc::now(),
+        );
+        assert_eq!(
+            origin.retrieval_url(),
+            "https://raw.githubusercontent.com/org/repo/main/signers.json"
+        );
+        assert_eq!(
+            origin.verified_content().content_hash(),
+            "b2d1d285b5199c85f988d03649c37e44fd3dde01e5d69c50fef90651962f48110e9340b60d49a479c4c0b53f5f07d690686dd87d2481937a512e8b85ee7c617f"
+        );
+    }
+
+    #[test]
     fn forge_origin_url_returns_url() {
+        let verified = VerifiedForgeContent::new_for_test(
+            "https://raw.example.com/signers.json".to_string(),
+            "deadbeef".to_string(),
+        );
         let origin = ForgeOrigin::new(
             Forge::Github,
             "https://example.com/signers.json".to_string(),
+            verified,
             Utc::now(),
         );
         assert_eq!(origin.url(), "https://example.com/signers.json");
@@ -662,22 +766,193 @@ mod accessor_tests {
 
     #[test]
     fn forge_origin_kind_returns_forge() {
+        let verified = VerifiedForgeContent::new_for_test(
+            "https://raw.gitlab.com/signers.json".to_string(),
+            "deadbeef".to_string(),
+        );
         let origin = ForgeOrigin::new(
             Forge::Gitlab,
             "https://gitlab.com/signers.json".to_string(),
+            verified,
             Utc::now(),
         );
         assert!(matches!(origin.kind(), Forge::Gitlab));
     }
 
     #[test]
+    fn forge_origin_round_trips_through_serde() {
+        let verified = VerifiedForgeContent::new_for_test(
+            "https://raw.example.com/file.json".to_string(),
+            "deadbeef".to_string(),
+        );
+        let origin = ForgeOrigin::new(
+            Forge::Github,
+            "https://example.com/file.json".to_string(),
+            verified,
+            chrono::Utc::now(),
+        );
+        let json = serde_json::to_string(&origin).unwrap();
+        let deserialized: ForgeOrigin = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.retrieval_url(), origin.retrieval_url());
+        assert_eq!(
+            deserialized.verified_content().content_hash(),
+            origin.verified_content().content_hash()
+        );
+    }
+
+    #[test]
     fn signers_config_metadata_origin_returns_origin() {
-        let forge = ForgeOrigin::new(Forge::Github, "https://example.com".to_string(), Utc::now());
+        let verified = VerifiedForgeContent::new_for_test(
+            "https://raw.example.com/s.json".to_string(),
+            "hash".to_string(),
+        );
+        let forge = ForgeOrigin::new(
+            Forge::Github,
+            "https://example.com".to_string(),
+            verified,
+            Utc::now(),
+        );
         let metadata = SignersConfigMetadata::from_forge(forge.clone());
         match metadata.origin() {
             SignersConfigOrigin::Forge(f) => {
                 assert_eq!(f.url(), forge.url());
             }
         }
+    }
+
+    #[test]
+    fn verified_forge_content_accessors_return_stored_values() {
+        let content = VerifiedForgeContent::new_for_test(
+            "https://raw.githubusercontent.com/org/repo/main/signers.json".to_string(),
+            "abcdef1234567890".to_string(),
+        );
+        assert_eq!(
+            content.retrieval_url(),
+            "https://raw.githubusercontent.com/org/repo/main/signers.json"
+        );
+        assert_eq!(
+            content.content_hash(),
+            "0332ea992739e7467276716cb5f013dadb207d06a09daa43561a053e3758283efd04d4ed07d5c7bf465c3477a99846de71ebd7cc87bd1f6cc7bdaa68b8f59874"
+        );
+    }
+
+    #[test]
+    fn verified_forge_content_round_trips_through_serde() {
+        let content = VerifiedForgeContent::new_for_test(
+            "https://raw.githubusercontent.com/org/repo/main/signers.json".to_string(),
+            "abc123".to_string(),
+        );
+        let json = serde_json::to_string(&content).unwrap();
+        let deserialized: VerifiedForgeContent = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.retrieval_url(), content.retrieval_url());
+        assert_eq!(deserialized.content_hash(), content.content_hash());
+    }
+
+    #[test]
+    fn verified_forge_content_requires_both_fields_for_deserialization() {
+        let json_missing_hash = r#"{"retrieval_url":"https://example.com"}"#;
+        let result: Result<VerifiedForgeContent, _> = serde_json::from_str(json_missing_hash);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn verified_forge_content_new_stores_content() {
+        let mut server = mockito::Server::new_async().await;
+        let body = "test content for hashing";
+        let mock = server
+            .mock("GET", "/test-file")
+            .with_status(200)
+            .with_body(body)
+            .create_async()
+            .await;
+
+        let url = format!("{}/test-file", server.url());
+        let verified = VerifiedForgeContent::new(url.clone()).await.unwrap();
+        // content() returns cached content without re-fetching
+        assert_eq!(verified.content().await.unwrap(), body);
+        mock.assert();
+    }
+
+    #[test]
+    fn verified_forge_content_content_not_serialized() {
+        let v = VerifiedForgeContent::new_for_test(
+            "https://example.com".to_string(),
+            "some content".to_string(),
+        );
+        let json = serde_json::to_string(&v).unwrap();
+        assert!(
+            !json.contains("some content"),
+            "content should not appear in serialized JSON"
+        );
+        assert!(
+            !json.contains("\"content\""),
+            "content field should be skipped"
+        );
+    }
+
+    #[tokio::test]
+    async fn verified_forge_content_content_refetches_after_deserialization() {
+        let mut server = mockito::Server::new_async().await;
+        let body = "refetched content";
+        let mock = server
+            .mock("GET", "/refetch")
+            .with_status(200)
+            .with_body(body)
+            .create_async()
+            .await;
+
+        let url = format!("{}/refetch", server.url());
+        let original = VerifiedForgeContent::new_for_test(url.clone(), body.to_string());
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: VerifiedForgeContent = serde_json::from_str(&json).unwrap();
+
+        // content() on deserialized instance re-fetches
+        let fetched = deserialized.content().await.unwrap();
+        assert_eq!(fetched, body);
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn verified_forge_content_new_fetches_and_hashes() {
+        let mut server = mockito::Server::new_async().await;
+        let content = "test content for hashing";
+        let mock = server
+            .mock("GET", "/test-file")
+            .with_status(200)
+            .with_body(content)
+            .create_async()
+            .await;
+
+        let url = format!("{}/test-file", server.url());
+        let verified = VerifiedForgeContent::new(url.clone()).await.unwrap();
+
+        assert_eq!(verified.retrieval_url(), url);
+        // Verify hash matches what we'd compute manually
+        let expected_hash = common::sha512_for_content(content.as_bytes().to_vec()).unwrap();
+        assert_eq!(verified.content_hash(), expected_hash.to_hex());
+
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn verified_forge_content_new_returns_error_on_http_failure() {
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server
+            .mock("GET", "/missing")
+            .with_status(404)
+            .create_async()
+            .await;
+
+        let url = format!("{}/missing", server.url());
+        let result = VerifiedForgeContent::new(url).await;
+        assert!(result.is_err());
+        assert!(
+            matches!(
+                result.as_ref().unwrap_err(),
+                VerifiedForgeContentError::FetchError(_)
+            ),
+            "Expected FetchError, got: {:?}",
+            result.unwrap_err()
+        );
     }
 }

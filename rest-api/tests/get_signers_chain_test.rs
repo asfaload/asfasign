@@ -14,6 +14,7 @@ use rest_api_test_helpers::{
 use rest_api_types::GetSignersChainResponse;
 use signers_file_types::{
     Forge, ForgeOrigin, HistoryEntry, HistoryFile, SignersConfig, SignersConfigMetadata,
+    VerifiedForgeContent,
 };
 use std::fs;
 use tempfile::TempDir;
@@ -187,6 +188,10 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
     let old_metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
         Forge::Github,
         "https://example.com/old".to_string(),
+        VerifiedForgeContent::new_for_test(
+            "https://example.com/old".to_string(),
+            "test_hash_placeholder".to_string(),
+        ),
         Utc::now(),
     ));
 

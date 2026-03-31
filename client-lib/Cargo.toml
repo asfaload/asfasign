@@ -8,7 +8,7 @@ thiserror = "2.0"
 features_lib = { path = "../core/features_lib/" }
 rest_api_types = { path = "../rest_api_types" }
 forge-url = { path = "../file-auth/forge-url" }
-reqwest = { version = "0.11", features = ["json", "stream"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
 sha2 = "0.10"
 digest = "0.10"
 hex = "0.4"
@@ -25,4 +25,5 @@ workspace = true
 chrono = "0.4.43"
 mockito = "1.7"
 test_helpers = { path = "../core/test_helpers/" }
+features_lib = { path = "../core/features_lib/", features = ["test-utils"] }
 anyhow = "1.0"

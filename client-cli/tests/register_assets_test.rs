@@ -60,9 +60,11 @@ fn test_register_assets_github_release_network_error_without_server() {
         .arg(&key_path)
         .env("ASFALOAD_REGISTER_ASSETS_PASSWORD", "test_password_123");
 
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("connection").or(predicate::str::contains("Connection")));
+    cmd.assert().failure().stderr(
+        predicate::str::contains("connection")
+            .or(predicate::str::contains("Connection"))
+            .or(predicate::str::contains("error sending request")),
+    );
 }
 
 #[test]
@@ -81,7 +83,9 @@ fn test_register_assets_csum_file_network_error_without_server() {
         .arg(&key_path)
         .env("ASFALOAD_REGISTER_ASSETS_PASSWORD", "test_password_123");
 
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("connection").or(predicate::str::contains("Connection")));
+    cmd.assert().failure().stderr(
+        predicate::str::contains("connection")
+            .or(predicate::str::contains("Connection"))
+            .or(predicate::str::contains("error sending request")),
+    );
 }

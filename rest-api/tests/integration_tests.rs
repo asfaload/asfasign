@@ -338,7 +338,7 @@ pub mod tests {
         use rest_api::file_auth::actors::signers_initialiser::{
             CleanupSignersRequest, InitialiseSignersRequest, SignersInitialiser,
         };
-        use signers_file_types::{Forge, ForgeOrigin, SignersConfigMetadata};
+        use signers_file_types::{Forge, ForgeOrigin, SignersConfigMetadata, VerifiedForgeContent};
         use std::fs;
 
         let temp_dir = TempDir::new()?;
@@ -373,6 +373,10 @@ pub mod tests {
         let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
+            VerifiedForgeContent::new_for_test(
+                "https://github.com/test/repo/blob/main/signers.json".to_string(),
+                "test_hash_placeholder".to_string(),
+            ),
             chrono::Utc::now(),
         ));
 

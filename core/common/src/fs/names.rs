@@ -165,6 +165,14 @@ pub fn metadata_path_for<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
     signers_dir.as_ref().join(METADATA_FILE)
 }
 
+/// Get the metadata signatures file path inside a signers directory.
+/// Composes `metadata_path_for` with `signatures_path_for`:
+/// `signers_dir/metadata.json.signatures.json`
+pub fn metadata_signatures_path_for<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
+    signatures_path_for(metadata_path_for(signers_dir))
+        .expect("metadata_path_for always produces a valid file name")
+}
+
 pub fn revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     file_path_with_suffix(path_in, REVOCATION_SUFFIX)
 }
@@ -789,6 +797,20 @@ mod asfaload_index_tests {
                     .ends_with(&format!(".{}.{}", SIGNATURES_SUFFIX, REVOKED_SUFFIX))
             );
         }
+        Ok(())
+    }
+
+    // test metadata_signatures_path_for
+    // ----------------------------------
+    #[test]
+    fn test_metadata_signatures_path_for() -> Result<()> {
+        let signers_dir = Path::new("/project/asfaload.signers");
+        let result = metadata_signatures_path_for(signers_dir);
+        let expected = PathBuf::from_str(&format!(
+            "/project/{}/{}.{}",
+            SIGNERS_DIR, METADATA_FILE, SIGNATURES_SUFFIX
+        ))?;
+        assert_eq!(result, expected);
         Ok(())
     }
 }

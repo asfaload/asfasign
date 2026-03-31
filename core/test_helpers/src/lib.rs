@@ -14,6 +14,7 @@ use signatures::types::AsfaloadSecretKeys;
 use signers_file_types::Forge;
 use signers_file_types::ForgeOrigin;
 use signers_file_types::SignersConfigMetadata;
+use signers_file_types::VerifiedForgeContent;
 use std::path::PathBuf;
 
 /// Number of pre-generated fixture keypairs available.
@@ -225,6 +226,10 @@ pub fn test_metadata() -> SignersConfigMetadata {
     SignersConfigMetadata::from_forge(ForgeOrigin::new(
         Forge::Github,
         "https://example.com/test".to_string(),
+        VerifiedForgeContent::new_for_test(
+            "https://raw.example.com/test/signers.json".to_string(),
+            "test_hash_placeholder".to_string(),
+        ),
         chrono::Utc::now(),
     ))
 }

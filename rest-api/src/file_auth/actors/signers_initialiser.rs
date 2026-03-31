@@ -389,7 +389,7 @@ mod tests {
     use common::fs::names::pending_signatures_path_for;
     use features_lib::{AsfaloadSecretKeyTrait, SignersConfig, sha512_for_content};
     use kameo::actor::Spawn;
-    use signers_file_types::{Forge, ForgeOrigin};
+    use signers_file_types::{Forge, ForgeOrigin, VerifiedForgeContent};
 
     /// Helper to create test InitialiseSignersRequest with proper signing.
     /// Uses the provided test_keys at index 0 for signing (the signer must be in the config).
@@ -409,6 +409,10 @@ mod tests {
         let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
+            VerifiedForgeContent::new_for_test(
+                "https://github.com/test/repo/blob/main/signers.json".to_string(),
+                "test_hash_placeholder".to_string(),
+            ),
             chrono::Utc::now(),
         ));
         InitialiseSignersRequest {
@@ -611,6 +615,10 @@ mod tests {
         let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
+            VerifiedForgeContent::new_for_test(
+                "https://github.com/test/repo/blob/main/signers.json".to_string(),
+                "test_hash_placeholder".to_string(),
+            ),
             chrono::Utc::now(),
         ));
         ProposeSignersRequest {

@@ -311,6 +311,10 @@ mod tests {
             metadata: SignersConfigMetadata::from_forge(ForgeOrigin::new(
                 Forge::Github,
                 forge_url.to_string(),
+                features_lib::VerifiedForgeContent::new_for_test(
+                    forge_url.to_string(),
+                    "test_hash_placeholder".to_string(),
+                ),
                 chrono::Utc::now(),
             )),
         };
@@ -361,6 +365,10 @@ mod tests {
             metadata: SignersConfigMetadata::from_forge(ForgeOrigin::new(
                 Forge::Github,
                 forge_url.to_string(),
+                features_lib::VerifiedForgeContent::new_for_test(
+                    forge_url.to_string(),
+                    "test_hash_placeholder".to_string(),
+                ),
                 chrono::Utc::now(),
             )),
         };
@@ -373,6 +381,10 @@ mod tests {
             metadata: SignersConfigMetadata::from_forge(ForgeOrigin::new(
                 Forge::Github,
                 forge_url.to_string(),
+                features_lib::VerifiedForgeContent::new_for_test(
+                    forge_url.to_string(),
+                    "test_hash_placeholder".to_string(),
+                ),
                 chrono::Utc::now(),
             )),
         };

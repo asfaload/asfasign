@@ -20,6 +20,10 @@
           "Forge": {
             "kind": "Github",
             "url": "https://example.com/test",
+            "verified_content": {
+              "retrieval_url": "https://example.com/test",
+              "content_hash": "test_hash_placeholder"
+            },
             "retrieved_at": "2026-03-11T12:24:29.935362415Z"
           }
         }
@@ -49,6 +53,10 @@
           "Forge": {
             "kind": "Github",
             "url": "https://example.com/test",
+            "verified_content": {
+              "retrieval_url": "https://example.com/test",
+              "content_hash": "test_hash_placeholder"
+            },
             "retrieved_at": "2026-03-11T12:24:29.935362926Z"
           }
         }
