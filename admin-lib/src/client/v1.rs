@@ -296,15 +296,14 @@ impl Client {
 
     /// Fetch content from an external URL.
     ///
-    /// Makes a GET request to an arbitrary URL, reusing the internal HTTP client.
-    /// Uses `text()` instead of `bytes()` to match the server's content handling,
-    /// ensuring consistent hash computation (avoids BOM/encoding mismatches).
+    /// Uses `common::http::fetch_with_retry` for resilient fetching with
+    /// retry-on-429. Returns text as bytes to match the server's content
+    /// handling, ensuring consistent hash computation (avoids BOM/encoding
+    /// mismatches).
     pub async fn fetch_external_url(&self, url: &str) -> AdminLibResult<Vec<u8>> {
-        let response = self.client.get(url).send().await?;
-
-        let response = Self::check_response_status(response).await?;
-
-        let content = response.text().await?;
+        let content = common::http::fetch_with_retry(url)
+            .await
+            .map_err(|e| AdminLibError::RequestFailed(e.to_string()))?;
 
         Ok(content.into_bytes())
     }
