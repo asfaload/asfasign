@@ -235,13 +235,21 @@ pub enum VerifiedForgeContentError {
 /// way to create one is [`VerifiedForgeContent::new`], which fetches the URL
 /// and computes the hash internally, eliminating any possibility of
 /// URL/content mismatch.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq)]
 pub struct VerifiedForgeContent {
     retrieval_url: String,
     content_hash: String,
     /// Cached fetched content. Present after `new()`, absent after deserialization.
     #[serde(skip)]
     content: Option<String>,
+}
+
+/// Equality compares only `retrieval_url` and `content_hash` — the `content`
+/// field is transient (skipped in serde) and must not affect equality.
+impl PartialEq for VerifiedForgeContent {
+    fn eq(&self, other: &Self) -> bool {
+        self.retrieval_url == other.retrieval_url && self.content_hash == other.content_hash
+    }
 }
 
 impl VerifiedForgeContent {
