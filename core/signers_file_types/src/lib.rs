@@ -266,45 +266,24 @@ impl VerifiedForgeContent {
     /// Returns the fetched content. If not cached (e.g. after deserialization),
     /// re-fetches from `retrieval_url`. Does not cache the re-fetched result, but
     /// impact is null or minimal in our scenario as we don't call it multiple times on
-    /// an instance that was dezerialised.
+    /// an instance that was deserialized.
     pub async fn content(&self) -> Result<String, VerifiedForgeContentError> {
         if let Some(ref c) = self.content {
             return Ok(c.clone());
         }
-        let response = reqwest::get(&self.retrieval_url).await.map_err(|e| {
-            VerifiedForgeContentError::FetchError(format!("{}: {}", self.retrieval_url, e))
-        })?;
-        if !response.status().is_success() {
-            return Err(VerifiedForgeContentError::FetchError(format!(
-                "{}: HTTP {}",
-                self.retrieval_url,
-                response.status()
-            )));
-        }
-        response.text().await.map_err(|e| {
-            VerifiedForgeContentError::FetchError(format!("{}: {}", self.retrieval_url, e))
-        })
+        common::http::fetch_with_retry(&self.retrieval_url)
+            .await
+            .map_err(|e| VerifiedForgeContentError::FetchError(e.to_string()))
     }
 
     /// Production constructor: fetches content from the URL and computes the hash.
     /// This is the only way to create a `VerifiedForgeContent` in production,
     /// guaranteeing that the URL and content hash are always consistent.
+    /// Retries with exponential backoff on HTTP 429 (rate limiting).
     pub async fn new(retrieval_url: String) -> Result<Self, VerifiedForgeContentError> {
-        let response = reqwest::get(&retrieval_url).await.map_err(|e| {
-            VerifiedForgeContentError::FetchError(format!("{}: {}", retrieval_url, e))
-        })?;
-
-        if !response.status().is_success() {
-            return Err(VerifiedForgeContentError::FetchError(format!(
-                "{}: HTTP {}",
-                retrieval_url,
-                response.status()
-            )));
-        }
-
-        let content = response.text().await.map_err(|e| {
-            VerifiedForgeContentError::FetchError(format!("{}: {}", retrieval_url, e))
-        })?;
+        let content = common::http::fetch_with_retry(&retrieval_url)
+            .await
+            .map_err(|e| VerifiedForgeContentError::FetchError(e.to_string()))?;
 
         let hash = common::sha512_for_content(content.as_bytes())
             .map_err(|e| VerifiedForgeContentError::HashError(e.to_string()))?;

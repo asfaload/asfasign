@@ -1,6 +1,7 @@
 pub mod checksums_parser;
 pub mod errors;
 pub mod fs;
+pub mod http;
 pub mod index_types;
 
 use constants::{
