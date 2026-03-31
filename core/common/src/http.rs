@@ -1,8 +1,12 @@
 use std::time::Duration;
 
+use reqwest::Client;
+
 /// Error type for HTTP fetch operations.
 #[derive(Debug, thiserror::Error)]
 pub enum FetchError {
+    #[error("Client error: {0}")]
+    ClientError(String),
     #[error("Request failed: {0}")]
     RequestFailed(String),
     #[error("HTTP {status}: {url}")]
@@ -16,6 +20,7 @@ pub enum FetchError {
 const MAX_RETRIES: u32 = 3;
 const INITIAL_BACKOFF_SEC: u64 = 1;
 const MAX_BACKOFF_SEC: u64 = 3600;
+const REQUEST_TIMEOUT_SEC: u64 = 10;
 
 /// Fetch the content at `url` as a string, retrying on HTTP 429 with
 /// exponential backoff. Respects the `Retry-After` header when present.
@@ -24,7 +29,13 @@ pub async fn fetch_with_retry(url: &str) -> Result<String, FetchError> {
     let mut backoff_sec = INITIAL_BACKOFF_SEC;
 
     loop {
-        let response = reqwest::get(url)
+        let client = Client::builder()
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SEC))
+            .build()
+            .map_err(|e| FetchError::ClientError(e.to_string()))?;
+        let response = client
+            .get(url)
+            .send()
             .await
             .map_err(|e| FetchError::RequestFailed(format!("{}: {}", url, e)))?;
 
