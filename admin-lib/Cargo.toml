@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 thiserror = "2.0"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 features_lib = { path = "../core/features_lib/" }
@@ -13,7 +13,7 @@ rest_api_types = { path = "../rest_api_types" }
 rest_api_auth = { path = "../rest_api_auth/" }
 
 [dev-dependencies]
-http = "0.2"
+http = "1.0"
 mockito = "1.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde_json = "1.0"
