@@ -39,6 +39,7 @@ impl SignersInfo {
 pub struct ProjectSignersProposal {
     pub project_id: String,
     pub signers_info: SignersInfo,
+    pub verified_content: signers_file_types::VerifiedForgeContent,
     pub request_id: String,
 }
 
@@ -88,6 +89,7 @@ impl ForgeProjectValidator {
         }
     }
 
+    #[allow(dead_code)]
     async fn fetch_with_retry(&self, url: &url::Url, request_id: &str) -> Result<String, ApiError> {
         let mut retries = 0;
         let mut backoff_sec = INITIAL_BACKOFF_SEC;
@@ -177,9 +179,27 @@ impl ForgeProjectValidator {
             ApiError::InvalidRequestBody(e)
         })?;
 
-        let content = self
-            .fetch_with_retry(repo_info.raw_url(), request_id)
-            .await?;
+        let verified_content =
+            signers_file_types::VerifiedForgeContent::new(repo_info.raw_url().to_string())
+                .await
+                .map_err(|e| {
+                    tracing::error!(
+                        actor_name = ACTOR_NAME,
+                        request_id = %request_id,
+                        error = %e,
+                        "Failed to fetch and verify forge content"
+                    );
+                    ApiError::ActorOperationFailed(
+                        "Failed to fetch signers file from forge".to_string(),
+                    )
+                })?;
+
+        let content = verified_content.content().await.map_err(|e| {
+            tracing::error!(actor_name = ACTOR_NAME, request_id = %request_id, error = %e, "Failed to read content");
+            ApiError::ActorOperationFailed(
+                "Failed to read signers file content".to_string(),
+            )
+        })?;
 
         tracing::info!(
             actor_name = ACTOR_NAME,request_id = %request_id,
@@ -220,6 +240,7 @@ impl ForgeProjectValidator {
         Ok(ProjectSignersProposal {
             project_id,
             signers_info,
+            verified_content,
             request_id: request_id.to_string(),
         })
     }

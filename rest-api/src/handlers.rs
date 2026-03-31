@@ -115,11 +115,7 @@ pub async fn register_repo_handler(
         signers_file_types::ForgeOrigin::new(
             forge_kind,
             request.signers_file_url.clone(),
-            signers_file_types::VerifiedForgeContent::new(repo_info.raw_url().to_string())
-                .await
-                .map_err(|e| {
-                    ApiError::InternalServerError(format!("Failed to verify forge content: {}", e))
-                })?,
+            signers_proposal.verified_content,
             chrono::Utc::now(),
         ),
     );
@@ -301,11 +297,7 @@ pub async fn update_signers_handler(
         signers_file_types::ForgeOrigin::new(
             forge_kind,
             request.signers_file_url.clone(),
-            signers_file_types::VerifiedForgeContent::new(repo_info.raw_url().to_string())
-                .await
-                .map_err(|e| {
-                    ApiError::InternalServerError(format!("Failed to verify forge content: {}", e))
-                })?,
+            signers_proposal.verified_content,
             chrono::Utc::now(),
         ),
     );

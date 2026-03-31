@@ -686,10 +686,7 @@ pub mod test_utils_tests {
         // signers file
         assert_eq!(response_body.required_signers.len(), 0);
 
-        // Forge URL is fetched twice: once by the forge validator, once by
-        // VerifiedForgeContent::new to compute the content hash.
-        // FIXME: eliminate double-fetch by building VerifiedForgeContent inside the forge validator.
-        mock.assert_hits(2);
+        mock.assert();
         server_handle.abort();
 
         Ok(())
@@ -787,8 +784,7 @@ pub mod test_utils_tests {
         assert_eq!(response_body.required_signers[0], public_key_2.to_base64());
         assert_eq!(response_body.signature_submission_url, "/v1/signatures");
 
-        // FIXME: eliminate double-fetch by building VerifiedForgeContent inside the forge validator.
-        mock.assert_hits(2);
+        mock.assert();
         server_handle.abort();
 
         Ok(())
@@ -1375,8 +1371,7 @@ pub mod test_utils_tests {
         assert_eq!(response.status(), StatusCode::OK);
         let register_response = response.json::<RegisterRepoResponse>().await?;
         assert!(register_response.success);
-        // FIXME: eliminate double-fetch by building VerifiedForgeContent inside the forge validator.
-        signers_mock.assert_hits(2);
+        signers_mock.assert();
 
         // --- Step 2: Set up mock checksums file and register assets ---
 

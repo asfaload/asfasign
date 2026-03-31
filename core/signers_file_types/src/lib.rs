@@ -239,6 +239,9 @@ pub enum VerifiedForgeContentError {
 pub struct VerifiedForgeContent {
     retrieval_url: String,
     content_hash: String,
+    /// Cached fetched content. Present after `new()`, absent after deserialization.
+    #[serde(skip)]
+    content: Option<String>,
 }
 
 impl VerifiedForgeContent {
@@ -250,6 +253,29 @@ impl VerifiedForgeContent {
     /// SHA-512 hex digest of the content at `retrieval_url`.
     pub fn content_hash(&self) -> &str {
         &self.content_hash
+    }
+
+    /// Returns the fetched content. If not cached (e.g. after deserialization),
+    /// re-fetches from `retrieval_url`. Does not cache the re-fetched result, but
+    /// impact is null or minimal in our scenario as we don't call it multiple times on
+    /// an instance that was dezerialised.
+    pub async fn content(&self) -> Result<String, VerifiedForgeContentError> {
+        if let Some(ref c) = self.content {
+            return Ok(c.clone());
+        }
+        let response = reqwest::get(&self.retrieval_url).await.map_err(|e| {
+            VerifiedForgeContentError::FetchError(format!("{}: {}", self.retrieval_url, e))
+        })?;
+        if !response.status().is_success() {
+            return Err(VerifiedForgeContentError::FetchError(format!(
+                "{}: HTTP {}",
+                self.retrieval_url,
+                response.status()
+            )));
+        }
+        response.text().await.map_err(|e| {
+            VerifiedForgeContentError::FetchError(format!("{}: {}", self.retrieval_url, e))
+        })
     }
 
     /// Production constructor: fetches content from the URL and computes the hash.
@@ -268,16 +294,17 @@ impl VerifiedForgeContent {
             )));
         }
 
-        let content = response.bytes().await.map_err(|e| {
+        let content = response.text().await.map_err(|e| {
             VerifiedForgeContentError::FetchError(format!("{}: {}", retrieval_url, e))
         })?;
 
-        let hash = common::sha512_for_content(&content[..])
+        let hash = common::sha512_for_content(content.as_bytes())
             .map_err(|e| VerifiedForgeContentError::HashError(e.to_string()))?;
 
         Ok(Self {
             retrieval_url,
             content_hash: hash.to_hex(),
+            content: Some(content),
         })
     }
 
@@ -290,6 +317,7 @@ impl VerifiedForgeContent {
         Self {
             retrieval_url,
             content_hash,
+            content: Some(content),
         }
     }
 }
@@ -838,6 +866,63 @@ mod accessor_tests {
         let json_missing_hash = r#"{"retrieval_url":"https://example.com"}"#;
         let result: Result<VerifiedForgeContent, _> = serde_json::from_str(json_missing_hash);
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn verified_forge_content_new_stores_content() {
+        let mut server = mockito::Server::new_async().await;
+        let body = "test content for hashing";
+        let mock = server
+            .mock("GET", "/test-file")
+            .with_status(200)
+            .with_body(body)
+            .create_async()
+            .await;
+
+        let url = format!("{}/test-file", server.url());
+        let verified = VerifiedForgeContent::new(url.clone()).await.unwrap();
+        // content() returns cached content without re-fetching
+        assert_eq!(verified.content().await.unwrap(), body);
+        mock.assert();
+    }
+
+    #[test]
+    fn verified_forge_content_content_not_serialized() {
+        let v = VerifiedForgeContent::new_for_test(
+            "https://example.com".to_string(),
+            "some content".to_string(),
+        );
+        let json = serde_json::to_string(&v).unwrap();
+        assert!(
+            !json.contains("some content"),
+            "content should not appear in serialized JSON"
+        );
+        assert!(
+            !json.contains("\"content\""),
+            "content field should be skipped"
+        );
+    }
+
+    #[tokio::test]
+    async fn verified_forge_content_content_refetches_after_deserialization() {
+        let mut server = mockito::Server::new_async().await;
+        let body = "refetched content";
+        let mock = server
+            .mock("GET", "/refetch")
+            .with_status(200)
+            .with_body(body)
+            .create_async()
+            .await;
+
+        let url = format!("{}/refetch", server.url());
+        let original = VerifiedForgeContent::new_for_test(url.clone(), body.to_string());
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: VerifiedForgeContent = serde_json::from_str(&json).unwrap();
+
+        // content() on deserialized instance re-fetches
+        let fetched = deserialized.content().await.unwrap();
+        assert_eq!(fetched, body);
+        mock.assert();
     }
 
     #[tokio::test]
