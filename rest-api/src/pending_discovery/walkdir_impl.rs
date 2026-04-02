@@ -34,7 +34,14 @@ impl super::PendingSignaturesDiscovery for WalkdirPendingDiscovery {
                     if path
                         .file_name()
                         .and_then(|name| name.to_str())
-                        .map(|name| name.ends_with(PENDING_SIGNATURES_SUFFIX))
+                        .map(|name| {
+                            name.ends_with(PENDING_SIGNATURES_SUFFIX)
+                                && !name.ends_with(&format!(
+                                    "{}.{}",
+                                    constants::METADATA_SUFFIX,
+                                    PENDING_SIGNATURES_SUFFIX
+                                ))
+                        })
                         .unwrap_or(false)
                     {
                         if let Ok(relative_path) = path.strip_prefix(&base) {
@@ -140,6 +147,30 @@ mod tests {
             .collect();
         assert!(paths.contains(&"nested/file1.txt.signatures.json.pending".to_string()));
         assert!(paths.contains(&"nested/file2.txt.signatures.json.pending".to_string()));
+    }
+
+    #[test]
+    fn test_find_all_pending_excludes_metadata_pending_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let normalised =
+            build_normalised_absolute_path(temp_dir.path(), PathBuf::from(".")).unwrap();
+
+        // A regular pending file — should be included
+        let regular = temp_dir.path().join("file.txt.signatures.json.pending");
+        fs::write(&regular, "sig").unwrap();
+
+        // A metadata pending file — should be excluded
+        let metadata_pending = temp_dir
+            .path()
+            .join("file.txt.metadata.json.signatures.json.pending");
+        fs::write(&metadata_pending, "meta-sig").unwrap();
+
+        let discovery = WalkdirPendingDiscovery::new();
+        let result = discovery.find_all_pending(&normalised).unwrap();
+
+        assert_eq!(result.len(), 1, "Metadata pending files must be excluded");
+        let path = result[0].relative_path().to_string_lossy().to_string();
+        assert_eq!(path, "file.txt.signatures.json.pending");
     }
 
     #[test]
