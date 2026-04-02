@@ -218,6 +218,8 @@ where
             SignedFileWithKind::Artifact(sf) => sf.add_signature(sig, pubkey),
             SignedFileWithKind::Revocation(sf) => sf.add_signature(sig, pubkey),
             SignedFileWithKind::RevokedArtifact(sf) => sf.add_signature(sig, pubkey),
+            // FIXME: implement
+            SignedFileWithKind::Metadata(_) => todo!("Not implemented"),
         }
     }
 
@@ -228,6 +230,8 @@ where
             SignedFileWithKind::Artifact(sf) => sf.is_signed(),
             SignedFileWithKind::Revocation(sf) => sf.is_signed(),
             SignedFileWithKind::RevokedArtifact(sf) => sf.is_signed(),
+            // FIXME: implement
+            SignedFileWithKind::Metadata(_) => todo!("Not implemented"),
         }
     }
 }

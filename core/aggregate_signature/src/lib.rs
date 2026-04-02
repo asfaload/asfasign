@@ -390,6 +390,8 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
             Ok(signers)
         }
         SignedFileWithKind::RevokedArtifact(_) => Err(AggregateSignatureError::FileRevoked),
+        // FIXME: implement
+        SignedFileWithKind::Metadata(_) => todo!(),
     }
 }
 
@@ -488,6 +490,8 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
             check_groups(signers_config.revocation_keys(), &signatures, &file_hash)
         }
         SignedFileWithKind::RevokedArtifact(_) => false,
+        // FIXME: implement
+        SignedFileWithKind::Metadata(_) => todo!(),
     };
     if !(signed_file.kind() == FileType::RevokedArtifact) && !look_at_pending && !is_complete {
         Err(AggregateSignatureError::MissingSignaturesInCompleteSignature)
