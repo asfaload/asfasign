@@ -1056,8 +1056,7 @@ pub async fn get_signers_chain_handler(
     axum::extract::Path(artifact_path_in): axum::extract::Path<String>,
 ) -> Result<Json<GetSignersChainResponse>, ApiError> {
     use common::fs::names::{
-        history_file_path_for, local_signers_path_for, metadata_path_for_signers_in_dir,
-        signatures_path_for,
+        history_file_path_for, local_signers_path_for, metadata_path_for, signatures_path_for,
     };
 
     let request_id = headers
@@ -1148,7 +1147,15 @@ pub async fn get_signers_chain_handler(
         );
         ApiError::InternalServerError(format!("Cannot derive signatures path: {}", e))
     })?;
-    let metadata_rel = metadata_path_for_signers_in_dir(signers_dir);
+    let metadata_rel = metadata_path_for(&source_signers_file).map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            signers_file = %source_signers_file.display(),
+            error = %e,
+            "Cannot derive metadata path"
+        );
+        ApiError::InternalServerError(format!("Cannot derive metadata path: {}", e))
+    })?;
 
     // Read all needed files from git history
     let backend = state.git_backend.clone();
