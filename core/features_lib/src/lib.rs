@@ -673,3 +673,105 @@ mod tests_signed_file_revocation {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests_signers_add_signature {
+    use super::*;
+    use ::constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
+    use common::errors::AggregateSignatureError;
+    use common::sha512_for_content;
+    use signatures::keys::AsfaloadSecretKeyTrait;
+    use signers_file_types::SignersConfig;
+    use tempfile::TempDir;
+    use test_helpers::{TestKeys, test_metadata};
+
+    #[test]
+    fn test_signers_add_signature_adds_pending_signature() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create a 2-signer config with threshold 2
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
+                ],
+                2,
+            ),
+        )?;
+        let json_content = signers_config.to_json()?;
+        let hash_value = sha512_for_content(json_content.as_bytes().to_vec())?;
+
+        // Initialize the signers file with key 0
+        let sig0 = test_keys.sec_key(0).unwrap().sign(&hash_value)?;
+        signers_file::initialize_signers_file(
+            dir_path,
+            &json_content,
+            test_metadata(),
+            &sig0,
+            test_keys.pub_key(0).unwrap(),
+        )?;
+
+        // Load the pending signers file through SignedFileLoader
+        let pending_signers_path = dir_path.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
+        let signed_file = SignedFileLoader::load(&pending_signers_path)?;
+
+        // Sign with key 1 through SignedFileWithKindTrait::add_signature
+        let sig1 = test_keys.sec_key(1).unwrap().sign(&hash_value)?;
+        let result = signed_file.add_signature(sig1, test_keys.pub_key(1).unwrap().clone());
+
+        assert!(result.is_ok(), "Expected success, got: {:?}", result.err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_signers_add_signature_errors_when_already_complete() -> anyhow::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(2);
+
+        // Create a 1-signer config (threshold 1) so initialize_signers_file auto-completes
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )?;
+        let json_content = signers_config.to_json()?;
+        let hash_value = sha512_for_content(json_content.as_bytes().to_vec())?;
+
+        // Initialize with key 0 — this completes and activates (renames pending to active)
+        let sig0 = test_keys.sec_key(0).unwrap().sign(&hash_value)?;
+        signers_file::initialize_signers_file(
+            dir_path,
+            &json_content,
+            test_metadata(),
+            &sig0,
+            test_keys.pub_key(0).unwrap(),
+        )?;
+
+        // Load the now-active signers file through SignedFileLoader
+        let active_signers_path = dir_path.join(SIGNERS_DIR).join(SIGNERS_FILE);
+        let signed_file = SignedFileLoader::load(&active_signers_path)?;
+
+        // Try to add another signature — should fail with SignatureAlreadyComplete
+        let sig1 = test_keys.sec_key(1).unwrap().sign(&hash_value)?;
+        let result = signed_file.add_signature(sig1, test_keys.pub_key(1).unwrap().clone());
+
+        match result {
+            Err(SignedFileError::SignersFileError(
+                common::errors::SignersFileError::AggregateSignatureError(
+                    AggregateSignatureError::SignatureAlreadyComplete,
+                ),
+            )) => {}
+            Err(other) => panic!("Expected SignatureAlreadyComplete error, got: {}", other),
+            Ok(_) => {
+                panic!("Expected error when adding signature to already complete signers file")
+            }
+        }
+
+        Ok(())
+    }
+}
