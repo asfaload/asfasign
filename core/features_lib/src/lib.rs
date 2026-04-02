@@ -719,7 +719,6 @@ mod tests_signers_add_signature {
         let pending_signers_path = dir_path.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
         let signed_file = SignedFileLoader::load(&pending_signers_path)?;
 
-        // Sign with key 1 through SignedFileWithKindTrait::add_signature
         let sig1 = test_keys.sec_key(1).unwrap().sign(&hash_value)?;
         let result = signed_file.add_signature(sig1, test_keys.pub_key(1).unwrap().clone());
 
