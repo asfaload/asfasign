@@ -391,8 +391,70 @@ pub fn get_authorized_signers_for_file<P: AsRef<Path>>(
             Ok(signers)
         }
         SignedFileWithKind::RevokedArtifact(_) => Err(AggregateSignatureError::FileRevoked),
-        // FIXME: implement
-        SignedFileWithKind::Metadata(_) => todo!(),
+        SignedFileWithKind::Metadata(_) => {
+            let parent_path = subject_path_from_metadata(file_path)?;
+            let parent_type = common::determine_file_type(&parent_path)?;
+            if parent_type == FileType::Metadata {
+                return Err(AggregateSignatureError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Metadata of a metadata file is not supported",
+                )));
+            }
+            match parent_type {
+                FileType::InitialSigners => {
+                    let config = load_signers_config(&parent_path)?;
+                    Ok(config.all_signer_keys())
+                }
+                FileType::Signers => {
+                    let old_config_path = find_global_signers_for(&parent_path)?;
+                    let old_config = load_signers_config(&old_config_path)?;
+                    let new_config = load_signers_config(&parent_path)?;
+
+                    let added_signers = get_newly_added_signer_keys(&old_config, &new_config);
+                    let mut all_keys = HashSet::new();
+
+                    for group in old_config.admin_keys() {
+                        for signer in &group.signers {
+                            all_keys.insert(signer.data.pubkey.clone());
+                        }
+                    }
+                    if let Some(master_groups) = old_config.master_keys() {
+                        for group in master_groups {
+                            for signer in &group.signers {
+                                all_keys.insert(signer.data.pubkey.clone());
+                            }
+                        }
+                    }
+                    for group in new_config.admin_keys() {
+                        for signer in &group.signers {
+                            all_keys.insert(signer.data.pubkey.clone());
+                        }
+                    }
+                    if let Some(master_groups) = new_config.master_keys() {
+                        for group in master_groups {
+                            for signer in &group.signers {
+                                all_keys.insert(signer.data.pubkey.clone());
+                            }
+                        }
+                    }
+                    all_keys.extend(added_signers);
+                    Ok(all_keys)
+                }
+                FileType::Artifact => {
+                    let signers_file_path = find_global_signers_for(&parent_path)?;
+                    let signers_config = load_signers_config(&signers_file_path)?;
+                    Ok(signers_config
+                        .artifact_signers()
+                        .iter()
+                        .flat_map(|group| group.signers.iter().map(|s| s.data.pubkey.clone()))
+                        .collect())
+                }
+                _ => Err(AggregateSignatureError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Unsupported parent file type for metadata: {}", parent_type),
+                ))),
+            }
+        }
     }
 }
 
@@ -4334,6 +4396,45 @@ mod tests {
         assert_eq!(authorized.len(), 2);
         assert!(authorized.contains(test_keys.pub_key(0).unwrap()));
         assert!(authorized.contains(test_keys.pub_key(1).unwrap()));
+    }
+
+    #[test]
+    fn test_get_authorized_signers_for_file_metadata_initial_signers() -> Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
+        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
+        std::fs::create_dir_all(&pending_dir)?;
+
+        let test_keys = test_helpers::TestKeys::new(2);
+
+        let config = signers_file_types::SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
+                ],
+                2,
+            ),
+        )?;
+        let json = config.to_json()?;
+
+        let signers_path = pending_dir.join(SIGNERS_FILE);
+        std::fs::write(&signers_path, &json)?;
+
+        let metadata_path = common::fs::names::metadata_path_for(&signers_path)?;
+        std::fs::write(
+            &metadata_path,
+            r#"{"origin":{"forge":"github","owner":"test","repo":"test"}}"#,
+        )?;
+
+        let authorized = get_authorized_signers_for_file(&metadata_path)?;
+
+        // For initial signers, all signers should be authorized
+        assert!(authorized.contains(test_keys.pub_key(0).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(1).unwrap()));
+        assert_eq!(authorized.len(), 2);
+
+        Ok(())
     }
 
     // ---------------------------------
