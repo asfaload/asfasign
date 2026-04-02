@@ -509,6 +509,7 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use common::fs::names::local_signers_path_for;
+    use common::fs::names::metadata_path_for;
     use common::sha512_for_file;
     use constants::{PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
     use signatures::keys::AsfaloadSecretKeyTrait;
@@ -528,16 +529,18 @@ mod tests {
         } else {
             PENDING_SIGNERS_DIR
         };
-        let metadata_path = root_dir.join(dir_name).join(METADATA_FILE);
+        let signers_file = root_dir.join(dir_name).join(SIGNERS_FILE);
+        let metadata_path = metadata_path_for(&signers_file)
+            .unwrap_or_else(|e| panic!("Failed to build metadata path: {}", e));
         assert!(
             metadata_path.exists(),
-            "metadata.json should exist in {}",
+            "metadata file should exist in {}",
             dir_name
         );
         let content = fs::read_to_string(&metadata_path)
-            .unwrap_or_else(|e| panic!("Failed to read metadata.json: {}", e));
+            .unwrap_or_else(|e| panic!("Failed to read metadata file: {}", e));
         let _: SignersConfigMetadata = serde_json::from_str(&content)
-            .unwrap_or_else(|e| panic!("Failed to deserialize metadata.json: {}", e));
+            .unwrap_or_else(|e| panic!("Failed to deserialize metadata file: {}", e));
     }
 
     /// Substitute the known placeholders in fixture templates and insert a timestamp.
@@ -1555,7 +1558,7 @@ mod tests {
 
         // Write metadata file for the existing active signers
         let metadata = test_metadata();
-        let metadata_path = active_dir.join(METADATA_FILE);
+        let metadata_path = metadata_path_for(&existing_signers_file).unwrap();
         fs::write(
             &metadata_path,
             serde_json::to_string_pretty(&metadata).unwrap(),
@@ -1803,7 +1806,7 @@ mod tests {
 
         // Write metadata file
         let metadata = test_metadata();
-        let metadata_path = active_signers_dir.join(METADATA_FILE);
+        let metadata_path = metadata_path_for(&signers_file_path).unwrap();
         fs::write(
             &metadata_path,
             serde_json::to_string_pretty(&metadata).unwrap(),
@@ -2719,15 +2722,15 @@ mod tests {
         let active_signers_dir = root_dir.join(SIGNERS_DIR);
         fs::create_dir_all(&active_signers_dir)?;
 
+        let signers_file_path = active_signers_dir.join(SIGNERS_FILE);
+
         // Write metadata file
         let metadata = test_metadata();
-        let metadata_path = active_signers_dir.join(METADATA_FILE);
+        let metadata_path = metadata_path_for(&signers_file_path).unwrap();
         fs::write(
             &metadata_path,
             serde_json::to_string_pretty(&metadata).unwrap(),
         )?;
-
-        let signers_file_path = active_signers_dir.join(SIGNERS_FILE);
 
         // Create a template for the active signers content
         let mut template = r#"
@@ -5038,9 +5041,10 @@ mod tests {
             signer_validator,
         )?;
 
-        // Verify metadata.json exists in the pending directory
-        let metadata_path = dir_path.join(PENDING_SIGNERS_DIR).join(METADATA_FILE);
-        assert!(metadata_path.exists(), "metadata.json should exist");
+        // Verify metadata file exists in the pending directory
+        let metadata_path =
+            metadata_path_for(dir_path.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE)).unwrap();
+        assert!(metadata_path.exists(), "metadata file should exist");
 
         // Verify it deserializes to a valid SignersConfigMetadata
         let metadata_content = fs::read_to_string(&metadata_path)?;
@@ -5063,10 +5067,10 @@ mod tests {
         let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
         let signature = seckey.sign(&hash)?;
 
-        // Pre-create the metadata.json file
+        // Pre-create the metadata file
         let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
         fs::create_dir_all(&pending_dir)?;
-        let metadata_path = pending_dir.join(METADATA_FILE);
+        let metadata_path = metadata_path_for(pending_dir.join(SIGNERS_FILE)).unwrap();
         fs::write(&metadata_path, "{}")?;
 
         let signer_validator = || Ok(());
@@ -5130,7 +5134,8 @@ mod tests {
         )?;
 
         // Read back the metadata file and compare
-        let metadata_path = dir_path.join(PENDING_SIGNERS_DIR).join(METADATA_FILE);
+        let metadata_path =
+            metadata_path_for(dir_path.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE)).unwrap();
         let actual_json = fs::read_to_string(&metadata_path)?;
         // Both should deserialize to valid metadata
         let actual: SignersConfigMetadata = serde_json::from_str(&actual_json)?;
