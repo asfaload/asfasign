@@ -161,7 +161,7 @@ pub fn history_file_path_for<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
 }
 
 /// Get the metadata file path inside a signers directory.
-pub fn metadata_path_for<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
+pub fn metadata_path_for_signers_in_dir<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
     signers_dir.as_ref().join(METADATA_FILE)
 }
 
@@ -169,7 +169,7 @@ pub fn metadata_path_for<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
 /// Composes `metadata_path_for` with `signatures_path_for`:
 /// `signers_dir/metadata.json.signatures.json`
 pub fn metadata_signatures_path_for<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
-    signatures_path_for(metadata_path_for(signers_dir))
+    signatures_path_for(metadata_path_for_signers_in_dir(signers_dir))
         .expect("metadata_path_for always produces a valid file name")
 }
 
