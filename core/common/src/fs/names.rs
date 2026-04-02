@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use constants::{
-    METADATA_FILE, PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX,
+    METADATA_SUFFIX, PENDING_SIGNATURES_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX,
     REVOCATION_SUFFIX, REVOKED_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE,
     SIGNERS_HISTORY_FILE, SIGNERS_SUFFIX,
 };
@@ -160,17 +160,18 @@ pub fn history_file_path_for<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
     parent.join(SIGNERS_HISTORY_FILE)
 }
 
-/// Get the metadata file path inside a signers directory.
-pub fn metadata_path_for_signers_in_dir<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
-    signers_dir.as_ref().join(METADATA_FILE)
+/// Get the metadata file path for a given file.
+/// Appends the metadata suffix to the file path, e.g. `index.json` -> `index.json.metadata.json`.
+pub fn metadata_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    file_path_with_suffix(path_in, METADATA_SUFFIX)
 }
 
-/// Get the metadata signatures file path inside a signers directory.
+/// Get the metadata signatures file path for a given file.
 /// Composes `metadata_path_for` with `signatures_path_for`:
-/// `signers_dir/metadata.json.signatures.json`
-pub fn metadata_signatures_path_for<P: AsRef<Path>>(signers_dir: P) -> PathBuf {
-    signatures_path_for(metadata_path_for_signers_in_dir(signers_dir))
-        .expect("metadata_path_for always produces a valid file name")
+/// e.g. `index.json` -> `index.json.metadata.json.signatures.json`
+pub fn metadata_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    let metadata = metadata_path_for(path_in)?;
+    signatures_path_for(metadata)
 }
 
 pub fn revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
@@ -800,17 +801,35 @@ mod asfaload_index_tests {
         Ok(())
     }
 
+    // test metadata_path_for
+    // ----------------------
+    #[test]
+    fn test_metadata_path_for() -> Result<()> {
+        let input = Path::new("/project/asfaload.signers/index.json");
+        let result = metadata_path_for(input)?;
+        assert_eq!(
+            result,
+            PathBuf::from(format!(
+                "/project/asfaload.signers/index.json.{}",
+                METADATA_SUFFIX
+            ))
+        );
+        Ok(())
+    }
+
     // test metadata_signatures_path_for
     // ----------------------------------
     #[test]
     fn test_metadata_signatures_path_for() -> Result<()> {
-        let signers_dir = Path::new("/project/asfaload.signers");
-        let result = metadata_signatures_path_for(signers_dir);
-        let expected = PathBuf::from_str(&format!(
-            "/project/{}/{}.{}",
-            SIGNERS_DIR, METADATA_FILE, SIGNATURES_SUFFIX
-        ))?;
-        assert_eq!(result, expected);
+        let input = Path::new("/project/asfaload.signers/index.json");
+        let result = metadata_signatures_path_for(input)?;
+        assert_eq!(
+            result,
+            PathBuf::from(format!(
+                "/project/asfaload.signers/index.json.{}.{}",
+                METADATA_SUFFIX, SIGNATURES_SUFFIX
+            ))
+        );
         Ok(())
     }
 }
