@@ -3,13 +3,14 @@ use common::{
     SignedFileLoader,
     errors::{AggregateSignatureError, SignersFileError},
     fs::{
-        names::{find_global_signers_for, pending_signatures_path_for, signatures_path_for},
+        names::{
+            find_global_signers_for, metadata_path_for, pending_signatures_path_for,
+            signatures_path_for,
+        },
         open_new_file,
     },
 };
-use constants::{
-    METADATA_FILE, PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE,
-};
+use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
     signatures_file::SignaturesFile,
@@ -167,7 +168,7 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
     }
 
     // If a metadata file exists, we refuse to overwrite it
-    let metadata_file_path = dir_path.join(METADATA_FILE);
+    let metadata_file_path = metadata_path_for(&signers_file_path)?;
     if metadata_file_path.exists() {
         return Err(SignersFileError::InitialisationError(format!(
             "Metadata file exists: {}",
@@ -343,7 +344,7 @@ fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), Signe
     let signatures: SignaturesFile = serde_json::from_str(&signatures_content)?;
 
     // Read the metadata file for the active signers
-    let metadata_file_path = active_signers_dir.join(METADATA_FILE);
+    let metadata_file_path = metadata_path_for(&active_signers_file)?;
     let metadata_content = fs::read_to_string(&metadata_file_path)?;
     let metadata: SignersConfigMetadata = serde_json::from_str(&metadata_content)?;
 
