@@ -1,11 +1,10 @@
 use crate::file_auth::actors::git_actor::{CommitFile, GitActor};
 use crate::handlers::map_to_user_error;
-use common::errors::AggregateSignatureError;
+use common::errors::{AggregateSignatureError, SignersFileError};
 use common::fs::names::signatures_path_for;
 use constants::SIGNERS_DIR;
 use features_lib::{
-    AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState, SignedFileLoader,
-    activate_signers_file, sha512_for_file,
+    AsfaloadPublicKeys, AsfaloadSignatures, SignatureWithState, SignedFileLoader, sha512_for_file,
 };
 use kameo::actor::ActorRef;
 use kameo::message::Context;
@@ -163,77 +162,75 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
             ));
         }
 
-        let signature_with_state =
-            SignatureWithState::load_for_file(&msg.file_path).map_err(|e| {
-                tracing::error!(
-                    actor = ACTOR_NAME,
-                    request_id = %msg.request_id,
-                    error = %e,
-                    "failed to load aggregate signature"
-                );
-                ApiError::InternalServerError("Failed to load aggregate signature".to_string())
-            })?;
-
-        let pending_agg = signature_with_state.get_pending().ok_or_else(|| {
-            ApiError::SignatureAlreadyComplete("Cannot accept additional signatures".to_string())
+        // Determine file type to choose the right signing path
+        let signed_file = SignedFileLoader::load(&msg.file_path).map_err(|e| {
+            tracing::error!(
+                actor = ACTOR_NAME,
+                request_id = %msg.request_id,
+                error = %e,
+                "failed to load signed file"
+            );
+            ApiError::InternalServerError(format!("Failed to load signed file: {}", e))
         })?;
 
-        let new_state = pending_agg
-            .add_individual_signature(&msg.signature, &msg.public_key)
+        let is_signers_file = signed_file.is_initial_signers() || signed_file.is_signers();
+
+        let new_state = if is_signers_file {
+            // For signers files, delegate to sign_signers_file which handles
+            // add_individual_signature + activation in one call.
+            signers_file::sign_signers_file(
+                msg.file_path.absolute_path(),
+                &msg.signature,
+                &msg.public_key,
+            )
             .map_err(|e| {
                 tracing::error!(
                     actor = ACTOR_NAME,
                     request_id = %msg.request_id,
                     error = %e,
-                    "failed to add individual signature"
+                    "failed to sign signers file"
                 );
-                match e {
-                    AggregateSignatureError::DuplicateSignature => ApiError::InvalidRequestBody(
-                        "Signature already collected for this key".to_string(),
-                    ),
-                    AggregateSignatureError::Signature(msg) => {
-                        if msg.contains("signature verification failed") {
-                            ApiError::SignatureVerificationFailed
-                        } else {
-                            ApiError::InternalServerError(msg)
-                        }
-                    }
-                    AggregateSignatureError::Io(io) => {
-                        if io.kind() == std::io::ErrorKind::AlreadyExists {
-                            ApiError::InvalidRequestBody("Signature already added".to_string())
-                        } else {
-                            ApiError::InternalServerError(format!("IO error: {}", io))
-                        }
-                    }
-                    _ => ApiError::InternalServerError(e.to_string()),
-                }
-            })?;
-        let is_complete = new_state.is_complete();
-
-        let commit_msg = if let SignatureWithState::Complete(complete_agg_sig) = new_state {
-            let signed_file = SignedFileLoader::load(&msg.file_path).map_err(|e| {
-                tracing::error!(
-                    actor = ACTOR_NAME,
-                    request_id = %msg.request_id,
-                    error = %e,
-                    "failed to load signed file"
-                );
-                ApiError::InternalServerError(format!("Failed to load signed file: {}", e))
-            })?;
-            // If signature is complete and this is a signers file, activate it
-            // In that case, the dirname changes for a signers file, which influences
-            // the git commit
-            // ----------------------------------------------------------------
-            if signed_file.is_initial_signers() || signed_file.is_signers() {
-                activate_signers_file(&complete_agg_sig).map_err(|e| {
+                map_signers_file_error(e)
+            })?
+        } else {
+            // For non-signers files, use the existing add_individual_signature flow
+            let signature_with_state =
+                SignatureWithState::load_for_file(&msg.file_path).map_err(|e| {
                     tracing::error!(
                         actor = ACTOR_NAME,
                         request_id = %msg.request_id,
                         error = %e,
-                        "failed to activate signers file"
+                        "failed to load aggregate signature"
                     );
-                    ApiError::InternalServerError(format!("Failed to activate signers file: {}", e))
+                    ApiError::InternalServerError("Failed to load aggregate signature".to_string())
                 })?;
+
+            let pending_agg = signature_with_state.get_pending().ok_or_else(|| {
+                ApiError::SignatureAlreadyComplete(
+                    "Cannot accept additional signatures".to_string(),
+                )
+            })?;
+
+            pending_agg
+                .add_individual_signature(&msg.signature, &msg.public_key)
+                .map_err(|e| {
+                    tracing::error!(
+                        actor = ACTOR_NAME,
+                        request_id = %msg.request_id,
+                        error = %e,
+                        "failed to add individual signature"
+                    );
+                    map_aggregate_signature_error(e)
+                })?
+        };
+
+        let is_complete = new_state.is_complete();
+
+        let commit_msg = if is_complete {
+            if is_signers_file {
+                // Signers file was already activated by sign_signers_file.
+                // The dirname changes for a signers file, which influences
+                // the git commit.
                 tracing::info!(
                     actor = ACTOR_NAME,
                     request_id = %msg.request_id,
@@ -263,7 +260,6 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                 }
             } else {
                 // For an artifact file, the dir name doesn't change
-                // -------------------------------------------
                 let commit_message = format!(
                     "completed signature collection for {}",
                     msg.file_path.relative_path().display(),
@@ -276,7 +272,6 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
             }
         } else {
             // If the signature is still partial, the dirname doesn't change,
-            // ---------------------------------
             // even for signers files
             let commit_message = format!(
                 "added partial signature for {}",
@@ -441,6 +436,48 @@ impl Message<RevokeFileMessage> for SignatureCollector {
         );
 
         Ok(RevokeFileResult())
+    }
+}
+
+/// Map an `AggregateSignatureError` to the appropriate `ApiError`.
+fn map_aggregate_signature_error(e: AggregateSignatureError) -> ApiError {
+    match e {
+        AggregateSignatureError::DuplicateSignature => {
+            ApiError::InvalidRequestBody("Signature already collected for this key".to_string())
+        }
+        AggregateSignatureError::Signature(msg) => {
+            if msg.contains("signature verification failed") {
+                ApiError::SignatureVerificationFailed
+            } else {
+                ApiError::InternalServerError(msg)
+            }
+        }
+        AggregateSignatureError::Io(io) => {
+            if io.kind() == std::io::ErrorKind::AlreadyExists {
+                ApiError::InvalidRequestBody("Signature already added".to_string())
+            } else {
+                ApiError::InternalServerError(format!("IO error: {}", io))
+            }
+        }
+        _ => ApiError::InternalServerError(e.to_string()),
+    }
+}
+
+/// Map a `SignersFileError` to the appropriate `ApiError`, preserving the same
+/// error responses as the previous direct `add_individual_signature` + `activate_signers_file` flow.
+fn map_signers_file_error(e: SignersFileError) -> ApiError {
+    match e {
+        SignersFileError::AggregateSignatureError(agg_err) => match agg_err {
+            AggregateSignatureError::SignatureAlreadyComplete => {
+                ApiError::SignatureAlreadyComplete(
+                    "Cannot accept additional signatures".to_string(),
+                )
+            }
+            other => map_aggregate_signature_error(other),
+        },
+        SignersFileError::IoError(io) => ApiError::InternalServerError(format!("IO error: {}", io)),
+        SignersFileError::SignatureVerificationFailed(_) => ApiError::SignatureVerificationFailed,
+        _ => ApiError::InternalServerError(e.to_string()),
     }
 }
 
