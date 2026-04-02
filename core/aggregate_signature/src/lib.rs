@@ -4437,6 +4437,91 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_get_authorized_signers_for_file_metadata_signers_update() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(6);
+
+        // Old config: admins (key 0), masters (key 1), artifact (key 2)
+        let old_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![2], 1)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
+        }
+        .build();
+        write_signers_config(temp_dir.path(), &old_config);
+
+        // New config: adds artifact signer (key 3), replaces admin (key 0 by key 4)
+        let new_config = SignersConfigProposal {
+            timestamp: chrono::Utc::now() + chrono::Duration::seconds(1),
+            version: 2,
+            artifact_signers: vec![create_group(&test_keys, vec![2, 3], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![4], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
+            revocation_keys: None,
+        }
+        .build();
+        let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
+
+        let metadata_path = common::fs::names::metadata_path_for(&pending_signers_file).unwrap();
+        std::fs::write(
+            &metadata_path,
+            r#"{"origin":{"forge":"github","owner":"test","repo":"test"}}"#,
+        )
+        .unwrap();
+
+        let authorized = get_authorized_signers_for_file(&metadata_path).expect("Should succeed");
+
+        // Same as the signers update test: old admin (0), old master (1),
+        // newly added artifact (3), new admin (4)
+        assert_eq!(authorized.len(), 4);
+        assert!(authorized.contains(test_keys.pub_key(0).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(1).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(3).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(4).unwrap()));
+        assert!(!authorized.contains(test_keys.pub_key(2).unwrap()));
+        assert!(!authorized.contains(test_keys.pub_key(5).unwrap()));
+    }
+
+    #[test]
+    fn test_get_authorized_signers_for_file_metadata_artifact() {
+        let temp_dir = TempDir::new().unwrap();
+        let test_keys = TestKeys::new(4);
+
+        let config = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![create_group(&test_keys, vec![0, 1], 2)],
+            admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
+            master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
+            revocation_keys: None,
+        }
+        .build();
+
+        write_signers_config(temp_dir.path(), &config);
+        let artifact_path = write_artifact_file(temp_dir.path());
+
+        let metadata_path = common::fs::names::metadata_path_for(&artifact_path).unwrap();
+        std::fs::write(
+            &metadata_path,
+            r#"{"origin":{"forge":"github","owner":"test","repo":"test"}}"#,
+        )
+        .unwrap();
+
+        let authorized = get_authorized_signers_for_file(&metadata_path).expect("Should succeed");
+
+        // Only artifact signers (keys 0 and 1) should be authorized,
+        // same as for the artifact itself
+        assert_eq!(authorized.len(), 2);
+        assert!(authorized.contains(test_keys.pub_key(0).unwrap()));
+        assert!(authorized.contains(test_keys.pub_key(1).unwrap()));
+        assert!(!authorized.contains(test_keys.pub_key(2).unwrap()));
+        assert!(!authorized.contains(test_keys.pub_key(3).unwrap()));
+    }
+
     // ---------------------------------
     // Test get_missing_signers
     // ---------------------------------
@@ -5712,6 +5797,120 @@ mod tests {
 
         // Now should be complete
         assert!(is_aggregate_signature_complete(&metadata_path, true)?);
+
+        Ok(())
+    }
+
+    // test get_missing_signers with metadata for initial signers
+    // -----------------------------------------------------------
+    #[test]
+    fn test_get_missing_signers_metadata_initial_signers() -> Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
+        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
+        std::fs::create_dir_all(&pending_dir)?;
+
+        let test_keys = TestKeys::new(2);
+
+        let config = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
+                ],
+                2,
+            ),
+        )?;
+        let json = config.to_json()?;
+
+        let signers_path = pending_dir.join(SIGNERS_FILE);
+        std::fs::write(&signers_path, &json)?;
+
+        let metadata_path = common::fs::names::metadata_path_for(&signers_path)?;
+        std::fs::write(
+            &metadata_path,
+            r#"{"origin":{"forge":"github","owner":"test","repo":"test"}}"#,
+        )?;
+
+        // Before any signatures, both signers should be missing
+        let missing = get_missing_signers(&metadata_path)?;
+        assert_eq!(missing.len(), 2);
+
+        // Sign with key 0
+        let metadata_hash = common::sha512_for_file(&metadata_path)?;
+        let sig0 = test_keys.sec_key(0).unwrap().sign(&metadata_hash)?;
+        sig0.add_to_aggregate_for_file(&metadata_path, test_keys.pub_key(0).unwrap())?;
+
+        // Now only key 1 should be missing
+        let missing = get_missing_signers(&metadata_path)?;
+        assert_eq!(missing.len(), 1);
+        assert!(missing.contains(test_keys.pub_key(1).unwrap()));
+
+        Ok(())
+    }
+
+    // test metadata-of-metadata rejection
+    // ------------------------------------
+    #[test]
+    fn test_is_aggregate_signature_complete_rejects_metadata_of_metadata() -> Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
+        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
+        std::fs::create_dir_all(&pending_dir)?;
+
+        let test_keys = TestKeys::new(1);
+
+        let config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )?;
+        let json = config.to_json()?;
+
+        let signers_path = pending_dir.join(SIGNERS_FILE);
+        std::fs::write(&signers_path, &json)?;
+
+        let metadata_path = common::fs::names::metadata_path_for(&signers_path)?;
+        std::fs::write(
+            &metadata_path,
+            r#"{"origin":{"forge":"github","owner":"test","repo":"test"}}"#,
+        )?;
+
+        let meta_meta_path = common::fs::names::metadata_path_for(&metadata_path)?;
+        std::fs::write(&meta_meta_path, "nested")?;
+
+        let result = is_aggregate_signature_complete(&meta_meta_path, true);
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_authorized_signers_rejects_metadata_of_metadata() -> Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
+        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
+        std::fs::create_dir_all(&pending_dir)?;
+
+        let test_keys = TestKeys::new(1);
+
+        let config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![test_keys.pub_key(0).unwrap().clone()], 1),
+        )?;
+        let json = config.to_json()?;
+
+        let signers_path = pending_dir.join(SIGNERS_FILE);
+        std::fs::write(&signers_path, &json)?;
+
+        let metadata_path = common::fs::names::metadata_path_for(&signers_path)?;
+        std::fs::write(
+            &metadata_path,
+            r#"{"origin":{"forge":"github","owner":"test","repo":"test"}}"#,
+        )?;
+
+        let meta_meta_path = common::fs::names::metadata_path_for(&metadata_path)?;
+        std::fs::write(&meta_meta_path, "nested")?;
+
+        let result = get_authorized_signers_for_file(&meta_meta_path);
+        assert!(result.is_err());
 
         Ok(())
     }
