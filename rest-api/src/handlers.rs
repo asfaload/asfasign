@@ -1147,7 +1147,15 @@ pub async fn get_signers_chain_handler(
         );
         ApiError::InternalServerError(format!("Cannot derive signatures path: {}", e))
     })?;
-    let metadata_rel = metadata_path_for(signers_dir);
+    let metadata_rel = metadata_path_for(&source_signers_file).map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            signers_file = %source_signers_file.display(),
+            error = %e,
+            "Cannot derive metadata path"
+        );
+        ApiError::InternalServerError(format!("Cannot derive metadata path: {}", e))
+    })?;
 
     // Read all needed files from git history
     let backend = state.git_backend.clone();

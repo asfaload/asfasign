@@ -386,7 +386,7 @@ mod tests {
 
     use super::*;
     use anyhow::Result;
-    use common::fs::names::pending_signatures_path_for;
+    use common::fs::names::{metadata_path_for, pending_signatures_path_for};
     use features_lib::{AsfaloadSecretKeyTrait, SignersConfig, sha512_for_content};
     use kameo::actor::Spawn;
     use signers_file_types::{Forge, ForgeOrigin, VerifiedForgeContent};
@@ -469,9 +469,10 @@ mod tests {
         assert!(init_result.signers_file_path.absolute_path().exists());
         assert!(init_result.history_file_path.absolute_path().exists());
 
-        // Verify metadata.json was created
-        let metadata_path = signers_pending_dir.join("metadata.json");
-        assert!(metadata_path.exists(), "metadata.json should exist");
+        // Verify metadata file was created
+        let metadata_path = metadata_path_for(init_result.signers_file_path.absolute_path())
+            .expect("Failed to build metadata path");
+        assert!(metadata_path.exists(), "metadata file should exist");
 
         let pending_signers_sig_path =
             pending_signatures_path_for(init_result.signers_file_path.absolute_path())?;

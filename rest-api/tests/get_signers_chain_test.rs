@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::Utc;
-use common::fs::names::signatures_path_for;
-use constants::{METADATA_FILE, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use common::fs::names::{metadata_path_for, signatures_path_for};
+use constants::{SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, SignaturesFile,
     TaggedSignature, sha512_for_content,
@@ -347,10 +347,8 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
 
     // Update metadata
     let new_metadata = test_helpers::test_metadata();
-    fs::write(
-        signers_dir.join(METADATA_FILE),
-        serde_json::to_string_pretty(&new_metadata)?,
-    )?;
+    let metadata_path = metadata_path_for(&signers_file_path)?;
+    fs::write(&metadata_path, serde_json::to_string_pretty(&new_metadata)?)?;
 
     // Commit the rotation
     git_commit(

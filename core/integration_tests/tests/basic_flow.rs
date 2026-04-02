@@ -1,12 +1,13 @@
 use anyhow::Result;
 use common::SignedFileLoader;
+use common::fs::names::metadata_path_for;
 use common::sha512_for_content;
 use common::sha512_for_file;
 use features_lib::SignatureWithState;
 use features_lib::SignedFileWithKindTrait;
 use features_lib::SignersFile;
 use features_lib::SignersFileTrait;
-use features_lib::constants::{METADATA_FILE, PENDING_SIGNERS_DIR, SIGNERS_DIR};
+use features_lib::constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
 use signatures::keys::AsfaloadSecretKeyTrait;
 use signers_file::initialize_signers_file;
 use signers_file_types::{SignersConfig, SignersConfigMetadata};
@@ -58,7 +59,8 @@ fn basic_flow() -> Result<()> {
     }
 
     // Verify metadata.json exists in pending signers dir
-    let pending_metadata = root_dir.join(PENDING_SIGNERS_DIR).join(METADATA_FILE);
+    let pending_metadata = metadata_path_for(root_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE))
+        .expect("Failed get pending signers metadata path.");
     assert!(
         pending_metadata.exists(),
         "metadata.json should exist after init"
@@ -80,12 +82,13 @@ fn basic_flow() -> Result<()> {
     }
 
     // Verify metadata.json moved to active signers dir
-    let pending_metadata = root_dir.join(PENDING_SIGNERS_DIR).join(METADATA_FILE);
+    let pending_metadata =
+        metadata_path_for(root_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE)).unwrap();
     assert!(
         !pending_metadata.exists(),
         "pending metadata should not exist after activation"
     );
-    let active_metadata = root_dir.join(SIGNERS_DIR).join(METADATA_FILE);
+    let active_metadata = metadata_path_for(root_dir.join(SIGNERS_DIR).join(SIGNERS_FILE)).unwrap();
     assert!(
         active_metadata.exists(),
         "metadata.json should exist in active dir"
