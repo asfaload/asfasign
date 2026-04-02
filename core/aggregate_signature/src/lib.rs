@@ -3,7 +3,8 @@ pub mod revocation;
 use common::errors::AggregateSignatureError;
 use common::fs::names::{
     create_local_signers_for, find_global_signers_for, local_signers_path_for,
-    pending_signatures_path_for, signatures_path_for, subject_path_from_pending_signatures,
+    pending_signatures_path_for, signatures_path_for, subject_path_from_metadata,
+    subject_path_from_pending_signatures,
 };
 use common::{AsfaloadHashes, FileType, SignedFileLoader, SignedFileWithKind};
 use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
@@ -490,8 +491,43 @@ pub fn is_aggregate_signature_complete<P: AsRef<Path>>(
             check_groups(signers_config.revocation_keys(), &signatures, &file_hash)
         }
         SignedFileWithKind::RevokedArtifact(_) => false,
-        // FIXME: implement
-        SignedFileWithKind::Metadata(_) => todo!(),
+        SignedFileWithKind::Metadata(_) => {
+            let parent_path = subject_path_from_metadata(file_path)?;
+            let parent_type = common::determine_file_type(&parent_path)?;
+            match parent_type {
+                FileType::InitialSigners => {
+                    let signers_config = load_signers_config(&parent_path)?;
+                    check_all_signers(&signatures, &signers_config, &file_hash)
+                }
+                FileType::Signers => {
+                    let active_signers_path = find_global_signers_for(&parent_path)?;
+                    let old_config = load_signers_config(&active_signers_path)?;
+                    let new_config = load_signers_config(&parent_path)?;
+                    validate_signers_update(&new_config, &old_config, &signatures, &file_hash)
+                }
+                FileType::Artifact => {
+                    let signers_file_path = if look_at_pending {
+                        find_global_signers_for(&parent_path)
+                    } else {
+                        local_signers_path_for(&parent_path)
+                    }?;
+                    let signers_config = load_signers_config(&signers_file_path)?;
+                    check_groups(signers_config.artifact_signers(), &signatures, &file_hash)
+                }
+                FileType::Metadata => {
+                    return Err(AggregateSignatureError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Metadata of a metadata file is not supported",
+                    )));
+                }
+                _ => {
+                    return Err(AggregateSignatureError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("Unsupported parent file type for metadata: {}", parent_type),
+                    )));
+                }
+            }
+        }
     };
     if !(signed_file.kind() == FileType::RevokedArtifact) && !look_at_pending && !is_complete {
         Err(AggregateSignatureError::MissingSignaturesInCompleteSignature)
@@ -5528,6 +5564,53 @@ mod tests {
                 other
             ),
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_is_aggregate_signature_complete_metadata_for_initial_signers() -> Result<()> {
+        let temp_dir = tempfile::TempDir::new()?;
+        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
+        std::fs::create_dir_all(&pending_dir)?;
+
+        let test_keys = TestKeys::new(2);
+
+        // threshold=1 but 2 signers. InitialSigners requires ALL signers.
+        // Using threshold=1 detects if code erroneously uses threshold.
+        let config = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    test_keys.pub_key(0).unwrap().clone(),
+                    test_keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+        let json = config.to_json()?;
+
+        let signers_path = pending_dir.join(SIGNERS_FILE);
+        std::fs::write(&signers_path, &json)?;
+
+        let metadata_path = common::fs::names::metadata_path_for(&signers_path)?;
+        std::fs::write(
+            &metadata_path,
+            r#"{"origin":{"forge":"github","owner":"test","repo":"test"}}"#,
+        )?;
+
+        let metadata_hash = common::sha512_for_file(&metadata_path)?;
+        let sig0 = test_keys.sec_key(0).unwrap().sign(&metadata_hash)?;
+        sig0.add_to_aggregate_for_file(&metadata_path, test_keys.pub_key(0).unwrap())?;
+
+        // Should NOT be complete (requires ALL signers, not just threshold)
+        assert!(!is_aggregate_signature_complete(&metadata_path, true)?);
+
+        let sig1 = test_keys.sec_key(1).unwrap().sign(&metadata_hash)?;
+        sig1.add_to_aggregate_for_file(&metadata_path, test_keys.pub_key(1).unwrap())?;
+
+        // Now should be complete
+        assert!(is_aggregate_signature_complete(&metadata_path, true)?);
 
         Ok(())
     }
