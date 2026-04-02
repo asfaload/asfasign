@@ -7,8 +7,8 @@ use std::{
 };
 
 use anyhow::Result;
-use common::fs::names::{pending_signatures_path_for, signatures_path_for};
-use constants::{METADATA_FILE, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
+use common::fs::names::{metadata_path_for, pending_signatures_path_for, signatures_path_for};
+use constants::{SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSecretKeys, AsfaloadSignatureTrait,
     SignaturesFile, TaggedSignature, sha512_for_content,
@@ -644,11 +644,8 @@ impl TestSetupBuilder {
 
         // Create metadata file
         let metadata = test_helpers::test_metadata();
-        tokio::fs::write(
-            signers_dir.join(METADATA_FILE),
-            serde_json::to_string_pretty(&metadata)?,
-        )
-        .await?;
+        let metadata_path = metadata_path_for(signers_dir.join(SIGNERS_FILE))?;
+        tokio::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?).await?;
 
         // Create a signatures file for the signers config (sign with first key)
         let first_pub_key = test_keys.pub_key(0).unwrap();
