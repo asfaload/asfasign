@@ -174,6 +174,27 @@ pub fn metadata_signatures_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Resu
     signatures_path_for(metadata)
 }
 
+/// Get the parent file path from a metadata file path.
+/// Strips the metadata suffix, e.g. `index.json.metadata.json` -> `index.json`.
+/// Returns an error if the path does not end with the metadata suffix.
+pub fn subject_path_from_metadata<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
+    let path = path_in.as_ref();
+    let suffix = format!(".{}", METADATA_SUFFIX);
+    let stripped = path
+        .file_name()
+        .and_then(|os_str| os_str.to_str())
+        .and_then(|name| name.strip_suffix(&suffix))
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("File does not end with {}", suffix),
+            )
+        })?;
+    let mut result = path.to_path_buf();
+    result.set_file_name(stripped);
+    Ok(result)
+}
+
 pub fn revocation_path_for<P: AsRef<Path>>(path_in: P) -> std::io::Result<PathBuf> {
     file_path_with_suffix(path_in, REVOCATION_SUFFIX)
 }
@@ -830,6 +851,40 @@ mod asfaload_index_tests {
                 METADATA_SUFFIX, SIGNATURES_SUFFIX
             ))
         );
+        Ok(())
+    }
+
+    // test subject_path_from_metadata
+    // --------------------------------
+    #[test]
+    fn test_subject_path_from_metadata_basic() -> Result<()> {
+        let input = PathBuf::from_str(&format!("/my/path/to/file.{}", METADATA_SUFFIX))?;
+        let result = subject_path_from_metadata(&input)?;
+        let expected = PathBuf::from_str("/my/path/to/file")?;
+        assert_eq!(result, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_subject_path_from_metadata_without_suffix() {
+        let input = PathBuf::from_str("/my/path/to/file").unwrap();
+        let result = subject_path_from_metadata(&input);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn test_subject_path_from_metadata_signers_file() -> Result<()> {
+        let signers_path = PathBuf::from_str(&format!(
+            "/project/asfaload.signers.pending/{}.{}",
+            SIGNERS_FILE, METADATA_SUFFIX
+        ))?;
+        let result = subject_path_from_metadata(&signers_path)?;
+        let expected = PathBuf::from_str(&format!(
+            "/project/asfaload.signers.pending/{}",
+            SIGNERS_FILE
+        ))?;
+        assert_eq!(result, expected);
         Ok(())
     }
 }
