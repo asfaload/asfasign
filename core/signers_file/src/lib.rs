@@ -24,6 +24,7 @@ use std::{borrow::Borrow, ffi::OsStr, fs, io::Write, path::Path};
 
 // Helper function used to validate the signer of a signers file
 // initialisation, i.e. when no existing signers file is active.
+#[cfg(test)]
 fn is_valid_signer_for_signer_init(
     pubkey: &AsfaloadPublicKeys,
     config: &SignersConfig,
@@ -46,6 +47,7 @@ fn is_valid_signer_for_signer_init(
 // Helper function used to validate the signer of a signers file
 // initialisation, i.e. when there is an existing signers file active,
 // which influences the validation.
+#[cfg(test)]
 fn is_valid_signer_for_update_of(
     pubkey: &AsfaloadPublicKeys,
     active_config: &SignersConfig,
@@ -474,6 +476,7 @@ mod tests {
     use common::fs::names::metadata_path_for;
     use common::sha512_for_file;
     use constants::{PENDING_SIGNATURES_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
+    use signatures::keys::AsfaloadPublicKeyTrait;
     use signatures::keys::AsfaloadSecretKeyTrait;
     use signatures::keys::AsfaloadSignatureTrait;
     use signatures::signatures_file::TaggedSignature;
@@ -855,24 +858,9 @@ mod tests {
         let json_content = &test_keys
             .substitute_keys(json_content_template.to_string())
             .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-
-        // Get keys we work with here
-        let pub_key = test_keys.pub_key(0).unwrap();
-        let sec_key = test_keys.sec_key(0).unwrap();
-
-        // Sign the hash
-        let signature = sec_key.sign(&hash_value).unwrap();
 
         // Call the function
-        initialize_signers_file(
-            dir_path,
-            json_content,
-            test_metadata(),
-            &signature,
-            test_keys.pub_key(0).unwrap(),
-        )
-        .unwrap();
+        initialize_signers_file(dir_path, json_content, test_metadata()).unwrap();
 
         // Check that the pending file exists
         let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -883,8 +871,7 @@ mod tests {
         // We don't compare exactly because of formatting, but we can parse it again to validate
         let _config: SignersConfig = parse_signers_config(&content).unwrap();
 
-        // Check that the signature does not exist as the aggregate
-        // signature is not complete
+        // Check that the complete signature does not exist
         let sig_file_path = dir_path.join(format!(
             "{}/{}.{}",
             PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
@@ -896,15 +883,10 @@ mod tests {
         ));
         assert!(pending_sig_file_path.exists());
 
-        // Check the signature file content
+        // Check the pending signature file is empty (no signatures yet)
         let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
         let sig_map: SignaturesFile = serde_json::from_str(&sig_content).unwrap();
-        assert_eq!(sig_map.entries.len(), 1);
-        assert!(sig_map.entries.contains_key(&pub_key.to_base64()));
-        assert_eq!(
-            sig_map.entries[&pub_key.to_base64()].signature,
-            signature.to_base64()
-        );
+        assert_eq!(sig_map.entries.len(), 0);
         assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
@@ -919,7 +901,6 @@ mod tests {
         // Extract used keys
         let pub_key0 = test_keys.pub_key(0).unwrap().clone();
         let pub_key1 = test_keys.pub_key(1).unwrap().clone();
-        let sec_key0 = test_keys.sec_key(0).unwrap();
 
         let signers_config = SignersConfig::with_keys(
             1,
@@ -930,38 +911,19 @@ mod tests {
         )?;
         let json_content = serde_json::json!(signers_config).to_string();
 
-        //let json_content = &test_keys.substitute_keys(json_content_template.to_string());
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-
-        // Get keys we work with here
-
-        // Sign the hash
-        let signature = sec_key0.sign(&hash_value).unwrap();
-
         // Call the function
-        initialize_signers_file(
-            dir_path,
-            json_content,
-            test_metadata(),
-            &signature,
-            &pub_key0,
-        )
-        .unwrap();
+        initialize_signers_file(dir_path, json_content, test_metadata()).unwrap();
 
-        // Even though we have a threshold 1, for a signers file initialisation we need
-        // to collect signatures from all signers preseng in the file. That's why we
-        // end up here with a pending signers dir and a pending agg sig.
-        // Check that the pending file exists
+        // Initialization creates a pending signers dir with empty pending signatures.
+        // Signing happens separately.
         let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(pending_file_path.exists());
 
         // Check the content
         let content = fs::read_to_string(&pending_file_path).unwrap();
-        // We don't compare exactly because of formatting, but we can parse it again to validate
         let _config: SignersConfig = parse_signers_config(&content).unwrap();
 
-        // Check that the signature does not exist as the aggregate
-        // signature is not complete
+        // Check that the complete signature does not exist
         let sig_file_path = dir_path.join(format!(
             "{}/{}.{}",
             PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
@@ -973,15 +935,10 @@ mod tests {
         ));
         assert!(pending_sig_file_path.exists());
 
-        // Check the signature file content
+        // Check the pending signature file is empty (no signatures yet)
         let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
         let sig_map: SignaturesFile = serde_json::from_str(&sig_content).unwrap();
-        assert_eq!(sig_map.entries.len(), 1);
-        assert!(sig_map.entries.contains_key(&pub_key0.to_base64()));
-        assert_eq!(
-            sig_map.entries[&pub_key0.to_base64()].signature,
-            signature.to_base64()
-        );
+        assert_eq!(sig_map.entries.len(), 0);
         assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
@@ -995,144 +952,47 @@ mod tests {
 
         // Get keys we work with here
         let pub_key = test_keys.pub_key(0).unwrap();
-        let sec_key = test_keys.sec_key(0).unwrap();
 
         // Build signers config
         let signers_config =
             SignersConfig::with_keys(1, (vec![pub_key.clone()], 1), None, None, None)?;
         let json_content = serde_json::json!(signers_config).to_string();
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
-        // Sign the hash
-        let signature = sec_key.sign(&hash_value).unwrap();
+        // Call the function -- initialization no longer signs, so the file stays pending
+        initialize_signers_file(dir_path, json_content, test_metadata()).unwrap();
 
-        // Call the function
-        initialize_signers_file(
-            dir_path,
-            json_content,
-            test_metadata(),
-            &signature,
-            test_keys.pub_key(0).unwrap(),
-        )
-        .unwrap();
-
-        // Check that the active file exists
-        let active_file_path = dir_path.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
-        assert!(active_file_path.exists());
+        // Check that the pending file exists (not activated since init doesn't sign)
+        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
 
         // Check the content
-        let content = fs::read_to_string(&active_file_path).unwrap();
-        // We don't compare exactly because of formatting, but we can parse it again to validate
+        let content = fs::read_to_string(&pending_file_path).unwrap();
         let _config: SignersConfig = parse_signers_config(&content).unwrap();
 
-        // Check that the signature does not exist as the aggregate
-        // signature is not complete
+        // Check that the complete signature does not exist
         let sig_file_path = dir_path.join(format!(
             "{}/{}.{}",
-            SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
         ));
-        assert!(sig_file_path.exists());
-        // Check the signature file content
-        let sig_content = fs::read_to_string(sig_file_path).unwrap();
+        assert!(!sig_file_path.exists());
+
+        // Check the pending signature file exists and is empty
+        let pending_sig_file_path = dir_path.join(format!(
+            "{}/{}.{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+        ));
+        assert!(pending_sig_file_path.exists());
+        let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
         let sig_map: SignaturesFile = serde_json::from_str(&sig_content).unwrap();
-        assert_eq!(sig_map.entries.len(), 1);
-        assert!(sig_map.entries.contains_key(&pub_key.to_base64()));
-        assert_eq!(
-            sig_map.entries[&pub_key.to_base64()].signature,
-            signature.to_base64()
-        );
+        assert_eq!(sig_map.entries.len(), 0);
 
-        // Check no pending signers dir was left
-        let pending_sig_dir = dir_path.join(PENDING_SIGNERS_DIR);
-        assert!(!pending_sig_dir.exists());
-
-        assert_metadata_file_valid(dir_path, true);
+        assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
 
-    #[test]
-    fn test_initialize_signers_file_invalid_signer() -> Result<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let dir_path = temp_dir.path();
-
-        let test_keys = TestKeys::new(3);
-
-        // JSON content with a specific signer
-        let json_content = r#"
-    {
-      "version": 1,
-      "timestamp": "TIMESTAMP",
-      "artifact_signers": [
-        {
-          "signers": [
-            { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} }
-          ],
-          "threshold": 1
-        }
-      ],
-      "master_keys": [],
-      "admin_keys": null
-    }
-    "#
-        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-
-        let json_content = render_fixture_template(&json_content, &test_keys);
-
-        // Generate a different keypair (not in the config)
-        // Get keys we work with here
-        let pubkey = test_keys.pub_key(1).unwrap();
-        let seckey = test_keys.sec_key(1).unwrap();
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-
-        // Sign the hash
-        let signature = seckey.sign(&hash_value).unwrap();
-
-        // Call the function - should fail due to invalid signer
-        let result =
-            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pubkey);
-        assert!(result.is_err());
-        match result {
-            Err(SignersFileError::InvalidSigner(_)) => (), //expected
-            Err(e) => panic!("Expected SignersFileError::InvalidSigner(_) but got {}", e),
-            Ok(_) => panic!("Expected SignersFileError::InvalidSigner(_) but got a success value!"),
-        }
-
-        // Ensure the pending file was not created
-        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
-        assert!(!pending_file_path.exists());
-        Ok(())
-    }
-
-    #[test]
-    fn test_initialize_signers_file_invalid_signature() -> Result<()> {
-        let temp_dir = TempDir::new().unwrap();
-        let dir_path = temp_dir.path();
-        let test_keys = TestKeys::new(3);
-
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let json_content =
-            SignersConfig::with_artifact_signers_only(1, (vec![pubkey.clone()], 1))?.to_json()?;
-
-        // Sign different data (not the hash of the JSON)
-        let signature = seckey
-            .sign(&common::sha512_for_content(b"wrong data".to_vec())?)
-            .unwrap();
-
-        // Call the function - should fail due to invalid signature
-        let result =
-            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pubkey);
-        assert!(result.is_err());
-        assert!(matches!(
-            result,
-            Err(SignersFileError::SignatureVerificationFailed(_))
-        ));
-
-        // Ensure the pending file was not created
-        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
-        assert!(!pending_file_path.exists());
-        Ok(())
-    }
+    // test_initialize_signers_file_invalid_signer and test_initialize_signers_file_invalid_signature
+    // were removed because initialize_signers_file no longer takes signature/pubkey arguments.
+    // Signer validation now happens at sign time via sign_signers_and_metadata_file.
 
     #[test]
     fn test_initialize_signers_file_with_admin_signers() -> Result<()> {
@@ -1154,27 +1014,10 @@ mod tests {
             None,
         )?
         .to_json()?;
-        //
-        // Get keys we work with here
-        let non_admin_pubkey = pubkey0;
-        let non_admin_seckey = test_keys.sec_key(0).unwrap();
-        let admin_pubkey = pubkey2;
-        let admin_seckey = test_keys.sec_key(2).unwrap();
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
-        // Reject new signers files signed by non admin keys
-        // -------------------------------------------------
-        // Sign the hash
-        let non_admin_signature = non_admin_seckey.sign(&hash_value).unwrap();
+        // Initialization no longer validates signers -- it just creates the files
+        initialize_signers_file(dir_path, &json_content, test_metadata())?;
 
-        // Call the function
-        let result = initialize_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &non_admin_signature,
-            &non_admin_pubkey,
-        );
         let sig_file_path = dir_path.join(format!(
             "{}/{}.{}",
             PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
@@ -1183,26 +1026,10 @@ mod tests {
             "{}/{}.{}",
             PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
         ));
-        assert!(!sig_file_path.exists());
-        assert!(!pending_file_path.exists());
-        assert!(result.is_err());
-        assert!(matches!(result, Err(SignersFileError::InvalidSigner(_))));
-
-        // Now sign proposal with admin key which should be ok
-        // --------------------------------------------------
-        let admin_signature = admin_seckey.sign(&hash_value).unwrap();
-        initialize_signers_file(
-            dir_path,
-            json_content,
-            test_metadata(),
-            &admin_signature,
-            &admin_pubkey,
-        )?;
-        // Check that the pending file exists
+        // Check that the pending signatures file exists
         assert!(pending_file_path.exists());
 
-        // Check that the signature file does not exist as not all
-        // required admin signatures where collected.
+        // Check that the complete signature file does not exist
         assert!(!sig_file_path.exists());
         assert_metadata_file_valid(dir_path, false);
         Ok(())
@@ -1215,34 +1042,30 @@ mod tests {
 
         // Get keys we work with here
         let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
 
         // Generate config
         let json_content =
             SignersConfig::with_artifact_signers_only(1, (vec![pubkey.clone()], 1))?.to_json()?;
 
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-
         let pending_signers_dir = dir_path.join(PENDING_SIGNERS_DIR);
-        let active_signers_dir = dir_path.join(SIGNERS_DIR);
-        let active_signers_file = active_signers_dir.join(SIGNERS_FILE);
-        let active_signers_file_signatures =
-            active_signers_dir.join(format!("{}.{}", SIGNERS_FILE, SIGNATURES_SUFFIX));
 
-        // Now sign proposal with unique artifact key which should be complete
-        // ---------------------------------------------------------------
-        let signature = seckey.sign(&hash_value).unwrap();
-        let result =
-            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pubkey);
-        result.expect("initialize_signers_file should have succeeded");
+        // Initialization no longer signs, so the file stays pending
+        initialize_signers_file(dir_path, &json_content, test_metadata())?;
 
-        // Check that the signature file exists as all
-        // required admin signatures where collected.
-        assert!(!pending_signers_dir.exists());
-        assert!(active_signers_dir.exists());
-        assert!(active_signers_file.exists());
-        assert!(active_signers_file_signatures.exists());
-        assert_metadata_file_valid(dir_path, true);
+        // Check that the pending file exists (not activated since init doesn't sign)
+        assert!(pending_signers_dir.exists());
+        let pending_file = pending_signers_dir.join(SIGNERS_FILE);
+        assert!(pending_file.exists());
+
+        // Check the pending signature file exists and is empty
+        let pending_sig_file_path =
+            pending_signers_dir.join(format!("{}.{}", SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX));
+        assert!(pending_sig_file_path.exists());
+        let sig_content = fs::read_to_string(pending_sig_file_path)?;
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 0);
+
+        assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
 
@@ -1252,14 +1075,10 @@ mod tests {
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(1);
 
-        // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
-        let sec_key = test_keys.sec_key(0).unwrap();
 
         let json_content =
             SignersConfig::with_artifact_signers_only(1, (vec![pub_key.clone()], 1))?.to_json()?;
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let signature = sec_key.sign(&hash_value).unwrap();
 
         // Test for IO error: Make the directory read-only
         let mut perms = fs::metadata(dir_path).unwrap().permissions();
@@ -1267,13 +1086,7 @@ mod tests {
         fs::set_permissions(dir_path, perms).unwrap();
 
         // Try to initialize the signers file, which should fail with an IO error
-        let result = initialize_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pub_key,
-        );
+        let result = initialize_signers_file(dir_path, &json_content, test_metadata());
 
         // Check that we got an IO error
         assert!(result.is_err());
@@ -1288,27 +1101,18 @@ mod tests {
         // first create a signers file in an empty directory
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
-        initialize_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pub_key,
-        )
-        .unwrap();
-        // Threshold was one, so it is activated
+        initialize_signers_file(dir_path, &json_content, test_metadata()).unwrap();
+        // Init no longer signs, so the file stays pending
         let pending_signers_file_path =
             dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
-        assert!(!pending_signers_file_path.exists());
-        let active_signers_file_path = dir_path.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
-        assert!(active_signers_file_path.exists());
-        let result =
-            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pub_key);
+        assert!(pending_signers_file_path.exists());
+        // Trying to initialize again should fail because pending dir exists
+        let result = initialize_signers_file(dir_path, &json_content, test_metadata());
         assert!(result.is_err());
         match result.as_ref().unwrap_err() {
             SignersFileError::InitialisationError(_) => {} // Expected
             _ => panic!(
-                "Expected InitisalistionError, got something else: {:?}",
+                "Expected InitialisationError, got something else: {:?}",
                 result.unwrap_err()
             ),
         }
@@ -1320,15 +1124,10 @@ mod tests {
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(1);
 
-        // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
-        let sec_key = test_keys.sec_key(0).unwrap();
 
         let json_content =
             SignersConfig::with_artifact_signers_only(1, (vec![pub_key.clone()], 1))?.to_json()?;
-        // Compute the SHA-512 hash of the JSON content
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let signature = sec_key.sign(&hash_value).unwrap();
 
         // Create complete signature file, content does not matter, only existence.
         let aggregate_signature_path = dir_path.join(format!(
@@ -1339,10 +1138,8 @@ mod tests {
         std::fs::File::create(&aggregate_signature_path)?;
 
         // Try to initialize the signers file, which should fail with an Initialisation error
-        let result =
-            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pub_key);
+        let result = initialize_signers_file(dir_path, &json_content, test_metadata());
 
-        // Check that we got an IO error
         assert!(result.is_err());
         match result.as_ref().unwrap_err() {
             SignersFileError::InitialisationError(_) => {} // Expected
@@ -1361,26 +1158,20 @@ mod tests {
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(1);
 
-        // Get keys and sign the hash
         let pub_key = test_keys.pub_key(0).unwrap();
-        let sec_key = test_keys.sec_key(0).unwrap();
 
         let json_content =
             SignersConfig::with_artifact_signers_only(1, (vec![pub_key.clone()], 1))?.to_json()?;
-        let hash_value = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let signature = sec_key.sign(&hash_value).unwrap();
 
-        // Create complete signature file, content does not matter, only existence.
+        // Create existing signers file, content does not matter, only existence.
         let existing_signers_path =
             dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         std::fs::create_dir(existing_signers_path.parent().unwrap())?;
         std::fs::File::create(existing_signers_path)?;
 
         // Try to initialize the signers file, which should fail with an Initialisation error
-        let result =
-            initialize_signers_file(dir_path, json_content, test_metadata(), &signature, pub_key);
+        let result = initialize_signers_file(dir_path, &json_content, test_metadata());
 
-        // Check that we got an IO error
         assert!(result.is_err());
         match result.as_ref().unwrap_err() {
             SignersFileError::InitialisationError(_) => {} // Expected
@@ -1392,7 +1183,7 @@ mod tests {
         let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         // Check the file is still there
         assert!(pending_file_path.exists());
-        // And check it wasn't changed, i.e. it is still and empty file
+        // And check it wasn't changed, i.e. it is still an empty file
         let file_size = std::fs::metadata(pending_file_path)?.len();
         assert_eq!(file_size, 0);
         Ok(())
@@ -2849,11 +2640,8 @@ mod tests {
         Ok(signers_file_path)
     }
 
-    // Helper function to create a test proposal
-    fn create_test_proposal(
-        test_keys: &TestKeys,
-        signer_index: usize,
-    ) -> (String, AsfaloadSignatures, &AsfaloadPublicKeys) {
+    // Helper function to create a test proposal content string
+    fn create_test_proposal(test_keys: &TestKeys) -> String {
         // Create a template for the proposal
         let template = r#"
 {
@@ -2875,15 +2663,7 @@ mod tests {
         .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         // Substitute placeholders with actual keys
-        let content = test_keys.substitute_keys(template.to_string());
-
-        // Compute hash and sign
-        let hash = common::sha512_for_content(content.as_bytes().to_vec()).unwrap();
-        let pubkey = test_keys.pub_key(signer_index).unwrap();
-        let seckey = test_keys.sec_key(signer_index).unwrap();
-        let signature = seckey.sign(&hash).unwrap();
-
-        (content, signature, pubkey)
+        test_keys.substitute_keys(template.to_string())
     }
 
     #[test]
@@ -2895,39 +2675,33 @@ mod tests {
         // Create active signers with admin keys
         create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
-        // Create a proposal signed by an admin key
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+        // Create a proposal
+        let proposal_content = create_test_proposal(&test_keys);
 
-        // Propose the new signers file
-        propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        )?;
+        // Propose the new signers file (no longer signs)
+        propose_signers_file(root_dir, &proposal_content, test_metadata())?;
 
-        // Verify the active file was created as we have a threshold of 1
-        let pending_file_path = root_dir.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
+        // Verify the pending file was created (propose no longer signs/activates)
+        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(pending_file_path.exists());
 
         // Verify the content
         let content = fs::read_to_string(&pending_file_path)?;
         let _config: SignersConfig = parse_signers_config(&content)?;
 
-        // Verify the pending signature is not there as signature is complete
+        // Verify the pending signature file exists and is empty
         let pending_sig_file_path = root_dir.join(format!(
             "{}/{}.{}",
-            SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
         ));
-        assert!(!pending_sig_file_path.exists());
+        assert!(pending_sig_file_path.exists());
 
-        // Verify the complete signature file is present
+        // Verify the complete signature file is not present (no signatures yet)
         let complete_sig_file_path = root_dir.join(format!(
             "{}/{}.{}",
-            SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
         ));
-        assert!(complete_sig_file_path.exists());
+        assert!(!complete_sig_file_path.exists());
 
         assert_metadata_file_valid(root_dir, false);
         Ok(())
@@ -2939,22 +2713,16 @@ mod tests {
         let root_dir = temp_dir.path();
         let test_keys = TestKeys::new(4);
 
-        // Create a proposal signed by an admin key before we setup the active signers file
+        // Create a proposal before we setup the active signers file
         // This means that the timestamp of the update will be smaller than the active signers
         // file, which we reject
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+        let proposal_content = create_test_proposal(&test_keys);
 
         // Create active signers with admin keys
         create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
         // Propose the new signers file
-        let result = propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        );
+        let result = propose_signers_file(root_dir, &proposal_content, test_metadata());
 
         match result {
             Err(SignersFileError::InvalidData(s)) => {
@@ -2979,17 +2747,11 @@ mod tests {
         // Create active signers with admin keys
         create_test_active_signers_for_update(root_dir, &test_keys, 2, 0)?;
 
-        // Create a proposal signed by an admin key
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+        // Create a proposal
+        let proposal_content = create_test_proposal(&test_keys);
 
         // Propose the new signers file
-        propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        )?;
+        propose_signers_file(root_dir, &proposal_content, test_metadata())?;
 
         // Verify the pending file was created
         let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -3026,17 +2788,11 @@ mod tests {
         // Create active signers with admin keys
         create_test_active_signers_for_update(root_dir, &test_keys, 1, 2)?;
 
-        // Create a proposal signed by an admin key
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+        // Create a proposal
+        let proposal_content = create_test_proposal(&test_keys);
 
         // Propose the new signers file
-        propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        )?;
+        propose_signers_file(root_dir, &proposal_content, test_metadata())?;
 
         // Verify the pending file was created
         let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -3073,17 +2829,11 @@ mod tests {
         // Create active signers with master keys
         create_test_active_signers_for_update(root_dir, &test_keys, 0, 1)?;
 
-        // Create a proposal signed by a master key
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+        // Create a proposal
+        let proposal_content = create_test_proposal(&test_keys);
 
         // Propose the new signers file
-        propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        )?;
+        propose_signers_file(root_dir, &proposal_content, test_metadata())?;
 
         // Verify the pending file is created. Threshold is 1, but need signature from previous
         // signers file.
@@ -3122,74 +2872,10 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_propose_signers_file_with_artifact_signer_fails_when_admin_group_present() -> Result<()>
-    {
-        let temp_dir = TempDir::new()?;
-        let root_dir = temp_dir.path();
-        let test_keys = TestKeys::new(4);
-
-        // Create active signers without admin or master keys
-        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
-
-        // Create a proposal signed by an artifact key
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
-
-        // Try to propose the new signers file
-        let result = propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        );
-
-        // Verify it fails because when there is an admin group, the artifact signers cannot
-        // propose a new signers file
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::InvalidSigner(_) => {} // Expected
-            e => panic!("Expected InvalidSigner error, got {}", e),
-        }
-
-        // Verify no pending file was created
-        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
-        assert!(!pending_file_path.exists());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_propose_signers_file_with_artifact_signer_ok_when_no_admin_group_present() -> Result<()>
-    {
-        let temp_dir = TempDir::new()?;
-        let root_dir = temp_dir.path();
-        let test_keys = TestKeys::new(2);
-
-        // Create active signers without admin or master keys
-        create_test_active_signers_for_update(root_dir, &test_keys, 0, 0)?;
-
-        // Create a proposal signed by an artifact key
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
-
-        // Try to propose the new signers file
-        let result = propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        );
-
-        assert!(result.is_ok());
-
-        // Verify no pending file was created
-        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
-        assert!(pending_file_path.exists());
-
-        assert_metadata_file_valid(root_dir, false);
-        Ok(())
-    }
+    // test_propose_signers_file_with_artifact_signer_fails_when_admin_group_present
+    // and test_propose_signers_file_with_artifact_signer_ok_when_no_admin_group_present
+    // were removed because propose_signers_file no longer takes signature/pubkey arguments.
+    // Signer validation now happens at sign time via sign_signers_and_metadata_file.
     #[test]
     fn test_propose_signers_file_without_active_signers_fails() -> Result<()> {
         let temp_dir = TempDir::new()?;
@@ -3199,16 +2885,10 @@ mod tests {
         // Don't create active signers
 
         // Create a proposal
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 0);
+        let proposal_content = create_test_proposal(&test_keys);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        );
+        let result = propose_signers_file(root_dir, &proposal_content, test_metadata());
 
         // Verify it fails
         assert!(result.is_err());
@@ -3224,45 +2904,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_propose_signers_file_with_invalid_signature_fails() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let root_dir = temp_dir.path();
-        let test_keys = TestKeys::new(4);
-
-        // Create active signers with admin keys
-        create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
-
-        // Create a proposal
-        let (proposal_content, _, pubkey) = create_test_proposal(&test_keys, 2);
-
-        // Create an invalid signature (sign wrong data)
-        let wrong_hash = common::sha512_for_content(b"wrong data".to_vec())?;
-        let seckey = test_keys.sec_key(3).unwrap();
-        let invalid_signature = seckey.sign(&wrong_hash).unwrap();
-
-        // Try to propose the new signers file
-        let result = propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &invalid_signature,
-            pubkey,
-        );
-
-        // Verify it fails
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::SignatureVerificationFailed(_) => {} // Expected
-            e => panic!("Expected SignatureVerificationFailed error, got {}", e),
-        }
-
-        // Verify no pending file was created
-        let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
-        assert!(!pending_file_path.exists());
-
-        Ok(())
-    }
+    // test_propose_signers_file_with_invalid_signature_fails was removed because
+    // propose_signers_file no longer takes signature/pubkey arguments.
+    // Signature validation now happens at sign time via sign_signers_and_metadata_file.
 
     #[test]
     fn test_propose_signers_file_with_existing_pending_file_fails() -> Result<()> {
@@ -3280,16 +2924,10 @@ mod tests {
         fs::write(&pending_file_path, "existing content")?;
 
         // Create a proposal
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
+        let proposal_content = create_test_proposal(&test_keys);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        );
+        let result = propose_signers_file(root_dir, &proposal_content, test_metadata());
 
         // Verify it fails
         assert!(result.is_err());
@@ -3322,16 +2960,10 @@ mod tests {
         fs::write(&pending_sig_file_path, "existing signature")?;
 
         // Create a proposal
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
+        let proposal_content = create_test_proposal(&test_keys);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        );
+        let result = propose_signers_file(root_dir, &proposal_content, test_metadata());
 
         // Verify it fails
         assert!(result.is_err());
@@ -3364,16 +2996,10 @@ mod tests {
         fs::write(&complete_sig_file_path, "existing signature")?;
 
         // Create a proposal
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 3);
+        let proposal_content = create_test_proposal(&test_keys);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(
-            root_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        );
+        let result = propose_signers_file(root_dir, &proposal_content, test_metadata());
 
         // Verify it fails
         assert!(result.is_err());
@@ -3399,17 +3025,11 @@ mod tests {
         // Create active signers with admin keys in nested directory
         create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
-        // Create a proposal signed by an admin key
-        let (proposal_content, signature, pubkey) = create_test_proposal(&test_keys, 2);
+        // Create a proposal
+        let proposal_content = create_test_proposal(&test_keys);
 
         // Propose the new signers file
-        propose_signers_file(
-            &nested_dir,
-            &proposal_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-        )?;
+        propose_signers_file(&nested_dir, &proposal_content, test_metadata())?;
 
         // Verify the pending file was created in the nested directory
         // File is pending as old signers did not sign the update
@@ -3681,24 +3301,9 @@ mod tests {
         .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content = test_keys.substitute_keys(json_content_template.to_string());
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
-
-        // Create a validator that always succeeds
-        let signer_validator = || Ok(());
 
         // Call write_valid_signers_file
-        write_valid_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-            signer_validator,
-        )?;
+        write_valid_signers_file(dir_path, &json_content, test_metadata())?;
 
         // Verify pending signers file exists
         let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -3708,7 +3313,7 @@ mod tests {
         let content = fs::read_to_string(&pending_file_path)?;
         assert_eq!(content, json_content);
 
-        // Verify pending signature file exists (incomplete signature)
+        // Verify pending signature file exists (empty, no signatures yet)
         let pending_sig_path = dir_path.join(format!(
             "{}/{}.{}",
             PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
@@ -3722,15 +3327,10 @@ mod tests {
         ));
         assert!(!complete_sig_path.exists());
 
-        // Verify signature content
+        // Verify pending signature file is empty
         let sig_content = fs::read_to_string(&pending_sig_path)?;
         let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.entries.len(), 1);
-        assert!(sig_map.entries.contains_key(&pubkey.to_base64()));
-        assert_eq!(
-            sig_map.entries[&pubkey.to_base64()].signature,
-            signature.to_base64()
-        );
+        assert_eq!(sig_map.entries.len(), 0);
 
         assert_metadata_file_valid(dir_path, false);
         Ok(())
@@ -3762,41 +3362,25 @@ mod tests {
         .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         let json_content = test_keys.substitute_keys(json_content_template.to_string());
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
 
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
+        // Call write_valid_signers_file (no longer signs, so stays pending)
+        write_valid_signers_file(dir_path, &json_content, test_metadata())?;
 
-        // Create a validator that always succeeds
-        let signer_validator = || Ok(());
+        // Verify pending signers file exists (write no longer signs/activates)
+        let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
+        assert!(pending_file_path.exists());
 
-        // Call write_valid_signers_file
-        write_valid_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-            signer_validator,
-        )?;
-
-        // Verify pending signers file exists
-        let active_file_path = dir_path.join(format!("{}/{}", SIGNERS_DIR, SIGNERS_FILE));
-        assert!(active_file_path.exists());
-
-        // Verify complete signature file exists (complete signature)
-        let complete_sig_path = dir_path.join(format!(
+        // Verify pending signature file exists and is empty
+        let pending_sig_path = dir_path.join(format!(
             "{}/{}.{}",
-            SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
+            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
         ));
-        assert!(complete_sig_path.exists());
+        assert!(pending_sig_path.exists());
+        let sig_content = fs::read_to_string(&pending_sig_path)?;
+        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
+        assert_eq!(sig_map.entries.len(), 0);
 
-        // Verify pending signature file does not exist
-        let pending_sig_dir = dir_path.join(PENDING_SIGNERS_DIR);
-        assert!(!pending_sig_dir.exists());
-
-        assert_metadata_file_valid(dir_path, true);
+        assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
 
@@ -3804,7 +3388,6 @@ mod tests {
     fn test_write_valid_signers_file_fails_with_existing_signers_file() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
-        let test_keys = TestKeys::new(1);
 
         // Create an existing signers file
         let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
@@ -3829,22 +3412,8 @@ mod tests {
         }
         "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
-
-        let validator = || Ok(());
-
         // Should fail
-        let result = write_valid_signers_file(
-            dir_path,
-            json_content.as_str(),
-            test_metadata(),
-            &signature,
-            pubkey,
-            validator,
-        );
+        let result = write_valid_signers_file(dir_path, json_content.as_str(), test_metadata());
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InitialisationError(msg) => {
@@ -3864,7 +3433,6 @@ mod tests {
     fn test_write_valid_signers_file_fails_with_existing_pending_signature() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
-        let test_keys = TestKeys::new(1);
 
         // Create an existing pending signature file
         let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
@@ -3890,22 +3458,8 @@ mod tests {
         }
         "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
-
-        let validator = || Ok(());
-
         // Should fail
-        let result = write_valid_signers_file(
-            dir_path,
-            json_content.as_str(),
-            test_metadata(),
-            &signature,
-            pubkey,
-            validator,
-        );
+        let result = write_valid_signers_file(dir_path, json_content.as_str(), test_metadata());
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InitialisationError(msg) => {
@@ -3925,7 +3479,6 @@ mod tests {
     fn test_write_valid_signers_file_fails_with_existing_complete_signature() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
-        let test_keys = TestKeys::new(1);
 
         // Create an existing complete signature file
         let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
@@ -3950,22 +3503,8 @@ mod tests {
         }
         "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
-
-        let signer_validator = || Ok(());
-
         // Should fail
-        let result = write_valid_signers_file(
-            dir_path,
-            json_content.as_str(),
-            test_metadata(),
-            &signature,
-            pubkey,
-            signer_validator,
-        );
+        let result = write_valid_signers_file(dir_path, json_content.as_str(), test_metadata());
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::InitialisationError(msg) => {
@@ -3985,7 +3524,6 @@ mod tests {
     fn test_write_valid_signers_file_fails_with_invalid_json() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
-        let test_keys = TestKeys::new(1);
 
         let invalid_json = r#"
         {
@@ -4004,22 +3542,8 @@ mod tests {
         }
         "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
-        let hash = common::sha512_for_content(invalid_json.as_bytes().to_vec())?;
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
-
-        let signer_validator = || Ok(());
-
         // Should fail
-        let result = write_valid_signers_file(
-            dir_path,
-            &invalid_json,
-            test_metadata(),
-            &signature,
-            pubkey,
-            signer_validator,
-        );
+        let result = write_valid_signers_file(dir_path, &invalid_json, test_metadata());
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::JsonError(_) => {} // Expected
@@ -4033,120 +3557,15 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_write_valid_signers_file_fails_with_validator_error() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let dir_path = temp_dir.path();
-        let test_keys = TestKeys::new(1);
-
-        let json_content = r#"
-        {
-          "version": 1,
-          "timestamp": "TIMESTAMP",
-          "artifact_signers": [
-            {
-              "signers": [
-                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
-              ],
-              "threshold": 1
-            }
-          ],
-          "master_keys": [],
-          "admin_keys": null
-        }
-        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
-
-        // Create a validator that fails
-        let signer_validator = || Err(SignersFileError::InvalidSigner("test error".to_string()));
-
-        // Should fail
-        let result = write_valid_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-            signer_validator,
-        );
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::InvalidSigner(msg) => {
-                assert_eq!(msg, "test error");
-            }
-            e => panic!("Expected InvalidSigner error, got {}", e),
-        }
-
-        // Verify no files were created
-        let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
-        assert!(!pending_dir.exists());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_write_valid_signers_file_fails_with_invalid_signature() -> Result<()> {
-        let temp_dir = TempDir::new()?;
-        let dir_path = temp_dir.path();
-        let test_keys = TestKeys::new(1);
-
-        let json_content = r#"
-        {
-          "version": 1,
-          "timestamp": "TIMESTAMP",
-          "artifact_signers": [
-            {
-              "signers": [
-                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
-              ],
-              "threshold": 1
-            }
-          ],
-          "master_keys": [],
-          "admin_keys": null
-        }
-        "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-
-        // Sign wrong data
-        let wrong_hash = common::sha512_for_content(b"wrong data".to_vec())?;
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let invalid_signature = seckey.sign(&wrong_hash)?;
-
-        let signer_validator = || Ok(());
-
-        // Should fail
-        let result = write_valid_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &invalid_signature,
-            pubkey,
-            signer_validator,
-        );
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::SignatureVerificationFailed(_) => {} // Expected
-            e => panic!("Expected SignatureVerificationFailed error, got {}", e),
-        }
-
-        // Verify no files were created
-        let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
-        assert!(!pending_dir.exists());
-
-        Ok(())
-    }
+    // test_write_valid_signers_file_fails_with_validator_error and
+    // test_write_valid_signers_file_fails_with_invalid_signature were removed because
+    // write_valid_signers_file no longer takes signature/pubkey/validator arguments.
 
     #[test]
     fn test_write_valid_signers_file_with_nested_directory() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let root_dir = temp_dir.path();
         let nested_dir = root_dir.join("nested");
-        let test_keys = TestKeys::new(1);
 
         let json_content = r#"
         {
@@ -4165,22 +3584,8 @@ mod tests {
         }
         "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
-
-        let signer_validator = || Ok(());
-
         // Should succeed
-        write_valid_signers_file(
-            &nested_dir,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-            signer_validator,
-        )?;
+        write_valid_signers_file(&nested_dir, &json_content, test_metadata())?;
 
         // Verify files are in the nested directory
         let pending_dir = nested_dir.join(PENDING_SIGNERS_DIR);
@@ -4196,7 +3601,6 @@ mod tests {
     fn test_write_valid_signers_file_io_error_on_write() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
-        let test_keys = TestKeys::new(1);
 
         // Create the pending directory but make it read-only
         let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
@@ -4223,22 +3627,8 @@ mod tests {
         }
         "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
-
-        let signer_validator = || Ok(());
-
         // Should fail with IO error
-        let result = write_valid_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-            signer_validator,
-        );
+        let result = write_valid_signers_file(dir_path, &json_content, test_metadata());
         assert!(result.is_err());
         match result.unwrap_err() {
             SignersFileError::IoError(_e) => {} // Expected
@@ -4258,7 +3648,6 @@ mod tests {
     fn test_write_valid_signers_file_with_already_pending_dir() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
-        let test_keys = TestKeys::new(1);
 
         // Create the pending directory in advance
         let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
@@ -4281,22 +3670,8 @@ mod tests {
         }
         "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
-
-        let validator = || Ok(());
-
         // Should succeed
-        write_valid_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-            validator,
-        )?;
+        write_valid_signers_file(dir_path, &json_content, test_metadata())?;
 
         // Verify files were created
         let pending_file = pending_dir.join(SIGNERS_FILE);
@@ -4310,7 +3685,6 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let root_dir = temp_dir.path();
         let pending_dir = root_dir.join(PENDING_SIGNERS_DIR);
-        let test_keys = TestKeys::new(1);
 
         let json_content = r#"
         {
@@ -4329,22 +3703,8 @@ mod tests {
         }
         "#.replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
-        let signature = seckey.sign(&hash)?;
-
-        let signer_validator = || Ok(());
-
         // Pass path that already ends with PENDING_SIGNERS_DIR
-        write_valid_signers_file(
-            &pending_dir,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-            signer_validator,
-        )?;
+        write_valid_signers_file(&pending_dir, &json_content, test_metadata())?;
 
         // Verify files were created in the correct location
         let pending_file = pending_dir.join(SIGNERS_FILE);
@@ -4357,10 +3717,11 @@ mod tests {
         Ok(())
     }
 
-    // Tests for sign_signers_file
-    // ---------------------------
+    // Tests for sign_signers_and_metadata_file
+    // ----------------------------------------
 
-    // Helper function to create a test signers file with given content
+    // Helper function to create a test signers file with given content,
+    // including metadata file and empty pending signatures for both.
     fn create_test_signers_file_with_content(
         dir_path: &Path,
         content: &str,
@@ -4369,7 +3730,37 @@ mod tests {
         fs::create_dir_all(&pending_dir)?;
         let signers_file_path = pending_dir.join(SIGNERS_FILE);
         fs::write(&signers_file_path, content)?;
+
+        // Create metadata file
+        let metadata_path = metadata_path_for(&signers_file_path)?;
+        let metadata = test_metadata();
+        let metadata_file = std::fs::File::create(&metadata_path)?;
+        serde_json::to_writer_pretty(&metadata_file, &metadata)?;
+
+        // Create empty pending signatures for metadata file
+        let metadata_pending_sig_path = pending_signatures_path_for(&metadata_path)?;
+        let empty_sigs = SignaturesFile::new();
+        fs::write(
+            metadata_pending_sig_path,
+            serde_json::to_string_pretty(&empty_sigs)?,
+        )?;
+
         Ok(signers_file_path)
+    }
+
+    // Helper to compute a metadata signature for a signers file
+    fn compute_metadata_signature(
+        signers_file_path: &Path,
+        test_keys: &TestKeys,
+        key_index: usize,
+    ) -> Result<AsfaloadSignatures, SignersFileError> {
+        let metadata_path = metadata_path_for(signers_file_path)?;
+        let metadata_hash = common::sha512_for_file(&metadata_path)?;
+        Ok(test_keys
+            .sec_key(key_index)
+            .unwrap()
+            .sign(&metadata_hash)
+            .unwrap())
     }
 
     // Helper function to create a test signature file
@@ -4401,7 +3792,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_signers_file_success() -> Result<()> {
+    fn test_sign_signers_and_metadata_file_success() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(2);
@@ -4416,9 +3807,10 @@ mod tests {
         let pubkey = test_keys.pub_key(0).unwrap();
         let seckey = test_keys.sec_key(0).unwrap();
         let signature = seckey.sign(&hash).unwrap();
+        let metadata_sig = compute_metadata_signature(&signers_file_path, &test_keys, 0)?;
 
-        // Call sign_signers_file
-        sign_signers_file(&signers_file_path, &signature, pubkey)?;
+        // Call sign_signers_and_metadata_file
+        sign_signers_and_metadata_file(&signers_file_path, &signature, pubkey, &metadata_sig)?;
 
         // Verify the pending signature file exists
         let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
@@ -4438,7 +3830,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_signers_file_on_non_signers() -> Result<()> {
+    fn test_sign_signers_and_metadata_file_on_non_signers() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(2);
@@ -4448,8 +3840,10 @@ mod tests {
         let signers_content = signers_config.to_json()?;
         let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
         let my_file = dir_path.join("myfile");
-        std::fs::rename(signers_file_path, &my_file)?;
-        std::fs::remove_dir(dir_path.join(PENDING_SIGNERS_DIR))?;
+        std::fs::rename(&signers_file_path, &my_file)?;
+        // Compute metadata sig before removing the dir
+        let metadata_sig = compute_metadata_signature(&signers_file_path, &test_keys, 0)?;
+        std::fs::remove_dir_all(dir_path.join(PENDING_SIGNERS_DIR))?;
 
         // Compute hash and sign
         let hash = common::sha512_for_file(&my_file)?;
@@ -4457,8 +3851,8 @@ mod tests {
         let seckey = test_keys.sec_key(0).unwrap();
         let signature = seckey.sign(&hash).unwrap();
 
-        // Call sign_signers_file
-        let result = sign_signers_file(&my_file, &signature, pubkey);
+        // Call sign_signers_and_metadata_file -- should fail because file is not in signers dir
+        let result = sign_signers_and_metadata_file(&my_file, &signature, pubkey, &metadata_sig);
 
         assert!(result.is_err());
         match result.err().unwrap() {
@@ -4470,7 +3864,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_signers_file_with_existing_signatures() -> Result<()> {
+    fn test_sign_signers_and_metadata_file_with_existing_signatures() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(3);
@@ -4483,14 +3877,34 @@ mod tests {
         // Create an existing signature file with one signature
         create_test_signature_file(&signers_file_path, &test_keys, &[0])?;
 
+        // Also add corresponding metadata signature for key 0
+        let metadata_path = metadata_path_for(&signers_file_path)?;
+        let metadata_hash = common::sha512_for_file(&metadata_path)?;
+        let meta_sig0 = test_keys.sec_key(0).unwrap().sign(&metadata_hash)?;
+        let metadata_pending_sig_path = pending_signatures_path_for(&metadata_path)?;
+        let mut meta_sig_file: SignaturesFile =
+            serde_json::from_str(&fs::read_to_string(&metadata_pending_sig_path)?)?;
+        meta_sig_file.entries.insert(
+            test_keys.pub_key(0).unwrap().to_base64(),
+            TaggedSignature {
+                format: test_keys.pub_key(0).unwrap().key_format(),
+                signature: meta_sig0.to_base64(),
+            },
+        );
+        fs::write(
+            &metadata_pending_sig_path,
+            serde_json::to_string(&meta_sig_file)?,
+        )?;
+
         // Compute hash and sign with a different key
         let hash = common::sha512_for_file(&signers_file_path)?;
         let pubkey = test_keys.pub_key(1).unwrap();
         let seckey = test_keys.sec_key(1).unwrap();
         let signature = seckey.sign(&hash).unwrap();
+        let metadata_sig = compute_metadata_signature(&signers_file_path, &test_keys, 1)?;
 
-        // Call sign_signers_file
-        sign_signers_file(&signers_file_path, &signature, pubkey)?;
+        // Call sign_signers_and_metadata_file
+        sign_signers_and_metadata_file(&signers_file_path, &signature, pubkey, &metadata_sig)?;
 
         // Verify the signature is complete and the signers file was activated
         let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
@@ -4514,7 +3928,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_signers_file_with_2_steps_to_complete() -> Result<()> {
+    fn test_sign_signers_and_metadata_file_with_2_steps_to_complete() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(2);
@@ -4531,18 +3945,20 @@ mod tests {
         let pubkey0 = test_keys.pub_key(0).unwrap();
         let seckey0 = test_keys.sec_key(0).unwrap();
         let signature0 = seckey0.sign(&hash).unwrap();
+        let metadata_sig0 = compute_metadata_signature(&signers_file_path, &test_keys, 0)?;
 
         let pubkey1 = test_keys.pub_key(1).unwrap();
         let seckey1 = test_keys.sec_key(1).unwrap();
         let signature1 = seckey1.sign(&hash).unwrap();
+        let metadata_sig1 = compute_metadata_signature(&signers_file_path, &test_keys, 1)?;
 
         // Define our pending and complete signatures path here.
         let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
         let active_signers_path = temp_dir.path().join(SIGNERS_DIR).join(SIGNERS_FILE);
         let complete_sig_path = signatures_path_for(&active_signers_path)?;
 
-        // Call sign_signers_file
-        sign_signers_file(&signers_file_path, &signature0, pubkey0)?;
+        // Call sign_signers_and_metadata_file
+        sign_signers_and_metadata_file(&signers_file_path, &signature0, pubkey0, &metadata_sig0)?;
 
         // Verify we have still the pending signature in the
         // PENDING_SIGNERS_DIR. The threshold is 1, but for a new signers
@@ -4560,7 +3976,7 @@ mod tests {
         );
 
         // Add second signature
-        sign_signers_file(&signers_file_path, &signature1, pubkey1)?;
+        sign_signers_and_metadata_file(&signers_file_path, &signature1, pubkey1, &metadata_sig1)?;
         assert!(!pending_sig_path.exists());
         assert!(complete_sig_path.exists());
         //
@@ -4575,7 +3991,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_signers_file_io_error() -> Result<()> {
+    fn test_sign_signers_and_metadata_file_io_error() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(2);
@@ -4590,6 +4006,7 @@ mod tests {
         let pubkey = test_keys.pub_key(0).unwrap();
         let seckey = test_keys.sec_key(0).unwrap();
         let signature = seckey.sign(&hash).unwrap();
+        let metadata_sig = compute_metadata_signature(&signers_file_path, &test_keys, 0)?;
 
         // Make the directory read-only to cause an IO error
         let pending_dir = signers_file_path.parent().unwrap();
@@ -4597,10 +4014,11 @@ mod tests {
         perms.set_readonly(true);
         fs::set_permissions(pending_dir, perms)?;
 
-        // Call sign_signers_file and expect an error.
+        // Call sign_signers_and_metadata_file and expect an error.
         // The IO error is wrapped in AggregateSignatureError since
-        // that is what  add_individual_signature returns
-        let result = sign_signers_file(&signers_file_path, &signature, pubkey);
+        // that is what add_individual_signature returns
+        let result =
+            sign_signers_and_metadata_file(&signers_file_path, &signature, pubkey, &metadata_sig);
         match result {
             Err(SignersFileError::AggregateSignatureError(AggregateSignatureError::Io(_))) => {} // Expected
             Err(e) => panic!("Expected AggregateSignatureError(Io(_)), got {}", e),
@@ -4617,7 +4035,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_signers_file_signature_operation_error() -> Result<()> {
+    fn test_sign_signers_and_metadata_file_signature_operation_error() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let dir_path = temp_dir.path();
         let test_keys = TestKeys::new(2);
@@ -4627,7 +4045,7 @@ mod tests {
         let signers_content = signers_config.to_json()?;
         let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
 
-        // Create a corrupted signature file that will cause an error
+        // Create a corrupted signature file for the signers file that will cause an error
         let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
         fs::write(&pending_sig_path, "invalid json")?;
 
@@ -4636,11 +4054,13 @@ mod tests {
         let pubkey = test_keys.pub_key(0).unwrap();
         let seckey = test_keys.sec_key(0).unwrap();
         let signature = seckey.sign(&hash).unwrap();
+        let metadata_sig = compute_metadata_signature(&signers_file_path, &test_keys, 0)?;
 
-        // Call sign_signers_file and expect an error.
+        // Call sign_signers_and_metadata_file and expect an error.
         // The JSON error is wrapped in AggregateSignatureError since
         // that is what add_individual_signature returns
-        let result = sign_signers_file(&signers_file_path, &signature, pubkey);
+        let result =
+            sign_signers_and_metadata_file(&signers_file_path, &signature, pubkey, &metadata_sig);
         match result {
             Err(SignersFileError::AggregateSignatureError(AggregateSignatureError::JsonError(
                 _,
@@ -4652,8 +4072,8 @@ mod tests {
         Ok(())
     }
 
-    // Tests for sign_signers_file with active signers file in parent directory
-    // -------------------------------------------------------------------
+    // Tests for sign_signers_and_metadata_file with active signers file in parent directory
+    // ---------------------------------------------------------------------------------
 
     // Helper function to create an active signers file in a parent directory
     fn create_active_signers_in_parent(
@@ -4694,7 +4114,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sign_signers_file_with_parent_active_signers_complete_after_all_signatures()
+    fn test_sign_signers_and_metadata_file_with_parent_active_signers_complete_after_all_signatures()
     -> Result<()> {
         let temp_dir = TempDir::new()?;
         let parent_dir = temp_dir.path();
@@ -4724,16 +4144,19 @@ mod tests {
         let active_signers_path = child_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
         let complete_sig_path = signatures_path_for(&active_signers_path)?;
 
-        // Compute hash once
+        // Compute hashes once
         let hash = common::sha512_for_file(&signers_file_path)?;
+        let metadata_path = metadata_path_for(&signers_file_path)?;
+        let metadata_hash = common::sha512_for_file(&metadata_path)?;
 
         // Sign with first key (present in existing signers file in parent dir)
         let pubkey0 = test_keys.pub_key(0).unwrap();
         let seckey0 = test_keys.sec_key(0).unwrap();
         let signature0 = seckey0.sign(&hash).unwrap();
+        let meta_sig0 = seckey0.sign(&metadata_hash).unwrap();
 
-        // Call sign_signers_file with first signature
-        sign_signers_file(&signers_file_path, &signature0, pubkey0)?;
+        // Call sign_signers_and_metadata_file with first signature
+        sign_signers_and_metadata_file(&signers_file_path, &signature0, pubkey0, &meta_sig0)?;
 
         // Assert after first signature: pending exists, not complete
         assert!(
@@ -4761,9 +4184,10 @@ mod tests {
         let pubkey1 = test_keys.pub_key(1).unwrap();
         let seckey1 = test_keys.sec_key(1).unwrap();
         let signature1 = seckey1.sign(&hash).unwrap();
+        let meta_sig1 = seckey1.sign(&metadata_hash).unwrap();
 
-        // Call sign_signers_file with second signature
-        sign_signers_file(&signers_file_path, &signature1, pubkey1)?;
+        // Call sign_signers_and_metadata_file with second signature
+        sign_signers_and_metadata_file(&signers_file_path, &signature1, pubkey1, &meta_sig1)?;
 
         // Assert after second signature: still pending, not complete
         assert!(
@@ -4795,9 +4219,10 @@ mod tests {
         let pubkey2 = new_keys.pub_key(0).unwrap();
         let seckey2 = new_keys.sec_key(0).unwrap();
         let signature2 = seckey2.sign(&hash).unwrap();
+        let meta_sig2 = seckey2.sign(&metadata_hash).unwrap();
 
-        // Call sign_signers_file with third signature
-        sign_signers_file(&signers_file_path, &signature2, pubkey2)?;
+        // Call sign_signers_and_metadata_file with third signature
+        sign_signers_and_metadata_file(&signers_file_path, &signature2, pubkey2, &meta_sig2)?;
 
         // Assert after third signature: still pending, not complete
         assert!(
@@ -4833,9 +4258,10 @@ mod tests {
         let pubkey3 = new_keys.pub_key(1).unwrap();
         let seckey3 = new_keys.sec_key(1).unwrap();
         let signature3 = seckey3.sign(&hash).unwrap();
+        let meta_sig3 = seckey3.sign(&metadata_hash).unwrap();
 
-        // Call sign_signers_file with fourth signature
-        sign_signers_file(&signers_file_path, &signature3, pubkey3)?;
+        // Call sign_signers_and_metadata_file with fourth signature
+        sign_signers_and_metadata_file(&signers_file_path, &signature3, pubkey3, &meta_sig3)?;
 
         // Assert after fourth signature: complete, pending moved
         assert!(
@@ -4878,8 +4304,8 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn test_sign_signers_file_with_parent_active_signers_complete_after_2_signatures() -> Result<()>
-    {
+    fn test_sign_signers_and_metadata_file_with_parent_active_signers_complete_after_2_signatures()
+    -> Result<()> {
         let temp_dir = TempDir::new()?;
         let parent_dir = temp_dir.path();
         let child_dir = parent_dir.join("child");
@@ -4904,16 +4330,19 @@ mod tests {
         let active_signers_path = child_dir.join(SIGNERS_DIR).join(SIGNERS_FILE);
         let complete_sig_path = signatures_path_for(&active_signers_path)?;
 
-        // Compute hash once
+        // Compute hashes once
         let hash = common::sha512_for_file(&signers_file_path)?;
+        let metadata_path = metadata_path_for(&signers_file_path)?;
+        let metadata_hash = common::sha512_for_file(&metadata_path)?;
 
         // Sign with first key
         let pubkey0 = test_keys.pub_key(0).unwrap();
         let seckey0 = test_keys.sec_key(0).unwrap();
         let signature0 = seckey0.sign(&hash).unwrap();
+        let meta_sig0 = seckey0.sign(&metadata_hash).unwrap();
 
-        // Call sign_signers_file with first signature
-        sign_signers_file(&signers_file_path, &signature0, pubkey0)?;
+        // Call sign_signers_and_metadata_file with first signature
+        sign_signers_and_metadata_file(&signers_file_path, &signature0, pubkey0, &meta_sig0)?;
 
         // Assert after first signature: pending exists, not complete
         assert!(
@@ -4941,9 +4370,10 @@ mod tests {
         let pubkey1 = test_keys.pub_key(1).unwrap();
         let seckey1 = test_keys.sec_key(1).unwrap();
         let signature1 = seckey1.sign(&hash).unwrap();
+        let meta_sig1 = seckey1.sign(&metadata_hash).unwrap();
 
-        // Call sign_signers_file with second signature
-        sign_signers_file(&signers_file_path, &signature1, pubkey1)?;
+        // Call sign_signers_and_metadata_file with second signature
+        sign_signers_and_metadata_file(&signers_file_path, &signature1, pubkey1, &meta_sig1)?;
 
         // Assert after second signature: complete as the signers are the same
         // in parent and new signers files
@@ -4985,7 +4415,6 @@ mod tests {
         let test_keys = TestKeys::new(2);
 
         let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
 
         let json_content = SignersConfig::with_artifact_signers_only(
             1,
@@ -4996,18 +4425,7 @@ mod tests {
         )?
         .to_json()?;
 
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let signature = seckey.sign(&hash)?;
-
-        let signer_validator = || Ok(());
-        write_valid_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-            signer_validator,
-        )?;
+        write_valid_signers_file(dir_path, &json_content, test_metadata())?;
 
         // Verify metadata file exists in the pending directory
         let metadata_path =
@@ -5028,12 +4446,9 @@ mod tests {
         let test_keys = TestKeys::new(1);
 
         let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
 
         let json_content =
             SignersConfig::with_artifact_signers_only(1, (vec![pubkey.clone()], 1))?.to_json()?;
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let signature = seckey.sign(&hash)?;
 
         // Pre-create the metadata file
         let pending_dir = dir_path.join(PENDING_SIGNERS_DIR);
@@ -5041,15 +4456,7 @@ mod tests {
         let metadata_path = metadata_path_for(pending_dir.join(SIGNERS_FILE)).unwrap();
         fs::write(&metadata_path, "{}")?;
 
-        let signer_validator = || Ok(());
-        let result = write_valid_signers_file(
-            dir_path,
-            &json_content,
-            test_metadata(),
-            &signature,
-            pubkey,
-            signer_validator,
-        );
+        let result = write_valid_signers_file(dir_path, &json_content, test_metadata());
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -5073,7 +4480,6 @@ mod tests {
         let test_keys = TestKeys::new(2);
 
         let pubkey = test_keys.pub_key(0).unwrap();
-        let seckey = test_keys.sec_key(0).unwrap();
 
         let json_content = SignersConfig::with_artifact_signers_only(
             1,
@@ -5084,22 +4490,11 @@ mod tests {
         )?
         .to_json()?;
 
-        let hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-        let signature = seckey.sign(&hash)?;
-
         let metadata = test_metadata();
         // Serialize to compare later
         let expected_json = serde_json::to_string_pretty(&metadata)?;
 
-        let signer_validator = || Ok(());
-        write_valid_signers_file(
-            dir_path,
-            &json_content,
-            metadata,
-            &signature,
-            pubkey,
-            signer_validator,
-        )?;
+        write_valid_signers_file(dir_path, &json_content, metadata)?;
 
         // Read back the metadata file and compare
         let metadata_path =
