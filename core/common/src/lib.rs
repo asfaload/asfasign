@@ -5,8 +5,8 @@ pub mod http;
 pub mod index_types;
 
 use constants::{
-    PENDING_REVOCATION_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX, REVOCATION_SUFFIX, SIGNERS_DIR,
-    SIGNERS_FILE,
+    METADATA_SUFFIX, PENDING_REVOCATION_SUFFIX, PENDING_SIGNERS_DIR, PENDING_SUFFIX,
+    REVOCATION_SUFFIX, SIGNERS_DIR, SIGNERS_FILE,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha512, digest::typenum};
@@ -126,6 +126,7 @@ pub enum FileType {
     InitialSigners,
     Revocation,
     RevokedArtifact,
+    Metadata,
 }
 
 impl Display for FileType {
@@ -136,6 +137,7 @@ impl Display for FileType {
             FileType::InitialSigners => write!(f, "InitialSigners"),
             FileType::Revocation => write!(f, "Revocation"),
             FileType::RevokedArtifact => write!(f, "RevokedArtifact"),
+            FileType::Metadata => write!(f, "Metadata"),
         }
     }
 }
@@ -153,6 +155,15 @@ pub fn determine_file_type<P: AsRef<Path>>(file_path: P) -> Result<FileType, std
     // Return immediately if we identify a revocation file
     if has_revocation_suffix(path) {
         return Ok(FileType::Revocation);
+    }
+
+    // Check for metadata files — generic, not restricted to signers dirs
+    let dot_metadata_suffix = format!(".{}", METADATA_SUFFIX);
+    if let Some(file_name) = path.file_name().and_then(|f| f.to_str())
+        && file_name.ends_with(&dot_metadata_suffix)
+        && file_name != dot_metadata_suffix
+    {
+        return Ok(FileType::Metadata);
     }
 
     let global_signers = find_global_signers_for(file_path.as_ref());
@@ -210,6 +221,8 @@ pub struct ArtifactMarker;
 pub struct RevocationMarker;
 #[derive(Clone)]
 pub struct RevokedArtifactMarker;
+#[derive(Clone)]
+pub struct MetadataFileMarker;
 
 // As we have marker types on the SignedFile, we need a DU type to be able to have
 // one function creating a SignedFile (ortherwise we would need one loader function
@@ -221,6 +234,7 @@ pub enum SignedFileWithKind {
     Artifact(SignedFile<ArtifactMarker>),
     Revocation(SignedFile<RevocationMarker>),
     RevokedArtifact(SignedFile<RevokedArtifactMarker>),
+    Metadata(SignedFile<MetadataFileMarker>),
 }
 
 impl SignedFileWithKind {
@@ -249,6 +263,12 @@ impl SignedFileWithKind {
             _ => None,
         }
     }
+    pub fn get_metadata(&self) -> Option<&SignedFile<MetadataFileMarker>> {
+        match self {
+            SignedFileWithKind::Metadata(f) => Some(f),
+            _ => None,
+        }
+    }
 
     // Function to extract info from the wrapped SignedFile without
     // requiring the caller to unwrap it.
@@ -259,6 +279,7 @@ impl SignedFileWithKind {
             SignedFileWithKind::Artifact(f) => f.location.clone(),
             SignedFileWithKind::Revocation(f) => f.location.clone(),
             SignedFileWithKind::RevokedArtifact(f) => f.location.clone(),
+            SignedFileWithKind::Metadata(f) => f.location.clone(),
         }
     }
 
@@ -269,6 +290,7 @@ impl SignedFileWithKind {
             SignedFileWithKind::Artifact(_) => FileType::Artifact,
             SignedFileWithKind::Revocation(_) => FileType::Revocation,
             SignedFileWithKind::RevokedArtifact(_) => FileType::RevokedArtifact,
+            SignedFileWithKind::Metadata(_) => FileType::Metadata,
         }
     }
 
@@ -284,6 +306,9 @@ impl SignedFileWithKind {
     }
     pub fn is_revocation(&self) -> bool {
         matches!(self, SignedFileWithKind::Revocation(_))
+    }
+    pub fn is_metadata(&self) -> bool {
+        matches!(self, SignedFileWithKind::Metadata(_))
     }
     pub fn artifact_path_for_revocation(&self) -> Result<PathBuf, std::io::Error> {
         match self {
@@ -330,6 +355,7 @@ impl AsRef<Path> for SignedFileWithKind {
             SignedFileWithKind::Artifact(f) => f.location.as_ref(),
             SignedFileWithKind::Revocation(f) => f.location.as_ref(),
             SignedFileWithKind::RevokedArtifact(f) => f.location.as_ref(),
+            SignedFileWithKind::Metadata(f) => f.location.as_ref(),
         }
     }
 }
@@ -370,6 +396,13 @@ impl SignedFileLoader {
             })),
             FileType::RevokedArtifact => Ok(SignedFileWithKind::RevokedArtifact(SignedFile::<
                 RevokedArtifactMarker,
+            > {
+                location: path.as_ref().to_string_lossy().to_string(),
+                digest: None,
+                marker: PhantomData,
+            })),
+            FileType::Metadata => Ok(SignedFileWithKind::Metadata(SignedFile::<
+                MetadataFileMarker,
             > {
                 location: path.as_ref().to_string_lossy().to_string(),
                 digest: None,
@@ -679,6 +712,42 @@ mod asfaload_common_tests {
 
         // Should still be Artifact (only complete revocations block)
         assert_eq!(determine_file_type(&artifact_path)?, FileType::Artifact);
+        Ok(())
+    }
+
+    #[test]
+    fn test_determine_file_type_metadata_in_pending_signers_dir() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let pending_dir = temp_dir.path().join(PENDING_SIGNERS_DIR);
+        std::fs::create_dir_all(&pending_dir)?;
+
+        let signers_file_path = pending_dir.join(SIGNERS_FILE);
+        std::fs::write(&signers_file_path, r#"{"timestamp": 1}"#)?;
+
+        let metadata_path = crate::fs::names::metadata_path_for(&signers_file_path)?;
+        std::fs::write(&metadata_path, r#"{"origin": "test"}"#)?;
+
+        let file_type = determine_file_type(&metadata_path)?;
+        assert_eq!(file_type, FileType::Metadata);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_determine_file_type_metadata_in_arbitrary_dir() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let subdir = temp_dir.path().join("some").join("nested").join("dir");
+        std::fs::create_dir_all(&subdir)?;
+
+        let file_path = subdir.join("report.json");
+        std::fs::write(&file_path, r#"{"data": true}"#)?;
+
+        let metadata_path = crate::fs::names::metadata_path_for(&file_path)?;
+        std::fs::write(&metadata_path, r#"{"origin": "test"}"#)?;
+
+        let file_type = determine_file_type(&metadata_path)?;
+        assert_eq!(file_type, FileType::Metadata);
+
         Ok(())
     }
 
