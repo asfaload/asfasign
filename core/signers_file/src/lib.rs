@@ -12,7 +12,6 @@ use common::{
 };
 use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use signatures::{
-    keys::AsfaloadPublicKeyTrait,
     signatures_file::SignaturesFile,
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
@@ -113,32 +112,25 @@ where
     Ok(new_state)
 }
 
-/// Initialize a signers file in a specific directory.
+/// Write a validated signers file to a pending directory.
 ///
 /// This function validates the provided JSON content by deserializing it into a SignersConfig,
-/// verifies that the provided signature is from a valid signer in the admin_signers group (if present)
-/// or in the artifact_signers group (if admin_signers is not present), and verifies the signature
-/// against the SHA-512 hash of the JSON content. If valid, it creates a pending signers file
-/// named "asfaload.signers.json.pending" in the specified directory and adds the signature to
-/// "asfaload.signatures.json.pending".
+/// then creates the pending signers file, its metadata file, and an empty pending signatures file.
+/// Signing happens separately via sign-pending.
 ///
 /// # Arguments
-/// * `dir_path` - The directory where the pending signers file should be placed. If it is not the
+/// * `dir_path_in` - The directory where the pending signers file should be placed. If it is not the
 ///   path to a directory named ${PENDING_SIGNERS_DIR}, a subdirectory with name ${PENDING_SIGNERS_DIR} is created.
 /// * `json_content` - The JSON content of the signers configuration
-/// * `signature` - The signature of the SHA-512 hash of the JSON content
-/// * `pubkey` - The public key of the signer
+/// * `metadata` - The metadata for the signers configuration
 ///
 /// # Returns
 /// * `Ok(())` if the pending file was successfully created
-/// * `Err(SignersFileError)` if there was an error validating the JSON, signature, or writing the file
+/// * `Err(SignersFileError)` if there was an error validating the JSON or writing the file
 pub fn write_valid_signers_file<P: AsRef<Path>>(
     dir_path_in: P,
     json_content: &str,
     metadata: SignersConfigMetadata,
-    signature: &AsfaloadSignatures,
-    pubkey: &AsfaloadPublicKeys,
-    validator: impl FnOnce() -> Result<(), SignersFileError>,
 ) -> Result<(), SignersFileError> {
     // Ensure we work in the right directory
 
@@ -190,19 +182,6 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
     // First, validate the JSON by parsing it
     let _signers_config: SignersConfig = parse_signers_config(json_content)?;
 
-    validator()?;
-
-    // Compute the SHA-512 hash of the JSON content
-    let hash_result = common::sha512_for_content(json_content.as_bytes().to_vec())?;
-
-    // Verify the signature against the hash
-    pubkey.verify(signature, &hash_result).map_err(|e| {
-        SignersFileError::SignatureVerificationFailed(format!(
-            "Signature verification failed: {}",
-            e
-        ))
-    })?;
-
     // Now that all validation have taken place, we can ensure directory exists
     // and create it if not.
     std::fs::create_dir_all(&dir_path)?;
@@ -215,7 +194,11 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
         let mut signers_file = open_new_file(&signers_file_path)?;
         signers_file.write_all(json_content.as_bytes())?;
 
-        sign_signers_file(signers_file_path, signature, pubkey)?;
+        // Create an empty pending signatures file for the signers file
+        let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
+        let empty_sigs = SignaturesFile::new();
+        let sig_file = open_new_file(&pending_sig_path)?;
+        serde_json::to_writer_pretty(&sig_file, &empty_sigs)?;
         Ok(())
     })();
 
@@ -229,8 +212,6 @@ pub fn initialize_signers_file<P: AsRef<Path>>(
     dir_path_in: P,
     json_content_in: impl AsRef<str>,
     metadata: SignersConfigMetadata,
-    signature: &AsfaloadSignatures,
-    pubkey: &AsfaloadPublicKeys,
 ) -> Result<(), SignersFileError> {
     let json_content = json_content_in.as_ref();
     if dir_path_in.as_ref().join(SIGNERS_DIR).exists()
@@ -241,42 +222,28 @@ pub fn initialize_signers_file<P: AsRef<Path>>(
             dir_path_in.as_ref().to_string_lossy(),
         )));
     }
-    let signers_config: SignersConfig = parse_signers_config(json_content)?;
-    let validator = || is_valid_signer_for_signer_init(pubkey, &signers_config);
-    write_valid_signers_file(
-        dir_path_in.as_ref(),
-        json_content,
-        metadata,
-        signature,
-        pubkey,
-        validator,
-    )
+    write_valid_signers_file(dir_path_in.as_ref(), json_content, metadata)
 }
 
 /// Propose an update to an existing signers file.
 ///
-/// This function validates that the provided signature is from a signer in the admin or master
-/// group of the currently active signers file, and then calls initialize_signers_file to create
-/// a new pending signers file.
+/// This function validates the proposed update's timestamp against the active signers file,
+/// then creates a new pending signers file with an empty pending signatures file.
+/// Signing happens separately via sign-pending.
 ///
 /// # Arguments
 /// * `dir_path` - The directory where the pending signers file should be placed
 /// * `json_content` - The JSON content of the new signers configuration
-/// * `signature` - The signature of the SHA-512 hash of the JSON content
-/// * `pubkey` - The public key of the signer
+/// * `metadata` - The metadata for the signers configuration
 ///
 /// # Returns
 /// * `Ok(())` if the pending file was successfully created
-/// * `Err(SignersFileError)` if there was an error validating the signature or creating the file
+/// * `Err(SignersFileError)` if there was an error validating or creating the file
 pub fn propose_signers_file<P: AsRef<Path>>(
     dir_path: P,
     json_content: &str,
     metadata: SignersConfigMetadata,
-    signature: &AsfaloadSignatures,
-    pubkey: &AsfaloadPublicKeys,
-) -> Result<(), SignersFileError>
-where
-{
+) -> Result<(), SignersFileError> {
     // Determine the path to the active signers file
     let active_signers_file = find_global_signers_for(dir_path.as_ref()).map_err(|e| {
         SignersFileError::InitialisationError(format!(
@@ -306,18 +273,8 @@ where
             active_config.timestamp()
         )));
     }
-    // Check if the provided pubkey is in the admin_keys or master_keys groups
-    let validator = || is_valid_signer_for_update_of(pubkey, &active_config);
 
-    // If the check passes, call initialize_signers_file
-    write_valid_signers_file(
-        dir_path,
-        json_content,
-        metadata,
-        signature,
-        pubkey,
-        validator,
-    )
+    write_valid_signers_file(dir_path, json_content, metadata)
 }
 
 fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), SignersFileError> {
