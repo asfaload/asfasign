@@ -26,6 +26,8 @@ pub struct CollectSignatureRequest {
     pub public_key: AsfaloadPublicKeys,
     /// Signature data
     pub signature: AsfaloadSignatures,
+    /// Metadata signature (required for signers files)
+    pub metadata_signature: Option<AsfaloadSignatures>,
     /// Request ID for tracing and logging
     pub request_id: String,
 }
@@ -176,12 +178,16 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
         let is_signers_file = signed_file.is_initial_signers() || signed_file.is_signers();
 
         let new_state = if is_signers_file {
-            // For signers files, delegate to sign_signers_file which handles
-            // add_individual_signature + activation in one call.
-            signers_file::sign_signers_file(
+            let metadata_sig = msg.metadata_signature.ok_or_else(|| {
+                ApiError::InvalidRequestBody(
+                    "Metadata signature required for signers files".to_string(),
+                )
+            })?;
+            signers_file::sign_signers_and_metadata_file(
                 msg.file_path.absolute_path(),
                 &msg.signature,
                 &msg.public_key,
+                &metadata_sig,
             )
             .map_err(|e| {
                 tracing::error!(
@@ -228,7 +234,7 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
 
         let commit_msg = if is_complete {
             if is_signers_file {
-                // Signers file was already activated by sign_signers_file.
+                // Signers file was already activated by sign_signers_and_metadata_file.
                 // The dirname changes for a signers file, which influences
                 // the git commit.
                 tracing::info!(

@@ -3,7 +3,7 @@ use kameo::message::Context;
 use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use signatures::keys::AsfaloadPublicKeyTrait;
-use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
+use signatures::types::AsfaloadPublicKeys;
 use signers_file_types::{HistoryFile, SignersConfigMetadata};
 use std::path::PathBuf;
 
@@ -16,8 +16,6 @@ pub struct InitialiseSignersRequest {
     pub project_path: NormalisedPaths,
     pub signers_info: SignersInfo,
     pub metadata: SignersConfigMetadata,
-    pub signature: AsfaloadSignatures,
-    pub pubkey: AsfaloadPublicKeys,
     pub git_repo_path: PathBuf,
     pub request_id: String,
 }
@@ -46,8 +44,6 @@ pub struct ProposeSignersRequest {
     pub project_path: NormalisedPaths,
     pub signers_info: SignersInfo,
     pub metadata: SignersConfigMetadata,
-    pub signature: AsfaloadSignatures,
-    pub pubkey: AsfaloadPublicKeys,
     pub request_id: String,
 }
 
@@ -148,10 +144,8 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         let dir = project_dir.clone();
         let json = msg.signers_info.json();
         let meta = msg.metadata;
-        let sig = msg.signature;
-        let pk = msg.pubkey;
         tokio::task::spawn_blocking(move || {
-            signers_file::initialize_signers_file(&dir, &json, meta, &sig, &pk)
+            signers_file::initialize_signers_file(&dir, &json, meta)
         })
         .await??;
 
@@ -258,33 +252,29 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
 
         let json = msg.signers_info.json();
         let meta = msg.metadata;
-        let sig = msg.signature;
-        let pk = msg.pubkey;
         let dir = project_dir.clone();
-        tokio::task::spawn_blocking(move || {
-            signers_file::propose_signers_file(&dir, &json, meta, &sig, &pk)
-        })
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                actor = %ACTOR_NAME,
-                request_id = %msg.request_id,
-                project_id = %project_id,
-                error = %e,
-                "Spawn error"
-            );
-            e
-        })?
-        .map_err(|e| {
-            tracing::error!(
-                actor = %ACTOR_NAME,
-                request_id = %msg.request_id,
-                project_id = %project_id,
-                error = %e,
-                "propose_signers_file error"
-            );
-            e
-        })?;
+        tokio::task::spawn_blocking(move || signers_file::propose_signers_file(&dir, &json, meta))
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    actor = %ACTOR_NAME,
+                    request_id = %msg.request_id,
+                    project_id = %project_id,
+                    error = %e,
+                    "Spawn error"
+                );
+                e
+            })?
+            .map_err(|e| {
+                tracing::error!(
+                    actor = %ACTOR_NAME,
+                    request_id = %msg.request_id,
+                    project_id = %project_id,
+                    error = %e,
+                    "propose_signers_file error"
+                );
+                e
+            })?;
 
         tracing::info!(
             request_id = %msg.request_id,
@@ -387,25 +377,20 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use common::fs::names::{metadata_path_for, pending_signatures_path_for};
-    use features_lib::{AsfaloadSecretKeyTrait, SignersConfig, sha512_for_content};
+    use features_lib::SignersConfig;
     use kameo::actor::Spawn;
     use signers_file_types::{Forge, ForgeOrigin, VerifiedForgeContent};
 
-    /// Helper to create test InitialiseSignersRequest with proper signing.
-    /// Uses the provided test_keys at index 0 for signing (the signer must be in the config).
+    /// Helper to create test InitialiseSignersRequest.
     fn build_test_init_request(
         project_path: NormalisedPaths,
         config: &SignersConfig,
-        test_keys: &test_helpers::TestKeys,
+        _test_keys: &test_helpers::TestKeys,
         git_repo_path: std::path::PathBuf,
         request_id: &str,
     ) -> InitialiseSignersRequest {
         let signers_json = serde_json::to_string_pretty(config).unwrap();
         let signers_info = SignersInfo::from_string(&signers_json).unwrap();
-        let hash = sha512_for_content(signers_json.as_bytes().to_vec()).unwrap();
-        let secret_key = test_keys.sec_key(0).unwrap();
-        let signature = secret_key.sign(&hash).unwrap();
-        let pubkey = test_keys.pub_key(0).unwrap().clone();
         let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
@@ -419,8 +404,6 @@ mod tests {
             project_path,
             signers_info,
             metadata,
-            signature,
-            pubkey,
             git_repo_path,
             request_id: request_id.to_string(),
         }
@@ -477,14 +460,6 @@ mod tests {
         let pending_signers_sig_path =
             pending_signatures_path_for(init_result.signers_file_path.absolute_path())?;
         assert!(pending_signers_sig_path.exists());
-        // With initialize_signers_file, the aggregate signature contains the first signature (not empty)
-        let pending_sig_content = tokio::fs::read_to_string(&pending_signers_sig_path)
-            .await
-            .unwrap();
-        assert_ne!(
-            pending_sig_content, "{}",
-            "Aggregate signature should contain the first signature"
-        );
 
         let history_content =
             tokio::fs::read_to_string(&init_result.history_file_path.absolute_path())
@@ -540,18 +515,19 @@ mod tests {
         assert!(result.is_ok());
         let init_result = result.unwrap();
 
-        // Key 0 signed during initialization, so only key 1 is still missing
-        assert_eq!(init_result.required_signers.len(), 1);
+        // No signing during initialization, so both keys should be missing
+        assert_eq!(init_result.required_signers.len(), 2);
         assert!(
-            !init_result
+            init_result
                 .required_signers
                 .contains(&test_keys.pub_key(0).unwrap().to_base64()),
-            "Key 0 already signed during init, should not be in required_signers"
+            "Key 0 should be in required_signers"
         );
         assert!(
             init_result
                 .required_signers
-                .contains(&test_keys.pub_key(1).unwrap().to_base64())
+                .contains(&test_keys.pub_key(1).unwrap().to_base64()),
+            "Key 1 should be in required_signers"
         );
         Ok(())
     }
@@ -599,20 +575,16 @@ mod tests {
         Ok(())
     }
 
-    /// Helper to create test ProposeSignersRequest with proper signing.
+    /// Helper to create test ProposeSignersRequest.
     fn build_test_propose_request(
         project_path: NormalisedPaths,
         config: &SignersConfig,
-        test_keys: &test_helpers::TestKeys,
-        signer_index: usize,
+        _test_keys: &test_helpers::TestKeys,
+        _signer_index: usize,
         request_id: &str,
     ) -> ProposeSignersRequest {
         let signers_json = serde_json::to_string_pretty(config).unwrap();
         let signers_info = SignersInfo::from_string(&signers_json).unwrap();
-        let hash = sha512_for_content(signers_json.as_bytes().to_vec()).unwrap();
-        let secret_key = test_keys.sec_key(signer_index).unwrap();
-        let signature = secret_key.sign(&hash).unwrap();
-        let pubkey = test_keys.pub_key(signer_index).unwrap().clone();
         let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
@@ -626,8 +598,6 @@ mod tests {
             project_path,
             signers_info,
             metadata,
-            signature,
-            pubkey,
             request_id: request_id.to_string(),
         }
     }
@@ -696,21 +666,20 @@ mod tests {
         let propose_result = result.unwrap();
 
         // Step 3: Verify required_signers.
-        // key0 already signed during propose_signers_file, so only key1 and key2
-        // should be in the missing signers list.
+        // No signing during propose_signers_file, so all 3 signers should be missing.
         let key0_b64 = test_keys.pub_key(0).unwrap().to_base64();
         let key1_b64 = test_keys.pub_key(1).unwrap().to_base64();
         let key2_b64 = test_keys.pub_key(2).unwrap().to_base64();
 
         assert_eq!(
             propose_result.required_signers.len(),
-            2,
-            "Should have 2 missing signers (key1 and key2), got: {:?}",
+            3,
+            "Should have 3 missing signers (all keys), got: {:?}",
             propose_result.required_signers
         );
         assert!(
-            !propose_result.required_signers.contains(&key0_b64),
-            "key0 already signed the proposal, should not be in required_signers"
+            propose_result.required_signers.contains(&key0_b64),
+            "key0 has not signed yet, should be in required_signers"
         );
         assert!(
             propose_result.required_signers.contains(&key1_b64),
