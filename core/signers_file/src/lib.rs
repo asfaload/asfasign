@@ -12,7 +12,7 @@ use common::{
 };
 use constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE, SIGNERS_HISTORY_FILE};
 use signatures::{
-    keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
+    keys::AsfaloadPublicKeyTrait,
     signatures_file::SignaturesFile,
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
@@ -91,34 +91,26 @@ where
             signers_file_path.as_ref().to_string_lossy()
         )));
     }
-    // Add the signature to the aggregate signatures file
-    signature.add_to_aggregate_for_file(&signers_file_path, pubkey)?;
 
-    // Now everything is set up, try the transition to a complete signature.
-    // This will succeed only if the signature is complete, and it is fine
-    // if it returns an error reporting an incomplete signature for which the
-    // transition cannot occur.
-    let agg_sig: SignatureWithState = SignatureWithState::load_for_file(&signers_file_path)?;
-    match agg_sig {
-        SignatureWithState::Pending(pending_sig) => {
-            match pending_sig.try_transition_to_complete() {
-                Ok(agg_sig) => {
-                    // Success case: The signature completed successfully.
-                    activate_signers_file(&agg_sig)?;
-                    Ok(SignatureWithState::Complete(agg_sig))
-                }
-                Err(AggregateSignatureError::IsIncomplete) => {
-                    // Signature is not yet complete, which is fine. We just added our part.
-                    Ok(SignatureWithState::Pending(pending_sig))
-                }
-                Err(e) => {
-                    // Any other error is fatal.
-                    Err(e.into())
-                }
-            }
-        }
-        SignatureWithState::Complete(_) => Ok(agg_sig),
+    // Load the pending aggregate signature and add the individual signature.
+    // add_individual_signature handles: writing to disk, reloading, and
+    // trying the transition to complete.
+    let agg_sig = SignatureWithState::load_for_file(&signers_file_path)?;
+    let pending_sig = agg_sig
+        .get_pending()
+        .ok_or(SignersFileError::AggregateSignatureError(
+            AggregateSignatureError::SignatureAlreadyComplete,
+        ))?;
+    let new_state = pending_sig
+        .add_individual_signature(signature, pubkey)
+        .map_err(SignersFileError::from)?;
+
+    // If the signature completed, activate the signers file.
+    if let SignatureWithState::Complete(ref complete) = new_state {
+        activate_signers_file(complete)?;
     }
+
+    Ok(new_state)
 }
 
 /// Initialize a signers file in a specific directory.
@@ -4635,12 +4627,14 @@ mod tests {
         perms.set_readonly(true);
         fs::set_permissions(pending_dir, perms)?;
 
-        // Call sign_signers_file and expect an error
+        // Call sign_signers_file and expect an error.
+        // The IO error is wrapped in AggregateSignatureError since
+        // that is what  add_individual_signature returns
         let result = sign_signers_file(&signers_file_path, &signature, pubkey);
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            SignersFileError::IoError(_) => {} // Expected
-            e => panic!("Expected IoError, got {}", e),
+        match result {
+            Err(SignersFileError::AggregateSignatureError(AggregateSignatureError::Io(_))) => {} // Expected
+            Err(e) => panic!("Expected AggregateSignatureError(Io(_)), got {}", e),
+            Ok(_) => panic!("Expected error, got Ok"),
         }
 
         // Restore permissions for cleanup
@@ -4673,12 +4667,16 @@ mod tests {
         let seckey = test_keys.sec_key(0).unwrap();
         let signature = seckey.sign(&hash).unwrap();
 
-        // Call sign_signers_file and expect an error
+        // Call sign_signers_file and expect an error.
+        // The JSON error is wrapped in AggregateSignatureError since
+        // that is what add_individual_signature returns
         let result = sign_signers_file(&signers_file_path, &signature, pubkey);
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            SignersFileError::JsonError(_) => {} // Expected
-            e => panic!("Expected JsonError, got {}", e),
+        match result {
+            Err(SignersFileError::AggregateSignatureError(AggregateSignatureError::JsonError(
+                _,
+            ))) => {} // Expected
+            Err(e) => panic!("Expected AggregateSignatureError(JsonError(_)), got {}", e),
+            Ok(_) => panic!("Expected error, got Ok"),
         }
 
         Ok(())
