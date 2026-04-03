@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use crate::error::Result;
 use features_lib::{
     AsfaloadPublicKeyTrait, AsfaloadPublicKeys, AsfaloadSecretKeyTrait, AsfaloadSecretKeys,
-    sha512_for_content,
+    AsfaloadSignatures, sha512_for_content,
 };
 use rest_api_types::SubmitSignatureResponse;
 
@@ -9,22 +11,21 @@ use rest_api_types::SubmitSignatureResponse;
 ///
 /// Translates a file path from list-pending into a signed submission to the backend.
 /// This is a one-step command for the user that:
-/// 1. Fetches the file content from backend
-/// 2. Computes hash and signs with user's key
-/// 3. Submits the signature to backend
+/// 1. Fetches all files that need signing from backend
+/// 2. Computes hash and signs each file with user's key
+/// 3. Submits all signatures to backend in one request
 ///
 /// # Arguments
 /// * `file_path` - Path to the file (as returned by list-pending)
 /// * `backend_url` - Backend API URL
 /// * `secret_key_path` - Path to the user's secret key file
-/// * `password` -  Password to unlock secret key
+/// * `password` - Password to unlock secret key
 ///
 /// # Workflow
 /// * Load secret key and derive public key
-/// * Fetch file content from backend
-/// * Compute SHA512 hash
-/// * Sign the hash
-/// * Submit signature to backend
+/// * Fetch all files to sign from backend
+/// * Compute SHA512 hash and sign each file
+/// * Submit all signatures to backend
 /// * Display result (whether signature is now complete)
 pub async fn handle_sign_pending_command(
     file_path: &str,
@@ -37,21 +38,23 @@ pub async fn handle_sign_pending_command(
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
     let public_key = AsfaloadPublicKeys::from_secret_key(&secret_key)?;
 
-    // Create REST client (shared across fetch + submit)
+    // Create REST client
     let client = admin_lib::v1::Client::new(backend_url);
 
-    // Fetch file from backend
-    let file_content = client.fetch_file(file_path).await?;
+    // Fetch all files that need signing
+    let files_to_sign = client.fetch_files_to_sign(file_path).await?;
 
-    // Compute hash
-    let hash = sha512_for_content(file_content)?;
+    // Sign each file
+    let mut signatures: HashMap<String, AsfaloadSignatures> = HashMap::new();
+    for (path, content) in &files_to_sign {
+        let hash = sha512_for_content(content.clone())?;
+        let signature = secret_key.sign(&hash)?;
+        signatures.insert(path.clone(), signature);
+    }
 
-    // Sign the hash
-    let signature = secret_key.sign(&hash)?;
-
-    // Submit to backend
+    // Submit all signatures to backend
     let response = client
-        .submit_signature(file_path, &public_key, &signature, &secret_key)
+        .submit_signatures(file_path, &public_key, &signatures, &secret_key)
         .await?;
 
     // Display result
