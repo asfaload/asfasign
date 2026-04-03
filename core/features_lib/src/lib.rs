@@ -30,7 +30,7 @@ pub use signatures::types::AsfaloadSecretKeys;
 pub use signatures::types::AsfaloadSignatures;
 
 pub use signers_file::activate_signers_file;
-use signers_file::sign_signers_file;
+pub use signers_file::sign_signers_and_metadata_file;
 pub use signers_file::validate_history;
 pub use signers_file_types::{
     Forge, ForgeOrigin, HistoryEntry, HistoryFile, SignersConfigMetadata, SignersConfigOrigin,
@@ -79,7 +79,16 @@ where
         sig: AsfaloadSignatures,
         pubkey: AsfaloadPublicKeys,
     ) -> Result<SignatureWithState, SignedFileError> {
-        sign_signers_file(&self.location, &sig, &pubkey).map_err(|e| e.into())
+        let agg_sig_with_state = SignatureWithState::load_for_file(&self.location)?;
+        if let Some(pending_sig) = agg_sig_with_state.get_pending() {
+            pending_sig
+                .add_individual_signature(&sig, &pubkey)
+                .map_err(|e| e.into())
+        } else {
+            Err(SignedFileError::AggregateSignatureError(
+                common::errors::AggregateSignatureError::SignatureAlreadyComplete,
+            ))
+        }
     }
 
     fn is_signed(&self) -> Result<bool, SignedFileError> {
