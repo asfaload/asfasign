@@ -604,14 +604,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_propose_signers_returns_missing_signers() -> Result<()> {
+        use features_lib::{AsfaloadSecretKeyTrait, SignaturesFile, sha512_for_file};
+
         let temp = tempfile::TempDir::new().unwrap();
         let git_path = temp.path().to_path_buf();
 
         let test_keys = test_helpers::TestKeys::new(3);
 
-        // Step 1: Initialize with a 1-signer config so it auto-activates.
-        // (With 1 signer and threshold 1, initialize_signers_file completes
-        // the aggregate signature and renames pending -> active.)
+        // Step 1: Initialize with a 1-signer config.
         let init_config = SignersConfig::with_artifact_signers_only(
             1,
             (vec![test_keys.pub_key(0).unwrap().clone()], 1),
@@ -634,6 +634,30 @@ mod tests {
             "Init should succeed: {:?}",
             init_result
         );
+
+        // Step 1b: Create metadata pending signatures file (not created by init)
+        // and explicitly sign the signers file to activate it.
+        let init_res = init_result.unwrap();
+        let signers_file_path = init_res.signers_file_path.absolute_path();
+        let metadata_path = metadata_path_for(&signers_file_path)?;
+        let metadata_pending_sig_path = pending_signatures_path_for(&metadata_path)?;
+        let empty_sigs = SignaturesFile::new();
+        std::fs::write(
+            &metadata_pending_sig_path,
+            serde_json::to_string_pretty(&empty_sigs)?,
+        )?;
+
+        // Sign the signers file and metadata to activate
+        let signers_digest = sha512_for_file(&signers_file_path)?;
+        let signers_sig = test_keys.sec_key(0).unwrap().sign(&signers_digest)?;
+        let metadata_digest = sha512_for_file(&metadata_path)?;
+        let metadata_sig = test_keys.sec_key(0).unwrap().sign(&metadata_digest)?;
+        signers_file::sign_signers_and_metadata_file(
+            &signers_file_path,
+            &signers_sig,
+            test_keys.pub_key(0).unwrap(),
+            &metadata_sig,
+        )?;
 
         // Step 2: Propose an update with 3 signers, signed by key0.
         // key0 is valid for updates because admin_keys() falls back to

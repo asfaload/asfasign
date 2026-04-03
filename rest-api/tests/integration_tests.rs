@@ -332,7 +332,6 @@ pub mod tests {
     #[tokio::test]
     async fn test_register_repo_cleans_up_on_repo_handler_failure() -> Result<(), anyhow::Error> {
         use constants::PENDING_SIGNERS_DIR;
-        use features_lib::{AsfaloadSecretKeyTrait, sha512_for_content};
         use kameo::actor::Spawn;
         use rest_api::file_auth::actors::git_actor::GitActor;
         use rest_api::file_auth::actors::signers_initialiser::{
@@ -347,10 +346,7 @@ pub mod tests {
 
         init_git_repo(&git_repo_path)?;
 
-        // Use 2 signers so the signature stays pending after init (only key_pair1 signs).
-        // With 1 signer, initialize_signers_file completes immediately and renames pending -> active.
         let test_keys = test_helpers::TestKeys::new(2);
-        let secret_key = test_keys.sec_key(0).unwrap();
 
         let signers_config = signers_file_types::SignersConfig::with_artifact_signers_only(
             1,
@@ -367,9 +363,6 @@ pub mod tests {
         // that is signed intact.
         let signers_info = SignersInfo::from_string(&signers_json)?;
 
-        let hash = sha512_for_content(signers_json.as_bytes().to_vec())?;
-        let signature = secret_key.sign(&hash)?;
-        let pubkey = test_keys.pub_key(0).unwrap().clone();
         let metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
             Forge::Github,
             "https://github.com/test/repo/blob/main/signers.json".to_string(),
@@ -392,8 +385,6 @@ pub mod tests {
             project_path,
             signers_info,
             metadata,
-            signature,
-            pubkey,
             git_repo_path: git_repo_path.clone(),
             request_id: "test-123".to_string(),
         };
@@ -464,10 +455,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_register_repo_errors_dont_leak_internal_details() -> Result<(), anyhow::Error> {
-        use features_lib::{
-            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
-            sha512_for_content,
-        };
+        use features_lib::AsfaloadPublicKeyTrait;
         use rest_api_types::RegisterRepoRequest;
 
         let temp_dir = TempDir::new()?;
@@ -482,17 +470,13 @@ pub mod tests {
 
         let client = reqwest::Client::new();
 
-        // Create a dummy signature (the URL is fake so it doesn't matter)
         let test_keys = test_helpers::TestKeys::new(1);
         let public_key = test_keys.pub_key(0).unwrap();
         let secret_key = test_keys.sec_key(0).unwrap();
-        let dummy_hash = sha512_for_content(b"dummy content".to_vec())?;
-        let dummy_signature = secret_key.sign(&dummy_hash)?;
 
         let request_body = RegisterRepoRequest {
             signers_file_url: "https://github.com/owner/repo/blob/main/nonexistent.json"
                 .to_string(),
-            signature: dummy_signature.to_base64(),
             public_key: public_key.to_base64(),
         };
         let payload_string = serde_json::to_string(&request_body)?;
@@ -935,15 +919,18 @@ pub mod test_utils_tests {
 
     #[tokio::test]
     async fn test_submit_signature_for_signers_file() -> Result<(), anyhow::Error> {
+        use common::fs::names::{metadata_path_for, pending_signatures_path_for};
         use constants::PENDING_SIGNERS_DIR;
         use constants::SIGNATURES_SUFFIX;
         use constants::SIGNERS_DIR;
         use constants::SIGNERS_FILE;
         use features_lib::{
-            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file,
+            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, SignaturesFile,
+            sha512_for_file,
         };
         use rest_api_types::SubmitSignatureRequest;
         use rest_api_types::SubmitSignatureResponse;
+        use std::collections::HashMap;
 
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
@@ -966,9 +953,42 @@ pub mod test_utils_tests {
         let complete_signers_path = complete_dir.join(SIGNERS_FILE);
         tokio::fs::write(pending_signers_path.clone(), &signers_json).await?;
 
+        // Create pending signatures file for the signers file
+        let pending_sig_path = pending_signatures_path_for(&pending_signers_path)?;
+        let empty_sigs = SignaturesFile::new();
+        tokio::fs::write(
+            &pending_sig_path,
+            serde_json::to_string_pretty(&empty_sigs)?,
+        )
+        .await?;
+
+        // Create metadata file
+        let metadata_path = metadata_path_for(&pending_signers_path)?;
+        let metadata = test_helpers::test_metadata();
+        tokio::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?).await?;
+
+        // Create pending signatures for metadata file
+        let metadata_pending_sig_path = pending_signatures_path_for(&metadata_path)?;
+        tokio::fs::write(
+            &metadata_pending_sig_path,
+            serde_json::to_string_pretty(&empty_sigs)?,
+        )
+        .await?;
+
+        // Create signatures
         let digest = sha512_for_file(&pending_signers_path)?;
         let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&digest)?;
+
+        let metadata_digest = sha512_for_file(&metadata_path)?;
+        let metadata_signature = secret_key.sign(&metadata_digest)?;
+
+        // Build the relative file path and metadata path
+        let signers_rel_path = format!(
+            "github.com/test/repo/{}/{}",
+            PENDING_SIGNERS_DIR, SIGNERS_FILE
+        );
+        let metadata_rel_path = format!("{}.{}", signers_rel_path, constants::METADATA_SUFFIX);
 
         let port = get_random_port().await?;
         init_git_repo(&git_repo_path)?;
@@ -980,14 +1000,13 @@ pub mod test_utils_tests {
         wait_for_server(&config, None).await?;
 
         let client = reqwest::Client::new();
+        let mut signatures = HashMap::new();
+        signatures.insert(signers_rel_path.clone(), signature.to_base64());
+        signatures.insert(metadata_rel_path, metadata_signature.to_base64());
         let payload = json!(&SubmitSignatureRequest {
-            file_path: format!(
-                "github.com/test/repo/{}/{}",
-                PENDING_SIGNERS_DIR, SIGNERS_FILE
-            )
-            .to_string(),
+            file_path: signers_rel_path,
             public_key: public_key.to_base64(),
-            signature: signature.to_base64(),
+            signatures,
         });
         let response = client
             .post(url_for("signatures", port))
@@ -1130,7 +1149,9 @@ pub mod test_utils_tests {
         let payload = json!({
             "file_path": "nonexistent.txt",
             "public_key": public_key.to_base64(),
-            "signature": "invalid_signature",
+            "signatures": {
+                "nonexistent.txt": "invalid_signature"
+            },
         });
         let payload_string = payload.to_string();
         let auth = create_auth_headers(&payload_string).await;
@@ -1259,10 +1280,12 @@ pub mod test_utils_tests {
         wait_for_server(&config, None).await?;
 
         let client = reqwest::Client::new();
+        let mut signatures = std::collections::HashMap::new();
+        signatures.insert("releases/release.tar.gz".to_string(), signature.to_base64());
         let payload = json!(&SubmitSignatureRequest {
             file_path: "releases/release.tar.gz".to_string(),
             public_key: public_key.to_base64(),
-            signature: signature.to_base64(),
+            signatures,
         });
         let response = client
             .post(url_for("signatures", port))

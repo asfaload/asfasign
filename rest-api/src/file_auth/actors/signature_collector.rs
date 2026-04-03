@@ -492,8 +492,9 @@ mod tests {
     use rest_api_types::git_backend::GitBackendKind;
 
     use super::*;
+    use common::fs::names::{metadata_path_for, pending_signatures_path_for};
     use constants::{PENDING_SIGNERS_DIR, SIGNATURES_SUFFIX, SIGNERS_DIR, SIGNERS_FILE};
-    use features_lib::{AsfaloadSecretKeyTrait, sha512_for_file};
+    use features_lib::{AsfaloadSecretKeyTrait, SignaturesFile, sha512_for_file};
     use kameo::actor::Spawn;
     use rest_api_test_helpers::init_git_repo;
     use signers_file_types::SignersConfig;
@@ -502,6 +503,56 @@ mod tests {
         str::FromStr,
     };
     use tempfile::TempDir;
+
+    /// Set up a pending signers file with all required companion files:
+    /// - The signers JSON content
+    /// - An empty pending signatures file for the signers file
+    /// - A metadata file
+    /// - An empty pending signatures file for the metadata file
+    ///
+    /// Returns the path to the pending signers file.
+    fn setup_pending_signers_with_metadata(
+        pending_dir: &Path,
+        signers_json: &str,
+    ) -> anyhow::Result<PathBuf> {
+        std::fs::create_dir_all(pending_dir)?;
+        let pending_signers_path = pending_dir.join(SIGNERS_FILE);
+        std::fs::write(&pending_signers_path, signers_json)?;
+
+        // Create empty pending signatures for the signers file
+        let pending_sig_path = pending_signatures_path_for(&pending_signers_path)?;
+        let empty_sigs = SignaturesFile::new();
+        std::fs::write(
+            &pending_sig_path,
+            serde_json::to_string_pretty(&empty_sigs)?,
+        )?;
+
+        // Create metadata file
+        let metadata_path = metadata_path_for(&pending_signers_path)?;
+        let metadata = test_helpers::test_metadata();
+        let metadata_file = std::fs::File::create(&metadata_path)?;
+        serde_json::to_writer_pretty(&metadata_file, &metadata)?;
+
+        // Create empty pending signatures for the metadata file
+        let metadata_pending_sig_path = pending_signatures_path_for(&metadata_path)?;
+        std::fs::write(
+            metadata_pending_sig_path,
+            serde_json::to_string_pretty(&empty_sigs)?,
+        )?;
+
+        Ok(pending_signers_path)
+    }
+
+    /// Compute a metadata signature for a signers file.
+    fn compute_metadata_signature(
+        signers_file_path: &Path,
+        test_keys: &test_helpers::TestKeys,
+        key_index: usize,
+    ) -> anyhow::Result<AsfaloadSignatures> {
+        let metadata_path = metadata_path_for(signers_file_path)?;
+        let metadata_hash = sha512_for_file(&metadata_path)?;
+        Ok(test_keys.sec_key(key_index).unwrap().sign(&metadata_hash)?)
+    }
 
     /// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
     /// Duplicated in tests module that need it. Moving it to a test helpers crate implies
@@ -528,10 +579,6 @@ mod tests {
 
         let project_dir = temp_dir.path().join("github.com/test/repo");
         let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
-        let pending_signers_path = pending_dir.join(SIGNERS_FILE);
-
-        // Create directory structure
-        std::fs::create_dir_all(&pending_dir)?;
 
         // Create test keys
         let test_keys = test_helpers::TestKeys::new(1);
@@ -542,12 +589,16 @@ mod tests {
             SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1))?;
 
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
-        std::fs::write(&pending_signers_path, signers_json)?;
+        let pending_signers_path =
+            setup_pending_signers_with_metadata(&pending_dir, &signers_json)?;
 
-        // Create the signature
+        // Create the signature for the signers file
         let digest = sha512_for_file(&pending_signers_path)?;
         let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&digest)?;
+
+        // Create the metadata signature
+        let metadata_sig = compute_metadata_signature(&pending_signers_path, &test_keys, 0)?;
 
         // Create NormalisedPaths
         let file_path =
@@ -564,6 +615,7 @@ mod tests {
             file_path,
             public_key: public_key.clone(),
             signature,
+            metadata_signature: Some(metadata_sig),
             request_id: "test-123".to_string(),
         };
 
@@ -641,6 +693,7 @@ mod tests {
             file_path,
             public_key: public_key.clone(),
             signature,
+            metadata_signature: None,
             request_id: "test-456".to_string(),
         };
 
@@ -661,9 +714,6 @@ mod tests {
 
         let project_dir = temp_dir.path().join("github.com/test/repo");
         let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
-        let pending_signers_path = pending_dir.join(SIGNERS_FILE);
-
-        std::fs::create_dir_all(&pending_dir)?;
 
         // Create key pair
         let test_keys = test_helpers::TestKeys::new(1);
@@ -672,13 +722,17 @@ mod tests {
             (vec![test_keys.pub_key(0).unwrap().clone()], 1),
         )?;
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
-        std::fs::write(&pending_signers_path, signers_json)?;
+        let pending_signers_path =
+            setup_pending_signers_with_metadata(&pending_dir, &signers_json)?;
 
         // Create a signature
         let digest = sha512_for_file(&pending_signers_path)?;
         let secret_key = test_keys.sec_key(0).unwrap();
         let signature = secret_key.sign(&digest)?;
         let public_key = test_keys.pub_key(0).unwrap();
+
+        // Create the metadata signature
+        let metadata_sig = compute_metadata_signature(&pending_signers_path, &test_keys, 0)?;
 
         let file_path =
             make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
@@ -695,6 +749,7 @@ mod tests {
                 file_path: file_path.clone(),
                 public_key: public_key.clone(),
                 signature: signature.clone(),
+                metadata_signature: Some(metadata_sig.clone()),
                 request_id: "first-sign".to_string(),
             })
             .await;
@@ -713,6 +768,7 @@ mod tests {
                 file_path: active_file_path,
                 public_key: public_key.clone(),
                 signature,
+                metadata_signature: Some(metadata_sig),
                 request_id: "duplicate-sign".to_string(),
             })
             .await;
@@ -744,9 +800,6 @@ mod tests {
 
         let project_dir = temp_dir.path().join("github.com/test/repo");
         let pending_dir = project_dir.join(PENDING_SIGNERS_DIR);
-        let pending_signers_path = pending_dir.join(SIGNERS_FILE);
-
-        std::fs::create_dir_all(&pending_dir)?;
 
         // Create test keys - we'll need 2 for threshold > 1
         let test_keys = test_helpers::TestKeys::new(2);
@@ -764,13 +817,17 @@ mod tests {
         )?;
 
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
-        std::fs::write(&pending_signers_path, signers_json)?;
+        let pending_signers_path =
+            setup_pending_signers_with_metadata(&pending_dir, &signers_json)?;
 
         // Create first signature
         let digest = sha512_for_file(&pending_signers_path)?;
         let secret_key1 = test_keys.sec_key(0).unwrap();
         let signature1 = secret_key1.sign(&digest)?;
         let public_key1 = test_keys.pub_key(0).unwrap();
+
+        // Create metadata signatures
+        let metadata_sig1 = compute_metadata_signature(&pending_signers_path, &test_keys, 0)?;
 
         let file_path =
             make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
@@ -787,6 +844,7 @@ mod tests {
                 file_path: file_path.clone(),
                 public_key: public_key1.clone(),
                 signature: signature1,
+                metadata_signature: Some(metadata_sig1),
                 request_id: "first-sign".to_string(),
             })
             .await;
@@ -799,11 +857,13 @@ mod tests {
         let secret_key2 = test_keys.sec_key(1).unwrap();
         let signature2 = secret_key2.sign(&digest)?;
         let public_key2 = test_keys.pub_key(1).unwrap();
+        let metadata_sig2 = compute_metadata_signature(&pending_signers_path, &test_keys, 1)?;
         let result2 = actor_ref
             .ask(CollectSignatureRequest {
                 file_path: file_path.clone(),
                 public_key: public_key2.clone(),
                 signature: signature2,
+                metadata_signature: Some(metadata_sig2),
                 request_id: "second-sign".to_string(),
             })
             .await;
@@ -857,6 +917,7 @@ mod tests {
                 file_path,
                 public_key: public_key.clone(),
                 signature,
+                metadata_signature: None,
                 request_id: "test-root-file".to_string(),
             })
             .await;
@@ -916,6 +977,7 @@ mod tests {
                 file_path,
                 public_key: test_keys.pub_key(2).unwrap().clone(),
                 signature,
+                metadata_signature: None,
                 request_id: "test-unauth-1".to_string(),
             })
             .await;
@@ -996,6 +1058,7 @@ mod tests {
                 file_path,
                 public_key: test_keys.pub_key(2).unwrap().clone(),
                 signature,
+                metadata_signature: None,
                 request_id: "test-unauth-signers".to_string(),
             })
             .await;
@@ -1056,6 +1119,7 @@ mod tests {
                 file_path,
                 public_key: test_keys.pub_key(2).unwrap().clone(),
                 signature,
+                metadata_signature: None,
                 request_id: "test-unauth-initial".to_string(),
             })
             .await;
