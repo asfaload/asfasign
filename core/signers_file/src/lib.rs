@@ -22,61 +22,6 @@ use signers_file_types::{
 use std::{borrow::Borrow, ffi::OsStr, fs, io::Write, path::Path};
 //
 
-// Helper function used to validate the signer of a signers file
-// initialisation, i.e. when no existing signers file is active.
-#[cfg(test)]
-fn is_valid_signer_for_signer_init(
-    pubkey: &AsfaloadPublicKeys,
-    config: &SignersConfig,
-) -> Result<(), SignersFileError> {
-    let is_valid = config.admin_keys().iter().any(|group| {
-        group
-            .signers
-            .iter()
-            .any(|signer| signer.data.pubkey == *pubkey)
-    });
-    if is_valid {
-        Ok(())
-    } else {
-        Err(SignersFileError::InvalidSigner(
-            "The provided public key is not in the required groups for signers init".to_string(),
-        ))
-    }
-}
-
-// Helper function used to validate the signer of a signers file
-// initialisation, i.e. when there is an existing signers file active,
-// which influences the validation.
-#[cfg(test)]
-fn is_valid_signer_for_update_of(
-    pubkey: &AsfaloadPublicKeys,
-    active_config: &SignersConfig,
-) -> Result<(), SignersFileError> {
-    // Only an admin key or a master key can propose a new signers file.
-    let is_valid = active_config.admin_keys().iter().any(|group| {
-        group
-            .signers
-            .iter()
-            .any(|signer| signer.data.pubkey == *pubkey)
-    }) || active_config
-        .master_keys()
-        .unwrap_or_default()
-        .iter()
-        .any(|group| {
-            group
-                .signers
-                .iter()
-                .any(|signer| signer.data.pubkey == *pubkey)
-        });
-    if is_valid {
-        Ok(())
-    } else {
-        Err(SignersFileError::InvalidSigner(
-            "The provided public key is not in the required groups of current config for signers update".to_string(),
-        ))
-    }
-}
-
 pub fn sign_signers_and_metadata_file<P>(
     signers_file_path: P,
     signature: &AsfaloadSignatures,
@@ -208,12 +153,6 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
         // Write the JSON content to the pending signers file
         let mut signers_file = open_new_file(&signers_file_path)?;
         signers_file.write_all(json_content.as_bytes())?;
-
-        // Create an empty pending signatures file for the signers file
-        let pending_sig_path = pending_signatures_path_for(&signers_file_path)?;
-        let empty_sigs = SignaturesFile::new();
-        let sig_file = open_new_file(&pending_sig_path)?;
-        serde_json::to_writer_pretty(&sig_file, &empty_sigs)?;
         Ok(())
     })();
 
@@ -877,16 +816,6 @@ mod tests {
             PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
         ));
         assert!(!sig_file_path.exists());
-        let pending_sig_file_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(pending_sig_file_path.exists());
-
-        // Check the pending signature file is empty (no signatures yet)
-        let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
-        let sig_map: SignaturesFile = serde_json::from_str(&sig_content).unwrap();
-        assert_eq!(sig_map.entries.len(), 0);
         assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
@@ -929,16 +858,6 @@ mod tests {
             PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
         ));
         assert!(!sig_file_path.exists());
-        let pending_sig_file_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(pending_sig_file_path.exists());
-
-        // Check the pending signature file is empty (no signatures yet)
-        let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
-        let sig_map: SignaturesFile = serde_json::from_str(&sig_content).unwrap();
-        assert_eq!(sig_map.entries.len(), 0);
         assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
@@ -976,16 +895,6 @@ mod tests {
         ));
         assert!(!sig_file_path.exists());
 
-        // Check the pending signature file exists and is empty
-        let pending_sig_file_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(pending_sig_file_path.exists());
-        let sig_content = fs::read_to_string(pending_sig_file_path).unwrap();
-        let sig_map: SignaturesFile = serde_json::from_str(&sig_content).unwrap();
-        assert_eq!(sig_map.entries.len(), 0);
-
         assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
@@ -1018,19 +927,6 @@ mod tests {
         // Initialization no longer validates signers -- it just creates the files
         initialize_signers_file(dir_path, &json_content, test_metadata())?;
 
-        let sig_file_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
-        ));
-        let pending_file_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        // Check that the pending signatures file exists
-        assert!(pending_file_path.exists());
-
-        // Check that the complete signature file does not exist
-        assert!(!sig_file_path.exists());
         assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
@@ -1056,14 +952,6 @@ mod tests {
         assert!(pending_signers_dir.exists());
         let pending_file = pending_signers_dir.join(SIGNERS_FILE);
         assert!(pending_file.exists());
-
-        // Check the pending signature file exists and is empty
-        let pending_sig_file_path =
-            pending_signers_dir.join(format!("{}.{}", SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX));
-        assert!(pending_sig_file_path.exists());
-        let sig_content = fs::read_to_string(pending_sig_file_path)?;
-        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.entries.len(), 0);
 
         assert_metadata_file_valid(dir_path, false);
         Ok(())
@@ -2689,20 +2577,6 @@ mod tests {
         let content = fs::read_to_string(&pending_file_path)?;
         let _config: SignersConfig = parse_signers_config(&content)?;
 
-        // Verify the pending signature file exists and is empty
-        let pending_sig_file_path = root_dir.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(pending_sig_file_path.exists());
-
-        // Verify the complete signature file is not present (no signatures yet)
-        let complete_sig_file_path = root_dir.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
-        ));
-        assert!(!complete_sig_file_path.exists());
-
         assert_metadata_file_valid(root_dir, false);
         Ok(())
     }
@@ -2761,20 +2635,6 @@ mod tests {
         let content = fs::read_to_string(&pending_file_path)?;
         let _config: SignersConfig = parse_signers_config(&content)?;
 
-        // Verify the pending signature is there as signature is incomplete
-        let pending_sig_file_path = root_dir.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(pending_sig_file_path.exists());
-
-        // Verify the complete signature file was created
-        let complete_sig_file_path = root_dir.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
-        ));
-        assert!(!complete_sig_file_path.exists());
-
         assert_metadata_file_valid(root_dir, false);
         Ok(())
     }
@@ -2801,20 +2661,6 @@ mod tests {
         // Verify the content
         let content = fs::read_to_string(&pending_file_path)?;
         let _config: SignersConfig = parse_signers_config(&content)?;
-
-        // Verify the pending signature not there as signature is incomplete
-        let pending_sig_file_path = root_dir.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(pending_sig_file_path.exists());
-
-        // Verify the complete signature file was created
-        let complete_sig_file_path = root_dir.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
-        ));
-        assert!(!complete_sig_file_path.exists());
 
         assert_metadata_file_valid(root_dir, false);
         Ok(())
@@ -2848,19 +2694,6 @@ mod tests {
         let content = fs::read_to_string(&pending_file_path)?;
         let _config: SignersConfig = parse_signers_config(&content)?;
 
-        // Verify the pending signature is there (previous signers have not signed!)
-        let pending_signatures_file_path = root_dir.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(pending_signatures_file_path.exists());
-
-        // Verify the complete signature file was not created
-        let complete_signatures_file_path = root_dir.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
-        ));
-        assert!(!complete_signatures_file_path.exists());
         // Check no local copy of the signers was taken as it is a signers file
         let local_signers_path = root_dir.join(format!(
             "{}/{}.{}",
@@ -3041,235 +2874,8 @@ mod tests {
         let content = fs::read_to_string(&pending_file_path)?;
         let _config: SignersConfig = parse_signers_config(&content)?;
 
-        // Check the signature was transitioned to complete
-        let pending_signature_path = nested_dir.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(pending_signature_path.exists());
-
         assert_metadata_file_valid(&nested_dir, false);
         Ok(())
-    }
-
-    // is_valid_signer_for_signer_init
-    // -------------------------------
-    #[test]
-    fn test_is_valid_signer_for_signer_init() {
-        let test_keys = TestKeys::new(5);
-
-        // Create a test config with admin and artifact signers
-        let json_content_template = r#"
-        {
-          "version": 1,
-      "timestamp": "TIMESTAMP",
-          "artifact_signers": [
-            {
-              "signers": [
-                { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
-                { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} }
-              ],
-              "threshold": 2
-            }
-          ],
-          "master_keys": [],
-          "admin_keys": [
-            {
-              "signers": [
-                { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} },
-                { "kind": "key", "data": { "pubkey": "PUBKEY3_PLACEHOLDER"} }
-              ],
-              "threshold": 2
-            }
-          ]
-        }
-        "#
-        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-
-        let json_content = test_keys.substitute_keys(json_content_template.to_string());
-        let config: SignersConfig = parse_signers_config(&json_content).unwrap();
-
-        // Test with a valid admin signer
-        let admin_pubkey = test_keys.pub_key(2).unwrap();
-        assert!(is_valid_signer_for_signer_init(admin_pubkey, &config).is_ok());
-
-        // Test with a valid artifact signer, but not accepted as first signer (when admin_keys is present, artifact signers are not valid)
-        let artifact_pubkey = test_keys.pub_key(0).unwrap();
-        assert!(is_valid_signer_for_signer_init(artifact_pubkey, &config).is_err());
-
-        // Test with an invalid signer (not in the config)
-        let invalid_pubkey = test_keys.pub_key(4).unwrap();
-        let result = is_valid_signer_for_signer_init(invalid_pubkey, &config);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::InvalidSigner(msg) => {
-                assert!(msg.contains("not in the required groups for signers init"));
-            }
-            _ => panic!("Expected InvalidSigner error"),
-        }
-
-        // Test with a config that has no admin_keys (artifact_signers should be valid)
-        let json_content_no_admin = r#"
-        {
-          "version": 1,
-      "timestamp": "TIMESTAMP",
-          "artifact_signers": [
-            {
-              "signers": [
-                { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
-                { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} }
-              ],
-              "threshold": 2
-            }
-          ],
-          "master_keys": []
-        }
-        "#
-        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-
-        let json_content_no_admin = test_keys.substitute_keys(json_content_no_admin.to_string());
-        let config_no_admin: SignersConfig = parse_signers_config(&json_content_no_admin).unwrap();
-
-        // Test with a valid artifact signer (when admin_keys is not present)
-        let artifact_pubkey = test_keys.pub_key(0).unwrap();
-        assert!(is_valid_signer_for_signer_init(artifact_pubkey, &config_no_admin).is_ok());
-
-        // Test with an invalid signer (not in the config)
-        let invalid_pubkey = test_keys.pub_key(2).unwrap(); // This key is not in the artifact_signers
-        let result = is_valid_signer_for_signer_init(invalid_pubkey, &config_no_admin);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::InvalidSigner(msg) => {
-                assert!(msg.contains("not in the required groups for signers init"));
-            }
-            e => panic!("Expected InvalidSigner error, got {}", e),
-        }
-    }
-
-    #[test]
-    fn test_is_valid_signer_for_update_of() {
-        let test_keys = TestKeys::new(5);
-
-        // Create a test config with admin, master, and artifact signers
-        let json_content_template = r#"
-        {
-          "version": 1,
-      "timestamp": "TIMESTAMP",
-          "artifact_signers": [
-            {
-              "signers": [
-                { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
-                { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} }
-              ],
-              "threshold": 2
-            }
-          ],
-          "master_keys": [
-            {
-              "signers": [
-                { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
-              ],
-              "threshold": 1
-            }
-          ],
-          "admin_keys": [
-            {
-              "signers": [
-                { "kind": "key", "data": { "pubkey": "PUBKEY3_PLACEHOLDER"} }
-              ],
-              "threshold": 1
-            }
-          ]
-        }
-        "#
-        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-
-        let json_content = test_keys.substitute_keys(json_content_template.to_string());
-        let config: SignersConfig = parse_signers_config(&json_content).unwrap();
-
-        // Test with a valid admin signer
-        let admin_pubkey = test_keys.pub_key(3).unwrap();
-        assert!(is_valid_signer_for_update_of(admin_pubkey, &config).is_ok());
-
-        // Test with a valid master signer
-        let master_pubkey = test_keys.pub_key(2).unwrap();
-        assert!(is_valid_signer_for_update_of(master_pubkey, &config).is_ok());
-
-        // Test with an artifact signer (should not be valid for updates as there is an admin group)
-        let artifact_pubkey = test_keys.pub_key(0).unwrap();
-        let result = is_valid_signer_for_update_of(artifact_pubkey, &config);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::InvalidSigner(msg) => {
-                assert!(
-                    msg.contains("not in the required groups of current config for signers update")
-                );
-            }
-            e => panic!("Expected InvalidSigner error, got {}", e),
-        }
-
-        // Test with an invalid signer (not in the config)
-        let invalid_pubkey = test_keys.pub_key(4).unwrap();
-        let result = is_valid_signer_for_update_of(invalid_pubkey, &config);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::InvalidSigner(msg) => {
-                assert!(
-                    msg.contains("not in the required groups of current config for signers update")
-                );
-            }
-            _ => panic!("Expected InvalidSigner error"),
-        }
-
-        // Test with a config that has no admin_keys (artifact_signers should be used as admin)
-        let json_content_no_admin = r#"
-        {
-          "version": 1,
-      "timestamp": "TIMESTAMP",
-          "artifact_signers": [
-            {
-              "signers": [
-                { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
-                { "kind": "key", "data": { "pubkey": "PUBKEY1_PLACEHOLDER"} }
-              ],
-              "threshold": 2
-            }
-          ],
-          "master_keys": [
-            {
-              "signers": [
-                { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
-              ],
-              "threshold": 1
-            }
-          ]
-        }
-        "#
-        .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
-
-        let json_content_no_admin = test_keys.substitute_keys(json_content_no_admin.to_string());
-        let config_no_admin: SignersConfig = parse_signers_config(&json_content_no_admin).unwrap();
-
-        // Test with a valid artifact signer (when admin_keys is not present, artifact_signers are used as admin)
-        let artifact_pubkey = test_keys.pub_key(0).unwrap();
-        assert!(is_valid_signer_for_update_of(artifact_pubkey, &config_no_admin).is_ok());
-
-        // Test with a valid master signer
-        let master_pubkey = test_keys.pub_key(2).unwrap();
-        assert!(is_valid_signer_for_update_of(master_pubkey, &config_no_admin).is_ok());
-
-        // Test with an invalid signer (not in the config)
-        let invalid_pubkey = test_keys.pub_key(3).unwrap();
-        let result = is_valid_signer_for_update_of(invalid_pubkey, &config_no_admin);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            SignersFileError::InvalidSigner(msg) => {
-                assert!(
-                    msg.contains("not in the required groups of current config for signers update")
-                );
-            }
-            e => panic!("Expected InvalidSigner error, got {}", e),
-        }
     }
 
     // write_valid_signers_file
@@ -3313,25 +2919,6 @@ mod tests {
         let content = fs::read_to_string(&pending_file_path)?;
         assert_eq!(content, json_content);
 
-        // Verify pending signature file exists (empty, no signatures yet)
-        let pending_sig_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(pending_sig_path.exists());
-
-        // Verify complete signature file does not exist
-        let complete_sig_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, SIGNATURES_SUFFIX
-        ));
-        assert!(!complete_sig_path.exists());
-
-        // Verify pending signature file is empty
-        let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.entries.len(), 0);
-
         assert_metadata_file_valid(dir_path, false);
         Ok(())
     }
@@ -3369,16 +2956,6 @@ mod tests {
         // Verify pending signers file exists (write no longer signs/activates)
         let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(pending_file_path.exists());
-
-        // Verify pending signature file exists and is empty
-        let pending_sig_path = dir_path.join(format!(
-            "{}/{}.{}",
-            PENDING_SIGNERS_DIR, SIGNERS_FILE, PENDING_SIGNATURES_SUFFIX
-        ));
-        assert!(pending_sig_path.exists());
-        let sig_content = fs::read_to_string(&pending_sig_path)?;
-        let sig_map: SignaturesFile = serde_json::from_str(&sig_content)?;
-        assert_eq!(sig_map.entries.len(), 0);
 
         assert_metadata_file_valid(dir_path, false);
         Ok(())
