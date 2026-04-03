@@ -75,10 +75,11 @@ fn is_valid_signer_for_update_of(
     }
 }
 
-pub fn sign_signers_file<P>(
+pub fn sign_signers_and_metadata_file<P>(
     signers_file_path: P,
     signature: &AsfaloadSignatures,
     pubkey: &AsfaloadPublicKeys,
+    metadata_signature: &AsfaloadSignatures,
 ) -> Result<SignatureWithState, SignersFileError>
 where
     P: AsRef<Path>,
@@ -91,9 +92,21 @@ where
         )));
     }
 
-    // Load the pending aggregate signature and add the individual signature.
-    // add_individual_signature handles: writing to disk, reloading, and
-    // trying the transition to complete.
+    // Sign the metadata file first
+    let metadata_file_path = metadata_path_for(&signers_file_path)?;
+    let metadata_agg_sig = SignatureWithState::load_for_file(&metadata_file_path)?;
+    match metadata_agg_sig {
+        SignatureWithState::Pending(pending) => {
+            pending
+                .add_individual_signature(metadata_signature, pubkey)
+                .map_err(SignersFileError::from)?;
+        }
+        SignatureWithState::Complete(_) => {
+            // Metadata signature already complete, nothing to do
+        }
+    }
+
+    // Now sign the signers file itself
     let agg_sig = SignatureWithState::load_for_file(&signers_file_path)?;
     let pending_sig = agg_sig
         .get_pending()
