@@ -3,12 +3,12 @@ use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
-    GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse, RegisterRepoRequest,
-    RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest,
-    SubmitSignatureResponse,
+    FilesToSignResponse, GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
+    RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
+    SubmitSignatureRequest, SubmitSignatureResponse,
 };
 
-use std::{path::PathBuf, str::FromStr};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::file_auth::forges::ForgeInfo;
 use crate::file_auth::forges::ForgeTrait;
@@ -88,12 +88,6 @@ pub async fn register_repo_handler(
             project_id
         )));
     }
-    // Parse public key and signature from the request
-    let public_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
-        .map_err(|_| ApiError::InvalidRequestBody("Invalid public key format".to_string()))?;
-    let signature = features_lib::AsfaloadSignatures::from_base64(&request.signature)
-        .map_err(|_| ApiError::InvalidRequestBody("Invalid signature format".to_string()))?;
-
     let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
         signers_file_url: parsed_url,
         request_id: request_id.to_string(),
@@ -125,8 +119,6 @@ pub async fn register_repo_handler(
         project_path: project_normalised_paths,
         signers_info: signers_proposal.signers_info,
         metadata,
-        signature,
-        pubkey: public_key,
         git_repo_path: state.git_repo_path.clone(),
         request_id: request_id.to_string(),
     };
@@ -269,12 +261,6 @@ pub async fn update_signers_handler(
         )));
     }
 
-    // Parse public key and signature from the request
-    let public_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
-        .map_err(|_| ApiError::InvalidRequestBody("Invalid public key format".to_string()))?;
-    let signature = features_lib::AsfaloadSignatures::from_base64(&request.signature)
-        .map_err(|_| ApiError::InvalidRequestBody("Invalid signature format".to_string()))?;
-
     // Validate the signers file from the forge
     let auth_request = crate::file_auth::actors::forge_signers_validator::ValidateProjectRequest {
         signers_file_url: parsed_url,
@@ -307,8 +293,6 @@ pub async fn update_signers_handler(
         project_path: project_normalised_paths.clone(),
         signers_info: signers_proposal.signers_info,
         metadata,
-        signature,
-        pubkey: public_key,
         request_id: request_id.to_string(),
     };
 
@@ -444,12 +428,37 @@ pub async fn submit_signature_handler(
         )));
     }
 
-    // Parse public key and signature from base64 strings
+    // Parse public key from base64 string
     let public_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|_| ApiError::InvalidRequestBody("Invalid public key format".to_string()))?;
 
-    let signature = features_lib::AsfaloadSignatures::from_base64(&request.signature)
+    // Extract primary signature from the signatures map
+    let signature_b64 = request.signatures.get(&request.file_path).ok_or_else(|| {
+        ApiError::InvalidRequestBody(format!(
+            "No signature provided for primary file: {}",
+            request.file_path
+        ))
+    })?;
+    let signature = features_lib::AsfaloadSignatures::from_base64(signature_b64)
         .map_err(|_| ApiError::InvalidRequestBody("Invalid signature format".to_string()))?;
+
+    // Extract metadata signature if present
+    let metadata_rel_path = common::fs::names::metadata_path_for(&request.file_path)
+        .map(|p| p.to_string_lossy().to_string())
+        .ok();
+    let metadata_signature = if let Some(ref meta_path) = metadata_rel_path {
+        request
+            .signatures
+            .get(meta_path)
+            .map(|sig_b64| {
+                features_lib::AsfaloadSignatures::from_base64(sig_b64).map_err(|_| {
+                    ApiError::InvalidRequestBody("Invalid metadata signature format".to_string())
+                })
+            })
+            .transpose()?
+    } else {
+        None
+    };
 
     // Send signature collection request to the actor
     let collector_request =
@@ -457,6 +466,7 @@ pub async fn submit_signature_handler(
             file_path: file_path.clone(),
             public_key,
             signature,
+            metadata_signature,
             request_id: request_id.to_string(),
         };
 
@@ -739,6 +749,93 @@ pub async fn get_file_handler(
     );
 
     Ok((axum::http::StatusCode::OK, headers, content))
+}
+
+/// Handler to return all files that need to be signed for a given file path.
+///
+/// For signers files, this includes both the signers file itself and
+/// its metadata file. For other files, only the primary file is returned.
+/// File contents are base64-encoded in the response.
+///
+/// # Arguments
+/// * `state` - Application state with git repo path
+/// * `file_path` - URL path parameter containing the file path
+///
+/// # Returns
+/// A map of relative file paths to their base64-encoded contents
+///
+/// # Errors
+/// Returns `ApiError` if:
+/// - File path is invalid
+/// - File does not exist
+/// - File cannot be read
+pub async fn get_files_to_sign_handler(
+    State(state): State<AppState>,
+    axum::extract::Path(file_path): axum::extract::Path<String>,
+) -> Result<Json<FilesToSignResponse>, ApiError> {
+    use base64::Engine;
+
+    let normalised_paths =
+        NormalisedPaths::new(state.git_repo_path.clone(), PathBuf::from(&file_path))
+            .await
+            .map_err(|e| ApiError::InvalidFilePath(format!("Invalid file path: {}", e)))?;
+
+    let absolute_path = normalised_paths.absolute_path();
+
+    if !absolute_path.exists() || !absolute_path.is_file() {
+        return Err(ApiError::FileNotFound(format!(
+            "File not found: {}",
+            file_path
+        )));
+    }
+
+    let mut files = HashMap::new();
+
+    // Read the primary file
+    let content = tokio::fs::read(&absolute_path)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Failed to read file: {}", e)))?;
+    let relative_path = normalised_paths
+        .relative_path()
+        .to_string_lossy()
+        .to_string();
+    files.insert(
+        relative_path.clone(),
+        base64::engine::general_purpose::STANDARD.encode(&content),
+    );
+
+    // If it's a signers file, also include the metadata file
+    let signed_file = common::SignedFileLoader::load(&absolute_path).map_err(|e| {
+        ApiError::InternalServerError(format!("Failed to determine file type: {}", e))
+    })?;
+    if signed_file.is_initial_signers() || signed_file.is_signers() {
+        let metadata_path = common::fs::names::metadata_path_for(&absolute_path).map_err(|e| {
+            ApiError::InternalServerError(format!("Failed to compute metadata path: {}", e))
+        })?;
+        if metadata_path.exists() {
+            let metadata_content = tokio::fs::read(&metadata_path).await.map_err(|e| {
+                ApiError::InternalServerError(format!("Failed to read metadata file: {}", e))
+            })?;
+            let metadata_relative =
+                common::fs::names::metadata_path_for(&relative_path).map_err(|e| {
+                    ApiError::InternalServerError(format!(
+                        "Failed to compute metadata relative path: {}",
+                        e
+                    ))
+                })?;
+            files.insert(
+                metadata_relative.to_string_lossy().to_string(),
+                base64::engine::general_purpose::STANDARD.encode(&metadata_content),
+            );
+        } else {
+            return Err(ApiError::InternalServerError(format!(
+                "Metadata file not found for signers file: {}",
+                metadata_path.display()
+            )));
+        }
+    }
+
+    Ok(Json(FilesToSignResponse { files }))
 }
 
 /// Handler to fetch the signers file for a given file path.

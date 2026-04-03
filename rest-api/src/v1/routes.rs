@@ -6,9 +6,10 @@ use axum::{
 use crate::{
     auth_middleware::auth_middleware,
     handlers::{
-        get_file_handler, get_pending_signatures_handler, get_signature_status_handler,
-        get_signers_chain_handler, get_signers_handler, register_assets_handler,
-        register_repo_handler, revoke_handler, submit_signature_handler, update_signers_handler,
+        get_file_handler, get_files_to_sign_handler, get_pending_signatures_handler,
+        get_signature_status_handler, get_signers_chain_handler, get_signers_handler,
+        register_assets_handler, register_repo_handler, revoke_handler, submit_signature_handler,
+        update_signers_handler,
     },
     state::AppState,
 };
@@ -40,6 +41,10 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
             get(get_signature_status_handler),
         );
     let files_router = Router::new().route("/files/{*file_path}", get(get_file_handler));
+    let files_to_sign_router = Router::new().route(
+        "/files-to-sign/{*file_path}",
+        get(get_files_to_sign_handler),
+    );
     let signers_router = Router::new().route("/get_signers/{*file_path}", get(get_signers_handler));
     let signers_chain_router = Router::new().route(
         "/get_signers_chain/{*artifact_path}",
@@ -60,6 +65,7 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
         .merge(pending_router)
         .merge(signature_router)
         .merge(files_router)
+        .merge(files_to_sign_router)
         .merge(signers_router)
         .merge(signers_chain_router)
         .merge(revoke_router)
