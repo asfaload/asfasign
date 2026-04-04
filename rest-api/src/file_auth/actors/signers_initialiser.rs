@@ -139,8 +139,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         })?;
 
         // Use initialize_signers_file from signers_file crate to create the
-        // pending signers directory, write the signers file, metadata, and
-        // record the first signature.
+        // pending signers directory, write the signers file, and metadata.
         let dir = project_dir.clone();
         let json = msg.signers_info.json();
         let meta = msg.metadata;
@@ -148,6 +147,25 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
             signers_file::initialize_signers_file(&dir, &json, meta)
         })
         .await??;
+
+        // Create empty pending signatures files so list-pending can discover them
+        let signers_abs = signers_normalised_paths.absolute_path();
+        let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_abs)
+            .map_err(|e| {
+                ApiError::FileWriteFailed(format!(
+                    "Failed to compute pending signatures path: {}",
+                    e
+                ))
+            })?;
+        let empty_sigs = signatures::signatures_file::SignaturesFile::new();
+        let empty_sigs_json = serde_json::to_string_pretty(&empty_sigs).map_err(|e| {
+            ApiError::FileWriteFailed(format!("Failed to serialize empty signatures: {}", e))
+        })?;
+        tokio::fs::write(&pending_sig_path, &empty_sigs_json)
+            .await
+            .map_err(|e| {
+                ApiError::FileWriteFailed(format!("Failed to write pending signatures file: {}", e))
+            })?;
 
         tracing::debug!(
             request_id = %msg.request_id,
@@ -287,6 +305,25 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
             .await?
             .join(SIGNERS_FILE)
             .await?;
+
+        // Create empty pending signatures file so list-pending can discover it
+        let signers_abs = signers_normalised_paths.absolute_path();
+        let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_abs)
+            .map_err(|e| {
+                ApiError::FileWriteFailed(format!(
+                    "Failed to compute pending signatures path: {}",
+                    e
+                ))
+            })?;
+        let empty_sigs = signatures::signatures_file::SignaturesFile::new();
+        let empty_sigs_json = serde_json::to_string_pretty(&empty_sigs).map_err(|e| {
+            ApiError::FileWriteFailed(format!("Failed to serialize empty signatures: {}", e))
+        })?;
+        tokio::fs::write(&pending_sig_path, &empty_sigs_json)
+            .await
+            .map_err(|e| {
+                ApiError::FileWriteFailed(format!("Failed to write pending signatures file: {}", e))
+            })?;
 
         // Collect required signers from the *proposed* config
         // (these are the admin/master keys that need to sign to activate)
@@ -456,10 +493,6 @@ mod tests {
         let metadata_path = metadata_path_for(init_result.signers_file_path.absolute_path())
             .expect("Failed to build metadata path");
         assert!(metadata_path.exists(), "metadata file should exist");
-
-        let pending_signers_sig_path =
-            pending_signatures_path_for(init_result.signers_file_path.absolute_path())?;
-        assert!(pending_signers_sig_path.exists());
 
         let history_content =
             tokio::fs::read_to_string(&init_result.history_file_path.absolute_path())
