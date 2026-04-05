@@ -747,7 +747,12 @@ mod tests_signers_add_signature {
         let json_content = signers_config.to_json()?;
 
         // Initialize the signers file (no longer signs)
-        signers_file::initialize_signers_file(dir_path, &json_content, test_metadata())?;
+        signers_file::initialize_signers_file(
+            dir_path,
+            &json_content,
+            test_metadata(),
+            test_keys.pub_key(0).unwrap(),
+        )?;
 
         // Load the pending signers file through SignedFileLoader
         let pending_signers_path = dir_path.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
@@ -776,7 +781,12 @@ mod tests_signers_add_signature {
         let json_content = signers_config.to_json()?;
 
         // Initialize the signers file (stays pending, init no longer signs)
-        signers_file::initialize_signers_file(dir_path, &json_content, test_metadata())?;
+        signers_file::initialize_signers_file(
+            dir_path,
+            &json_content,
+            test_metadata(),
+            test_keys.pub_key(0).unwrap(),
+        )?;
 
         // Sign to complete and activate via sign_signers_and_metadata_file
         let pending_signers_path = dir_path.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);

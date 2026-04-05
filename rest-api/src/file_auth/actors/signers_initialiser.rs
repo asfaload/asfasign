@@ -18,6 +18,7 @@ pub struct InitialiseSignersRequest {
     pub metadata: SignersConfigMetadata,
     pub git_repo_path: PathBuf,
     pub request_id: String,
+    pub pubkey: AsfaloadPublicKeys,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +46,7 @@ pub struct ProposeSignersRequest {
     pub signers_info: SignersInfo,
     pub metadata: SignersConfigMetadata,
     pub request_id: String,
+    pub pubkey: AsfaloadPublicKeys,
 }
 
 #[derive(Debug, Clone)]
@@ -187,8 +189,9 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         let dir = project_dir.clone();
         let json = msg.signers_info.json();
         let meta = msg.metadata;
+        let pubkey = msg.pubkey.clone();
         tokio::task::spawn_blocking(move || {
-            signers_file::initialize_signers_file(&dir, &json, meta)
+            signers_file::initialize_signers_file(&dir, &json, meta, &pubkey)
         })
         .await??;
 
@@ -298,28 +301,31 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
         let json = msg.signers_info.json();
         let meta = msg.metadata;
         let dir = project_dir.clone();
-        tokio::task::spawn_blocking(move || signers_file::propose_signers_file(&dir, &json, meta))
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    actor = %ACTOR_NAME,
-                    request_id = %msg.request_id,
-                    project_id = %project_id,
-                    error = %e,
-                    "Spawn error"
-                );
-                e
-            })?
-            .map_err(|e| {
-                tracing::error!(
-                    actor = %ACTOR_NAME,
-                    request_id = %msg.request_id,
-                    project_id = %project_id,
-                    error = %e,
-                    "propose_signers_file error"
-                );
-                e
-            })?;
+        let pubkey = msg.pubkey.clone();
+        tokio::task::spawn_blocking(move || {
+            signers_file::propose_signers_file(&dir, &json, meta, &pubkey)
+        })
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                actor = %ACTOR_NAME,
+                request_id = %msg.request_id,
+                project_id = %project_id,
+                error = %e,
+                "Spawn error"
+            );
+            e
+        })?
+        .map_err(|e| {
+            tracing::error!(
+                actor = %ACTOR_NAME,
+                request_id = %msg.request_id,
+                project_id = %project_id,
+                error = %e,
+                "propose_signers_file error"
+            );
+            e
+        })?;
 
         tracing::info!(
             request_id = %msg.request_id,
@@ -432,7 +438,7 @@ mod tests {
     fn build_test_init_request(
         project_path: NormalisedPaths,
         config: &SignersConfig,
-        _test_keys: &test_helpers::TestKeys,
+        test_keys: &test_helpers::TestKeys,
         git_repo_path: std::path::PathBuf,
         request_id: &str,
     ) -> InitialiseSignersRequest {
@@ -453,6 +459,7 @@ mod tests {
             metadata,
             git_repo_path,
             request_id: request_id.to_string(),
+            pubkey: test_keys.pub_key(0).unwrap().clone(),
         }
     }
 
@@ -622,8 +629,8 @@ mod tests {
     fn build_test_propose_request(
         project_path: NormalisedPaths,
         config: &SignersConfig,
-        _test_keys: &test_helpers::TestKeys,
-        _signer_index: usize,
+        test_keys: &test_helpers::TestKeys,
+        signer_index: usize,
         request_id: &str,
     ) -> ProposeSignersRequest {
         let signers_json = serde_json::to_string_pretty(config).unwrap();
@@ -642,6 +649,7 @@ mod tests {
             signers_info,
             metadata,
             request_id: request_id.to_string(),
+            pubkey: test_keys.pub_key(signer_index).unwrap().clone(),
         }
     }
 

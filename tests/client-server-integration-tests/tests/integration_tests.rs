@@ -4,6 +4,7 @@ mod tests {
     use common::fs::names::pending_signatures_path_for;
     use features_lib::constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::AsfaloadPublicKeyTrait;
+    use features_lib::AsfaloadPublicKeys;
     use features_lib::AsfaloadSecretKeyTrait;
     use signers_file::initialize_signers_file;
     use signers_file_types::SignersConfig;
@@ -13,8 +14,12 @@ mod tests {
 
     /// Initialize signers file and create the empty pending signatures file
     /// that list-pending needs to discover it.
-    fn initialize_signers_file_with_pending_sigs(project_dir: &Path, signers_content: &str) {
-        initialize_signers_file(project_dir, signers_content, test_metadata())
+    fn initialize_signers_file_with_pending_sigs(
+        project_dir: &Path,
+        signers_content: &str,
+        pubkey: &AsfaloadPublicKeys,
+    ) {
+        initialize_signers_file(project_dir, signers_content, test_metadata(), pubkey)
             .expect("Failed to initialize signers file");
         let signers_path = project_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
         let pending_sig_path =
@@ -86,7 +91,7 @@ mod tests {
             .to_json()
             .expect("Failed to serialize signers config");
 
-        initialize_signers_file_with_pending_sigs(&project_dir, &signers_content);
+        initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key);
 
         // The pending signers file needs to be signed first (two-phase signing).
         // list-pending should show it.
@@ -183,7 +188,7 @@ mod tests {
             .to_json()
             .expect("Failed to serialize signers config");
 
-        initialize_signers_file_with_pending_sigs(&project_dir, &signers_content);
+        initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key);
 
         // Sign the pending signers file first (two-phase signing)
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
@@ -287,7 +292,11 @@ mod tests {
         let project_dir = git_repo_path.join(&project_dir_sub);
         fs::create_dir_all(&project_dir).expect("Failed to create project dir");
 
-        initialize_signers_file_with_pending_sigs(&project_dir, &signers_json);
+        initialize_signers_file_with_pending_sigs(
+            &project_dir,
+            &signers_json,
+            test_keys.pub_key(0).unwrap(),
+        );
 
         drop(guard);
 
