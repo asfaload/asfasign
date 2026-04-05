@@ -42,7 +42,7 @@ pub async fn handle_sign_pending_command(
     let client = admin_lib::v1::Client::new(backend_url);
 
     // Fetch all files that need signing
-    let files_to_sign = client.fetch_files_to_sign(file_path).await?;
+    let files_to_sign = client.fetch_files_to_sign(file_path, &secret_key).await?;
 
     // Sign each file
     let mut signatures: HashMap<String, AsfaloadSignatures> = HashMap::new();
