@@ -41,10 +41,15 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
             get(get_signature_status_handler),
         );
     let files_router = Router::new().route("/files/{*file_path}", get(get_file_handler));
-    let files_to_sign_router = Router::new().route(
-        "/files-to-sign/{*file_path}",
-        get(get_files_to_sign_handler),
-    );
+    let files_to_sign_router = Router::new()
+        .route(
+            "/files-to-sign/{*file_path}",
+            get(get_files_to_sign_handler),
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            app_state.clone(),
+            auth_middleware,
+        ));
     let signers_router = Router::new().route("/get_signers/{*file_path}", get(get_signers_handler));
     let signers_chain_router = Router::new().route(
         "/get_signers_chain/{*artifact_path}",

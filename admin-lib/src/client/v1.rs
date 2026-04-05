@@ -112,16 +112,18 @@ impl Client {
 
     /// Fetch all files that need signing for a given file path.
     ///
-    /// Makes an unauthenticated GET request to `/v1/files-to-sign/{file_path}`.
+    /// Makes an authenticated GET request to `/v1/files-to-sign/{file_path}`.
     /// Returns a map of file paths to their raw content bytes.
     pub async fn fetch_files_to_sign(
         &self,
         file_path: &str,
+        secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<HashMap<String, Vec<u8>>> {
         use base64::Engine;
 
         let url = format!("{}/v1/files-to-sign/{}", self.base_url, file_path);
-        let response = self.client.get(&url).send().await?;
+        let headers = create_auth_headers("", secret_key)?;
+        let response = self.client.get(&url).headers(headers).send().await?;
         let response = Self::check_response_status(response).await?;
 
         let files_response: FilesToSignResponse = Self::parse_json_response(response).await?;

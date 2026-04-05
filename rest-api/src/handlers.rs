@@ -760,6 +760,7 @@ pub async fn get_file_handler(
 /// - File cannot be read
 pub async fn get_files_to_sign_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     axum::extract::Path(file_path): axum::extract::Path<String>,
 ) -> Result<Json<FilesToSignResponse>, ApiError> {
     use base64::Engine;
@@ -777,6 +778,9 @@ pub async fn get_files_to_sign_handler(
             file_path
         )));
     }
+
+    // Extract and validate the signer's public key from auth headers
+    let _public_key = extract_public_key_from_headers(&headers)?;
 
     let mut files = HashMap::new();
 
