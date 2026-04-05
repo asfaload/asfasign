@@ -54,6 +54,50 @@ pub struct ProposeSignersResult {
     pub request_id: String,
 }
 
+/// Create empty pending signatures files for a signers file and its metadata file.
+/// This makes them discoverable by `list-pending`.
+async fn create_empty_pending_signatures(signers_path: &NormalisedPaths) -> Result<(), ApiError> {
+    let empty_sigs = signatures::signatures_file::SignaturesFile::new();
+    let empty_sigs_json = serde_json::to_string_pretty(&empty_sigs).map_err(|e| {
+        ApiError::FileWriteFailed(format!("Failed to serialize empty signatures: {}", e))
+    })?;
+
+    let signers_abs_path = signers_path.absolute_path();
+
+    // Create pending signatures for the signers file
+    let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_abs_path)
+        .map_err(|e| {
+            ApiError::FileWriteFailed(format!("Failed to compute pending signatures path: {}", e))
+        })?;
+    tokio::fs::write(&pending_sig_path, &empty_sigs_json)
+        .await
+        .map_err(|e| {
+            ApiError::FileWriteFailed(format!("Failed to write pending signatures file: {}", e))
+        })?;
+
+    // Create pending signatures for the metadata file
+    let metadata_path = common::fs::names::metadata_path_for(&signers_abs_path).map_err(|e| {
+        ApiError::FileWriteFailed(format!("Failed to compute metadata path: {}", e))
+    })?;
+    let metadata_pending_sig_path = common::fs::names::pending_signatures_path_for(&metadata_path)
+        .map_err(|e| {
+            ApiError::FileWriteFailed(format!(
+                "Failed to compute metadata pending signatures path: {}",
+                e
+            ))
+        })?;
+    tokio::fs::write(&metadata_pending_sig_path, &empty_sigs_json)
+        .await
+        .map_err(|e| {
+            ApiError::FileWriteFailed(format!(
+                "Failed to write metadata pending signatures file: {}",
+                e
+            ))
+        })?;
+
+    Ok(())
+}
+
 pub struct SignersInitialiser;
 
 impl Actor for SignersInitialiser {
@@ -148,24 +192,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
         })
         .await??;
 
-        // Create empty pending signatures files so list-pending can discover them
-        let signers_abs = signers_normalised_paths.absolute_path();
-        let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_abs)
-            .map_err(|e| {
-                ApiError::FileWriteFailed(format!(
-                    "Failed to compute pending signatures path: {}",
-                    e
-                ))
-            })?;
-        let empty_sigs = signatures::signatures_file::SignaturesFile::new();
-        let empty_sigs_json = serde_json::to_string_pretty(&empty_sigs).map_err(|e| {
-            ApiError::FileWriteFailed(format!("Failed to serialize empty signatures: {}", e))
-        })?;
-        tokio::fs::write(&pending_sig_path, &empty_sigs_json)
-            .await
-            .map_err(|e| {
-                ApiError::FileWriteFailed(format!("Failed to write pending signatures file: {}", e))
-            })?;
+        create_empty_pending_signatures(&signers_normalised_paths).await?;
 
         tracing::debug!(
             request_id = %msg.request_id,
@@ -306,24 +333,7 @@ impl Message<ProposeSignersRequest> for SignersInitialiser {
             .join(SIGNERS_FILE)
             .await?;
 
-        // Create empty pending signatures file so list-pending can discover it
-        let signers_abs = signers_normalised_paths.absolute_path();
-        let pending_sig_path = common::fs::names::pending_signatures_path_for(&signers_abs)
-            .map_err(|e| {
-                ApiError::FileWriteFailed(format!(
-                    "Failed to compute pending signatures path: {}",
-                    e
-                ))
-            })?;
-        let empty_sigs = signatures::signatures_file::SignaturesFile::new();
-        let empty_sigs_json = serde_json::to_string_pretty(&empty_sigs).map_err(|e| {
-            ApiError::FileWriteFailed(format!("Failed to serialize empty signatures: {}", e))
-        })?;
-        tokio::fs::write(&pending_sig_path, &empty_sigs_json)
-            .await
-            .map_err(|e| {
-                ApiError::FileWriteFailed(format!("Failed to write pending signatures file: {}", e))
-            })?;
+        create_empty_pending_signatures(&signers_normalised_paths).await?;
 
         // Collect required signers from the *proposed* config
         // (these are the admin/master keys that need to sign to activate)
@@ -413,7 +423,7 @@ mod tests {
 
     use super::*;
     use anyhow::Result;
-    use common::fs::names::{metadata_path_for, pending_signatures_path_for};
+    use common::fs::names::metadata_path_for;
     use features_lib::SignersConfig;
     use kameo::actor::Spawn;
     use signers_file_types::{Forge, ForgeOrigin, VerifiedForgeContent};
@@ -637,7 +647,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_propose_signers_returns_missing_signers() -> Result<()> {
-        use features_lib::{AsfaloadSecretKeyTrait, SignaturesFile, sha512_for_file};
+        use features_lib::{AsfaloadSecretKeyTrait, sha512_for_file};
 
         let temp = tempfile::TempDir::new().unwrap();
         let git_path = temp.path().to_path_buf();
@@ -668,17 +678,10 @@ mod tests {
             init_result
         );
 
-        // Step 1b: Create metadata pending signatures file (not created by init)
-        // and explicitly sign the signers file to activate it.
+        // Step 1b: Sign the signers file and metadata to activate them.
         let init_res = init_result.unwrap();
         let signers_file_path = init_res.signers_file_path.absolute_path();
         let metadata_path = metadata_path_for(&signers_file_path)?;
-        let metadata_pending_sig_path = pending_signatures_path_for(&metadata_path)?;
-        let empty_sigs = SignaturesFile::new();
-        std::fs::write(
-            &metadata_pending_sig_path,
-            serde_json::to_string_pretty(&empty_sigs)?,
-        )?;
 
         // Sign the signers file and metadata to activate
         let signers_digest = sha512_for_file(&signers_file_path)?;
