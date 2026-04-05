@@ -114,6 +114,10 @@ pub async fn register_repo_handler(
         ),
     );
 
+    // Parse the submitter's public key for authorization
+    let pubkey = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
+
     // Step 2: Initialise signers - create directory structure and files
     let init_request = crate::file_auth::actors::signers_initialiser::InitialiseSignersRequest {
         project_path: project_normalised_paths,
@@ -121,6 +125,7 @@ pub async fn register_repo_handler(
         metadata,
         git_repo_path: state.git_repo_path.clone(),
         request_id: request_id.to_string(),
+        pubkey,
     };
 
     let init_result = state
@@ -288,12 +293,17 @@ pub async fn update_signers_handler(
         ),
     );
 
+    // Parse the submitter's public key for authorization
+    let pubkey = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid public key: {}", e)))?;
+
     // Propose signers file update
     let propose_request = crate::file_auth::actors::signers_initialiser::ProposeSignersRequest {
         project_path: project_normalised_paths.clone(),
         signers_info: signers_proposal.signers_info,
         metadata,
         request_id: request_id.to_string(),
+        pubkey,
     };
 
     let propose_result = state

@@ -22,6 +22,59 @@ use signers_file_types::{
 use std::{borrow::Borrow, ffi::OsStr, fs, io::Write, path::Path};
 //
 
+/// Validate that the pubkey is authorized to initialize a signers file.
+/// For initial signers, the pubkey must be in the admin_keys group (if present)
+/// or in the artifact_signers group (if admin_keys is not present).
+fn is_valid_signer_for_signer_init(
+    pubkey: &AsfaloadPublicKeys,
+    config: &SignersConfig,
+) -> Result<(), SignersFileError> {
+    let is_valid = config.admin_keys().iter().any(|group| {
+        group
+            .signers
+            .iter()
+            .any(|signer| signer.data.pubkey == *pubkey)
+    });
+    if is_valid {
+        Ok(())
+    } else {
+        Err(SignersFileError::InvalidSigner(
+            "The provided public key is not in the required groups for signers init".to_string(),
+        ))
+    }
+}
+
+/// Validate that the pubkey is authorized to propose a signers file update.
+/// For updates, the pubkey must be in the admin_keys or master_keys group
+/// of the currently active signers file.
+fn is_valid_signer_for_update_of(
+    pubkey: &AsfaloadPublicKeys,
+    active_config: &SignersConfig,
+) -> Result<(), SignersFileError> {
+    let is_valid = active_config.admin_keys().iter().any(|group| {
+        group
+            .signers
+            .iter()
+            .any(|signer| signer.data.pubkey == *pubkey)
+    }) || active_config
+        .master_keys()
+        .unwrap_or_default()
+        .iter()
+        .any(|group| {
+            group
+                .signers
+                .iter()
+                .any(|signer| signer.data.pubkey == *pubkey)
+        });
+    if is_valid {
+        Ok(())
+    } else {
+        Err(SignersFileError::InvalidSigner(
+            "The provided public key is not in the required groups of current config for signers update".to_string(),
+        ))
+    }
+}
+
 pub fn sign_signers_and_metadata_file<P>(
     signers_file_path: P,
     signature: &AsfaloadSignatures,
@@ -166,6 +219,7 @@ pub fn initialize_signers_file<P: AsRef<Path>>(
     dir_path_in: P,
     json_content_in: impl AsRef<str>,
     metadata: SignersConfigMetadata,
+    pubkey: &AsfaloadPublicKeys,
 ) -> Result<(), SignersFileError> {
     let json_content = json_content_in.as_ref();
     if dir_path_in.as_ref().join(SIGNERS_DIR).exists()
@@ -176,6 +230,8 @@ pub fn initialize_signers_file<P: AsRef<Path>>(
             dir_path_in.as_ref().to_string_lossy(),
         )));
     }
+    let signers_config: SignersConfig = parse_signers_config(json_content)?;
+    is_valid_signer_for_signer_init(pubkey, &signers_config)?;
     write_valid_signers_file(dir_path_in.as_ref(), json_content, metadata)
 }
 
@@ -197,6 +253,7 @@ pub fn propose_signers_file<P: AsRef<Path>>(
     dir_path: P,
     json_content: &str,
     metadata: SignersConfigMetadata,
+    pubkey: &AsfaloadPublicKeys,
 ) -> Result<(), SignersFileError> {
     // Determine the path to the active signers file
     let active_signers_file = find_global_signers_for(dir_path.as_ref()).map_err(|e| {
@@ -227,6 +284,9 @@ pub fn propose_signers_file<P: AsRef<Path>>(
             active_config.timestamp()
         )));
     }
+
+    // Check if the provided pubkey is in the admin_keys or master_keys groups
+    is_valid_signer_for_update_of(pubkey, &active_config)?;
 
     write_valid_signers_file(dir_path, json_content, metadata)
 }
@@ -799,7 +859,13 @@ mod tests {
             .replace("TIMESTAMP", chrono::Utc::now().to_string().as_str());
 
         // Call the function
-        initialize_signers_file(dir_path, json_content, test_metadata()).unwrap();
+        initialize_signers_file(
+            dir_path,
+            json_content,
+            test_metadata(),
+            test_keys.pub_key(0).unwrap(),
+        )
+        .unwrap();
 
         // Check that the pending file exists
         let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -841,7 +907,13 @@ mod tests {
         let json_content = serde_json::json!(signers_config).to_string();
 
         // Call the function
-        initialize_signers_file(dir_path, json_content, test_metadata()).unwrap();
+        initialize_signers_file(
+            dir_path,
+            json_content,
+            test_metadata(),
+            test_keys.pub_key(0).unwrap(),
+        )
+        .unwrap();
 
         // Initialization creates a pending signers dir with empty pending signatures.
         // Signing happens separately.
@@ -878,7 +950,13 @@ mod tests {
         let json_content = serde_json::json!(signers_config).to_string();
 
         // Call the function -- initialization no longer signs, so the file stays pending
-        initialize_signers_file(dir_path, json_content, test_metadata()).unwrap();
+        initialize_signers_file(
+            dir_path,
+            json_content,
+            test_metadata(),
+            test_keys.pub_key(0).unwrap(),
+        )
+        .unwrap();
 
         // Check that the pending file exists (not activated since init doesn't sign)
         let pending_file_path = dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -899,9 +977,9 @@ mod tests {
         Ok(())
     }
 
-    // test_initialize_signers_file_invalid_signer and test_initialize_signers_file_invalid_signature
-    // were removed because initialize_signers_file no longer takes signature/pubkey arguments.
-    // Signer validation now happens at sign time via sign_signers_and_metadata_file.
+    // test_initialize_signers_file_invalid_signature was removed because
+    // initialize_signers_file no longer verifies signatures (only authorization).
+    // Signature validation now happens at sign time via sign_signers_and_metadata_file.
 
     #[test]
     fn test_initialize_signers_file_with_admin_signers() -> Result<()> {
@@ -924,8 +1002,8 @@ mod tests {
         )?
         .to_json()?;
 
-        // Initialization no longer validates signers -- it just creates the files
-        initialize_signers_file(dir_path, &json_content, test_metadata())?;
+        // Pubkey must be in admin_keys for authorization
+        initialize_signers_file(dir_path, &json_content, test_metadata(), &pubkey2)?;
 
         assert_metadata_file_valid(dir_path, false);
         Ok(())
@@ -946,7 +1024,7 @@ mod tests {
         let pending_signers_dir = dir_path.join(PENDING_SIGNERS_DIR);
 
         // Initialization no longer signs, so the file stays pending
-        initialize_signers_file(dir_path, &json_content, test_metadata())?;
+        initialize_signers_file(dir_path, &json_content, test_metadata(), pubkey)?;
 
         // Check that the pending file exists (not activated since init doesn't sign)
         assert!(pending_signers_dir.exists());
@@ -974,7 +1052,7 @@ mod tests {
         fs::set_permissions(dir_path, perms).unwrap();
 
         // Try to initialize the signers file, which should fail with an IO error
-        let result = initialize_signers_file(dir_path, &json_content, test_metadata());
+        let result = initialize_signers_file(dir_path, &json_content, test_metadata(), pub_key);
 
         // Check that we got an IO error
         assert!(result.is_err());
@@ -989,13 +1067,13 @@ mod tests {
         // first create a signers file in an empty directory
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
-        initialize_signers_file(dir_path, &json_content, test_metadata()).unwrap();
+        initialize_signers_file(dir_path, &json_content, test_metadata(), pub_key).unwrap();
         // Init no longer signs, so the file stays pending
         let pending_signers_file_path =
             dir_path.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
         assert!(pending_signers_file_path.exists());
         // Trying to initialize again should fail because pending dir exists
-        let result = initialize_signers_file(dir_path, &json_content, test_metadata());
+        let result = initialize_signers_file(dir_path, &json_content, test_metadata(), pub_key);
         assert!(result.is_err());
         match result.as_ref().unwrap_err() {
             SignersFileError::InitialisationError(_) => {} // Expected
@@ -1026,7 +1104,7 @@ mod tests {
         std::fs::File::create(&aggregate_signature_path)?;
 
         // Try to initialize the signers file, which should fail with an Initialisation error
-        let result = initialize_signers_file(dir_path, &json_content, test_metadata());
+        let result = initialize_signers_file(dir_path, &json_content, test_metadata(), pub_key);
 
         assert!(result.is_err());
         match result.as_ref().unwrap_err() {
@@ -1058,7 +1136,7 @@ mod tests {
         std::fs::File::create(existing_signers_path)?;
 
         // Try to initialize the signers file, which should fail with an Initialisation error
-        let result = initialize_signers_file(dir_path, &json_content, test_metadata());
+        let result = initialize_signers_file(dir_path, &json_content, test_metadata(), pub_key);
 
         assert!(result.is_err());
         match result.as_ref().unwrap_err() {
@@ -2567,7 +2645,13 @@ mod tests {
         let proposal_content = create_test_proposal(&test_keys);
 
         // Propose the new signers file (no longer signs)
-        propose_signers_file(root_dir, &proposal_content, test_metadata())?;
+        // key2 is the admin key in the active config
+        propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            test_keys.pub_key(2).unwrap(),
+        )?;
 
         // Verify the pending file was created (propose no longer signs/activates)
         let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -2596,7 +2680,12 @@ mod tests {
         create_test_active_signers_for_update(root_dir, &test_keys, 1, 0)?;
 
         // Propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, test_metadata());
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            test_keys.pub_key(2).unwrap(),
+        );
 
         match result {
             Err(SignersFileError::InvalidData(s)) => {
@@ -2625,7 +2714,12 @@ mod tests {
         let proposal_content = create_test_proposal(&test_keys);
 
         // Propose the new signers file
-        propose_signers_file(root_dir, &proposal_content, test_metadata())?;
+        propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            test_keys.pub_key(2).unwrap(),
+        )?;
 
         // Verify the pending file was created
         let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -2651,8 +2745,13 @@ mod tests {
         // Create a proposal
         let proposal_content = create_test_proposal(&test_keys);
 
-        // Propose the new signers file
-        propose_signers_file(root_dir, &proposal_content, test_metadata())?;
+        // Propose the new signers file; key4 is the admin key
+        propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            test_keys.pub_key(4).unwrap(),
+        )?;
 
         // Verify the pending file was created
         let pending_file_path = root_dir.join(format!("{}/{}", PENDING_SIGNERS_DIR, SIGNERS_FILE));
@@ -2678,8 +2777,13 @@ mod tests {
         // Create a proposal
         let proposal_content = create_test_proposal(&test_keys);
 
-        // Propose the new signers file
-        propose_signers_file(root_dir, &proposal_content, test_metadata())?;
+        // Propose the new signers file; key2 is a master key
+        propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            test_keys.pub_key(2).unwrap(),
+        )?;
 
         // Verify the pending file is created. Threshold is 1, but need signature from previous
         // signers file.
@@ -2705,10 +2809,9 @@ mod tests {
         Ok(())
     }
 
-    // test_propose_signers_file_with_artifact_signer_fails_when_admin_group_present
-    // and test_propose_signers_file_with_artifact_signer_ok_when_no_admin_group_present
-    // were removed because propose_signers_file no longer takes signature/pubkey arguments.
-    // Signer validation now happens at sign time via sign_signers_and_metadata_file.
+    // test_propose_signers_file_with_invalid_signature_fails was removed because
+    // propose_signers_file no longer verifies signatures (only authorization).
+    // Signature validation now happens at sign time via sign_signers_and_metadata_file.
     #[test]
     fn test_propose_signers_file_without_active_signers_fails() -> Result<()> {
         let temp_dir = TempDir::new()?;
@@ -2720,8 +2823,13 @@ mod tests {
         // Create a proposal
         let proposal_content = create_test_proposal(&test_keys);
 
-        // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, test_metadata());
+        // Try to propose the new signers file (fails before auth check: no active signers)
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            test_keys.pub_key(0).unwrap(),
+        );
 
         // Verify it fails
         assert!(result.is_err());
@@ -2738,7 +2846,7 @@ mod tests {
     }
 
     // test_propose_signers_file_with_invalid_signature_fails was removed because
-    // propose_signers_file no longer takes signature/pubkey arguments.
+    // propose_signers_file no longer verifies signatures.
     // Signature validation now happens at sign time via sign_signers_and_metadata_file.
 
     #[test]
@@ -2760,7 +2868,12 @@ mod tests {
         let proposal_content = create_test_proposal(&test_keys);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, test_metadata());
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            test_keys.pub_key(2).unwrap(),
+        );
 
         // Verify it fails
         assert!(result.is_err());
@@ -2796,7 +2909,12 @@ mod tests {
         let proposal_content = create_test_proposal(&test_keys);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, test_metadata());
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            test_keys.pub_key(2).unwrap(),
+        );
 
         // Verify it fails
         assert!(result.is_err());
@@ -2832,7 +2950,12 @@ mod tests {
         let proposal_content = create_test_proposal(&test_keys);
 
         // Try to propose the new signers file
-        let result = propose_signers_file(root_dir, &proposal_content, test_metadata());
+        let result = propose_signers_file(
+            root_dir,
+            &proposal_content,
+            test_metadata(),
+            test_keys.pub_key(2).unwrap(),
+        );
 
         // Verify it fails
         assert!(result.is_err());
@@ -2861,8 +2984,13 @@ mod tests {
         // Create a proposal
         let proposal_content = create_test_proposal(&test_keys);
 
-        // Propose the new signers file
-        propose_signers_file(&nested_dir, &proposal_content, test_metadata())?;
+        // Propose the new signers file; key2 is the admin key
+        propose_signers_file(
+            &nested_dir,
+            &proposal_content,
+            test_metadata(),
+            test_keys.pub_key(2).unwrap(),
+        )?;
 
         // Verify the pending file was created in the nested directory
         // File is pending as old signers did not sign the update

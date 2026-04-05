@@ -40,7 +40,7 @@ fn basic_flow() -> Result<()> {
         .to_json()
         .expect("Could not serialise SignersConfig to json");
 
-        initialize_signers_file(root_dir, &signers_content, test_metadata())?;
+        initialize_signers_file(root_dir, &signers_content, test_metadata(), user1_pk)?;
     }
 
     // Verify files exist after init

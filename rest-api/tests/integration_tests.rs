@@ -385,6 +385,7 @@ pub mod tests {
             project_path,
             signers_info,
             metadata,
+            pubkey: test_keys.pub_key(0).unwrap().clone(),
             git_repo_path: git_repo_path.clone(),
             request_id: "test-123".to_string(),
         };
