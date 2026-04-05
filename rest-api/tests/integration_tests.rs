@@ -585,10 +585,7 @@ pub mod test_utils_tests {
 
     #[tokio::test]
     async fn test_register_repo_success() -> Result<(), anyhow::Error> {
-        use features_lib::{
-            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
-            sha512_for_content,
-        };
+        use features_lib::AsfaloadPublicKeyTrait;
         use httpmock::Method;
         use rest_api_types::RegisterRepoRequest;
         use rest_api_types::RegisterRepoResponse;
@@ -611,10 +608,6 @@ pub mod test_utils_tests {
 
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
 
-        // Sign the signers file content
-        let hash = sha512_for_content(signers_json.as_bytes().to_vec())?;
-        let signature = secret_key.sign(&hash)?;
-
         let signers_json_clone = signers_json.clone();
         let mock = mock_server.mock(|when, then| {
             when.method(Method::GET)
@@ -636,7 +629,6 @@ pub mod test_utils_tests {
 
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
-            signature: signature.to_base64(),
             public_key: public_key.to_base64(),
         };
         let payload_string = serde_json::to_string(&request_body)?;
@@ -667,9 +659,8 @@ pub mod test_utils_tests {
             response_body.message,
             "Project registered successfully. Collect signatures to activate."
         );
-        // The signature provided at repo registration is sufficient only one signer is defined in
-        // signers file
-        assert_eq!(response_body.required_signers.len(), 0);
+        // In two-phase signing, registration does not sign. The single signer must still sign.
+        assert_eq!(response_body.required_signers.len(), 1);
 
         mock.assert();
         server_handle.abort();
@@ -680,10 +671,7 @@ pub mod test_utils_tests {
     #[tokio::test]
     async fn test_register_repo_success_without_immediate_activation() -> Result<(), anyhow::Error>
     {
-        use features_lib::{
-            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
-            sha512_for_content,
-        };
+        use features_lib::AsfaloadPublicKeyTrait;
         use httpmock::Method;
         use rest_api_types::RegisterRepoRequest;
         use rest_api_types::RegisterRepoResponse;
@@ -707,10 +695,6 @@ pub mod test_utils_tests {
 
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
 
-        // Sign the signers file content
-        let hash = sha512_for_content(signers_json.as_bytes().to_vec())?;
-        let signature = secret_key.sign(&hash)?;
-
         let signers_json_clone = signers_json.clone();
         let mock = mock_server.mock(|when, then| {
             when.method(Method::GET)
@@ -732,7 +716,6 @@ pub mod test_utils_tests {
 
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
-            signature: signature.to_base64(),
             public_key: public_key.to_base64(),
         };
         let payload_string = serde_json::to_string(&request_body)?;
@@ -763,10 +746,8 @@ pub mod test_utils_tests {
             response_body.message,
             "Project registered successfully. Collect signatures to activate."
         );
-        // The signature provided at repo registration is NOT sufficient as
-        // we need to signature of all signers
-        assert_eq!(response_body.required_signers.len(), 1);
-        assert_eq!(response_body.required_signers[0], public_key_2.to_base64());
+        // In two-phase signing, registration does not sign. Both signers must still sign.
+        assert_eq!(response_body.required_signers.len(), 2);
         assert_eq!(response_body.signature_submission_url, "/v1/signatures");
 
         mock.assert();
@@ -777,10 +758,7 @@ pub mod test_utils_tests {
 
     #[tokio::test]
     async fn test_register_repo_already_exists() -> Result<(), anyhow::Error> {
-        use features_lib::{
-            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
-            sha512_for_content,
-        };
+        use features_lib::AsfaloadPublicKeyTrait;
         use httpmock::Method;
         use rest_api_types::RegisterRepoRequest;
 
@@ -807,10 +785,6 @@ pub mod test_utils_tests {
 
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
 
-        // Sign the signers file content
-        let hash = sha512_for_content(signers_json.as_bytes().to_vec())?;
-        let signature = secret_key.sign(&hash)?;
-
         let signers_json_clone = signers_json.clone();
         let mock = mock_server.mock(|when, then| {
             when.method(Method::GET)
@@ -830,7 +804,6 @@ pub mod test_utils_tests {
 
         let request_body = RegisterRepoRequest {
             signers_file_url: signers_url,
-            signature: signature.to_base64(),
             public_key: public_key.to_base64(),
         };
         let payload_string = serde_json::to_string(&request_body)?;
@@ -1321,10 +1294,7 @@ pub mod test_utils_tests {
     #[tokio::test]
     async fn test_register_assets_finds_signers_created_by_register_repo()
     -> Result<(), anyhow::Error> {
-        use features_lib::{
-            AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
-            sha512_for_content,
-        };
+        use features_lib::AsfaloadPublicKeyTrait;
         use httpmock::Method;
         use rest_api_types::{RegisterAssetsResponse, RegisterRepoRequest, RegisterRepoResponse};
 
@@ -1345,9 +1315,6 @@ pub mod test_utils_tests {
             (vec![public_key.clone()], 1),
         )?;
         let signers_json = serde_json::to_string_pretty(&signers_config)?;
-
-        let hash = sha512_for_content(signers_json.as_bytes().to_vec())?;
-        let signature = secret_key.sign(&hash)?;
 
         let signers_json_clone = signers_json.clone();
         let signers_mock = mock_server.mock(|when, then| {
@@ -1371,7 +1338,6 @@ pub mod test_utils_tests {
         // Register the repo (creates signers at http/127.0.0.1/<mock_port>/owner/repo/)
         let register_body = RegisterRepoRequest {
             signers_file_url: signers_url,
-            signature: signature.to_base64(),
             public_key: public_key.to_base64(),
         };
         let payload_string = serde_json::to_string(&register_body)?;
@@ -1396,6 +1362,79 @@ pub mod test_utils_tests {
         let register_response = response.json::<RegisterRepoResponse>().await?;
         assert!(register_response.success);
         signers_mock.assert();
+
+        // --- Step 1b: Sign the pending signers file to activate it ---
+        // In two-phase signing, register-repo creates pending signers but doesn't sign.
+        // We must sign to activate before register-assets can find active signers.
+        {
+            use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSignatureTrait};
+            use rest_api_types::SubmitSignatureResponse;
+
+            let project_prefix = format!("http/127.0.0.1/{}/owner/repo", mock_server.port());
+
+            // Fetch files to sign
+            let files_url = format!(
+                "http://localhost:{}/v1/files-to-sign/{}/asfaload.signers.pending/index.json",
+                port, project_prefix
+            );
+            let files_payload = "";
+            let TestAuthHeaders {
+                timestamp: ft,
+                nonce: fn_,
+                signature: fs,
+                public_key: fp,
+            } = create_auth_headers_with_key(secret_key, files_payload).await;
+            let files_resp = client
+                .get(&files_url)
+                .header(HEADER_TIMESTAMP, &ft)
+                .header(HEADER_NONCE, &fn_)
+                .header(HEADER_SIGNATURE, &fs)
+                .header(HEADER_PUBLIC_KEY, &fp)
+                .send()
+                .await?;
+            assert_eq!(files_resp.status(), StatusCode::OK);
+            let files_body: rest_api_types::FilesToSignResponse = files_resp.json().await?;
+
+            // Sign each file
+            let mut signatures = std::collections::HashMap::new();
+            for (path, content_b64) in &files_body.files {
+                let content =
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, content_b64)
+                        .expect("base64 decode");
+                let hash = features_lib::sha512_for_content(content)?;
+                let sig = secret_key.sign(&hash)?;
+                signatures.insert(path.clone(), sig.to_base64());
+            }
+
+            // Submit signatures
+            let submit_body = rest_api_types::SubmitSignatureRequest {
+                file_path: format!("{}/asfaload.signers.pending/index.json", project_prefix),
+                public_key: public_key.to_base64(),
+                signatures,
+            };
+            let submit_payload = serde_json::to_string(&submit_body)?;
+            let TestAuthHeaders {
+                timestamp: st,
+                nonce: sn,
+                signature: ss,
+                public_key: sp,
+            } = create_auth_headers_with_key(secret_key, &submit_payload).await;
+            let submit_resp = client
+                .post(format!("http://localhost:{}/v1/signatures", port))
+                .header(HEADER_TIMESTAMP, &st)
+                .header(HEADER_NONCE, &sn)
+                .header(HEADER_SIGNATURE, &ss)
+                .header(HEADER_PUBLIC_KEY, &sp)
+                .json(&submit_body)
+                .send()
+                .await?;
+            assert_eq!(submit_resp.status(), StatusCode::OK);
+            let submit_response: SubmitSignatureResponse = submit_resp.json().await?;
+            assert!(
+                submit_response.is_complete,
+                "Single signer should complete activation"
+            );
+        }
 
         // --- Step 2: Set up mock checksums file and register assets ---
 
