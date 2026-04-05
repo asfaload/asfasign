@@ -6,6 +6,7 @@ use rest_api_auth::{
 };
 
 /// Creates authentication headers for REST API requests.
+/// For GET request, the payload is ""
 pub(crate) fn create_auth_headers(
     payload: &str,
     secret_key: &AsfaloadSecretKeys,
