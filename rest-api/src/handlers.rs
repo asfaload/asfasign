@@ -432,41 +432,30 @@ pub async fn submit_signature_handler(
     let public_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|_| ApiError::InvalidRequestBody("Invalid public key format".to_string()))?;
 
-    // Extract primary signature from the signatures map
-    let signature_b64 = request.signatures.get(&request.file_path).ok_or_else(|| {
-        ApiError::InvalidRequestBody(format!(
+    // Parse all signatures from the request map
+    let mut parsed_signatures = std::collections::HashMap::new();
+    for (path_str, sig_b64) in &request.signatures {
+        let sig = features_lib::AsfaloadSignatures::from_base64(sig_b64).map_err(|_| {
+            ApiError::InvalidRequestBody(format!("Invalid signature format for path: {}", path_str))
+        })?;
+        parsed_signatures.insert(PathBuf::from(path_str), sig);
+    }
+
+    // Verify the primary file has a signature
+    let primary_path = PathBuf::from(&request.file_path);
+    if !parsed_signatures.contains_key(&primary_path) {
+        return Err(ApiError::InvalidRequestBody(format!(
             "No signature provided for primary file: {}",
             request.file_path
-        ))
-    })?;
-    let signature = features_lib::AsfaloadSignatures::from_base64(signature_b64)
-        .map_err(|_| ApiError::InvalidRequestBody("Invalid signature format".to_string()))?;
-
-    // Extract metadata signature if present
-    let metadata_rel_path = common::fs::names::metadata_path_for(&request.file_path)
-        .map(|p| p.to_string_lossy().to_string())
-        .ok();
-    let metadata_signature = if let Some(ref meta_path) = metadata_rel_path {
-        request
-            .signatures
-            .get(meta_path)
-            .map(|sig_b64| {
-                features_lib::AsfaloadSignatures::from_base64(sig_b64).map_err(|_| {
-                    ApiError::InvalidRequestBody("Invalid metadata signature format".to_string())
-                })
-            })
-            .transpose()?
-    } else {
-        None
-    };
+        )));
+    }
 
     // Send signature collection request to the actor
     let collector_request =
         crate::file_auth::actors::signature_collector::CollectSignatureRequest {
             file_path: file_path.clone(),
             public_key,
-            signature,
-            metadata_signature,
+            signatures: parsed_signatures,
             request_id: request_id.to_string(),
         };
 

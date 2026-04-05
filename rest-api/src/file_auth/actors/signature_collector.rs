@@ -12,7 +12,8 @@ use kameo::prelude::{Actor, Message};
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
 use signers_file_types::revocation::RevocationInfo;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 /// Request to collect a signature for a specific file.
 ///
@@ -20,14 +21,14 @@ use std::path::Path;
 /// signature to a file's aggregate signature collection.
 #[derive(Debug, Clone)]
 pub struct CollectSignatureRequest {
-    /// Normalised path to the file being signed
+    /// Normalised path to the primary file being signed
     pub file_path: NormalisedPaths,
     /// Public key of the signer
     pub public_key: AsfaloadPublicKeys,
-    /// Signature data
-    pub signature: AsfaloadSignatures,
-    /// Metadata signature (required for signers files)
-    pub metadata_signature: Option<AsfaloadSignatures>,
+    /// Map of relative file paths to their signatures.
+    /// Must contain at least the primary file's signature.
+    /// For signers files, also contains the metadata file signature.
+    pub signatures: HashMap<PathBuf, AsfaloadSignatures>,
     /// Request ID for tracing and logging
     pub request_id: String,
 }
@@ -178,16 +179,27 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
         let is_signers_file = signed_file.is_initial_signers() || signed_file.is_signers();
 
         let new_state = if is_signers_file {
-            let metadata_sig = msg.metadata_signature.ok_or_else(|| {
+            let primary_path = msg.file_path.relative_path();
+            let signature = msg.signatures.get(&primary_path).ok_or_else(|| {
+                ApiError::InvalidRequestBody(format!(
+                    "No signature provided for primary file: {}",
+                    primary_path.display()
+                ))
+            })?;
+            let metadata_rel_path =
+                common::fs::names::metadata_path_for(&primary_path).map_err(|e| {
+                    ApiError::InternalServerError(format!("Failed to compute metadata path: {}", e))
+                })?;
+            let metadata_sig = msg.signatures.get(&metadata_rel_path).ok_or_else(|| {
                 ApiError::InvalidRequestBody(
                     "Metadata signature required for signers files".to_string(),
                 )
             })?;
             signers_file::sign_signers_and_metadata_file(
                 msg.file_path.absolute_path(),
-                &msg.signature,
+                signature,
                 &msg.public_key,
-                &metadata_sig,
+                metadata_sig,
             )
             .map_err(|e| {
                 tracing::error!(
@@ -217,8 +229,15 @@ impl Message<CollectSignatureRequest> for SignatureCollector {
                 )
             })?;
 
+            let primary_path = msg.file_path.relative_path();
+            let signature = msg.signatures.get(&primary_path).ok_or_else(|| {
+                ApiError::InvalidRequestBody(format!(
+                    "No signature provided for file: {}",
+                    primary_path.display()
+                ))
+            })?;
             pending_agg
-                .add_individual_signature(&msg.signature, &msg.public_key)
+                .add_individual_signature(signature, &msg.public_key)
                 .map_err(|e| {
                     tracing::error!(
                         actor = ACTOR_NAME,
@@ -611,11 +630,17 @@ mod tests {
         ));
 
         let actor_ref = SignatureCollector::spawn(git_actor);
+
+        let rel_path = file_path.relative_path();
+        let metadata_rel_path = metadata_path_for(&rel_path).unwrap();
+        let mut signatures = HashMap::new();
+        signatures.insert(rel_path, signature);
+        signatures.insert(metadata_rel_path, metadata_sig);
+
         let request = CollectSignatureRequest {
             file_path,
             public_key: public_key.clone(),
-            signature,
-            metadata_signature: Some(metadata_sig),
+            signatures,
             request_id: "test-123".to_string(),
         };
 
@@ -689,11 +714,14 @@ mod tests {
         ));
 
         let actor_ref = SignatureCollector::spawn(git_actor);
+
+        let mut signatures = HashMap::new();
+        signatures.insert(file_path.relative_path(), signature);
+
         let request = CollectSignatureRequest {
             file_path,
             public_key: public_key.clone(),
-            signature,
-            metadata_signature: None,
+            signatures,
             request_id: "test-456".to_string(),
         };
 
@@ -744,12 +772,17 @@ mod tests {
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         // Add the signature first time - should succeed and complete
+        let rel_path = file_path.relative_path();
+        let metadata_rel_path = metadata_path_for(&rel_path).unwrap();
+        let mut signatures1 = HashMap::new();
+        signatures1.insert(rel_path, signature.clone());
+        signatures1.insert(metadata_rel_path.clone(), metadata_sig.clone());
+
         let result1 = actor_ref
             .ask(CollectSignatureRequest {
                 file_path: file_path.clone(),
                 public_key: public_key.clone(),
-                signature: signature.clone(),
-                metadata_signature: Some(metadata_sig.clone()),
+                signatures: signatures1,
                 request_id: "first-sign".to_string(),
             })
             .await;
@@ -763,12 +796,17 @@ mod tests {
 
         // Try to add the same signature again - should fail with "already complete"
         // (because after first signature, the signature file is now complete and activated)
+        let active_rel_path = active_file_path.relative_path();
+        let active_metadata_rel_path = metadata_path_for(&active_rel_path).unwrap();
+        let mut signatures2 = HashMap::new();
+        signatures2.insert(active_rel_path, signature);
+        signatures2.insert(active_metadata_rel_path, metadata_sig);
+
         let result2 = actor_ref
             .ask(CollectSignatureRequest {
                 file_path: active_file_path,
                 public_key: public_key.clone(),
-                signature,
-                metadata_signature: Some(metadata_sig),
+                signatures: signatures2,
                 request_id: "duplicate-sign".to_string(),
             })
             .await;
@@ -839,12 +877,17 @@ mod tests {
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         // Add first signature - should return is_complete: false
+        let rel_path = file_path.relative_path();
+        let metadata_rel_path = metadata_path_for(&rel_path).unwrap();
+        let mut signatures1 = HashMap::new();
+        signatures1.insert(rel_path.clone(), signature1);
+        signatures1.insert(metadata_rel_path.clone(), metadata_sig1);
+
         let result1 = actor_ref
             .ask(CollectSignatureRequest {
                 file_path: file_path.clone(),
                 public_key: public_key1.clone(),
-                signature: signature1,
-                metadata_signature: Some(metadata_sig1),
+                signatures: signatures1,
                 request_id: "first-sign".to_string(),
             })
             .await;
@@ -858,12 +901,15 @@ mod tests {
         let signature2 = secret_key2.sign(&digest)?;
         let public_key2 = test_keys.pub_key(1).unwrap();
         let metadata_sig2 = compute_metadata_signature(&pending_signers_path, &test_keys, 1)?;
+        let mut signatures2 = HashMap::new();
+        signatures2.insert(rel_path, signature2);
+        signatures2.insert(metadata_rel_path, metadata_sig2);
+
         let result2 = actor_ref
             .ask(CollectSignatureRequest {
                 file_path: file_path.clone(),
                 public_key: public_key2.clone(),
-                signature: signature2,
-                metadata_signature: Some(metadata_sig2),
+                signatures: signatures2,
                 request_id: "second-sign".to_string(),
             })
             .await;
@@ -912,12 +958,14 @@ mod tests {
         ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
+        let mut signatures = HashMap::new();
+        signatures.insert(file_path.relative_path(), signature);
+
         let result = actor_ref
             .ask(CollectSignatureRequest {
                 file_path,
                 public_key: public_key.clone(),
-                signature,
-                metadata_signature: None,
+                signatures,
                 request_id: "test-root-file".to_string(),
             })
             .await;
@@ -972,12 +1020,14 @@ mod tests {
         ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
+        let mut signatures = HashMap::new();
+        signatures.insert(file_path.relative_path(), signature);
+
         let result = actor_ref
             .ask(CollectSignatureRequest {
                 file_path,
                 public_key: test_keys.pub_key(2).unwrap().clone(),
-                signature,
-                metadata_signature: None,
+                signatures,
                 request_id: "test-unauth-1".to_string(),
             })
             .await;
@@ -1053,12 +1103,14 @@ mod tests {
         ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
+        let mut signatures = HashMap::new();
+        signatures.insert(file_path.relative_path(), signature);
+
         let result = actor_ref
             .ask(CollectSignatureRequest {
                 file_path,
                 public_key: test_keys.pub_key(2).unwrap().clone(),
-                signature,
-                metadata_signature: None,
+                signatures,
                 request_id: "test-unauth-signers".to_string(),
             })
             .await;
@@ -1114,12 +1166,14 @@ mod tests {
         ));
         let actor_ref = SignatureCollector::spawn(git_actor);
 
+        let mut signatures = HashMap::new();
+        signatures.insert(file_path.relative_path(), signature);
+
         let result = actor_ref
             .ask(CollectSignatureRequest {
                 file_path,
                 public_key: test_keys.pub_key(2).unwrap().clone(),
-                signature,
-                metadata_signature: None,
+                signatures,
                 request_id: "test-unauth-initial".to_string(),
             })
             .await;
