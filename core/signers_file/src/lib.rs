@@ -1294,6 +1294,14 @@ mod tests {
             serde_json::to_string_pretty(&metadata).unwrap(),
         )?;
 
+        // Write metadata signatures file for the existing active signers
+        let (_, metadata_sigs) = sign_metadata(&metadata, &existing_keys, &[0]).unwrap();
+        let meta_sigs_path = metadata_signatures_path_for(&existing_signers_file).unwrap();
+        fs::write(
+            &meta_sigs_path,
+            serde_json::to_string_pretty(&metadata_sigs).unwrap(),
+        )?;
+
         // Create the signatures file for the existing signers file
         let hash = common::sha512_for_file(&existing_signers_file)?;
         let pubkey0 = existing_keys.pub_key(0).unwrap();
