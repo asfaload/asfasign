@@ -452,6 +452,7 @@ pub fn signers_chain_for_artifact(
     active_signers_content: &str,
     active_signatures: &SignaturesFile,
     active_metadata: &SignersConfigMetadata,
+    active_metadata_signatures: &SignaturesFile,
     cutoff: chrono::DateTime<chrono::Utc>,
 ) -> Result<HistoryFile, SignersFileError> {
     let mut chain = HistoryFile::new();
@@ -468,7 +469,7 @@ pub fn signers_chain_for_artifact(
         signers_file: active_signers_content.to_string(),
         signatures: active_signatures.clone(),
         metadata: active_metadata.clone(),
-        metadata_signatures: SignaturesFile::new(), // FIXME: Task 4 will pass real metadata signatures
+        metadata_signatures: active_metadata_signatures.clone(),
     });
 
     Ok(chain)
@@ -4273,9 +4274,14 @@ mod tests {
 
     #[test]
     fn test_signers_chain_for_artifact_filters_by_cutoff() -> Result<()> {
+        use test_helpers::history_helpers::sign_metadata;
+
         let test_keys = TestKeys::new(2);
         let signers_config = create_test_signers_config(&test_keys);
         let signers_json = signers_config.to_json()?;
+
+        let metadata = test_metadata();
+        let (_, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
 
         let t1: DateTime<Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
         let t2: DateTime<Utc> = "2024-06-01T00:00:00Z".parse().unwrap();
@@ -4287,33 +4293,34 @@ mod tests {
             obsoleted_at: t1,
             signers_file: signers_json.clone(),
             signatures: SignaturesFile::new(),
-            metadata: test_metadata(),
-            metadata_signatures: SignaturesFile::new(), // FIXME: Task 5 will provide real metadata signatures
+            metadata: metadata.clone(),
+            metadata_signatures: metadata_sigs.clone(),
         });
         history.add_entry(HistoryEntry {
             obsoleted_at: t2,
             signers_file: signers_json.clone(),
             signatures: SignaturesFile::new(),
-            metadata: test_metadata(),
-            metadata_signatures: SignaturesFile::new(), // FIXME: Task 5 will provide real metadata signatures
+            metadata: metadata.clone(),
+            metadata_signatures: metadata_sigs.clone(),
         });
         history.add_entry(HistoryEntry {
             obsoleted_at: t3,
             signers_file: signers_json.clone(),
             signatures: SignaturesFile::new(),
-            metadata: test_metadata(),
-            metadata_signatures: SignaturesFile::new(), // FIXME: Task 5 will provide real metadata signatures
+            metadata: metadata.clone(),
+            metadata_signatures: metadata_sigs.clone(),
         });
 
         let active_signers = signers_json.clone();
         let active_signatures = SignaturesFile::new();
-        let active_metadata = test_metadata();
+        let active_metadata = metadata.clone();
 
         let chain = signers_chain_for_artifact(
             &history,
             &active_signers,
             &active_signatures,
             &active_metadata,
+            &metadata_sigs,
             cutoff,
         )?;
 
@@ -4327,10 +4334,15 @@ mod tests {
 
     #[test]
     fn test_signers_chain_for_artifact_empty_history() -> Result<()> {
+        use test_helpers::history_helpers::sign_metadata;
+
         let test_keys = TestKeys::new(2);
         let signers_config = create_test_signers_config(&test_keys);
         let signers_json = signers_config.to_json()?;
         let cutoff: DateTime<Utc> = "2024-08-01T00:00:00Z".parse().unwrap();
+
+        let metadata = test_metadata();
+        let (_, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
 
         let history = HistoryFile::new();
 
@@ -4338,7 +4350,8 @@ mod tests {
             &history,
             &signers_json,
             &SignaturesFile::new(),
-            &test_metadata(),
+            &metadata,
+            &metadata_sigs,
             cutoff,
         )?;
 
