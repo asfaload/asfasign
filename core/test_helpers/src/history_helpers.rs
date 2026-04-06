@@ -52,11 +52,16 @@ pub fn create_test_signatures(test_keys: &TestKeys) -> SignaturesFile {
 /// Uses `create_test_signers_config` and `create_test_signatures` internally.
 /// The metadata uses `test_metadata()` (hardcoded Github forge URL).
 pub fn create_test_history_entry(test_keys: &TestKeys, timestamp: DateTime<Utc>) -> HistoryEntry {
+    let config = create_test_signers_config(test_keys);
+    let metadata = crate::test_metadata();
+    let (_, metadata_sig_file) = sign_metadata(&metadata, test_keys, &[0, 1]).unwrap();
+
     HistoryEntry {
         obsoleted_at: timestamp,
-        signers_file: create_test_signers_config(test_keys).to_json().unwrap(),
+        signers_file: config.to_json().unwrap(),
         signatures: create_test_signatures(test_keys),
-        metadata: crate::test_metadata(),
+        metadata,
+        metadata_signatures: metadata_sig_file,
     }
 }
 
@@ -96,6 +101,43 @@ pub fn sign_config(
     Ok((json, sig_file))
 }
 
+/// Sign a `SignersConfigMetadata`'s JSON with the given secret keys.
+/// Returns the serialized metadata JSON and the corresponding `SignaturesFile`.
+/// Uses `serde_json::to_string_pretty` to match the serialization used by
+/// `write_valid_signers_file` (which writes metadata via `serde_json::to_writer_pretty`).
+pub fn sign_metadata(
+    metadata: &SignersConfigMetadata,
+    keys: &TestKeys,
+    indices: &[usize],
+) -> Result<(String, SignaturesFile)> {
+    let json = serde_json::to_string_pretty(metadata)?;
+    let sig_file = sign_json_bytes(json.as_bytes(), keys, indices)?;
+    Ok((json, sig_file))
+}
+
+/// Build a `HistoryEntry` with real metadata signatures and return it as a JSON string.
+/// Useful for tests in crates that suffer from diamond dependency issues when
+/// comparing `test_helpers` types directly against their own `signers_file_types`.
+pub fn make_history_entry_json() -> String {
+    let keys = TestKeys::new(1);
+    let config =
+        SignersConfig::with_artifact_signers_only(1, (vec![keys.pub_key(0).unwrap().clone()], 1))
+            .unwrap();
+    let metadata = crate::test_metadata();
+    let (signers_json, signers_sigs) = sign_config(&config, &keys, &[0]).unwrap();
+    let (_, metadata_sigs) = sign_metadata(&metadata, &keys, &[0]).unwrap();
+
+    let entry = HistoryEntry {
+        obsoleted_at: Utc::now(),
+        signers_file: signers_json,
+        signatures: signers_sigs,
+        metadata,
+        metadata_signatures: metadata_sigs,
+    };
+
+    serde_json::to_string(&entry).unwrap()
+}
+
 /// Build a fully valid `HistoryEntry` with real cryptographic signatures
 /// and a custom forge URL in metadata.
 ///
@@ -119,10 +161,14 @@ pub fn make_history_entry(
         ),
         Utc::now(),
     ));
+    // Sign the serialized metadata with the same keys
+    let (_, metadata_sig_file) = sign_metadata(&metadata, keys, signer_indices)?;
+
     Ok(HistoryEntry {
         obsoleted_at: timestamp,
         signers_file: json,
         signatures: sig_file,
         metadata,
+        metadata_signatures: metadata_sig_file,
     })
 }

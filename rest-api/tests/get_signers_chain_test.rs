@@ -195,6 +195,9 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
         Utc::now(),
     ));
 
+    let (_, old_metadata_sigs) =
+        test_helpers::history_helpers::sign_metadata(&old_metadata, &history_keys, &[0]).unwrap();
+
     // Create the history file with the old entry.
     // Use a time clearly in the past so the cutoff filter in signers_chain_for_artifact
     // always includes this entry (cutoff is the git commit time, which has second precision).
@@ -205,6 +208,7 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
         signers_file: old_signers_json,
         signatures: old_signatures,
         metadata: old_metadata,
+        metadata_signatures: old_metadata_sigs,
     });
 
     // Use the builder: 3 keys (all available via test_keys), threshold 1,
@@ -312,6 +316,9 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
     );
     let metadata = test_helpers::test_metadata();
 
+    let (_, metadata_sigs) =
+        test_helpers::history_helpers::sign_metadata(&metadata, setup.test_keys(), &[0]).unwrap();
+
     let rotation_time = Utc::now();
     let history_file_path = repo_path.join(SIGNERS_HISTORY_FILE);
     let mut updated_history = HistoryFile::load_from_file(&history_file_path)?;
@@ -320,6 +327,7 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
         signers_file: current_signers_json,
         signatures: current_signatures,
         metadata: metadata.clone(),
+        metadata_signatures: metadata_sigs,
     });
     updated_history.save_to_file(&history_file_path)?;
 
