@@ -1308,10 +1308,6 @@ pub async fn get_signers_chain_handler(
         serde_json::from_str(&active_signatures_json).map_err(|e| {
             ApiError::InternalServerError(format!("Failed to parse signatures file: {}", e))
         })?;
-    let active_metadata: signers_file_types::SignersConfigMetadata =
-        serde_json::from_str(&active_metadata_json).map_err(|e| {
-            ApiError::InternalServerError(format!("Failed to parse metadata file: {}", e))
-        })?;
     let active_metadata_signatures: signatures::signatures_file::SignaturesFile =
         serde_json::from_str(&active_metadata_signatures_json).map_err(|e| {
             ApiError::InternalServerError(format!(
@@ -1327,7 +1323,7 @@ pub async fn get_signers_chain_handler(
         // The artifact's signers copy which is not included in the history.
         &active_signers_json,
         &active_signatures,
-        &active_metadata,
+        &active_metadata_json,
         &active_metadata_signatures,
         commit_time,
     )
