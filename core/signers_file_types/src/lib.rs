@@ -730,6 +730,35 @@ mod accessor_tests {
     use chrono::Utc;
 
     #[test]
+    fn history_entry_round_trips_with_metadata_signatures() {
+        // Build a HistoryEntry with metadata_signatures via JSON, then
+        // round-trip it through serialization/deserialization.
+        // We avoid direct cross-crate type comparisons (diamond dependency)
+        // by comparing the serialized JSON instead.
+        let entry_json = test_helpers::history_helpers::make_history_entry_json();
+
+        let entry: HistoryEntry = serde_json::from_str(&entry_json).unwrap();
+        assert!(!entry.metadata_signatures.entries.is_empty());
+
+        // Round-trip
+        let reserialized = serde_json::to_string(&entry).unwrap();
+        let deserialized: HistoryEntry = serde_json::from_str(&reserialized).unwrap();
+
+        assert_eq!(
+            deserialized.metadata_signatures.entries.len(),
+            entry.metadata_signatures.entries.len(),
+        );
+        assert_eq!(
+            serde_json::to_value(&deserialized.metadata).unwrap(),
+            serde_json::to_value(&entry.metadata).unwrap(),
+        );
+        assert_eq!(
+            serde_json::to_value(&deserialized.metadata_signatures).unwrap(),
+            serde_json::to_value(&entry.metadata_signatures).unwrap(),
+        );
+    }
+
+    #[test]
     fn forge_origin_retrieval_url_delegates_to_verified_content() {
         let verified = VerifiedForgeContent::new_for_test(
             "https://raw.githubusercontent.com/org/repo/main/signers.json".to_string(),

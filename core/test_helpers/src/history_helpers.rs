@@ -115,6 +115,29 @@ pub fn sign_metadata(
     Ok((json, sig_file))
 }
 
+/// Build a `HistoryEntry` with real metadata signatures and return it as a JSON string.
+/// Useful for tests in crates that suffer from diamond dependency issues when
+/// comparing `test_helpers` types directly against their own `signers_file_types`.
+pub fn make_history_entry_json() -> String {
+    let keys = TestKeys::new(1);
+    let config =
+        SignersConfig::with_artifact_signers_only(1, (vec![keys.pub_key(0).unwrap().clone()], 1))
+            .unwrap();
+    let metadata = crate::test_metadata();
+    let (signers_json, signers_sigs) = sign_config(&config, &keys, &[0]).unwrap();
+    let (_, metadata_sigs) = sign_metadata(&metadata, &keys, &[0]).unwrap();
+
+    let entry = HistoryEntry {
+        obsoleted_at: Utc::now(),
+        signers_file: signers_json,
+        signatures: signers_sigs,
+        metadata,
+        metadata_signatures: metadata_sigs,
+    };
+
+    serde_json::to_string(&entry).unwrap()
+}
+
 /// Build a fully valid `HistoryEntry` with real cryptographic signatures
 /// and a custom forge URL in metadata.
 ///
