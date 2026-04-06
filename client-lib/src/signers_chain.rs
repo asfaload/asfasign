@@ -135,7 +135,9 @@ pub(crate) async fn validate_first_entry(
         &signers_config,
         &file_hash,
     ) {
-        return Err(ClientLibError::SignersChainFirstEntrySignatureInvalid);
+        return Err(ClientLibError::SignersChainFirstEntryInvalid(
+            "signers file signatures invalid (not all signers signed)".to_string(),
+        ));
     }
 
     Ok(())
@@ -198,7 +200,7 @@ mod tests {
         SignersChainFirstEntryMismatch,
         SignersConfigParse,
         SignaturesParseError,
-        SignersChainFirstEntrySignatureInvalid,
+        SignersChainFirstEntryInvalid,
     }
 
     struct Scenario {
@@ -255,10 +257,10 @@ mod tests {
                             err
                         );
                     }
-                    ExpectedError::SignersChainFirstEntrySignatureInvalid => {
+                    ExpectedError::SignersChainFirstEntryInvalid => {
                         assert!(
-                            matches!(err, ClientLibError::SignersChainFirstEntrySignatureInvalid),
-                            "Scenario '{}': expected SignersChainFirstEntrySignatureInvalid, got {:?}",
+                            matches!(err, ClientLibError::SignersChainFirstEntryInvalid(_)),
+                            "Scenario '{}': expected SignersChainFirstEntryInvalid, got {:?}",
                             name,
                             err
                         );
@@ -489,7 +491,7 @@ mod tests {
                 forge_body: partial_sig_entry.signers_file.clone(),
                 forge_status: 200,
                 entry: partial_sig_entry,
-                expected: Expected::Err(ExpectedError::SignersChainFirstEntrySignatureInvalid),
+                expected: Expected::Err(ExpectedError::SignersChainFirstEntryInvalid),
             },
             // 9. No signatures at all
             Scenario {
@@ -497,7 +499,7 @@ mod tests {
                 forge_body: no_sig_entry.signers_file.clone(),
                 forge_status: 200,
                 entry: no_sig_entry,
-                expected: Expected::Err(ExpectedError::SignersChainFirstEntrySignatureInvalid),
+                expected: Expected::Err(ExpectedError::SignersChainFirstEntryInvalid),
             },
             // 10. Signature from wrong key
             Scenario {
@@ -505,7 +507,7 @@ mod tests {
                 forge_body: wrong_key_entry.signers_file.clone(),
                 forge_status: 200,
                 entry: wrong_key_entry,
-                expected: Expected::Err(ExpectedError::SignersChainFirstEntrySignatureInvalid),
+                expected: Expected::Err(ExpectedError::SignersChainFirstEntryInvalid),
             },
             // 11. Forge content whitespace diff (compact vs pretty-printed)
             Scenario {
@@ -543,7 +545,7 @@ mod tests {
                 forge_body: missing_admin_entry.signers_file.clone(),
                 forge_status: 200,
                 entry: missing_admin_entry,
-                expected: Expected::Err(ExpectedError::SignersChainFirstEntrySignatureInvalid),
+                expected: Expected::Err(ExpectedError::SignersChainFirstEntryInvalid),
             },
         ]
     }

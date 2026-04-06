@@ -91,8 +91,8 @@ pub enum ClientLibError {
     #[error("First entry content does not match forge source")]
     SignersChainFirstEntryMismatch,
 
-    #[error("First entry signatures are invalid (not all signers signed)")]
-    SignersChainFirstEntrySignatureInvalid,
+    #[error("First entry validation failed: {0}")]
+    SignersChainFirstEntryInvalid(String),
 
     #[error("Signers chain transition is invalid")]
     SignersChainTransitionInvalid,
