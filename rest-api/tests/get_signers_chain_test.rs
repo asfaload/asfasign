@@ -195,7 +195,7 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
         Utc::now(),
     ));
 
-    let (_, old_metadata_sigs) =
+    let (old_metadata_json, old_metadata_sigs) =
         test_helpers::history_helpers::sign_metadata(&old_metadata, &history_keys, &[0]).unwrap();
 
     // Create the history file with the old entry.
@@ -207,7 +207,7 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
         obsoleted_at: past_time,
         signers_file: old_signers_json,
         signatures: old_signatures,
-        metadata: old_metadata,
+        metadata: old_metadata_json,
         metadata_signatures: old_metadata_sigs,
     });
 
@@ -316,7 +316,7 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
     );
     let metadata = test_helpers::test_metadata();
 
-    let (_, metadata_sigs) =
+    let (metadata_json, metadata_sigs) =
         test_helpers::history_helpers::sign_metadata(&metadata, setup.test_keys(), &[0]).unwrap();
 
     let rotation_time = Utc::now();
@@ -326,7 +326,7 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
         obsoleted_at: rotation_time,
         signers_file: current_signers_json,
         signatures: current_signatures,
-        metadata: metadata.clone(),
+        metadata: metadata_json,
         metadata_signatures: metadata_sigs,
     });
     updated_history.save_to_file(&history_file_path)?;
