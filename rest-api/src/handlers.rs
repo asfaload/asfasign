@@ -1156,7 +1156,8 @@ pub async fn get_signers_chain_handler(
     axum::extract::Path(artifact_path_in): axum::extract::Path<String>,
 ) -> Result<Json<GetSignersChainResponse>, ApiError> {
     use common::fs::names::{
-        history_file_path_for, local_signers_path_for, metadata_path_for, signatures_path_for,
+        history_file_path_for, local_signers_path_for, metadata_path_for,
+        metadata_signatures_path_for, signatures_path_for,
     };
 
     let request_id = headers
@@ -1256,26 +1257,44 @@ pub async fn get_signers_chain_handler(
         );
         ApiError::InternalServerError(format!("Cannot derive metadata path: {}", e))
     })?;
+    let metadata_signatures_rel =
+        metadata_signatures_path_for(&source_signers_file).map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                signers_file = %source_signers_file.display(),
+                error = %e,
+                "Cannot derive metadata signatures path"
+            );
+            ApiError::InternalServerError(format!("Cannot derive metadata signatures path: {}", e))
+        })?;
 
     // Read all needed files from git history
+    type GitReadResult = (Result<String, ApiError>, String, String, String, String);
     let backend = state.git_backend.clone();
-    let (history_result, active_signers_json, active_signatures_json, active_metadata_json) =
-        tokio::task::spawn_blocking({
-            let commit = commit.clone();
-            let history_rel = history_rel.clone();
-            let signatures_rel = signatures_rel.clone();
-            let metadata_rel = metadata_rel.clone();
-            move || -> Result<(Result<String, ApiError>, String, String, String), ApiError> {
-                // History file may not exist if no rotations happened
-                let history = backend.file_content_at_commit(&commit, &history_rel);
-                let signers = backend.file_content_at_commit(&commit, &source_signers_file)?;
-                let sigs = backend.file_content_at_commit(&commit, &signatures_rel)?;
-                let meta = backend.file_content_at_commit(&commit, &metadata_rel)?;
-                Ok((history, signers, sigs, meta))
-            }
-        })
-        .await
-        .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
+    let (
+        history_result,
+        active_signers_json,
+        active_signatures_json,
+        active_metadata_json,
+        active_metadata_signatures_json,
+    ) = tokio::task::spawn_blocking({
+        let commit = commit.clone();
+        let history_rel = history_rel.clone();
+        let signatures_rel = signatures_rel.clone();
+        let metadata_rel = metadata_rel.clone();
+        let metadata_signatures_rel = metadata_signatures_rel.clone();
+        move || -> Result<GitReadResult, ApiError> {
+            // History file may not exist if no rotations happened
+            let history = backend.file_content_at_commit(&commit, &history_rel);
+            let signers = backend.file_content_at_commit(&commit, &source_signers_file)?;
+            let sigs = backend.file_content_at_commit(&commit, &signatures_rel)?;
+            let meta = backend.file_content_at_commit(&commit, &metadata_rel)?;
+            let meta_sigs = backend.file_content_at_commit(&commit, &metadata_signatures_rel)?;
+            Ok((history, signers, sigs, meta, meta_sigs))
+        }
+    })
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
 
     // Parse history (may be empty if no rotations happened)
     let history = match history_result {
@@ -1293,6 +1312,13 @@ pub async fn get_signers_chain_handler(
         serde_json::from_str(&active_metadata_json).map_err(|e| {
             ApiError::InternalServerError(format!("Failed to parse metadata file: {}", e))
         })?;
+    let active_metadata_signatures: signatures::signatures_file::SignaturesFile =
+        serde_json::from_str(&active_metadata_signatures_json).map_err(|e| {
+            ApiError::InternalServerError(format!(
+                "Failed to parse metadata signatures file: {}",
+                e
+            ))
+        })?;
 
     // Build the filtered chain
     let chain = signers_file::signers_chain_for_artifact(
@@ -1302,6 +1328,7 @@ pub async fn get_signers_chain_handler(
         &active_signers_json,
         &active_signatures,
         &active_metadata,
+        &active_metadata_signatures,
         commit_time,
     )
     .map_err(|e| ApiError::InternalServerError(format!("Failed to build signers chain: {}", e)))?;
