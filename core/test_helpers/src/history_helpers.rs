@@ -54,13 +54,13 @@ pub fn create_test_signatures(test_keys: &TestKeys) -> SignaturesFile {
 pub fn create_test_history_entry(test_keys: &TestKeys, timestamp: DateTime<Utc>) -> HistoryEntry {
     let config = create_test_signers_config(test_keys);
     let metadata = crate::test_metadata();
-    let (_, metadata_sig_file) = sign_metadata(&metadata, test_keys, &[0, 1]).unwrap();
+    let (metadata_json, metadata_sig_file) = sign_metadata(&metadata, test_keys, &[0, 1]).unwrap();
 
     HistoryEntry {
         obsoleted_at: timestamp,
         signers_file: config.to_json().unwrap(),
         signatures: create_test_signatures(test_keys),
-        metadata,
+        metadata: metadata_json,
         metadata_signatures: metadata_sig_file,
     }
 }
@@ -125,13 +125,13 @@ pub fn make_history_entry_json() -> String {
             .unwrap();
     let metadata = crate::test_metadata();
     let (signers_json, signers_sigs) = sign_config(&config, &keys, &[0]).unwrap();
-    let (_, metadata_sigs) = sign_metadata(&metadata, &keys, &[0]).unwrap();
+    let (metadata_json, metadata_sigs) = sign_metadata(&metadata, &keys, &[0]).unwrap();
 
     let entry = HistoryEntry {
         obsoleted_at: Utc::now(),
         signers_file: signers_json,
         signatures: signers_sigs,
-        metadata,
+        metadata: metadata_json,
         metadata_signatures: metadata_sigs,
     };
 
@@ -161,14 +161,13 @@ pub fn make_history_entry(
         ),
         Utc::now(),
     ));
-    // Sign the serialized metadata with the same keys
-    let (_, metadata_sig_file) = sign_metadata(&metadata, keys, signer_indices)?;
+    let (metadata_json, metadata_sig_file) = sign_metadata(&metadata, keys, signer_indices)?;
 
     Ok(HistoryEntry {
         obsoleted_at: timestamp,
         signers_file: json,
         signatures: sig_file,
-        metadata,
+        metadata: metadata_json,
         metadata_signatures: metadata_sig_file,
     })
 }
