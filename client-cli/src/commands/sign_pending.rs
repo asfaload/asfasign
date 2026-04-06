@@ -47,7 +47,8 @@ pub async fn handle_sign_pending_command(
     // Sign each file
     let mut signatures: HashMap<String, AsfaloadSignatures> = HashMap::new();
     for (path, content) in &files_to_sign {
-        let hash = sha512_for_content(content.clone())?;
+        // content is &Vec<u8>, as_slice() give a &[u8] and avoids cloning
+        let hash = sha512_for_content(content.as_slice())?;
         let signature = secret_key.sign(&hash)?;
         signatures.insert(path.clone(), signature);
     }
