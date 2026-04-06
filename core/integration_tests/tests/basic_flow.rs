@@ -1,13 +1,11 @@
 use anyhow::Result;
 use common::SignedFileLoader;
 use common::fs::names::metadata_path_for;
-use common::sha512_for_content;
 use common::sha512_for_file;
 use features_lib::SignatureWithState;
 use features_lib::SignedFileWithKindTrait;
-use features_lib::SignersFile;
-use features_lib::SignersFileTrait;
 use features_lib::constants::{PENDING_SIGNERS_DIR, SIGNERS_DIR, SIGNERS_FILE};
+use features_lib::sign_signers_and_metadata_file;
 use signatures::keys::AsfaloadSecretKeyTrait;
 use signers_file::initialize_signers_file;
 use signers_file_types::{SignersConfig, SignersConfigMetadata};
@@ -32,58 +30,47 @@ fn basic_flow() -> Result<()> {
     // We create scopes for each operation taking place, to ensure each
     // user has access to the data it needs.
 
-    // User1 initialises the signers file
+    // User1 initialises the signers file (no signature at init)
     {
-        // User1 scope for initialising the signers file
         let signers_content = SignersConfig::with_artifact_signers_only(
             1,
             (vec![user1_pk.clone(), user2_pk.clone()], 2),
         )
         .expect("Could not build signers config")
         .to_json()
-        .expect("Could not serialise Signersconfig to json");
+        .expect("Could not serialise SignersConfig to json");
 
-        // It is the sha512 of the content of the file that is signed.
-        let signers_file_hash = sha512_for_content(signers_content.as_bytes().to_vec())?;
-        // The user1 signs the file
-        let signature1 = user1_sk.sign(&signers_file_hash)?;
-
-        // And the signers file is initialised for root_dir.
-        initialize_signers_file(
-            root_dir,
-            &signers_content,
-            test_metadata(),
-            &signature1,
-            user1_pk,
-        )?;
+        initialize_signers_file(root_dir, &signers_content, test_metadata(), user1_pk)?;
     }
 
-    // Verify metadata.json exists in pending signers dir
-    let pending_metadata = metadata_path_for(root_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE))
-        .expect("Failed get pending signers metadata path.");
+    // Verify files exist after init
+    let pending_signers_path = root_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
+    assert!(pending_signers_path.exists());
+    let pending_metadata = metadata_path_for(&pending_signers_path)?;
     assert!(
         pending_metadata.exists(),
-        "metadata.json should exist after init"
+        "metadata should exist after init"
     );
-    let _: SignersConfigMetadata = serde_json::from_str(&fs::read_to_string(&pending_metadata)?)?;
 
-    // Second user signs the signers file
-    // It reads the content of the signers file proposed by user1
+    // User1 signs both files
     {
-        // Signers2 scope for signing the signers file
-        let signers_file = SignersFile::find_pending_in_dir(root_dir)?;
-        let signed_file = SignedFileLoader::load(&signers_file)?;
-        // It computes the hash of the content
-        let signers_file_hash_for_user2 = sha512_for_file(&signers_file)?;
-        // Then it signs it
-        let signature2 = user2_sk.sign(&signers_file_hash_for_user2)?;
-        // And adds it to the signers_file signatures.
-        signed_file.add_signature(signature2, user2_pk.clone())?;
+        let signers_hash = sha512_for_file(&pending_signers_path)?;
+        let sig1 = user1_sk.sign(&signers_hash)?;
+        let metadata_hash = sha512_for_file(&pending_metadata)?;
+        let meta_sig1 = user1_sk.sign(&metadata_hash)?;
+        sign_signers_and_metadata_file(&pending_signers_path, &sig1, user1_pk, &meta_sig1)?;
     }
 
-    // Verify metadata.json moved to active signers dir
-    let pending_metadata =
-        metadata_path_for(root_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE)).unwrap();
+    // User2 signs both files — this completes the aggregate signature and activates
+    {
+        let signers_hash = sha512_for_file(&pending_signers_path)?;
+        let sig2 = user2_sk.sign(&signers_hash)?;
+        let metadata_hash = sha512_for_file(&pending_metadata)?;
+        let meta_sig2 = user2_sk.sign(&metadata_hash)?;
+        sign_signers_and_metadata_file(&pending_signers_path, &sig2, user2_pk, &meta_sig2)?;
+    }
+
+    // Verify activation moved both files
     assert!(
         !pending_metadata.exists(),
         "pending metadata should not exist after activation"
@@ -91,7 +78,7 @@ fn basic_flow() -> Result<()> {
     let active_metadata = metadata_path_for(root_dir.join(SIGNERS_DIR).join(SIGNERS_FILE)).unwrap();
     assert!(
         active_metadata.exists(),
-        "metadata.json should exist in active dir"
+        "metadata should exist in active dir"
     );
     let _: SignersConfigMetadata = serde_json::from_str(&fs::read_to_string(&active_metadata)?)?;
 

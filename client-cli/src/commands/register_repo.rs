@@ -9,17 +9,11 @@ pub async fn handle_register_repo_command(
     password: &str,
     json: bool,
 ) -> Result<()> {
-    let sub = prepare_signers_submission(backend_url, signers_file_url, secret_key_path, password)
-        .await?;
+    let sub = prepare_signers_submission(backend_url, secret_key_path, password).await?;
 
     let response = sub
         .client
-        .register_repo(
-            signers_file_url,
-            &sub.signature,
-            &sub.public_key,
-            &sub.secret_key,
-        )
+        .register_repo(signers_file_url, &sub.public_key, &sub.secret_key)
         .await?;
 
     if json {

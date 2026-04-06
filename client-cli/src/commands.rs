@@ -18,45 +18,29 @@ pub mod register_repo;
 pub mod revoke;
 pub mod update_signers;
 
-/// Shared state produced by the common key-load → fetch → hash → sign
-/// flow used by both `register-repo` and `update-signers`.
+/// Shared state produced by loading keys and creating a client,
+/// used by both `register-repo` and `update-signers`.
 pub(crate) struct PreparedSignersSubmission {
     pub client: admin_lib::v1::Client,
-    pub signature: features_lib::AsfaloadSignatures,
     pub public_key: features_lib::AsfaloadPublicKeys,
     pub secret_key: features_lib::AsfaloadSecretKeys,
 }
 
-/// Load secret key, derive public key, fetch the signers file from the
-/// forge URL, hash it, and produce a signature.  The caller then decides
-/// which API endpoint to call with the result.
+/// Load secret key, derive public key, and create an API client.
+/// The caller then decides which API endpoint to call with the result.
 pub(crate) async fn prepare_signers_submission(
     backend_url: &str,
-    signers_file_url: &str,
     secret_key_path: &std::path::PathBuf,
     password: &str,
 ) -> crate::error::Result<PreparedSignersSubmission> {
-    use features_lib::{
-        AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSecretKeys, sha512_for_content,
-    };
-    use forge_url::ForgeTrait;
+    use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
 
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
     let public_key = features_lib::AsfaloadPublicKeys::from_secret_key(&secret_key)?;
     let client = admin_lib::v1::Client::new(backend_url);
 
-    let parsed_url = url::Url::parse(signers_file_url)
-        .map_err(|e| crate::error::ClientCliError::InvalidInput(format!("Invalid URL: {}", e)))?;
-    let forge_info = forge_url::ForgeInfo::new(&parsed_url)
-        .map_err(|e| crate::error::ClientCliError::InvalidInput(e.to_string()))?;
-    let content = client
-        .fetch_external_url(forge_info.raw_url().as_str())
-        .await?;
-    let hash = sha512_for_content(content)?;
-    let signature = secret_key.sign(&hash)?;
     Ok(PreparedSignersSubmission {
         client,
-        signature,
         public_key,
         secret_key,
     })

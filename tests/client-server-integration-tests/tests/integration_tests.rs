@@ -1,14 +1,32 @@
 #[cfg(test)]
 mod tests {
     use client_server_integration_tests::test_harness;
-    use common::sha512_for_content;
-    use features_lib::constants::PENDING_SIGNERS_DIR;
+    use common::fs::names::pending_signatures_path_for;
+    use features_lib::constants::{PENDING_SIGNERS_DIR, SIGNERS_FILE};
     use features_lib::AsfaloadPublicKeyTrait;
+    use features_lib::AsfaloadPublicKeys;
     use features_lib::AsfaloadSecretKeyTrait;
     use signers_file::initialize_signers_file;
     use signers_file_types::SignersConfig;
     use std::fs;
+    use std::path::Path;
     use test_helpers::test_metadata;
+
+    /// Initialize signers file and create the empty pending signatures file
+    /// that list-pending needs to discover it.
+    fn initialize_signers_file_with_pending_sigs(
+        project_dir: &Path,
+        signers_content: &str,
+        pubkey: &AsfaloadPublicKeys,
+    ) {
+        initialize_signers_file(project_dir, signers_content, test_metadata(), pubkey)
+            .expect("Failed to initialize signers file");
+        let signers_path = project_dir.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
+        let pending_sig_path =
+            pending_signatures_path_for(&signers_path).expect("Failed to compute pending sig path");
+        fs::write(&pending_sig_path, r#"{"entries":{}}"#)
+            .expect("Failed to write pending signatures file");
+    }
 
     // ========================================
     // LIST-PENDING COMMAND TESTS
@@ -73,19 +91,44 @@ mod tests {
             .to_json()
             .expect("Failed to serialize signers config");
 
-        let signers_hash = sha512_for_content(signers_content.as_bytes().to_vec())
-            .expect("Failed to hash signers content");
-        let signature = secret_key.sign(&signers_hash).expect("Failed to sign");
+        initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key);
 
-        initialize_signers_file(
-            &project_dir,
-            &signers_content,
-            test_metadata(),
-            &signature,
-            &public_key,
+        // The pending signers file needs to be signed first (two-phase signing).
+        // list-pending should show it.
+        let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
+            &backend_url,
+            &secret_key_path,
+            test_harness::TEST_PASSWORD,
+            false,
         )
-        .expect("Failed to initialize signers file");
+        .await
+        .expect("list-pending should succeed");
 
+        let signers_pending_path = file_paths
+            .iter()
+            .find(|p| {
+                p.contains(project_dir_sub.to_string_lossy().as_ref())
+                    && p.contains(PENDING_SIGNERS_DIR)
+            })
+            .expect("Signers file should be in pending list")
+            .clone();
+
+        // Sign the pending signers file to activate it (threshold=all for InitialSignersFile)
+        let r = client_cli::commands::sign_pending::handle_sign_pending_command(
+            &signers_pending_path,
+            &backend_url,
+            &secret_key_path,
+            test_harness::TEST_PASSWORD,
+            false,
+        )
+        .await
+        .expect("sign-pending for signers should succeed");
+        assert!(
+            r.is_complete,
+            "Signers file should be complete with 1 of 1 signer"
+        );
+
+        // Now create the artifact file
         test_harness::create_file_in_repo(&file_path, "This is a test file.")
             .await
             .expect("Failed to create file");
@@ -145,18 +188,40 @@ mod tests {
             .to_json()
             .expect("Failed to serialize signers config");
 
-        let signers_hash = sha512_for_content(signers_content.as_bytes().to_vec())
-            .expect("Failed to hash signers content");
-        let signature = secret_key.sign(&signers_hash).expect("Failed to sign");
+        initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key);
 
-        initialize_signers_file(
-            &project_dir,
-            &signers_content,
-            test_metadata(),
-            &signature,
-            &public_key,
+        // Sign the pending signers file first (two-phase signing)
+        let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
+            &backend_url,
+            &secret_key_path,
+            test_harness::TEST_PASSWORD,
+            false,
         )
-        .expect("Failed to initialize signers file");
+        .await
+        .expect("list-pending should succeed");
+
+        let signers_pending_path = file_paths
+            .iter()
+            .find(|p| {
+                p.contains(project_dir_sub.to_string_lossy().as_ref())
+                    && p.contains(PENDING_SIGNERS_DIR)
+            })
+            .expect("Signers file should be in pending list")
+            .clone();
+
+        let r = client_cli::commands::sign_pending::handle_sign_pending_command(
+            &signers_pending_path,
+            &backend_url,
+            &secret_key_path,
+            test_harness::TEST_PASSWORD,
+            false,
+        )
+        .await
+        .expect("sign-pending for signers should succeed");
+        assert!(
+            r.is_complete,
+            "Signers file should be complete with 1 of 1 signer"
+        );
 
         // Create artifact file
         test_harness::create_file_in_repo(&file_path, "This is an artifact to be signed.")
@@ -222,50 +287,56 @@ mod tests {
             .expect("Failed to build signers config");
         let signers_json = signers_config.to_json().expect("Failed to serialize");
 
-        // --- Phase 1: Initialize signers (records key[0]'s signature) ---
+        // --- Phase 1: Initialize signers ---
         let (project_dir_sub, _) = test_harness::unique_test_paths("multi_signer", "dummy");
         let project_dir = git_repo_path.join(&project_dir_sub);
         fs::create_dir_all(&project_dir).expect("Failed to create project dir");
 
-        let secret_key_0 =
-            features_lib::AsfaloadSecretKeys::from_file(&key_paths[0], test_harness::TEST_PASSWORD)
-                .expect("Failed to load key 0");
-        let signers_hash = sha512_for_content(signers_json.as_bytes().to_vec())
-            .expect("Failed to hash signers content");
-        let signature_0 = secret_key_0.sign(&signers_hash).expect("Failed to sign");
-        let pub_key_0 = features_lib::AsfaloadPublicKeys::from_secret_key(&secret_key_0)
-            .expect("Failed to derive public key");
-
-        initialize_signers_file(
+        initialize_signers_file_with_pending_sigs(
             &project_dir,
             &signers_json,
-            test_metadata(),
-            &signature_0,
-            &pub_key_0,
-        )
-        .expect("Failed to initialize signers file");
+            test_keys.pub_key(0).unwrap(),
+        );
 
         drop(guard);
 
-        // --- Phase 2: Sign signers file with remaining 2 keys ---
-        // list-pending for key[1] should show the pending signers file
+        // --- Phase 2: Sign signers file with all 3 keys ---
+        // list-pending for key[0] should show the pending signers file
         let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
             &backend_url,
-            &key_paths[1],
+            &key_paths[0],
             test_harness::TEST_PASSWORD,
             false,
         )
         .await
-        .expect("list-pending should succeed for key[1]");
+        .expect("list-pending should succeed for key[0]");
 
-        // Find the signers file in the pending list
+        // Find the signers file for this project in the pending list
         let signers_pending_path = file_paths
             .iter()
-            .find(|p| p.contains(PENDING_SIGNERS_DIR))
+            .find(|p| {
+                p.contains(project_dir_sub.to_string_lossy().as_ref())
+                    && p.contains(PENDING_SIGNERS_DIR)
+            })
             .expect("Signers file should be in pending list")
             .clone();
 
-        // sign-pending with key[1]: not yet complete (2 of 3)
+        // sign-pending with key[0]: 1 of 3, not yet complete
+        let r0 = client_cli::commands::sign_pending::handle_sign_pending_command(
+            &signers_pending_path,
+            &backend_url,
+            &key_paths[0],
+            test_harness::TEST_PASSWORD,
+            false,
+        )
+        .await
+        .expect("sign-pending key[0] should succeed");
+        assert!(
+            !r0.is_complete,
+            "Should not be complete after 1 of 3 signatures"
+        );
+
+        // sign-pending with key[1]: 2 of 3, not yet complete
         let r1 = client_cli::commands::sign_pending::handle_sign_pending_command(
             &signers_pending_path,
             &backend_url,
@@ -280,7 +351,7 @@ mod tests {
             "Should not be complete after 2 of 3 signatures"
         );
 
-        // sign-pending with key[2]: complete (3 of 3) → signers activate
+        // sign-pending with key[2]: 3 of 3, complete -> signers activate
         let r2 = client_cli::commands::sign_pending::handle_sign_pending_command(
             &signers_pending_path,
             &backend_url,

@@ -6,6 +6,7 @@ version = 4
 name = "admin-lib"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "common",
  "features_lib",
  "http",
@@ -3023,6 +3024,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "base64",
  "chrono",
  "common",
  "config",

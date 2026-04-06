@@ -264,6 +264,8 @@ pub mod environment {
 }
 
 pub mod models {
+    use std::collections::HashMap;
+
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Serialize)]
@@ -274,8 +276,6 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RegisterRepoRequest {
         pub signers_file_url: String,
-        /// Base64-encoded signature of the SHA-512 hash of the signers file content
-        pub signature: String,
         /// Base64-encoded public key of the submitter
         pub public_key: String,
     }
@@ -293,16 +293,16 @@ pub mod models {
     pub type UpdateRepoSignersResponse = RegisterRepoResponse;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    /// Request to submit a signature for a specific file.
+    /// Request to submit signatures for a specific file.
     ///
     /// # Fields
     /// * `file_path` - Relative path to the file being signed
     /// * `public_key` - Base64-encoded public key of the signer
-    /// * `signature` - Base64-encoded signature data
+    /// * `signatures` - Map of file path to base64-encoded signature data
     pub struct SubmitSignatureRequest {
         pub file_path: String,
         pub public_key: String,
-        pub signature: String,
+        pub signatures: HashMap<String, String>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -335,6 +335,11 @@ pub mod models {
     ///   from the requesting signer
     pub struct ListPendingResponse {
         pub file_paths: Vec<String>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct FilesToSignResponse {
+        pub files: HashMap<String, String>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -445,7 +450,7 @@ pub mod rustls {
 
 // Re-export commonly used types at the module level
 pub use models::{
-    GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
+    FilesToSignResponse, GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
     RegisterAssetsRequest, RegisterAssetsResponse, RegisterRepoRequest, RegisterRepoResponse,
     RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };

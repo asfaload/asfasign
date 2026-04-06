@@ -493,10 +493,13 @@ impl TestSetup {
         let hash = sha512_for_content(content)?;
         let sig = secret_key.sign(&hash)?;
 
+        let mut signatures = std::collections::HashMap::new();
+        signatures.insert(self.artifact_path.clone(), sig.to_base64());
+
         let submit_payload = serde_json::json!({
             "file_path": self.artifact_path,
             "public_key": public_key.to_base64(),
-            "signature": sig.to_base64(),
+            "signatures": signatures,
         });
 
         let submit_payload_str = submit_payload.to_string();

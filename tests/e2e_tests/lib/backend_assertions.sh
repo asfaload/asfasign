@@ -77,6 +77,35 @@ assert_pending_signers_signature_count() {
         "Pending signers has $expected signature(s)"
 }
 
+assert_pending_metadata_exist() {
+    local project_dir
+    project_dir="$(_project_dir)"
+    assert_file_exists "$project_dir/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX" \
+        "Pending metadata file"
+}
+
+assert_pending_metadata_signature_count() {
+    local expected="$1"
+    local project_dir sig_file
+    project_dir="$(_project_dir)"
+    sig_file="$project_dir/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX.$PENDING_SIGNATURES_SUFFIX"
+    assert_json_field "$sig_file" ".entries | keys | length == $expected" \
+        "Pending metadata has $expected signature(s)"
+}
+
+assert_pending_metadata_signatures_contain_keys() {
+    local project_dir sig_file
+    project_dir="$(_project_dir)"
+    sig_file="$project_dir/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX.$PENDING_SIGNATURES_SUFFIX"
+    for key_file in "$@"; do
+        local pk
+        pk="$(prefixed_pubkey_of "$key_file")"
+        assert_json_field "$sig_file" \
+            ".entries | has(\"$pk\")" \
+            "Pending metadata signed by $(basename "$key_file")"
+    done
+}
+
 assert_signers_active() {
     local project_dir
     project_dir="$(_project_dir)"
@@ -84,6 +113,10 @@ assert_signers_active() {
     assert_file_exists "$project_dir/$SIGNERS_DIR/$SIGNERS_FILE" "Active signers index.json"
     assert_file_exists "$project_dir/$SIGNERS_DIR/$SIGNERS_FILE.$SIGNATURES_SUFFIX" \
         "Active signers signatures"
+    assert_file_exists "$project_dir/$SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX" \
+        "Active metadata file"
+    assert_file_exists "$project_dir/$SIGNERS_DIR/$SIGNERS_FILE.$METADATA_SUFFIX.$SIGNATURES_SUFFIX" \
+        "Active metadata signatures"
     assert_file_not_exists "$project_dir/$PENDING_SIGNERS_DIR" "Pending signers dir removed"
 }
 
