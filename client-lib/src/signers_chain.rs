@@ -122,9 +122,8 @@ pub(crate) async fn validate_first_entry(
     };
 
     // Verify metadata signatures before trusting the forge URL it contains
-    let metadata_json = serde_json::to_string_pretty(&entry.metadata)?;
     if !verify_all_signers_signed(
-        metadata_json.as_bytes(),
+        entry.metadata.as_bytes(),
         &entry.metadata_signatures,
         &signers_config,
     )? {
@@ -134,7 +133,8 @@ pub(crate) async fn validate_first_entry(
     }
 
     // Now that metadata is verified, we can trust the forge URL
-    let forge_url = match entry.metadata.origin() {
+    let metadata = entry.metadata()?;
+    let forge_url = match metadata.origin() {
         features_lib::SignersConfigOrigin::Forge(forge) => forge.retrieval_url(),
     };
 
@@ -337,14 +337,14 @@ mod tests {
             ),
             chrono::Utc::now(),
         ));
-        let (_, invalid_json_metadata_sigs) =
+        let (invalid_json_metadata_json, invalid_json_metadata_sigs) =
             test_helpers::history_helpers::sign_metadata(&invalid_json_metadata, &keys_1, &[0])
                 .unwrap();
         let invalid_json_entry = HistoryEntry {
             obsoleted_at: timestamp,
             signers_file: "not valid json".to_string(),
             signatures: SignaturesFile::new(),
-            metadata: invalid_json_metadata,
+            metadata: invalid_json_metadata_json,
             metadata_signatures: invalid_json_metadata_sigs,
         };
 
@@ -396,13 +396,13 @@ mod tests {
             ),
             chrono::Utc::now(),
         ));
-        let (_, compact_metadata_sigs) =
+        let (compact_metadata_json, compact_metadata_sigs) =
             test_helpers::history_helpers::sign_metadata(&compact_metadata, &keys_1, &[0]).unwrap();
         let compact_entry = HistoryEntry {
             obsoleted_at: timestamp,
             signers_file: compact_json,
             signatures: compact_sig,
-            metadata: compact_metadata,
+            metadata: compact_metadata_json,
             metadata_signatures: compact_metadata_sigs,
         };
 
@@ -416,13 +416,13 @@ mod tests {
             ),
             chrono::Utc::now(),
         ));
-        let (_, empty_metadata_sigs) =
+        let (empty_metadata_json, empty_metadata_sigs) =
             test_helpers::history_helpers::sign_metadata(&empty_metadata, &keys_1, &[0]).unwrap();
         let empty_entry = HistoryEntry {
             obsoleted_at: timestamp,
             signers_file: String::new(),
             signatures: SignaturesFile::new(),
-            metadata: empty_metadata,
+            metadata: empty_metadata_json,
             metadata_signatures: empty_metadata_sigs,
         };
 
@@ -586,10 +586,8 @@ mod tests {
             {
                 let mut wrong_meta_key_entry =
                     make_history_entry(&config_1, &keys_1, &[0], forge_url, timestamp).unwrap();
-                let wrong_meta_json =
-                    serde_json::to_string_pretty(&wrong_meta_key_entry.metadata).unwrap();
                 let wrong_meta_sigs = test_helpers::history_helpers::sign_json_bytes(
-                    wrong_meta_json.as_bytes(),
+                    wrong_meta_key_entry.metadata.as_bytes(),
                     &keys_2,
                     &[1],
                 )
