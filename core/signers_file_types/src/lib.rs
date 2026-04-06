@@ -552,8 +552,11 @@ pub struct HistoryEntry {
     pub signers_file: String,
     /// Signatures collected for the signers file
     pub signatures: SignaturesFile,
-    /// Metadata about the origin of the signers file
-    pub metadata: SignersConfigMetadata,
+    /// Content of the metadata file as raw JSON, base64-encoded in serialized form.
+    /// Base64 encoding preserves the exact bytes that were signed.
+    /// Use `metadata()` to parse into a `SignersConfigMetadata`.
+    #[serde(with = "base64_serde")]
+    pub metadata: String,
     /// Signatures collected for the metadata file
     pub metadata_signatures: SignaturesFile,
 }
@@ -562,6 +565,11 @@ impl HistoryEntry {
     /// Parse the raw JSON into a SignersConfig.
     pub fn signers_config(&self) -> Result<SignersConfig, serde_json::Error> {
         parse_signers_config(&self.signers_file)
+    }
+
+    /// Parse the raw JSON into a SignersConfigMetadata.
+    pub fn metadata(&self) -> Result<SignersConfigMetadata, serde_json::Error> {
+        serde_json::from_str(&self.metadata)
     }
 }
 
