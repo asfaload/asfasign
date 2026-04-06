@@ -554,6 +554,8 @@ pub struct HistoryEntry {
     pub signatures: SignaturesFile,
     /// Metadata about the origin of the signers file
     pub metadata: SignersConfigMetadata,
+    /// Signatures collected for the metadata file
+    pub metadata_signatures: SignaturesFile,
 }
 
 impl HistoryEntry {
