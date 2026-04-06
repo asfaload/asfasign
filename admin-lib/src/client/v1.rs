@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::auth::create_auth_headers;
 use crate::error::{AdminLibError, AdminLibResult};
 use features_lib::{
@@ -7,8 +9,8 @@ use features_lib::{
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
-    ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest,
-    RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    FilesToSignResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
+    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use serde::de::DeserializeOwned;
 
@@ -108,24 +110,59 @@ impl Client {
         Ok(content.to_vec())
     }
 
-    /// Submit a signature for a file to the backend.
+    /// Fetch all files that need signing for a given file path.
+    ///
+    /// Makes an authenticated GET request to `/v1/files-to-sign/{file_path}`.
+    /// Returns a map of file paths to their raw content bytes.
+    pub async fn fetch_files_to_sign(
+        &self,
+        file_path: &str,
+        secret_key: &AsfaloadSecretKeys,
+    ) -> AdminLibResult<HashMap<String, Vec<u8>>> {
+        use base64::Engine;
+
+        let url = format!("{}/v1/files-to-sign/{}", self.base_url, file_path);
+        let headers = create_auth_headers("", secret_key)?;
+        let response = self.client.get(&url).headers(headers).send().await?;
+        let response = Self::check_response_status(response).await?;
+
+        let files_response: FilesToSignResponse = Self::parse_json_response(response).await?;
+
+        let mut result = HashMap::new();
+        for (path, b64_content) in files_response.files {
+            let content = base64::engine::general_purpose::STANDARD
+                .decode(&b64_content)
+                .map_err(|e| {
+                    AdminLibError::InvalidInput(format!("Failed to decode file content: {}", e))
+                })?;
+            result.insert(path, content);
+        }
+        Ok(result)
+    }
+
+    /// Submit signatures for a file to the backend.
     ///
     /// Makes an authenticated POST request to `/v1/signatures`.
     /// Serializes the payload once and uses the same string for both
     /// auth headers and the request body (avoids signature mismatch).
-    pub async fn submit_signature(
+    pub async fn submit_signatures(
         &self,
         file_path: &str,
         public_key: &AsfaloadPublicKeys,
-        signature: &AsfaloadSignatures,
+        signatures: &HashMap<String, AsfaloadSignatures>,
         secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<SubmitSignatureResponse> {
         let url = format!("{}/v1/signatures", self.base_url);
 
+        let sig_map: HashMap<String, String> = signatures
+            .iter()
+            .map(|(path, sig)| (path.clone(), sig.to_base64()))
+            .collect();
+
         let request = SubmitSignatureRequest {
             file_path: file_path.to_string(),
             public_key: public_key.to_base64(),
-            signature: signature.to_base64(),
+            signatures: sig_map,
         };
 
         // Serialize once: same bytes for auth and body
@@ -191,7 +228,6 @@ impl Client {
     pub async fn register_repo(
         &self,
         signers_file_url: &str,
-        signature: &AsfaloadSignatures,
         public_key: &AsfaloadPublicKeys,
         secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<RegisterRepoResponse> {
@@ -199,7 +235,6 @@ impl Client {
 
         let request = RegisterRepoRequest {
             signers_file_url: signers_file_url.to_string(),
-            signature: signature.to_base64(),
             public_key: public_key.to_base64(),
         };
 
@@ -226,7 +261,6 @@ impl Client {
     pub async fn update_signers(
         &self,
         signers_file_url: &str,
-        signature: &AsfaloadSignatures,
         public_key: &AsfaloadPublicKeys,
         secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<UpdateRepoSignersResponse> {
@@ -234,7 +268,6 @@ impl Client {
 
         let request = UpdateRepoSignersRequest {
             signers_file_url: signers_file_url.to_string(),
-            signature: signature.to_base64(),
             public_key: public_key.to_base64(),
         };
 
