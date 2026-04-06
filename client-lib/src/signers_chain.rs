@@ -304,19 +304,24 @@ mod tests {
             make_history_entry(&config_2, &keys_2, &[0, 1], forge_url, timestamp).unwrap();
 
         // -- Entry with invalid signers_file JSON --
+        let invalid_json_metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+            Forge::Github,
+            forge_url.to_string(),
+            features_lib::VerifiedForgeContent::new_for_test(
+                forge_url.to_string(),
+                "test_hash_placeholder".to_string(),
+            ),
+            chrono::Utc::now(),
+        ));
+        let (_, invalid_json_metadata_sigs) =
+            test_helpers::history_helpers::sign_metadata(&invalid_json_metadata, &keys_1, &[0])
+                .unwrap();
         let invalid_json_entry = HistoryEntry {
             obsoleted_at: timestamp,
             signers_file: "not valid json".to_string(),
             signatures: SignaturesFile::new(),
-            metadata: SignersConfigMetadata::from_forge(ForgeOrigin::new(
-                Forge::Github,
-                forge_url.to_string(),
-                features_lib::VerifiedForgeContent::new_for_test(
-                    forge_url.to_string(),
-                    "test_hash_placeholder".to_string(),
-                ),
-                chrono::Utc::now(),
-            )),
+            metadata: invalid_json_metadata,
+            metadata_signatures: invalid_json_metadata_sigs,
         };
 
         // -- Entry with bad base64 in signature --
@@ -358,35 +363,43 @@ mod tests {
                 signature: sig.to_base64(),
             },
         );
+        let compact_metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+            Forge::Github,
+            forge_url.to_string(),
+            features_lib::VerifiedForgeContent::new_for_test(
+                forge_url.to_string(),
+                "test_hash_placeholder".to_string(),
+            ),
+            chrono::Utc::now(),
+        ));
+        let (_, compact_metadata_sigs) =
+            test_helpers::history_helpers::sign_metadata(&compact_metadata, &keys_1, &[0]).unwrap();
         let compact_entry = HistoryEntry {
             obsoleted_at: timestamp,
             signers_file: compact_json,
             signatures: compact_sig,
-            metadata: SignersConfigMetadata::from_forge(ForgeOrigin::new(
-                Forge::Github,
-                forge_url.to_string(),
-                features_lib::VerifiedForgeContent::new_for_test(
-                    forge_url.to_string(),
-                    "test_hash_placeholder".to_string(),
-                ),
-                chrono::Utc::now(),
-            )),
+            metadata: compact_metadata,
+            metadata_signatures: compact_metadata_sigs,
         };
 
         // -- Entry with empty signers_file --
+        let empty_metadata = SignersConfigMetadata::from_forge(ForgeOrigin::new(
+            Forge::Github,
+            forge_url.to_string(),
+            features_lib::VerifiedForgeContent::new_for_test(
+                forge_url.to_string(),
+                "test_hash_placeholder".to_string(),
+            ),
+            chrono::Utc::now(),
+        ));
+        let (_, empty_metadata_sigs) =
+            test_helpers::history_helpers::sign_metadata(&empty_metadata, &keys_1, &[0]).unwrap();
         let empty_entry = HistoryEntry {
             obsoleted_at: timestamp,
             signers_file: String::new(),
             signatures: SignaturesFile::new(),
-            metadata: SignersConfigMetadata::from_forge(ForgeOrigin::new(
-                Forge::Github,
-                forge_url.to_string(),
-                features_lib::VerifiedForgeContent::new_for_test(
-                    forge_url.to_string(),
-                    "test_hash_placeholder".to_string(),
-                ),
-                chrono::Utc::now(),
-            )),
+            metadata: empty_metadata,
+            metadata_signatures: empty_metadata_sigs,
         };
 
         // -- Full config: artifact_signers(key0, thresh=1) + admin(key1, thresh=1)
