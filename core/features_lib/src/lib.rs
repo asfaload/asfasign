@@ -293,7 +293,7 @@ pub mod aggregate_signature_helpers {
 
     pub use aggregate_signature::{
         check_all_signers, check_groups, get_authorized_signers_for_file, get_missing_signers,
-        load_signers_config,
+        load_signers_config, verify_all_signers_signed,
     };
     use aggregate_signature::{
         get_individual_signatures_from_bytes as get_individual_signatures_from_bytes_ori,
