@@ -306,10 +306,9 @@ fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), Signe
     let signatures_content = fs::read_to_string(&signatures_file_path)?;
     let signatures: SignaturesFile = serde_json::from_str(&signatures_content)?;
 
-    // Read the metadata file for the active signers
+    // Read the metadata file for the active signers (keep as raw string to preserve exact bytes)
     let metadata_file_path = metadata_path_for(&active_signers_file)?;
     let metadata_content = fs::read_to_string(&metadata_file_path)?;
-    let metadata: SignersConfigMetadata = serde_json::from_str(&metadata_content)?;
 
     // Read the metadata signatures file for the active signers
     let metadata_signatures_file_path = metadata_signatures_path_for(&active_signers_file)?;
@@ -327,7 +326,7 @@ fn move_current_signers_to_history<Pa: AsRef<Path>>(dir: Pa) -> Result<(), Signe
         obsoleted_at,
         signers_file: existing_content,
         signatures,
-        metadata,
+        metadata: metadata_content,
         metadata_signatures,
     };
 
@@ -451,7 +450,7 @@ pub fn signers_chain_for_artifact(
     history: &HistoryFile,
     active_signers_content: &str,
     active_signatures: &SignaturesFile,
-    active_metadata: &SignersConfigMetadata,
+    active_metadata_content: &str,
     active_metadata_signatures: &SignaturesFile,
     cutoff: chrono::DateTime<chrono::Utc>,
 ) -> Result<HistoryFile, SignersFileError> {
@@ -468,7 +467,7 @@ pub fn signers_chain_for_artifact(
         obsoleted_at: cutoff,
         signers_file: active_signers_content.to_string(),
         signatures: active_signatures.clone(),
-        metadata: active_metadata.clone(),
+        metadata: active_metadata_content.to_string(),
         metadata_signatures: active_metadata_signatures.clone(),
     });
 
@@ -1362,8 +1361,9 @@ mod tests {
         let old_config_in_history = history.entries[0].signers_config().unwrap();
         assert_eq!(old_config_in_history.timestamp(), config_timestamp);
 
-        // Verify the metadata is preserved in the history
-        assert_eq!(history.entries[0].metadata, metadata);
+        // Verify the metadata is preserved in the history (compare raw JSON strings)
+        let expected_metadata_json = serde_json::to_string_pretty(&metadata).unwrap();
+        assert_eq!(history.entries[0].metadata, expected_metadata_json);
 
         // Verify the new configuration is active
         let new_active_content = fs::read_to_string(active_dir.join(SIGNERS_FILE))?;
@@ -1688,12 +1688,12 @@ mod tests {
         // Note the timestamp of the history entry is earlier than its obsoleted_at field,
         // which makes it a consistent entry
         let metadata = test_metadata();
-        let (_, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
+        let (metadata_json, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
         let existing_entry = HistoryEntry {
             obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
             signers_file: signers_file_json,
             signatures: SignaturesFile::new(),
-            metadata,
+            metadata: metadata_json,
             metadata_signatures: metadata_sigs,
         };
 
@@ -1764,7 +1764,7 @@ mod tests {
 
         // Create multiple existing history entries
         let metadata = test_metadata();
-        let (_, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
+        let (metadata_json, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
         let entry1 = HistoryEntry {
             obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
             signers_file: serde_json::json!({
@@ -1778,7 +1778,7 @@ mod tests {
                 r#"{"entries":{"key1":{"format":"minisign","signature":"sig1"}}}"#,
             )
             .unwrap(),
-            metadata: metadata.clone(),
+            metadata: metadata_json.clone(),
             metadata_signatures: metadata_sigs.clone(),
         };
 
@@ -1795,7 +1795,7 @@ mod tests {
                 r#"{"entries":{"key2":{"format":"minisign","signature":"sig2"}}}"#,
             )
             .unwrap(),
-            metadata,
+            metadata: metadata_json,
             metadata_signatures: metadata_sigs,
         };
 
@@ -2221,13 +2221,13 @@ mod tests {
 
         // Build the history file programmatically
         let metadata = test_metadata();
-        let (_, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
+        let (metadata_json, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
         let mut original_history = HistoryFile::new();
         original_history.add_entry(HistoryEntry {
             obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
             signers_file: signers_config.to_json().unwrap(),
             signatures,
-            metadata,
+            metadata: metadata_json,
             metadata_signatures: metadata_sigs,
         });
 
@@ -2478,12 +2478,12 @@ mod tests {
 
         // Create an entry with empty signatures
         let metadata = test_metadata();
-        let (_, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
+        let (metadata_json, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
         let entry = HistoryEntry {
             obsoleted_at: "2023-01-01T00:00:00Z".parse().unwrap(),
             signers_file: create_test_signers_config(&test_keys).to_json().unwrap(),
             signatures: SignaturesFile::new(),
-            metadata,
+            metadata: metadata_json,
             metadata_signatures: metadata_sigs,
         };
 
@@ -4289,7 +4289,7 @@ mod tests {
         let signers_json = signers_config.to_json()?;
 
         let metadata = test_metadata();
-        let (_, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
+        let (metadata_json, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
 
         let t1: DateTime<Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
         let t2: DateTime<Utc> = "2024-06-01T00:00:00Z".parse().unwrap();
@@ -4301,33 +4301,33 @@ mod tests {
             obsoleted_at: t1,
             signers_file: signers_json.clone(),
             signatures: SignaturesFile::new(),
-            metadata: metadata.clone(),
+            metadata: metadata_json.clone(),
             metadata_signatures: metadata_sigs.clone(),
         });
         history.add_entry(HistoryEntry {
             obsoleted_at: t2,
             signers_file: signers_json.clone(),
             signatures: SignaturesFile::new(),
-            metadata: metadata.clone(),
+            metadata: metadata_json.clone(),
             metadata_signatures: metadata_sigs.clone(),
         });
         history.add_entry(HistoryEntry {
             obsoleted_at: t3,
             signers_file: signers_json.clone(),
             signatures: SignaturesFile::new(),
-            metadata: metadata.clone(),
+            metadata: metadata_json.clone(),
             metadata_signatures: metadata_sigs.clone(),
         });
 
         let active_signers = signers_json.clone();
         let active_signatures = SignaturesFile::new();
-        let active_metadata = metadata.clone();
+        let active_metadata_content = metadata_json.clone();
 
         let chain = signers_chain_for_artifact(
             &history,
             &active_signers,
             &active_signatures,
-            &active_metadata,
+            &active_metadata_content,
             &metadata_sigs,
             cutoff,
         )?;
@@ -4350,7 +4350,7 @@ mod tests {
         let cutoff: DateTime<Utc> = "2024-08-01T00:00:00Z".parse().unwrap();
 
         let metadata = test_metadata();
-        let (_, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
+        let (metadata_json, metadata_sigs) = sign_metadata(&metadata, &test_keys, &[0, 1]).unwrap();
 
         let history = HistoryFile::new();
 
@@ -4358,7 +4358,7 @@ mod tests {
             &history,
             &signers_json,
             &SignaturesFile::new(),
-            &metadata,
+            &metadata_json,
             &metadata_sigs,
             cutoff,
         )?;
@@ -4418,8 +4418,8 @@ mod validate_history_tests {
         let (json2, sig2) = sign_config(&config2, &keys, &[0, 1, 2])?;
 
         let metadata = test_metadata();
-        let (_, meta_sigs1) = sign_metadata(&metadata, &keys, &[0, 1])?;
-        let (_, meta_sigs2) = sign_metadata(&metadata, &keys, &[0, 1, 2])?;
+        let (metadata_json1, meta_sigs1) = sign_metadata(&metadata, &keys, &[0, 1])?;
+        let (metadata_json2, meta_sigs2) = sign_metadata(&metadata, &keys, &[0, 1, 2])?;
 
         let history = HistoryFile {
             entries: vec![
@@ -4427,14 +4427,14 @@ mod validate_history_tests {
                     obsoleted_at: Utc::now() - chrono::Duration::seconds(1),
                     signers_file: json1,
                     signatures: sig1,
-                    metadata: metadata.clone(),
+                    metadata: metadata_json1,
                     metadata_signatures: meta_sigs1,
                 },
                 HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json2,
                     signatures: sig2,
-                    metadata,
+                    metadata: metadata_json2,
                     metadata_signatures: meta_sigs2,
                 },
             ],
@@ -4478,7 +4478,7 @@ mod validate_history_tests {
         let (json2, sig2) = sign_config(&config2, &keys, &[0, 1])?;
 
         let metadata = test_metadata();
-        let (_, meta_sigs) = sign_metadata(&metadata, &keys, &[0, 1])?;
+        let (metadata_json, meta_sigs) = sign_metadata(&metadata, &keys, &[0, 1])?;
 
         let history = HistoryFile {
             entries: vec![
@@ -4486,14 +4486,14 @@ mod validate_history_tests {
                     obsoleted_at: Utc::now() - chrono::Duration::seconds(1),
                     signers_file: json1,
                     signatures: sig1,
-                    metadata: metadata.clone(),
+                    metadata: metadata_json.clone(),
                     metadata_signatures: meta_sigs.clone(),
                 },
                 HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json2,
                     signatures: sig2,
-                    metadata,
+                    metadata: metadata_json,
                     metadata_signatures: meta_sigs,
                 },
             ],
@@ -4515,14 +4515,14 @@ mod validate_history_tests {
         let (json, sig) = sign_config(&config, &keys, &[0])?;
 
         let metadata = test_metadata();
-        let (_, meta_sigs) = sign_metadata(&metadata, &keys, &[0])?;
+        let (metadata_json, meta_sigs) = sign_metadata(&metadata, &keys, &[0])?;
 
         let history = HistoryFile {
             entries: vec![HistoryEntry {
                 obsoleted_at: Utc::now(),
                 signers_file: json,
                 signatures: sig,
-                metadata,
+                metadata: metadata_json,
                 metadata_signatures: meta_sigs,
             }],
         };
@@ -4568,8 +4568,8 @@ mod validate_history_tests {
         let (json2, sig2) = sign_config(&config2, &keys, &[0, 1, 2])?;
 
         let metadata = test_metadata();
-        let (_, meta_sigs1) = sign_metadata(&metadata, &keys, &[0, 1])?;
-        let (_, meta_sigs2) = sign_metadata(&metadata, &keys, &[0, 1, 2])?;
+        let (metadata_json1, meta_sigs1) = sign_metadata(&metadata, &keys, &[0, 1])?;
+        let (metadata_json2, meta_sigs2) = sign_metadata(&metadata, &keys, &[0, 1, 2])?;
 
         let now = Utc::now();
         let earlier = now - chrono::Duration::hours(1);
@@ -4581,14 +4581,14 @@ mod validate_history_tests {
                     obsoleted_at: now,
                     signers_file: json1,
                     signatures: sig1,
-                    metadata: metadata.clone(),
+                    metadata: metadata_json1,
                     metadata_signatures: meta_sigs1,
                 },
                 HistoryEntry {
                     obsoleted_at: earlier,
                     signers_file: json2,
                     signatures: sig2,
-                    metadata,
+                    metadata: metadata_json2,
                     metadata_signatures: meta_sigs2,
                 },
             ],
@@ -4638,8 +4638,8 @@ mod validate_history_tests {
         let sig2 = sign_json_bytes(compact_json2.as_bytes(), &keys, &[0, 1, 2])?;
 
         let metadata = test_metadata();
-        let (_, meta_sigs1) = sign_metadata(&metadata, &keys, &[0, 1])?;
-        let (_, meta_sigs2) = sign_metadata(&metadata, &keys, &[0, 1, 2])?;
+        let (metadata_json1, meta_sigs1) = sign_metadata(&metadata, &keys, &[0, 1])?;
+        let (metadata_json2, meta_sigs2) = sign_metadata(&metadata, &keys, &[0, 1, 2])?;
 
         let history = HistoryFile {
             entries: vec![
@@ -4647,14 +4647,14 @@ mod validate_history_tests {
                     obsoleted_at: Utc::now() - chrono::Duration::seconds(1),
                     signers_file: pretty_json1,
                     signatures: sig1,
-                    metadata: metadata.clone(),
+                    metadata: metadata_json1,
                     metadata_signatures: meta_sigs1,
                 },
                 HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: compact_json2,
                     signatures: sig2,
-                    metadata,
+                    metadata: metadata_json2,
                     metadata_signatures: meta_sigs2,
                 },
             ],

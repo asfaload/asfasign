@@ -77,17 +77,64 @@ pub async fn verify_signers_chain(
     })
 }
 
+/// Verify that all signers in `signers_config` signed the given content.
+fn verify_all_signers_signed(
+    content: &[u8],
+    signatures: &features_lib::SignaturesFile,
+    signers_config: &features_lib::SignersConfig,
+) -> AsfaloadLibResult<bool> {
+    let hash = features_lib::sha512_for_content(content)?;
+    let parsed =
+        features_lib::aggregate_signature_helpers::parse_tagged_signatures(&signatures.entries)
+            .map_err(|e| ClientLibError::SignaturesParseError(e.to_string()))?;
+
+    let r = features_lib::aggregate_signature_helpers::check_all_signers(
+        &parsed,
+        signers_config,
+        &hash,
+    );
+    Ok(r)
+}
+
 /// Validate the first entry in the signers chain.
 ///
-/// 1. Fetch the signers file from its original forge URL (in metadata)
-/// 2. Compare content with what's stored in the history entry
-/// 3. Verify all signers in the config signed it (InitialSignersFile rule)
+/// 1. Verify signers file signatures (all signers must have signed)
+/// 2. Verify metadata signatures (all signers must have signed)
+/// 3. Fetch the signers file from its original forge URL (in metadata)
+/// 4. Compare content with what's stored in the history entry
 pub(crate) async fn validate_first_entry(
     client: &reqwest::Client,
     entry: &features_lib::HistoryEntry,
 ) -> AsfaloadLibResult<()> {
-    // Extract retrieval URL from metadata (serves actual file content, not HTML)
-    let forge_url = match entry.metadata.origin() {
+    let signers_config = entry
+        .signers_config()
+        .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
+
+    // Verify signers file signatures: all signers must have signed
+    if !verify_all_signers_signed(
+        entry.signers_file.as_bytes(),
+        &entry.signatures,
+        &signers_config,
+    )? {
+        return Err(ClientLibError::SignersChainFirstEntryInvalid(
+            "signers file signatures invalid (not all signers signed)".into(),
+        ));
+    };
+
+    // Verify metadata signatures before trusting the forge URL it contains
+    if !verify_all_signers_signed(
+        entry.metadata.as_bytes(),
+        &entry.metadata_signatures,
+        &signers_config,
+    )? {
+        return Err(ClientLibError::SignersChainFirstEntryInvalid(
+            "metadata file signatures invalid (not all signers signed)".into(),
+        ));
+    }
+
+    // Now that metadata is verified, we can trust the forge URL
+    let metadata = entry.metadata()?;
+    let forge_url = match metadata.origin() {
         features_lib::SignersConfigOrigin::Forge(forge) => forge.retrieval_url(),
     };
 
@@ -113,29 +160,6 @@ pub(crate) async fn validate_first_entry(
     // Compare content
     if forge_content != entry.signers_file {
         return Err(ClientLibError::SignersChainFirstEntryMismatch);
-    }
-
-    // Parse signers config using the entry's built-in method
-    let signers_config = entry
-        .signers_config()
-        .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
-
-    // Compute hash of the raw content (this is what was signed)
-    let file_hash = features_lib::sha512_for_content(entry.signers_file.as_bytes().to_vec())?;
-
-    // Parse tagged signatures
-    let signatures = features_lib::aggregate_signature_helpers::parse_tagged_signatures(
-        &entry.signatures.entries,
-    )
-    .map_err(|e| ClientLibError::SignaturesParseError(e.to_string()))?;
-
-    // Verify all signers signed
-    if !features_lib::aggregate_signature_helpers::check_all_signers(
-        &signatures,
-        &signers_config,
-        &file_hash,
-    ) {
-        return Err(ClientLibError::SignersChainFirstEntrySignatureInvalid);
     }
 
     Ok(())
@@ -198,7 +222,7 @@ mod tests {
         SignersChainFirstEntryMismatch,
         SignersConfigParse,
         SignaturesParseError,
-        SignersChainFirstEntrySignatureInvalid,
+        SignersChainFirstEntryInvalid,
     }
 
     struct Scenario {
@@ -255,10 +279,10 @@ mod tests {
                             err
                         );
                     }
-                    ExpectedError::SignersChainFirstEntrySignatureInvalid => {
+                    ExpectedError::SignersChainFirstEntryInvalid => {
                         assert!(
-                            matches!(err, ClientLibError::SignersChainFirstEntrySignatureInvalid),
-                            "Scenario '{}': expected SignersChainFirstEntrySignatureInvalid, got {:?}",
+                            matches!(err, ClientLibError::SignersChainFirstEntryInvalid(_)),
+                            "Scenario '{}': expected SignersChainFirstEntryInvalid, got {:?}",
                             name,
                             err
                         );
@@ -313,14 +337,14 @@ mod tests {
             ),
             chrono::Utc::now(),
         ));
-        let (_, invalid_json_metadata_sigs) =
+        let (invalid_json_metadata_json, invalid_json_metadata_sigs) =
             test_helpers::history_helpers::sign_metadata(&invalid_json_metadata, &keys_1, &[0])
                 .unwrap();
         let invalid_json_entry = HistoryEntry {
             obsoleted_at: timestamp,
             signers_file: "not valid json".to_string(),
             signatures: SignaturesFile::new(),
-            metadata: invalid_json_metadata,
+            metadata: invalid_json_metadata_json,
             metadata_signatures: invalid_json_metadata_sigs,
         };
 
@@ -372,13 +396,13 @@ mod tests {
             ),
             chrono::Utc::now(),
         ));
-        let (_, compact_metadata_sigs) =
+        let (compact_metadata_json, compact_metadata_sigs) =
             test_helpers::history_helpers::sign_metadata(&compact_metadata, &keys_1, &[0]).unwrap();
         let compact_entry = HistoryEntry {
             obsoleted_at: timestamp,
             signers_file: compact_json,
             signatures: compact_sig,
-            metadata: compact_metadata,
+            metadata: compact_metadata_json,
             metadata_signatures: compact_metadata_sigs,
         };
 
@@ -392,13 +416,13 @@ mod tests {
             ),
             chrono::Utc::now(),
         ));
-        let (_, empty_metadata_sigs) =
+        let (empty_metadata_json, empty_metadata_sigs) =
             test_helpers::history_helpers::sign_metadata(&empty_metadata, &keys_1, &[0]).unwrap();
         let empty_entry = HistoryEntry {
             obsoleted_at: timestamp,
             signers_file: String::new(),
             signatures: SignaturesFile::new(),
-            metadata: empty_metadata,
+            metadata: empty_metadata_json,
             metadata_signatures: empty_metadata_sigs,
         };
 
@@ -489,7 +513,7 @@ mod tests {
                 forge_body: partial_sig_entry.signers_file.clone(),
                 forge_status: 200,
                 entry: partial_sig_entry,
-                expected: Expected::Err(ExpectedError::SignersChainFirstEntrySignatureInvalid),
+                expected: Expected::Err(ExpectedError::SignersChainFirstEntryInvalid),
             },
             // 9. No signatures at all
             Scenario {
@@ -497,7 +521,7 @@ mod tests {
                 forge_body: no_sig_entry.signers_file.clone(),
                 forge_status: 200,
                 entry: no_sig_entry,
-                expected: Expected::Err(ExpectedError::SignersChainFirstEntrySignatureInvalid),
+                expected: Expected::Err(ExpectedError::SignersChainFirstEntryInvalid),
             },
             // 10. Signature from wrong key
             Scenario {
@@ -505,7 +529,7 @@ mod tests {
                 forge_body: wrong_key_entry.signers_file.clone(),
                 forge_status: 200,
                 entry: wrong_key_entry,
-                expected: Expected::Err(ExpectedError::SignersChainFirstEntrySignatureInvalid),
+                expected: Expected::Err(ExpectedError::SignersChainFirstEntryInvalid),
             },
             // 11. Forge content whitespace diff (compact vs pretty-printed)
             Scenario {
@@ -543,7 +567,40 @@ mod tests {
                 forge_body: missing_admin_entry.signers_file.clone(),
                 forge_status: 200,
                 entry: missing_admin_entry,
-                expected: Expected::Err(ExpectedError::SignersChainFirstEntrySignatureInvalid),
+                expected: Expected::Err(ExpectedError::SignersChainFirstEntryInvalid),
+            },
+            // 15. Tampered metadata signatures (empty)
+            {
+                let mut tampered_meta_sigs_entry = valid_entry_1.clone();
+                tampered_meta_sigs_entry.metadata_signatures = SignaturesFile::new();
+
+                Scenario {
+                    name: "tampered_metadata_signatures",
+                    forge_body: tampered_meta_sigs_entry.signers_file.clone(),
+                    forge_status: 200,
+                    entry: tampered_meta_sigs_entry,
+                    expected: Expected::Err(ExpectedError::SignersChainFirstEntryInvalid),
+                }
+            },
+            // 16. Metadata signed by wrong key
+            {
+                let mut wrong_meta_key_entry =
+                    make_history_entry(&config_1, &keys_1, &[0], forge_url, timestamp).unwrap();
+                let wrong_meta_sigs = test_helpers::history_helpers::sign_json_bytes(
+                    wrong_meta_key_entry.metadata.as_bytes(),
+                    &keys_2,
+                    &[1],
+                )
+                .unwrap();
+                wrong_meta_key_entry.metadata_signatures = wrong_meta_sigs;
+
+                Scenario {
+                    name: "metadata_signed_by_wrong_key",
+                    forge_body: wrong_meta_key_entry.signers_file.clone(),
+                    forge_status: 200,
+                    entry: wrong_meta_key_entry,
+                    expected: Expected::Err(ExpectedError::SignersChainFirstEntryInvalid),
+                }
             },
         ]
     }
