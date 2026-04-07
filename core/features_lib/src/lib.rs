@@ -32,6 +32,7 @@ pub use signatures::types::AsfaloadSignatures;
 pub use signers_file::activate_signers_file;
 pub use signers_file::sign_signers_and_metadata_file;
 pub use signers_file::validate_history;
+pub use signers_file::{build_history_entry_for, validate_signers_chain_on_disk};
 pub use signers_file_types::{
     Forge, ForgeOrigin, HistoryEntry, HistoryFile, SignersConfigMetadata, SignersConfigOrigin,
     VerifiedForgeContent,
