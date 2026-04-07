@@ -4,8 +4,8 @@ use common::{
     errors::{AggregateSignatureError, SignersFileError},
     fs::{
         names::{
-            find_global_signers_for, metadata_path_for, metadata_signatures_path_for,
-            pending_signatures_path_for, signatures_path_for,
+            find_global_signers_for, history_file_path_for, metadata_path_for,
+            metadata_signatures_path_for, pending_signatures_path_for, signatures_path_for,
         },
         open_new_file,
     },
@@ -501,6 +501,89 @@ pub fn signers_chain_for_artifact(
     Ok(chain)
 }
 
+/// Build a `HistoryEntry` from a signers file on disk by loading the file
+/// itself, its `.signatures.json` sidecar, its `.metadata.json` sidecar, and
+/// the metadata's `.signatures.json`.
+///
+/// The `signers_file` and `metadata` fields hold the raw bytes (as `String`),
+/// preserving the exact bytes that were originally signed.
+pub fn build_history_entry_for(signers_file_path: &Path) -> Result<HistoryEntry, SignersFileError> {
+    let chain_err =
+        |msg: String| -> SignersFileError { SignersFileError::ChainValidationFailed(msg) };
+
+    let signers_file_raw = fs::read_to_string(signers_file_path).map_err(|e| {
+        chain_err(format!(
+            "read signers file {}: {e}",
+            signers_file_path.display()
+        ))
+    })?;
+
+    let signatures_path = signatures_path_for(signers_file_path)
+        .map_err(|e| chain_err(format!("compute signatures path: {e}")))?;
+    let signatures_str = fs::read_to_string(&signatures_path)
+        .map_err(|e| chain_err(format!("read {}: {e}", signatures_path.display())))?;
+    let signatures: SignaturesFile = serde_json::from_str(&signatures_str)
+        .map_err(|e| chain_err(format!("parse signatures: {e}")))?;
+
+    let metadata_path = metadata_path_for(signers_file_path)
+        .map_err(|e| chain_err(format!("compute metadata path: {e}")))?;
+    let metadata_raw = fs::read_to_string(&metadata_path)
+        .map_err(|e| chain_err(format!("read {}: {e}", metadata_path.display())))?;
+
+    let meta_sigs_path = metadata_signatures_path_for(signers_file_path)
+        .map_err(|e| chain_err(format!("compute metadata signatures path: {e}")))?;
+    let meta_sigs_str = fs::read_to_string(&meta_sigs_path)
+        .map_err(|e| chain_err(format!("read {}: {e}", meta_sigs_path.display())))?;
+    let metadata_signatures: SignaturesFile = serde_json::from_str(&meta_sigs_str)
+        .map_err(|e| chain_err(format!("parse metadata signatures: {e}")))?;
+
+    Ok(HistoryEntry {
+        obsoleted_at: chrono::Utc::now(),
+        signers_file: signers_file_raw,
+        signatures,
+        metadata: metadata_raw,
+        metadata_signatures,
+    })
+}
+
+/// Validate the cryptographic chain for a signers file found on disk.
+///
+/// Reads the signers file and its sidecars, builds a single-entry
+/// `HistoryFile`, and validates it via `validate_history`.
+pub fn validate_signers_chain_on_disk(signers_file_path: &Path) -> Result<(), SignersFileError> {
+    let chain_err =
+        |msg: String| -> SignersFileError { SignersFileError::ChainValidationFailed(msg) };
+
+    let signers_dir = signers_file_path.parent().ok_or_else(|| {
+        chain_err(format!(
+            "signers file has no parent directory: {}",
+            signers_file_path.display()
+        ))
+    })?;
+    let history_file_path = history_file_path_for(signers_dir);
+    let mut history = if history_file_path.exists() {
+        HistoryFile::load_from_file(&history_file_path).map_err(|e| {
+            chain_err(format!(
+                "load history file {}: {e}",
+                history_file_path.display()
+            ))
+        })?
+    } else {
+        HistoryFile::new()
+    };
+
+    let entry = build_history_entry_for(signers_file_path)?;
+    history.entries.push(entry);
+
+    if validate_history(&history) {
+        Ok(())
+    } else {
+        Err(SignersFileError::ChainValidationFailed(
+            "signers chain validation failed".to_string(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,7 +603,7 @@ mod tests {
     use tempfile::TempDir;
     use test_helpers::TestKeys;
     use test_helpers::history_helpers::{
-        create_test_history_entry, create_test_signers_config, sign_metadata,
+        create_test_history_entry, create_test_signers_config, sign_config, sign_metadata,
     };
     use test_helpers::test_metadata;
 
@@ -4393,6 +4476,266 @@ mod tests {
         // Only the appended active entry
         assert_eq!(chain.entries().len(), 1);
         assert_eq!(chain.entries()[0].obsoleted_at, cutoff);
+        Ok(())
+    }
+
+    /// Create an initial signers file (pending), have all listed keys sign it
+    /// (signers file + metadata), then activate it. Returns the path to the
+    /// active signers file.
+    fn setup_valid_initial_signers(
+        root: &Path,
+        keys: &TestKeys,
+        key_indices: &[usize],
+        threshold: u32,
+    ) -> Result<PathBuf> {
+        let pub_keys: Vec<_> = key_indices
+            .iter()
+            .map(|&i| keys.pub_key(i).unwrap().clone())
+            .collect();
+        let config = SignersConfig::with_artifact_signers_only(1, (pub_keys, threshold))?;
+        let json_content = config.to_json()?;
+
+        initialize_signers_file(
+            root,
+            &json_content,
+            test_metadata(),
+            keys.pub_key(0).unwrap(),
+        )?;
+
+        let pending_path = root.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
+        let file_hash = sha512_for_file(&pending_path)?;
+        let metadata_path = metadata_path_for(&pending_path)?;
+        let metadata_hash = sha512_for_file(&metadata_path)?;
+
+        for &i in key_indices {
+            let sig = keys.sec_key(i).unwrap().sign(&file_hash)?;
+            let meta_sig = keys.sec_key(i).unwrap().sign(&metadata_hash)?;
+            sign_signers_and_metadata_file(
+                &pending_path,
+                &sig,
+                keys.pub_key(i).unwrap(),
+                &meta_sig,
+            )?;
+        }
+
+        let active_path = root.join(SIGNERS_DIR).join(SIGNERS_FILE);
+        assert!(
+            active_path.exists(),
+            "Active signers file should exist after activation"
+        );
+        Ok(active_path)
+    }
+
+    #[test]
+    fn valid_initial_signers_file_passes_validation() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let keys = TestKeys::new(2);
+        let active_path = setup_valid_initial_signers(temp_dir.path(), &keys, &[0, 1], 2)?;
+        validate_signers_chain_on_disk(&active_path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn missing_signatures_file_fails_validation() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let keys = TestKeys::new(2);
+        let active_path = setup_valid_initial_signers(temp_dir.path(), &keys, &[0, 1], 2)?;
+
+        let sig_path = common::fs::names::signatures_path_for(&active_path)?;
+        fs::remove_file(&sig_path)?;
+
+        let err = validate_signers_chain_on_disk(&active_path).unwrap_err();
+        assert!(matches!(
+            err,
+            common::errors::SignersFileError::ChainValidationFailed(_)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn rogue_signers_file_with_partial_signatures_fails_validation() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root = temp_dir.path();
+
+        let attacker_keys = TestKeys::new(2);
+        let attacker_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    attacker_keys.pub_key(0).unwrap().clone(),
+                    attacker_keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir)?;
+        let signers_file_path = signers_dir.join(SIGNERS_FILE);
+        let json_content = attacker_config.to_json()?;
+        fs::write(&signers_file_path, &json_content)?;
+
+        // Attacker signs with only one key (initial signers require ALL keys).
+        let file_hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
+        let sig0 = attacker_keys.sec_key(0).unwrap().sign(&file_hash)?;
+        let mut signatures = SignaturesFile::new();
+        signatures.entries.insert(
+            attacker_keys.pub_key(0).unwrap().to_base64(),
+            TaggedSignature {
+                format: attacker_keys.pub_key(0).unwrap().key_format(),
+                signature: sig0.to_base64(),
+            },
+        );
+        let sig_path = common::fs::names::signatures_path_for(&signers_file_path)?;
+        fs::write(&sig_path, serde_json::to_string_pretty(&signatures)?)?;
+
+        // Write a metadata file and an empty metadata-signatures file so the
+        // build step succeeds and validation is what fails.
+        let metadata_path = metadata_path_for(&signers_file_path)?;
+        let metadata = test_metadata();
+        fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
+        let meta_sigs_path = metadata_signatures_path_for(&signers_file_path)?;
+        fs::write(
+            &meta_sigs_path,
+            serde_json::to_string_pretty(&SignaturesFile::new())?,
+        )?;
+
+        let err = validate_signers_chain_on_disk(&signers_file_path).unwrap_err();
+        assert!(matches!(
+            err,
+            common::errors::SignersFileError::ChainValidationFailed(_)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn tampered_signatures_file_fails_validation() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let keys = TestKeys::new(2);
+        let active_path = setup_valid_initial_signers(temp_dir.path(), &keys, &[0, 1], 2)?;
+
+        let sig_path = common::fs::names::signatures_path_for(&active_path)?;
+        let content = fs::read_to_string(&sig_path)?;
+        let corrupted = content.replacen('A', "B", 1);
+        let corrupted = if corrupted == content {
+            content.replacen('a', "b", 1)
+        } else {
+            corrupted
+        };
+        fs::write(&sig_path, corrupted)?;
+
+        let err = validate_signers_chain_on_disk(&active_path).unwrap_err();
+        assert!(matches!(
+            err,
+            common::errors::SignersFileError::ChainValidationFailed(_)
+        ));
+        Ok(())
+    }
+
+    /// Writes a self-valid current signers file on disk plus a history file
+    /// containing a deliberately invalid first entry. The current entry alone
+    /// passes `validate_history`, so any implementation that ignores the
+    /// on-disk history file would erroneously return Ok. The presence of the
+    /// invalid prior entry must cause validation to fail.
+    #[test]
+    fn validate_signers_chain_on_disk_loads_history_file_from_disk() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let keys = TestKeys::new(2);
+        let active_path = setup_valid_initial_signers(temp_dir.path(), &keys, &[0, 1], 2)?;
+
+        // Sanity: the on-disk current entry alone is valid.
+        validate_signers_chain_on_disk(&active_path)?;
+
+        // Now drop a history file next to the signers dir with a garbage first
+        // entry. validate_history must reject the resulting chain.
+        let signers_dir = active_path.parent().unwrap();
+        let history_path = common::fs::names::history_file_path_for(signers_dir);
+        let bogus_history = HistoryFile {
+            entries: vec![HistoryEntry {
+                obsoleted_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+                signers_file: "not valid json".to_string(),
+                signatures: SignaturesFile::new(),
+                metadata: "not valid json".to_string(),
+                metadata_signatures: SignaturesFile::new(),
+            }],
+        };
+        bogus_history.save_to_file(&history_path)?;
+
+        let err = validate_signers_chain_on_disk(&active_path).unwrap_err();
+        assert!(matches!(
+            err,
+            common::errors::SignersFileError::ChainValidationFailed(_)
+        ));
+        Ok(())
+    }
+
+    /// On-disk: a valid history with one prior entry plus a current signers
+    /// file that is a valid rotation from it must validate successfully.
+    #[test]
+    fn validate_signers_chain_on_disk_valid_two_entries() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root = temp_dir.path();
+        let keys = TestKeys::new(3);
+
+        // config1: artifact signers [0,1] threshold 1 — historical entry.
+        let config1 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+        // config2: adds key 2 — becomes the current on-disk active config.
+        let config2 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                    keys.pub_key(2).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        let metadata = test_metadata();
+        let (json1, sig1) = sign_config(&config1, &keys, &[0, 1])?;
+        let (meta_json1, meta_sig1) = sign_metadata(&metadata, &keys, &[0, 1])?;
+        // Rotation requires old admin + new admin + newly added signer.
+        let (json2, sig2) = sign_config(&config2, &keys, &[0, 1, 2])?;
+        let (meta_json2, meta_sig2) = sign_metadata(&metadata, &keys, &[0, 1, 2])?;
+
+        // Write the active signers file and its sidecars on disk.
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir)?;
+        let active_path = signers_dir.join(SIGNERS_FILE);
+        fs::write(&active_path, &json2)?;
+        fs::write(
+            common::fs::names::signatures_path_for(&active_path)?,
+            serde_json::to_string_pretty(&sig2)?,
+        )?;
+        fs::write(metadata_path_for(&active_path)?, &meta_json2)?;
+        fs::write(
+            metadata_signatures_path_for(&active_path)?,
+            serde_json::to_string_pretty(&meta_sig2)?,
+        )?;
+
+        // Write the history file containing entry1 as the prior trust anchor.
+        let history = HistoryFile {
+            entries: vec![HistoryEntry {
+                obsoleted_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+                signers_file: json1,
+                signatures: sig1,
+                metadata: meta_json1,
+                metadata_signatures: meta_sig1,
+            }],
+        };
+        history.save_to_file(common::fs::names::history_file_path_for(&signers_dir))?;
+
+        validate_signers_chain_on_disk(&active_path)?;
         Ok(())
     }
 }
