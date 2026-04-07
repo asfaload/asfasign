@@ -31,7 +31,8 @@ pub use signatures::types::AsfaloadSignatures;
 
 pub use signers_file::activate_signers_file;
 pub use signers_file::sign_signers_and_metadata_file;
-pub use signers_file::validate_history;
+pub use signers_file::{build_history_entry_for, validate_signers_chain_on_disk};
+pub use signers_file::{validate_chain, validate_genesis_entry, validate_history_transitions};
 pub use signers_file_types::{
     Forge, ForgeOrigin, HistoryEntry, HistoryFile, SignersConfigMetadata, SignersConfigOrigin,
     VerifiedForgeContent,
@@ -293,7 +294,7 @@ pub mod aggregate_signature_helpers {
 
     pub use aggregate_signature::{
         check_all_signers, check_groups, get_authorized_signers_for_file, get_missing_signers,
-        load_signers_config,
+        load_signers_config, verify_all_signers_signed,
     };
     use aggregate_signature::{
         get_individual_signatures_from_bytes as get_individual_signatures_from_bytes_ori,

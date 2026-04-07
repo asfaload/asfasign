@@ -1,11 +1,14 @@
+#[cfg(test)]
+mod validate_history_rotation_tests;
+
 use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
 use common::{
     SignedFileLoader,
     errors::{AggregateSignatureError, SignersFileError},
     fs::{
         names::{
-            find_global_signers_for, metadata_path_for, metadata_signatures_path_for,
-            pending_signatures_path_for, signatures_path_for,
+            find_global_signers_for, history_file_path_for, metadata_path_for,
+            metadata_signatures_path_for, pending_signatures_path_for, signatures_path_for,
         },
         open_new_file,
     },
@@ -396,20 +399,64 @@ where
     Ok(())
 }
 
-/// Validate that every transition in a signers history file is properly authorized.
+/// Validate the genesis (root) entry of a signers history.
 ///
-/// For each consecutive pair of entries, verifies that the signatures on the
-/// newer entry satisfy `validate_signers_update` against the older entry's config.
-/// An empty or single-entry history is considered valid.
-pub fn validate_history(history: &HistoryFile) -> bool {
-    if !history.entries().is_sorted_by_key(|e| e.obsoleted_at) {
-        return false;
+/// The genesis entry establishes the trust anchor for the chain: every signer
+/// listed in its config must have signed both the `signers_file` bytes and
+/// the `metadata` bytes. This is the cryptographic counterpart to the
+/// trust-anchor forge-content check performed by callers separately.
+pub fn validate_genesis_entry(entry: &HistoryEntry) -> bool {
+    let signers = match entry.signers_config() {
+        Ok(c) => c,
+        Err(_) => return false,
     };
+    let signers_file_ok = matches!(
+        aggregate_signature::verify_all_signers_signed(
+            entry.signers_file.as_bytes(),
+            &entry.signatures,
+            &signers,
+        ),
+        Ok(true)
+    );
+    if !signers_file_ok {
+        return false;
+    }
+    matches!(
+        aggregate_signature::verify_all_signers_signed(
+            entry.metadata.as_bytes(),
+            &entry.metadata_signatures,
+            &signers,
+        ),
+        Ok(true)
+    )
+}
+
+/// Validate that every transition between consecutive entries in a signers
+/// history is properly authorized.
+///
+/// For each adjacent pair, verifies that the newer entry's signatures
+/// satisfy `validate_signers_update` against the older entry's config. Also
+/// enforces strict monotonic ordering of `obsoleted_at`. The genesis entry
+/// itself is NOT checked here — see [`validate_genesis_entry`].
+///
+/// An empty or single-entry history is considered valid (vacuously, as there
+/// are no transitions to verify).
+pub fn validate_history_transitions(history: &HistoryFile) -> bool {
+    // Strict ordering: equal `obsoleted_at` timestamps are rejected. In
+    // practice two entries should never share an obsolescence instant, and
+    // accepting it would weaken chain auditability.
+    if !history
+        .entries()
+        .windows(2)
+        .all(|p| p[0].obsoleted_at < p[1].obsoleted_at)
+    {
+        return false;
+    }
+
     history.entries().windows(2).all(|pair| {
         let parent = &pair[0];
         let updated = &pair[1];
 
-        // Parse configs from raw JSON
         let parent_signers = match parent.signers_config() {
             Ok(c) => c,
             Err(_) => return false,
@@ -425,7 +472,6 @@ pub fn validate_history(history: &HistoryFile) -> bool {
             Err(_) => return false,
         };
 
-        // Parse the tagged signatures into the typed map
         let signatures =
             match aggregate_signature::parse_tagged_signatures(&updated.signatures.entries) {
                 Ok(s) => s,
@@ -439,6 +485,17 @@ pub fn validate_history(history: &HistoryFile) -> bool {
             &file_hash,
         )
     })
+}
+
+/// Full cryptographic validation of a signers chain: genesis entry plus all
+/// transitions. Callers that want "validate the whole chain" should use this.
+///
+/// An empty history is considered valid.
+pub fn validate_chain(history: &HistoryFile) -> bool {
+    match history.entries().first() {
+        None => true,
+        Some(first) => validate_genesis_entry(first) && validate_history_transitions(history),
+    }
 }
 
 /// Build a HistoryFile representing the signers chain applicable to an artifact.
@@ -474,6 +531,89 @@ pub fn signers_chain_for_artifact(
     Ok(chain)
 }
 
+/// Build a `HistoryEntry` from a signers file on disk by loading the file
+/// itself, its `.signatures.json` sidecar, its `.metadata.json` sidecar, and
+/// the metadata's `.signatures.json`.
+///
+/// The `signers_file` and `metadata` fields hold the raw bytes (as `String`),
+/// preserving the exact bytes that were originally signed.
+pub fn build_history_entry_for(signers_file_path: &Path) -> Result<HistoryEntry, SignersFileError> {
+    let chain_err =
+        |msg: String| -> SignersFileError { SignersFileError::ChainValidationFailed(msg) };
+
+    let signers_file_raw = fs::read_to_string(signers_file_path).map_err(|e| {
+        chain_err(format!(
+            "read signers file {}: {e}",
+            signers_file_path.display()
+        ))
+    })?;
+
+    let signatures_path = signatures_path_for(signers_file_path)
+        .map_err(|e| chain_err(format!("compute signatures path: {e}")))?;
+    let signatures_str = fs::read_to_string(&signatures_path)
+        .map_err(|e| chain_err(format!("read {}: {e}", signatures_path.display())))?;
+    let signatures: SignaturesFile = serde_json::from_str(&signatures_str)
+        .map_err(|e| chain_err(format!("parse signatures: {e}")))?;
+
+    let metadata_path = metadata_path_for(signers_file_path)
+        .map_err(|e| chain_err(format!("compute metadata path: {e}")))?;
+    let metadata_raw = fs::read_to_string(&metadata_path)
+        .map_err(|e| chain_err(format!("read {}: {e}", metadata_path.display())))?;
+
+    let meta_sigs_path = metadata_signatures_path_for(signers_file_path)
+        .map_err(|e| chain_err(format!("compute metadata signatures path: {e}")))?;
+    let meta_sigs_str = fs::read_to_string(&meta_sigs_path)
+        .map_err(|e| chain_err(format!("read {}: {e}", meta_sigs_path.display())))?;
+    let metadata_signatures: SignaturesFile = serde_json::from_str(&meta_sigs_str)
+        .map_err(|e| chain_err(format!("parse metadata signatures: {e}")))?;
+
+    Ok(HistoryEntry {
+        obsoleted_at: chrono::Utc::now(),
+        signers_file: signers_file_raw,
+        signatures,
+        metadata: metadata_raw,
+        metadata_signatures,
+    })
+}
+
+/// Validate the cryptographic chain for a signers file found on disk.
+///
+/// Reads the signers file and its sidecars, builds a single-entry
+/// `HistoryFile`, and validates it via `validate_chain`.
+pub fn validate_signers_chain_on_disk(signers_file_path: &Path) -> Result<(), SignersFileError> {
+    let chain_err =
+        |msg: String| -> SignersFileError { SignersFileError::ChainValidationFailed(msg) };
+
+    let signers_dir = signers_file_path.parent().ok_or_else(|| {
+        chain_err(format!(
+            "signers file has no parent directory: {}",
+            signers_file_path.display()
+        ))
+    })?;
+    let history_file_path = history_file_path_for(signers_dir);
+    let mut history = if history_file_path.exists() {
+        HistoryFile::load_from_file(&history_file_path).map_err(|e| {
+            chain_err(format!(
+                "load history file {}: {e}",
+                history_file_path.display()
+            ))
+        })?
+    } else {
+        HistoryFile::new()
+    };
+
+    let entry = build_history_entry_for(signers_file_path)?;
+    history.entries.push(entry);
+
+    if validate_chain(&history) {
+        Ok(())
+    } else {
+        Err(SignersFileError::ChainValidationFailed(
+            "signers chain validation failed".to_string(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -493,7 +633,7 @@ mod tests {
     use tempfile::TempDir;
     use test_helpers::TestKeys;
     use test_helpers::history_helpers::{
-        create_test_history_entry, create_test_signers_config, sign_metadata,
+        create_test_history_entry, create_test_signers_config, sign_config, sign_metadata,
     };
     use test_helpers::test_metadata;
 
@@ -4368,6 +4508,266 @@ mod tests {
         assert_eq!(chain.entries()[0].obsoleted_at, cutoff);
         Ok(())
     }
+
+    /// Create an initial signers file (pending), have all listed keys sign it
+    /// (signers file + metadata), then activate it. Returns the path to the
+    /// active signers file.
+    fn setup_valid_initial_signers(
+        root: &Path,
+        keys: &TestKeys,
+        key_indices: &[usize],
+        threshold: u32,
+    ) -> Result<PathBuf> {
+        let pub_keys: Vec<_> = key_indices
+            .iter()
+            .map(|&i| keys.pub_key(i).unwrap().clone())
+            .collect();
+        let config = SignersConfig::with_artifact_signers_only(1, (pub_keys, threshold))?;
+        let json_content = config.to_json()?;
+
+        initialize_signers_file(
+            root,
+            &json_content,
+            test_metadata(),
+            keys.pub_key(0).unwrap(),
+        )?;
+
+        let pending_path = root.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE);
+        let file_hash = sha512_for_file(&pending_path)?;
+        let metadata_path = metadata_path_for(&pending_path)?;
+        let metadata_hash = sha512_for_file(&metadata_path)?;
+
+        for &i in key_indices {
+            let sig = keys.sec_key(i).unwrap().sign(&file_hash)?;
+            let meta_sig = keys.sec_key(i).unwrap().sign(&metadata_hash)?;
+            sign_signers_and_metadata_file(
+                &pending_path,
+                &sig,
+                keys.pub_key(i).unwrap(),
+                &meta_sig,
+            )?;
+        }
+
+        let active_path = root.join(SIGNERS_DIR).join(SIGNERS_FILE);
+        assert!(
+            active_path.exists(),
+            "Active signers file should exist after activation"
+        );
+        Ok(active_path)
+    }
+
+    #[test]
+    fn valid_initial_signers_file_passes_validation() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let keys = TestKeys::new(2);
+        let active_path = setup_valid_initial_signers(temp_dir.path(), &keys, &[0, 1], 2)?;
+        validate_signers_chain_on_disk(&active_path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn missing_signatures_file_fails_validation() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let keys = TestKeys::new(2);
+        let active_path = setup_valid_initial_signers(temp_dir.path(), &keys, &[0, 1], 2)?;
+
+        let sig_path = common::fs::names::signatures_path_for(&active_path)?;
+        fs::remove_file(&sig_path)?;
+
+        let err = validate_signers_chain_on_disk(&active_path).unwrap_err();
+        assert!(matches!(
+            err,
+            common::errors::SignersFileError::ChainValidationFailed(_)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn rogue_signers_file_with_partial_signatures_fails_validation() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root = temp_dir.path();
+
+        let attacker_keys = TestKeys::new(2);
+        let attacker_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    attacker_keys.pub_key(0).unwrap().clone(),
+                    attacker_keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir)?;
+        let signers_file_path = signers_dir.join(SIGNERS_FILE);
+        let json_content = attacker_config.to_json()?;
+        fs::write(&signers_file_path, &json_content)?;
+
+        // Attacker signs with only one key (initial signers require ALL keys).
+        let file_hash = common::sha512_for_content(json_content.as_bytes().to_vec())?;
+        let sig0 = attacker_keys.sec_key(0).unwrap().sign(&file_hash)?;
+        let mut signatures = SignaturesFile::new();
+        signatures.entries.insert(
+            attacker_keys.pub_key(0).unwrap().to_base64(),
+            TaggedSignature {
+                format: attacker_keys.pub_key(0).unwrap().key_format(),
+                signature: sig0.to_base64(),
+            },
+        );
+        let sig_path = common::fs::names::signatures_path_for(&signers_file_path)?;
+        fs::write(&sig_path, serde_json::to_string_pretty(&signatures)?)?;
+
+        // Write a metadata file and an empty metadata-signatures file so the
+        // build step succeeds and validation is what fails.
+        let metadata_path = metadata_path_for(&signers_file_path)?;
+        let metadata = test_metadata();
+        fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)?;
+        let meta_sigs_path = metadata_signatures_path_for(&signers_file_path)?;
+        fs::write(
+            &meta_sigs_path,
+            serde_json::to_string_pretty(&SignaturesFile::new())?,
+        )?;
+
+        let err = validate_signers_chain_on_disk(&signers_file_path).unwrap_err();
+        assert!(matches!(
+            err,
+            common::errors::SignersFileError::ChainValidationFailed(_)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn tampered_signatures_file_fails_validation() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let keys = TestKeys::new(2);
+        let active_path = setup_valid_initial_signers(temp_dir.path(), &keys, &[0, 1], 2)?;
+
+        let sig_path = common::fs::names::signatures_path_for(&active_path)?;
+        let content = fs::read_to_string(&sig_path)?;
+        let corrupted = content.replacen('A', "B", 1);
+        let corrupted = if corrupted == content {
+            content.replacen('a', "b", 1)
+        } else {
+            corrupted
+        };
+        fs::write(&sig_path, corrupted)?;
+
+        let err = validate_signers_chain_on_disk(&active_path).unwrap_err();
+        assert!(matches!(
+            err,
+            common::errors::SignersFileError::ChainValidationFailed(_)
+        ));
+        Ok(())
+    }
+
+    /// Writes a self-valid current signers file on disk plus a history file
+    /// containing a deliberately invalid first entry. The current entry alone
+    /// passes `validate_chain`, so any implementation that ignores the
+    /// on-disk history file would erroneously return Ok. The presence of the
+    /// invalid prior entry must cause validation to fail.
+    #[test]
+    fn validate_signers_chain_on_disk_loads_history_file_from_disk() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let keys = TestKeys::new(2);
+        let active_path = setup_valid_initial_signers(temp_dir.path(), &keys, &[0, 1], 2)?;
+
+        // Sanity: the on-disk current entry alone is valid.
+        validate_signers_chain_on_disk(&active_path)?;
+
+        // Now drop a history file next to the signers dir with a garbage first
+        // entry. validate_chain must reject the resulting chain.
+        let signers_dir = active_path.parent().unwrap();
+        let history_path = common::fs::names::history_file_path_for(signers_dir);
+        let bogus_history = HistoryFile {
+            entries: vec![HistoryEntry {
+                obsoleted_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+                signers_file: "not valid json".to_string(),
+                signatures: SignaturesFile::new(),
+                metadata: "not valid json".to_string(),
+                metadata_signatures: SignaturesFile::new(),
+            }],
+        };
+        bogus_history.save_to_file(&history_path)?;
+
+        let err = validate_signers_chain_on_disk(&active_path).unwrap_err();
+        assert!(matches!(
+            err,
+            common::errors::SignersFileError::ChainValidationFailed(_)
+        ));
+        Ok(())
+    }
+
+    /// On-disk: a valid history with one prior entry plus a current signers
+    /// file that is a valid rotation from it must validate successfully.
+    #[test]
+    fn validate_signers_chain_on_disk_valid_two_entries() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root = temp_dir.path();
+        let keys = TestKeys::new(3);
+
+        // config1: artifact signers [0,1] threshold 1 — historical entry.
+        let config1 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+        // config2: adds key 2 — becomes the current on-disk active config.
+        let config2 = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                    keys.pub_key(2).unwrap().clone(),
+                ],
+                1,
+            ),
+        )?;
+
+        let metadata = test_metadata();
+        let (json1, sig1) = sign_config(&config1, &keys, &[0, 1])?;
+        let (meta_json1, meta_sig1) = sign_metadata(&metadata, &keys, &[0, 1])?;
+        // Rotation requires old admin + new admin + newly added signer.
+        let (json2, sig2) = sign_config(&config2, &keys, &[0, 1, 2])?;
+        let (meta_json2, meta_sig2) = sign_metadata(&metadata, &keys, &[0, 1, 2])?;
+
+        // Write the active signers file and its sidecars on disk.
+        let signers_dir = root.join(SIGNERS_DIR);
+        fs::create_dir_all(&signers_dir)?;
+        let active_path = signers_dir.join(SIGNERS_FILE);
+        fs::write(&active_path, &json2)?;
+        fs::write(
+            common::fs::names::signatures_path_for(&active_path)?,
+            serde_json::to_string_pretty(&sig2)?,
+        )?;
+        fs::write(metadata_path_for(&active_path)?, &meta_json2)?;
+        fs::write(
+            metadata_signatures_path_for(&active_path)?,
+            serde_json::to_string_pretty(&meta_sig2)?,
+        )?;
+
+        // Write the history file containing entry1 as the prior trust anchor.
+        let history = HistoryFile {
+            entries: vec![HistoryEntry {
+                obsoleted_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+                signers_file: json1,
+                signatures: sig1,
+                metadata: meta_json1,
+                metadata_signatures: meta_sig1,
+            }],
+        };
+        history.save_to_file(common::fs::names::history_file_path_for(&signers_dir))?;
+
+        validate_signers_chain_on_disk(&active_path)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -4378,7 +4778,7 @@ mod validate_history_tests {
     use test_helpers::history_helpers::{sign_config, sign_json_bytes, sign_metadata};
     use test_helpers::{TestKeys, test_metadata};
 
-    use super::validate_history;
+    use super::validate_chain;
 
     #[test]
     fn validate_history_valid_two_entries() -> Result<()> {
@@ -4440,7 +4840,7 @@ mod validate_history_tests {
             ],
         };
 
-        assert!(validate_history(&history));
+        assert!(validate_chain(&history));
         Ok(())
     }
 
@@ -4499,7 +4899,7 @@ mod validate_history_tests {
             ],
         };
 
-        assert!(!validate_history(&history));
+        assert!(!validate_chain(&history));
         Ok(())
     }
 
@@ -4527,14 +4927,71 @@ mod validate_history_tests {
             }],
         };
 
-        assert!(validate_history(&history));
+        assert!(validate_chain(&history));
         Ok(())
     }
 
     #[test]
     fn validate_history_empty_is_valid() {
         let history = HistoryFile::new();
-        assert!(validate_history(&history));
+        assert!(validate_chain(&history));
+    }
+
+    #[test]
+    fn validate_history_rejects_first_entry_without_all_signers() -> Result<()> {
+        // 2 signers required, only 1 signs the signers_file — must fail.
+        let keys = TestKeys::new(2);
+        let config = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                2,
+            ),
+        )?;
+
+        // Signers partially signed
+        let (json, sig_partial) = sign_config(&config, &keys, &[0])?;
+        let metadata = test_metadata();
+        let (meta_json, meta_sig) = sign_metadata(&metadata, &keys, &[0, 1])?;
+
+        let history = HistoryFile {
+            entries: vec![HistoryEntry {
+                obsoleted_at: Utc::now(),
+                signers_file: json,
+                signatures: sig_partial,
+                metadata: meta_json,
+                metadata_signatures: meta_sig,
+            }],
+        };
+
+        assert!(
+            !validate_chain(&history),
+            "first entry missing a signersfile signer must fail"
+        );
+
+        // Metadata partially signed
+        let (json, sig_partial) = sign_config(&config, &keys, &[0, 1])?;
+        let metadata = test_metadata();
+        let (meta_json, meta_sig) = sign_metadata(&metadata, &keys, &[1])?;
+
+        let history = HistoryFile {
+            entries: vec![HistoryEntry {
+                obsoleted_at: Utc::now(),
+                signers_file: json,
+                signatures: sig_partial,
+                metadata: meta_json,
+                metadata_signatures: meta_sig,
+            }],
+        };
+
+        assert!(
+            !validate_chain(&history),
+            "first entry missing a metadata signer must fail"
+        );
+        Ok(())
     }
 
     #[test]
@@ -4594,7 +5051,7 @@ mod validate_history_tests {
             ],
         };
 
-        assert!(!validate_history(&history));
+        assert!(!validate_chain(&history));
         Ok(())
     }
 
@@ -4676,9 +5133,483 @@ mod validate_history_tests {
         let history = HistoryFile::load_from_file(&fixture_path)?;
 
         assert!(
-            validate_history(&history),
-            "validate_history should accept valid signatures regardless of JSON formatting"
+            validate_chain(&history),
+            "validate_chain should accept valid signatures regardless of JSON formatting"
         );
         Ok(())
+    }
+
+    struct FirstEntryScenario {
+        name: &'static str,
+        history: HistoryFile,
+        expected_valid: bool,
+    }
+
+    fn first_entry_scenarios() -> Vec<FirstEntryScenario> {
+        use signatures::keys::AsfaloadPublicKeyTrait;
+        use signatures::signatures_file::{SignaturesFile, TaggedSignature};
+        use signers_file_types::{Forge, ForgeOrigin, SignersConfigMetadata, VerifiedForgeContent};
+
+        let keys_1 = TestKeys::new(1);
+        let keys_2 = TestKeys::new(2);
+        let keys_3 = TestKeys::new(3);
+        let keys_5 = TestKeys::new(5);
+
+        let single = |entry: HistoryEntry| -> HistoryFile {
+            HistoryFile {
+                entries: vec![entry],
+            }
+        };
+
+        let make_metadata = |url: &str| -> SignersConfigMetadata {
+            SignersConfigMetadata::from_forge(ForgeOrigin::new(
+                Forge::Github,
+                url.to_string(),
+                VerifiedForgeContent::new_for_test(url.to_string(), "test_hash".to_string()),
+                Utc::now(),
+            ))
+        };
+
+        let default_metadata = test_metadata();
+
+        let mut scenarios: Vec<FirstEntryScenario> = Vec::new();
+
+        // 1. valid_single_signer
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (vec![keys_1.pub_key(0).unwrap().clone()], 1),
+            )
+            .unwrap();
+            let (json, sig) = sign_config(&config, &keys_1, &[0]).unwrap();
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_1, &[0]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "valid_single_signer",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: true,
+            });
+        }
+
+        // 2. valid_multiple_signers
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (
+                    vec![
+                        keys_2.pub_key(0).unwrap().clone(),
+                        keys_2.pub_key(1).unwrap().clone(),
+                    ],
+                    2,
+                ),
+            )
+            .unwrap();
+            let (json, sig) = sign_config(&config, &keys_2, &[0, 1]).unwrap();
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_2, &[0, 1]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "valid_multiple_signers",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: true,
+            });
+        }
+
+        // 3. valid_with_full_key_config
+        // NOTE: all_signer_keys() currently does NOT include revocation_keys — known bug
+        // tracked separately. When fixed, this scenario must also sign with key 3.
+        {
+            let config = SignersConfig::with_keys(
+                1,
+                (vec![keys_5.pub_key(0).unwrap().clone()], 1),
+                Some((vec![keys_5.pub_key(1).unwrap().clone()], 1)),
+                Some((vec![keys_5.pub_key(2).unwrap().clone()], 1)),
+                Some((vec![keys_5.pub_key(3).unwrap().clone()], 1)),
+            )
+            .unwrap();
+            let (json, sig) = sign_config(&config, &keys_5, &[0, 1, 2]).unwrap();
+            let (meta_json, meta_sig) =
+                sign_metadata(&default_metadata, &keys_5, &[0, 1, 2]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "valid_with_full_key_config",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: true,
+            });
+        }
+
+        // 4. missing_one_signer_signature
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (
+                    vec![
+                        keys_2.pub_key(0).unwrap().clone(),
+                        keys_2.pub_key(1).unwrap().clone(),
+                    ],
+                    2,
+                ),
+            )
+            .unwrap();
+            let (json, sig) = sign_config(&config, &keys_2, &[0]).unwrap();
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_2, &[0, 1]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "missing_one_signer_signature_of_signers_file",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (
+                    vec![
+                        keys_2.pub_key(0).unwrap().clone(),
+                        keys_2.pub_key(1).unwrap().clone(),
+                    ],
+                    2,
+                ),
+            )
+            .unwrap();
+            let (json, sig) = sign_config(&config, &keys_2, &[0, 1]).unwrap();
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_2, &[1]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "missing_one_signer_signature_of_metadata",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+        // 5. no_signatures_at_all_of_signers
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (vec![keys_1.pub_key(0).unwrap().clone()], 1),
+            )
+            .unwrap();
+            let json = config.to_json().unwrap();
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_1, &[0]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "no_signatures_at_all_of_signers_file",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: SignaturesFile::new(),
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (vec![keys_1.pub_key(0).unwrap().clone()], 1),
+            )
+            .unwrap();
+            let json_metadata = serde_json::to_string_pretty(&default_metadata).unwrap();
+            let (json, sig) = sign_config(&config, &keys_1, &[0]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "no_signatures_at_all_of_signers_file",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: json_metadata,
+                    metadata_signatures: SignaturesFile::new(),
+                }),
+                expected_valid: false,
+            });
+        }
+        // 6. signature_from_wrong_key
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (
+                    vec![
+                        keys_3.pub_key(0).unwrap().clone(),
+                        keys_3.pub_key(1).unwrap().clone(),
+                    ],
+                    2,
+                ),
+            )
+            .unwrap();
+            // Sign config with key 2 (not in config)
+            let (json, sig) = sign_config(&config, &keys_3, &[2]).unwrap();
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_3, &[0]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "signature_from_wrong_key",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (
+                    vec![
+                        keys_3.pub_key(0).unwrap().clone(),
+                        keys_3.pub_key(1).unwrap().clone(),
+                    ],
+                    2,
+                ),
+            )
+            .unwrap();
+            // Sign config with key 2 (not in config)
+            let (json, sig) = sign_config(&config, &keys_3, &[0]).unwrap();
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_3, &[2]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "signature_from_wrong_key_of_metadata",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+        // 7. invalid_signature_base64
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (vec![keys_1.pub_key(0).unwrap().clone()], 1),
+            )
+            .unwrap();
+            let json = config.to_json().unwrap();
+            let pubkey = keys_1.pub_key(0).unwrap();
+            let mut sig_file = SignaturesFile::new();
+            sig_file.entries.insert(
+                pubkey.to_base64(),
+                TaggedSignature {
+                    format: pubkey.key_format(),
+                    signature: "!!!not-base64!!!".to_string(),
+                },
+            );
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_1, &[0]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "invalid_signature_base64",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig_file,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (vec![keys_1.pub_key(0).unwrap().clone()], 1),
+            )
+            .unwrap();
+            let (json, sig) = sign_config(&config, &keys_1, &[0]).unwrap();
+            let meta_json = serde_json::to_string_pretty(&default_metadata).unwrap();
+            let pubkey = keys_1.pub_key(0).unwrap();
+            let mut meta_sig_file = SignaturesFile::new();
+            meta_sig_file.entries.insert(
+                pubkey.to_base64(),
+                TaggedSignature {
+                    format: pubkey.key_format(),
+                    signature: "!!!not-base64!!!".to_string(),
+                },
+            );
+            scenarios.push(FirstEntryScenario {
+                name: "invalid_signature_base64_of_metadata",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig_file,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        // 8. invalid_signers_config_json
+        {
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_1, &[0]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "invalid_signers_config_json",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: "not valid json".to_string(),
+                    signatures: SignaturesFile::new(),
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        // 9. empty_signers_file
+        {
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_1, &[0]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "empty_signers_file",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: String::new(),
+                    signatures: SignaturesFile::new(),
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        // 10. missing_admin_key_signature
+        // NOTE: all_signer_keys() currently does NOT include revocation_keys — known bug
+        // tracked separately. When fixed, this scenario must also sign with key 3.
+        {
+            let config = SignersConfig::with_keys(
+                1,
+                (vec![keys_5.pub_key(0).unwrap().clone()], 1),
+                Some((vec![keys_5.pub_key(1).unwrap().clone()], 1)),
+                Some((vec![keys_5.pub_key(2).unwrap().clone()], 1)),
+                Some((vec![keys_5.pub_key(3).unwrap().clone()], 1)),
+            )
+            .unwrap();
+            // Sign with [0, 2] — missing admin (key 1)
+            let (json, sig) = sign_config(&config, &keys_5, &[0, 2]).unwrap();
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_5, &[0, 2]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "missing_admin_key_signature",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        {
+            let config = SignersConfig::with_keys(
+                1,
+                (vec![keys_5.pub_key(0).unwrap().clone()], 1),
+                Some((vec![keys_5.pub_key(1).unwrap().clone()], 1)),
+                Some((vec![keys_5.pub_key(2).unwrap().clone()], 1)),
+                Some((vec![keys_5.pub_key(3).unwrap().clone()], 1)),
+            )
+            .unwrap();
+            // Signers file fully signed; metadata missing admin (key 1)
+            let (json, sig) = sign_config(&config, &keys_5, &[0, 1, 2]).unwrap();
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_5, &[0, 2]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "missing_admin_key_signature_of_metadata",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        // 11. tampered_metadata_signatures
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (vec![keys_1.pub_key(0).unwrap().clone()], 1),
+            )
+            .unwrap();
+            let (json, sig) = sign_config(&config, &keys_1, &[0]).unwrap();
+            let metadata_a = make_metadata("https://example.test/a.json");
+            let metadata_b = make_metadata("https://example.test/b.json");
+            let (_a_json, sig_a) = sign_metadata(&metadata_a, &keys_1, &[0]).unwrap();
+            let (b_json, _b_sig) = sign_metadata(&metadata_b, &keys_1, &[0]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "tampered_metadata_signatures",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: b_json,
+                    metadata_signatures: sig_a,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        // 12. metadata_signed_by_wrong_key
+        {
+            let config = SignersConfig::with_artifact_signers_only(
+                1,
+                (vec![keys_1.pub_key(0).unwrap().clone()], 1),
+            )
+            .unwrap();
+            let (json, sig) = sign_config(&config, &keys_1, &[0]).unwrap();
+            // Sign metadata with key 2 from keys_3 (not in config)
+            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_3, &[2]).unwrap();
+            scenarios.push(FirstEntryScenario {
+                name: "metadata_signed_by_wrong_key",
+                history: single(HistoryEntry {
+                    obsoleted_at: Utc::now(),
+                    signers_file: json,
+                    signatures: sig,
+                    metadata: meta_json,
+                    metadata_signatures: meta_sig,
+                }),
+                expected_valid: false,
+            });
+        }
+
+        scenarios
+    }
+
+    #[test]
+    fn validate_history_first_entry_scenarios() {
+        for sc in first_entry_scenarios() {
+            let result = validate_chain(&sc.history);
+            assert_eq!(
+                result, sc.expected_valid,
+                "Scenario '{}': expected valid={}, got valid={}",
+                sc.name, sc.expected_valid, result
+            );
+        }
     }
 }
