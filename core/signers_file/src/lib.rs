@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod validate_history_rotation_tests;
+
 use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
 use common::{
     SignedFileLoader,
@@ -402,7 +405,14 @@ where
 /// newer entry satisfy `validate_signers_update` against the older entry's config.
 /// An empty or single-entry history is considered valid.
 pub fn validate_history(history: &HistoryFile) -> bool {
-    if !history.entries().is_sorted_by_key(|e| e.obsoleted_at) {
+    // Strict ordering: equal `obsoleted_at` timestamps are rejected. In
+    // practice two entries should never share an obsolescence instant, and
+    // accepting it would weaken chain auditability.
+    if !history
+        .entries()
+        .windows(2)
+        .all(|p| p[0].obsoleted_at < p[1].obsoleted_at)
+    {
         return false;
     };
 
