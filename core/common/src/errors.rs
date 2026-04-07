@@ -85,6 +85,8 @@ pub enum SignersFileError {
     NotInPendingDir(String),
     #[error("Pending signers file filesystem hierarchy error: {0}")]
     FileSystemHierarchyError(String),
+    #[error("Signers chain validation failed: {0}")]
+    ChainValidationFailed(String),
 }
 
 impl From<SignatureError> for SignersFileError {
