@@ -399,12 +399,49 @@ where
     Ok(())
 }
 
-/// Validate that every transition in a signers history file is properly authorized.
+/// Validate the genesis (root) entry of a signers history.
 ///
-/// For each consecutive pair of entries, verifies that the signatures on the
-/// newer entry satisfy `validate_signers_update` against the older entry's config.
-/// An empty or single-entry history is considered valid.
-pub fn validate_history(history: &HistoryFile) -> bool {
+/// The genesis entry establishes the trust anchor for the chain: every signer
+/// listed in its config must have signed both the `signers_file` bytes and
+/// the `metadata` bytes. This is the cryptographic counterpart to the
+/// trust-anchor forge-content check performed by callers separately.
+pub fn validate_genesis_entry(entry: &HistoryEntry) -> bool {
+    let signers = match entry.signers_config() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let signers_file_ok = matches!(
+        aggregate_signature::verify_all_signers_signed(
+            entry.signers_file.as_bytes(),
+            &entry.signatures,
+            &signers,
+        ),
+        Ok(true)
+    );
+    if !signers_file_ok {
+        return false;
+    }
+    matches!(
+        aggregate_signature::verify_all_signers_signed(
+            entry.metadata.as_bytes(),
+            &entry.metadata_signatures,
+            &signers,
+        ),
+        Ok(true)
+    )
+}
+
+/// Validate that every transition between consecutive entries in a signers
+/// history is properly authorized.
+///
+/// For each adjacent pair, verifies that the newer entry's signatures
+/// satisfy `validate_signers_update` against the older entry's config. Also
+/// enforces strict monotonic ordering of `obsoleted_at`. The genesis entry
+/// itself is NOT checked here — see [`validate_genesis_entry`].
+///
+/// An empty or single-entry history is considered valid (vacuously, as there
+/// are no transitions to verify).
+pub fn validate_history_transitions(history: &HistoryFile) -> bool {
     // Strict ordering: equal `obsoleted_at` timestamps are rejected. In
     // practice two entries should never share an obsolescence instant, and
     // accepting it would weaken chain auditability.
@@ -414,39 +451,12 @@ pub fn validate_history(history: &HistoryFile) -> bool {
         .all(|p| p[0].obsoleted_at < p[1].obsoleted_at)
     {
         return false;
-    };
-
-    // The first (genesis) entry establishes the trust anchor: every signer
-    // listed in its config must have signed both the signers_file bytes and
-    // the metadata bytes.
-    if let Some(first) = history.entries().first() {
-        let first_signers = match first.signers_config() {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
-        match aggregate_signature::verify_all_signers_signed(
-            first.signers_file.as_bytes(),
-            &first.signatures,
-            &first_signers,
-        ) {
-            Ok(true) => {}
-            _ => return false,
-        }
-        match aggregate_signature::verify_all_signers_signed(
-            first.metadata.as_bytes(),
-            &first.metadata_signatures,
-            &first_signers,
-        ) {
-            Ok(true) => {}
-            _ => return false,
-        }
     }
 
     history.entries().windows(2).all(|pair| {
         let parent = &pair[0];
         let updated = &pair[1];
 
-        // Parse configs from raw JSON
         let parent_signers = match parent.signers_config() {
             Ok(c) => c,
             Err(_) => return false,
@@ -462,7 +472,6 @@ pub fn validate_history(history: &HistoryFile) -> bool {
             Err(_) => return false,
         };
 
-        // Parse the tagged signatures into the typed map
         let signatures =
             match aggregate_signature::parse_tagged_signatures(&updated.signatures.entries) {
                 Ok(s) => s,
@@ -476,6 +485,17 @@ pub fn validate_history(history: &HistoryFile) -> bool {
             &file_hash,
         )
     })
+}
+
+/// Full cryptographic validation of a signers chain: genesis entry plus all
+/// transitions. Callers that want "validate the whole chain" should use this.
+///
+/// An empty history is considered valid.
+pub fn validate_chain(history: &HistoryFile) -> bool {
+    match history.entries().first() {
+        None => true,
+        Some(first) => validate_genesis_entry(first) && validate_history_transitions(history),
+    }
 }
 
 /// Build a HistoryFile representing the signers chain applicable to an artifact.
@@ -559,7 +579,7 @@ pub fn build_history_entry_for(signers_file_path: &Path) -> Result<HistoryEntry,
 /// Validate the cryptographic chain for a signers file found on disk.
 ///
 /// Reads the signers file and its sidecars, builds a single-entry
-/// `HistoryFile`, and validates it via `validate_history`.
+/// `HistoryFile`, and validates it via `validate_chain`.
 pub fn validate_signers_chain_on_disk(signers_file_path: &Path) -> Result<(), SignersFileError> {
     let chain_err =
         |msg: String| -> SignersFileError { SignersFileError::ChainValidationFailed(msg) };
@@ -585,7 +605,7 @@ pub fn validate_signers_chain_on_disk(signers_file_path: &Path) -> Result<(), Si
     let entry = build_history_entry_for(signers_file_path)?;
     history.entries.push(entry);
 
-    if validate_history(&history) {
+    if validate_chain(&history) {
         Ok(())
     } else {
         Err(SignersFileError::ChainValidationFailed(
@@ -4644,7 +4664,7 @@ mod tests {
 
     /// Writes a self-valid current signers file on disk plus a history file
     /// containing a deliberately invalid first entry. The current entry alone
-    /// passes `validate_history`, so any implementation that ignores the
+    /// passes `validate_chain`, so any implementation that ignores the
     /// on-disk history file would erroneously return Ok. The presence of the
     /// invalid prior entry must cause validation to fail.
     #[test]
@@ -4657,7 +4677,7 @@ mod tests {
         validate_signers_chain_on_disk(&active_path)?;
 
         // Now drop a history file next to the signers dir with a garbage first
-        // entry. validate_history must reject the resulting chain.
+        // entry. validate_chain must reject the resulting chain.
         let signers_dir = active_path.parent().unwrap();
         let history_path = common::fs::names::history_file_path_for(signers_dir);
         let bogus_history = HistoryFile {
@@ -4758,7 +4778,7 @@ mod validate_history_tests {
     use test_helpers::history_helpers::{sign_config, sign_json_bytes, sign_metadata};
     use test_helpers::{TestKeys, test_metadata};
 
-    use super::validate_history;
+    use super::validate_chain;
 
     #[test]
     fn validate_history_valid_two_entries() -> Result<()> {
@@ -4820,7 +4840,7 @@ mod validate_history_tests {
             ],
         };
 
-        assert!(validate_history(&history));
+        assert!(validate_chain(&history));
         Ok(())
     }
 
@@ -4879,7 +4899,7 @@ mod validate_history_tests {
             ],
         };
 
-        assert!(!validate_history(&history));
+        assert!(!validate_chain(&history));
         Ok(())
     }
 
@@ -4907,14 +4927,14 @@ mod validate_history_tests {
             }],
         };
 
-        assert!(validate_history(&history));
+        assert!(validate_chain(&history));
         Ok(())
     }
 
     #[test]
     fn validate_history_empty_is_valid() {
         let history = HistoryFile::new();
-        assert!(validate_history(&history));
+        assert!(validate_chain(&history));
     }
 
     #[test]
@@ -4948,7 +4968,7 @@ mod validate_history_tests {
         };
 
         assert!(
-            !validate_history(&history),
+            !validate_chain(&history),
             "first entry missing a signersfile signer must fail"
         );
 
@@ -4968,7 +4988,7 @@ mod validate_history_tests {
         };
 
         assert!(
-            !validate_history(&history),
+            !validate_chain(&history),
             "first entry missing a metadata signer must fail"
         );
         Ok(())
@@ -5031,7 +5051,7 @@ mod validate_history_tests {
             ],
         };
 
-        assert!(!validate_history(&history));
+        assert!(!validate_chain(&history));
         Ok(())
     }
 
@@ -5113,8 +5133,8 @@ mod validate_history_tests {
         let history = HistoryFile::load_from_file(&fixture_path)?;
 
         assert!(
-            validate_history(&history),
-            "validate_history should accept valid signatures regardless of JSON formatting"
+            validate_chain(&history),
+            "validate_chain should accept valid signatures regardless of JSON formatting"
         );
         Ok(())
     }
@@ -5584,7 +5604,7 @@ mod validate_history_tests {
     #[test]
     fn validate_history_first_entry_scenarios() {
         for sc in first_entry_scenarios() {
-            let result = validate_history(&sc.history);
+            let result = validate_chain(&sc.history);
             assert_eq!(
                 result, sc.expected_valid,
                 "Scenario '{}': expected valid={}, got valid={}",

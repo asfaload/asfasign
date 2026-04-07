@@ -1,4 +1,4 @@
-//! Scenario-table tests for `validate_history` covering multi-entry rotation
+//! Scenario-table tests for `validate_chain` covering multi-entry rotation
 //! transitions, mirroring the style of `validate_history_first_entry_scenarios`
 //! in `lib.rs`.
 //!
@@ -19,7 +19,7 @@ use signers_file_types::{HistoryEntry, HistoryFile, SignersConfig};
 use test_helpers::history_helpers::{sign_config, sign_metadata};
 use test_helpers::{TestKeys, test_metadata};
 
-use crate::validate_history;
+use crate::validate_chain;
 
 struct RotationScenario {
     name: &'static str,
@@ -529,7 +529,7 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
 #[test]
 fn validate_history_rotation_scenarios() {
     for sc in rotation_scenarios() {
-        let result = validate_history(&sc.history);
+        let result = validate_chain(&sc.history);
         assert_eq!(
             result, sc.expected_valid,
             "Scenario '{}': expected valid={}, got valid={}",

@@ -45,7 +45,7 @@ async fn get_signers_chain(
 ///
 /// Fetches the chain from the backend API, runs cryptographic validation
 /// across the entire history (including the first-entry all-signers rule)
-/// via `validate_history`, and finally checks the first entry's
+/// via `validate_chain`, and finally checks the first entry's
 /// trust-anchor (forge content match).
 pub async fn verify_signers_chain(
     backend_url: &str,
@@ -62,7 +62,7 @@ pub async fn verify_signers_chain(
     }
 
     // Cryptographic validation of the entire chain (incl. first-entry all-signers).
-    if !features_lib::validate_history(&history) {
+    if !features_lib::validate_chain(&history) {
         return Err(ClientLibError::SignersChainFirstEntryInvalid(
             "signers chain validation failed".into(),
         ));
@@ -81,7 +81,7 @@ pub async fn verify_signers_chain(
 /// served by the forge URL recorded in its metadata.
 ///
 /// Signature validity is assumed to have already been checked by
-/// `validate_history`. This function only performs the forge fetch and
+/// `validate_chain`. This function only performs the forge fetch and
 /// content comparison.
 pub(crate) async fn validate_trust_anchor(
     client: &reqwest::Client,
