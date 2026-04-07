@@ -153,6 +153,19 @@ pub fn check_all_signers(
         })
 }
 
+/// Verify that every signer listed in `signers_config` has a valid signature
+/// over `content` in `signatures`. Hashes the raw bytes with SHA-512, parses
+/// the tagged signatures, then delegates to `check_all_signers`.
+pub fn verify_all_signers_signed(
+    content: &[u8],
+    signatures: &SignaturesFile,
+    signers_config: &SignersConfig,
+) -> Result<bool, AggregateSignatureError> {
+    let hash = common::sha512_for_content(content.to_vec())?;
+    let parsed = parse_tagged_signatures(&signatures.entries)?;
+    Ok(check_all_signers(&parsed, signers_config, &hash))
+}
+
 pub fn check_signers<P, S>(
     signatures: &HashMap<P, S>,
     signers: &[P],
