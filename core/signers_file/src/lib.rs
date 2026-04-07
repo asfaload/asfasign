@@ -405,6 +405,33 @@ pub fn validate_history(history: &HistoryFile) -> bool {
     if !history.entries().is_sorted_by_key(|e| e.obsoleted_at) {
         return false;
     };
+
+    // The first (genesis) entry establishes the trust anchor: every signer
+    // listed in its config must have signed both the signers_file bytes and
+    // the metadata bytes.
+    if let Some(first) = history.entries().first() {
+        let first_signers = match first.signers_config() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        match aggregate_signature::verify_all_signers_signed(
+            first.signers_file.as_bytes(),
+            &first.signatures,
+            &first_signers,
+        ) {
+            Ok(true) => {}
+            _ => return false,
+        }
+        match aggregate_signature::verify_all_signers_signed(
+            first.metadata.as_bytes(),
+            &first.metadata_signatures,
+            &first_signers,
+        ) {
+            Ok(true) => {}
+            _ => return false,
+        }
+    }
+
     history.entries().windows(2).all(|pair| {
         let parent = &pair[0];
         let updated = &pair[1];
@@ -4535,6 +4562,63 @@ mod validate_history_tests {
     fn validate_history_empty_is_valid() {
         let history = HistoryFile::new();
         assert!(validate_history(&history));
+    }
+
+    #[test]
+    fn validate_history_rejects_first_entry_without_all_signers() -> Result<()> {
+        // 2 signers required, only 1 signs the signers_file — must fail.
+        let keys = TestKeys::new(2);
+        let config = SignersConfig::with_artifact_signers_only(
+            1,
+            (
+                vec![
+                    keys.pub_key(0).unwrap().clone(),
+                    keys.pub_key(1).unwrap().clone(),
+                ],
+                2,
+            ),
+        )?;
+
+        // Signers partially signed
+        let (json, sig_partial) = sign_config(&config, &keys, &[0])?;
+        let metadata = test_metadata();
+        let (meta_json, meta_sig) = sign_metadata(&metadata, &keys, &[0, 1])?;
+
+        let history = HistoryFile {
+            entries: vec![HistoryEntry {
+                obsoleted_at: Utc::now(),
+                signers_file: json,
+                signatures: sig_partial,
+                metadata: meta_json,
+                metadata_signatures: meta_sig,
+            }],
+        };
+
+        assert!(
+            !validate_history(&history),
+            "first entry missing a signersfile signer must fail"
+        );
+
+        // Metadata partially signed
+        let (json, sig_partial) = sign_config(&config, &keys, &[0, 1])?;
+        let metadata = test_metadata();
+        let (meta_json, meta_sig) = sign_metadata(&metadata, &keys, &[1])?;
+
+        let history = HistoryFile {
+            entries: vec![HistoryEntry {
+                obsoleted_at: Utc::now(),
+                signers_file: json,
+                signatures: sig_partial,
+                metadata: meta_json,
+                metadata_signatures: meta_sig,
+            }],
+        };
+
+        assert!(
+            !validate_history(&history),
+            "first entry missing a metadata signer must fail"
+        );
+        Ok(())
     }
 
     #[test]
