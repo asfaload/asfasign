@@ -211,6 +211,7 @@ impl SignersConfig {
             .iter()
             .chain(self.master_keys().unwrap_or_default().iter())
             .chain(self.artifact_signers.iter())
+            .chain(self.revocation_keys().iter())
             .flat_map(|group| {
                 group
                     .signers
@@ -993,5 +994,37 @@ mod accessor_tests {
             "Expected FetchError, got: {:?}",
             result.unwrap_err()
         );
+    }
+
+    #[test]
+    fn all_signer_keys_includes_revocation_keys() {
+        let keys = test_helpers::TestKeys::new(4);
+        let config = SignersConfig::with_keys(
+            1,
+            (vec![keys.pub_key(0).unwrap().clone()], 1),
+            Some((vec![keys.pub_key(1).unwrap().clone()], 1)),
+            Some((vec![keys.pub_key(2).unwrap().clone()], 1)),
+            Some((vec![keys.pub_key(3).unwrap().clone()], 1)),
+        )
+        .unwrap();
+
+        let all_keys = config.all_signer_keys();
+        assert!(
+            all_keys.contains(keys.pub_key(0).unwrap()),
+            "should contain artifact key"
+        );
+        assert!(
+            all_keys.contains(keys.pub_key(1).unwrap()),
+            "should contain admin key"
+        );
+        assert!(
+            all_keys.contains(keys.pub_key(2).unwrap()),
+            "should contain master key"
+        );
+        assert!(
+            all_keys.contains(keys.pub_key(3).unwrap()),
+            "should contain revocation key"
+        );
+        assert_eq!(all_keys.len(), 4);
     }
 }
