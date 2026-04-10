@@ -25,6 +25,14 @@ test-sha256:
 		done; \
 	done
 
+## Run local tests in fast config. Run by default by CI too.
+test-local:
+	@for t in $(TESTS); do \
+		if [[ $$t == *_local.sh ]]; then \
+			ASFALOAD_GIT_BACKEND=$${ASFALOAD_GIT_BACKEND:-sha256} KEY_TYPE=$${KEY_TYPE:-ed25519} ./$$t || exit 1; \
+		fi; \
+	done
+
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"
 	@echo

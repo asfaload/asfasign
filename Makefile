@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL:=/bin/bash
 
-## Run all tests with minisign keys (default)
+## Run all tests with ed25519 keys (default)
 test: test-ed25519
 
 ## Run all tests with minisign keys
@@ -17,6 +17,7 @@ test-minisign:
 	# Re-run rest-api tests with sha256 backend
 	$(MAKE) -C rest-api test-sha256
 	$(MAKE) -C rest-api test-with-test-utils-sha256
+	KEY_TYPE=minisign $(MAKE) -C tests/e2e_tests test-local
 
 ## Run tests with test-utils feature enabled (for integration tests)
 # Note that if test-utils is added to other packages, they need to be added here.
@@ -82,6 +83,7 @@ test-ed25519:
 	KEY_TYPE=ed25519 $(MAKE) test-with-test-utils
 	KEY_TYPE=ed25519 $(MAKE) -C rest-api test-sha256
 	KEY_TYPE=ed25519 $(MAKE) -C rest-api test-with-test-utils-sha256
+	KEY_TYPE=ed25519 $(MAKE) -C tests/e2e_tests test-local
 
 ## Run mutation tests (with ed25519 keys). Select packages in .cargo/mutants.toml
 test-mutants:
