@@ -207,11 +207,16 @@ impl SignersConfig {
     }
     // Get all signers keys present in the SignersConfig.
     pub fn all_signer_keys(&self) -> HashSet<AsfaloadPublicKeys> {
-        self.admin_keys()
+        // Do not use the accessors: we do not want to follow the fallback mechanisms, as this
+        // would lead to duplicated keys (eg if admin group is empty, the admin accessor will
+        // return the artifact signers, which we add later on.)
+        self.admin_keys
+            .as_deref()
+            .unwrap_or_default()
             .iter()
             .chain(self.master_keys().unwrap_or_default().iter())
             .chain(self.artifact_signers.iter())
-            .chain(self.revocation_keys().iter())
+            .chain(self.revocation_keys.as_deref().unwrap_or_default().iter())
             .flat_map(|group| {
                 group
                     .signers
