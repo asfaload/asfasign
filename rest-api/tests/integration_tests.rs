@@ -830,7 +830,7 @@ pub mod test_utils_tests {
         assert!(response_body.get("error").is_some());
 
         // project existence is detected before sending out request
-        mock.assert_hits(0);
+        mock.assert_calls(0);
 
         server_handle.abort();
 
