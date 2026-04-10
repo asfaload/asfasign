@@ -242,9 +242,21 @@ run_step_json "Sign pending signers with key1" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
 
-run_step_json "Sign pending signers with key3 (completes, activates new signers)" \
-    '.is_complete == true' \
+run_step_json "Sign pending signers with key3 (newly added artifact signer)" \
+    '.is_complete == false' \
     cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(pending_signers_file)
+
+run_step_json "Sign pending signers with key4 (newly added revocation key)" \
+    '.is_complete == false' \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_4" -u "$backend" --password $key_password $(pending_signers_file)
+
+run_step_json "Sign pending signers with key5 (newly added revocation key)" \
+    '.is_complete == false' \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_5" -u "$backend" --password $key_password $(pending_signers_file)
+
+run_step_json "Sign pending signers with key6 (activates new signers file)" \
+    '.is_complete == true' \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_6" -u "$backend" --password $key_password $(pending_signers_file)
 
 assert_signers_active
 
