@@ -202,6 +202,24 @@ pub enum Commands {
         json_args: JsonArgs,
     },
 
+    /// Check signature collection status for a file
+    SignatureStatus {
+        /// Path to the file (relative path in mirror)
+        file_path: String,
+
+        #[command(flatten)]
+        secret_key_args: SecretKeyArgs,
+
+        #[command(flatten)]
+        password_args: PasswordArgs,
+
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
+
     /// Register a repository with the backend
     RegisterRepo {
         /// URL to the signers file (e.g., https://raw.githubusercontent.com/owner/repo/branch/asfaload.signers/index.json)
@@ -323,6 +341,7 @@ impl Commands {
             Self::NewKeys { .. } => "NEW_KEYS",
             Self::ListPending { .. } => "LIST_PENDING",
             Self::SignPending { .. } => "SIGN_PENDING",
+            Self::SignatureStatus { .. } => "SIGNATURE_STATUS",
             Self::RegisterRepo { .. } => "REGISTER_REPO",
             Self::RegisterAssets { .. } => "REGISTER_ASSETS",
             Self::UpdateSigners { .. } => "UPDATE_SIGNERS",
@@ -352,6 +371,7 @@ impl Commands {
             | Self::NewSignersFile { json_args, .. }
             | Self::ListPending { json_args, .. }
             | Self::SignPending { json_args, .. }
+            | Self::SignatureStatus { json_args, .. }
             | Self::RegisterRepo { json_args, .. }
             | Self::RegisterAssets { json_args, .. }
             | Self::UpdateSigners { json_args, .. }
