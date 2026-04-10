@@ -5225,8 +5225,6 @@ mod validate_history_tests {
         }
 
         // 3. valid_with_full_key_config
-        // NOTE: all_signer_keys() currently does NOT include revocation_keys — known bug
-        // tracked separately. When fixed, this scenario must also sign with key 3.
         {
             let config = SignersConfig::with_keys(
                 1,
@@ -5236,9 +5234,9 @@ mod validate_history_tests {
                 Some((vec![keys_5.pub_key(3).unwrap().clone()], 1)),
             )
             .unwrap();
-            let (json, sig) = sign_config(&config, &keys_5, &[0, 1, 2]).unwrap();
+            let (json, sig) = sign_config(&config, &keys_5, &[0, 1, 2, 3]).unwrap();
             let (meta_json, meta_sig) =
-                sign_metadata(&default_metadata, &keys_5, &[0, 1, 2]).unwrap();
+                sign_metadata(&default_metadata, &keys_5, &[0, 1, 2, 3]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "valid_with_full_key_config",
                 history: single(HistoryEntry {
@@ -5498,8 +5496,6 @@ mod validate_history_tests {
         }
 
         // 10. missing_admin_key_signature
-        // NOTE: all_signer_keys() currently does NOT include revocation_keys — known bug
-        // tracked separately. When fixed, this scenario must also sign with key 3.
         {
             let config = SignersConfig::with_keys(
                 1,
@@ -5509,9 +5505,10 @@ mod validate_history_tests {
                 Some((vec![keys_5.pub_key(3).unwrap().clone()], 1)),
             )
             .unwrap();
-            // Sign with [0, 2] — missing admin (key 1)
-            let (json, sig) = sign_config(&config, &keys_5, &[0, 2]).unwrap();
-            let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_5, &[0, 2]).unwrap();
+            // Sign with [0, 2, 3] — missing admin (key 1)
+            let (json, sig) = sign_config(&config, &keys_5, &[0, 2, 3]).unwrap();
+            let (meta_json, meta_sig) =
+                sign_metadata(&default_metadata, &keys_5, &[0, 2, 3]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "missing_admin_key_signature",
                 history: single(HistoryEntry {

@@ -214,15 +214,15 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
 
     // A7. rotation_changes_revocation_key
     {
-        // Revocation keys are NOT in `all_signer_keys()` (known limitation),
-        // so a revocation key swap does not introduce any "newly added
-        // signer". Only old admin + new admin signatures are required.
+        // Revocation keys ARE in `all_signer_keys()`, so swapping
+        // revocation key 6→7 introduces key 7 as a newly added signer.
+        // The rotation must be co-signed by old admin + new admin + new key 7.
         let old = with_admin_and_revocation(&keys, (&[0], 1), (&[4], 1), (&[6], 1));
         let new = with_admin_and_revocation(&keys, (&[0], 1), (&[4], 1), (&[7], 1));
-        // First entry: all_signer_keys = {X=0, A=4}. Sign with [0, 4].
-        let entry1 = make_entry(&old, &keys, &[0, 4], &[0, 4], t(10));
-        // Rotation needs old admin (A) + new admin (A). Sign with [4].
-        let entry2 = make_entry(&new, &keys, &[4], &[4], t(20));
+        // First entry: all_signer_keys = {X=0, A=4, R=6}. Sign with [0, 4, 6].
+        let entry1 = make_entry(&old, &keys, &[0, 4, 6], &[0, 4, 6], t(10));
+        // Rotation needs old admin (A=4) + new admin (A=4) + newly added (R=7). Sign with [4, 7].
+        let entry2 = make_entry(&new, &keys, &[4, 7], &[4, 7], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_changes_revocation_key",
             history: HistoryFile {
