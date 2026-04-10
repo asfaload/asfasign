@@ -404,7 +404,7 @@ mod test_utils_tests {
         // Poll for the first hit, then delete the mock and create the success mock
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            if mock_429.hits() > 0 {
+            if mock_429.calls() > 0 {
                 mock_429.delete();
                 mock_server.mock(|when, then| {
                     when.method(httpmock::Method::GET)
@@ -416,7 +416,7 @@ mod test_utils_tests {
                 break;
             }
             if start.elapsed().as_secs() > 5 {
-                panic!("Timeout waiting for first hit, hits: {}", mock_429.hits());
+                panic!("Timeout waiting for first hit, calls: {}", mock_429.calls());
             }
         }
 
@@ -496,7 +496,7 @@ mod test_utils_tests {
             .unwrap();
 
         assert_eq!(result, "success content");
-        mock.assert_hits_async(1).await;
+        mock.assert_calls_async(1).await;
     }
 
     #[tokio::test]
@@ -515,7 +515,7 @@ mod test_utils_tests {
             .unwrap_err();
 
         assert!(matches!(err, ApiError::ActorOperationFailed(msg) if msg.contains("500")));
-        mock.assert_hits_async(1).await;
+        mock.assert_calls_async(1).await;
     }
 
     #[tokio::test]
@@ -535,7 +535,7 @@ mod test_utils_tests {
             .unwrap_err();
 
         // Should retry MAX_RETRIES + 1 times (initial + 3 retries = 4 total attempts)
-        mock.assert_hits_async((MAX_RETRIES + 1) as usize).await;
+        mock.assert_calls_async((MAX_RETRIES + 1) as usize).await;
 
         // Total sleep time: 1 + 2 + 4 = 7 seconds (backoff: 1→2→4; stops before 8 due to max retries)
         let elapsed = start.elapsed();
@@ -566,7 +566,7 @@ mod test_utils_tests {
             .await
             .unwrap_err();
 
-        mock.assert_hits_async((MAX_RETRIES + 1) as usize).await;
+        mock.assert_calls_async((MAX_RETRIES + 1) as usize).await;
 
         // Each retry waits 2s → 3 retries = 6s total wait
         let elapsed = start.elapsed();
@@ -608,7 +608,7 @@ mod test_utils_tests {
         // The mock returning 429 gets a hit, it is replaced by a success responder
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            if mock_429.hits() > 0 {
+            if mock_429.calls() > 0 {
                 mock_429.delete();
                 server.mock(|when, then| {
                     when.method(httpmock::Method::GET).path("/");
@@ -619,7 +619,7 @@ mod test_utils_tests {
                 break;
             }
             if start.elapsed().as_secs() > 5 {
-                panic!("Timeout waiting for first hit, hits: {}", mock_429.hits());
+                panic!("Timeout waiting for first hit, calls: {}", mock_429.calls());
             }
         }
 
