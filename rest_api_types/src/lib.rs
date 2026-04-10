@@ -132,6 +132,9 @@ pub mod errors {
         #[error("File is revoked: {0}")]
         FileRevoked(String),
 
+        #[error("Not authorized: {0}")]
+        NotAuthorized(String),
+
         #[error("Release already registered: {0}")]
         ReleaseAlreadyRegistered(String),
     }
@@ -230,6 +233,7 @@ pub mod errors {
                 ApiError::FileNotFullySigned(_) => StatusCode::CONFLICT,
                 ApiError::DigestMismatch(_) => StatusCode::BAD_REQUEST,
                 ApiError::FileRevoked(_) => StatusCode::BAD_REQUEST,
+                ApiError::NotAuthorized(_) => StatusCode::FORBIDDEN,
                 ApiError::ReleaseAlreadyRegistered(_) => StatusCode::CONFLICT,
                 ApiError::GitError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
