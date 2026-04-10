@@ -382,9 +382,16 @@ HISTORY_REL_PATH="${HISTORY_REL_PATH#"$E2E_GIT_REPO_PATH/"}"
 HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" rev-parse "HEAD:$HISTORY_REL_PATH")
 
 # Build the raw.githubusercontent.com URL for signers_file_2 (valid but different content)
+# The metadata field in history entries is base64-encoded JSON. To tamper
+# with the retrieval URL we must: decode base64 → modify JSON → re-encode base64.
 TAMPERED_RAW_URL="https://raw.githubusercontent.com/${E2E_REPO}/master/${TEST_NAME}/signers_file_2${_SIGNERS_SUFFIX}.json"
 TAMPERED_HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
-    jq --arg url "$TAMPERED_RAW_URL" '.entries[0].metadata.data.Forge.verified_content.retrieval_url = $url' | \
+    jq --arg url "$TAMPERED_RAW_URL" '
+      .entries[0].metadata |= (
+        @base64d | fromjson |
+        .data.Forge.verified_content.retrieval_url = $url |
+        tojson | @base64
+      )' | \
     git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
 git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$TAMPERED_HISTORY_BLOB"
 
@@ -396,7 +403,12 @@ git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
 # --- Tamper: point metadata URL to non-existent file (404) ---
 NONEXISTENT_RAW_URL="https://raw.githubusercontent.com/${E2E_REPO}/master/${TEST_NAME}/signers_file_nonexistent.json"
 NOTFOUND_HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
-    jq --arg url "$NONEXISTENT_RAW_URL" '.entries[0].metadata.data.Forge.verified_content.retrieval_url = $url' | \
+    jq --arg url "$NONEXISTENT_RAW_URL" '
+      .entries[0].metadata |= (
+        @base64d | fromjson |
+        .data.Forge.verified_content.retrieval_url = $url |
+        tojson | @base64
+      )' | \
     git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
 git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$NOTFOUND_HISTORY_BLOB"
 
