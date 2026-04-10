@@ -541,6 +541,38 @@ pub async fn get_signature_status_handler(
         )));
     }
 
+    // Verify caller is an authorized signer for this file
+    // Note that we look at the current global signers file, not the local copy taken when the
+    // signature was completed. If a key has been removed from the signers file, we might have the
+    // situation where a key that signed the file can't check its status. This seems sensible, as
+    // the key might have been removed for security reasons.
+    let public_key = extract_public_key_from_headers(&headers)?;
+    let signers_path = common::fs::names::find_global_signers_for(&file_path.absolute_path())
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                error = %e,
+                "No signers file found"
+            );
+            ApiError::FileNotFound(format!(
+                "No signers file found for: {}",
+                file_path.relative_path().display()
+            ))
+        })?;
+    let signers_content = std::fs::read_to_string(&signers_path).map_err(|e| {
+        ApiError::InternalServerError(format!("Failed to read signers file: {}", e))
+    })?;
+    let signers_config =
+        signers_file_types::parse_signers_config(&signers_content).map_err(|e| {
+            ApiError::InternalServerError(format!("Failed to parse signers file: {}", e))
+        })?;
+    if !signers_config.all_signer_keys().contains(&public_key) {
+        return Err(ApiError::NotAuthorized(format!(
+            "caller is not an authorized signer for {}",
+            file_path.relative_path().display()
+        )));
+    }
+
     // Send status request to the actor
     let status_request = crate::file_auth::actors::signature_collector::GetSignatureStatusRequest {
         file_path: file_path.clone(),
