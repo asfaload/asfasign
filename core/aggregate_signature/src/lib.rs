@@ -3022,6 +3022,30 @@ mod tests {
             signatures.insert(pubkey1.clone(), sig1.clone());
             assert!(!check_all_signers(&signatures, &config, &data));
         }
+
+        // Scenario 10: Revocation keys must be signed too
+        {
+            let config = SignersConfigProposal {
+                timestamp: chrono::Utc::now(),
+                version: 1,
+                artifact_signers: vec![create_group(vec![create_signer(pubkey0.clone())], 1)],
+                master_keys: None,
+                admin_keys: None,
+                revocation_keys: Some(vec![create_group(vec![create_signer(pubkey1.clone())], 1)]),
+            }
+            .build();
+
+            // Both artifact + revocation signed → true
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            signatures.insert(pubkey1.clone(), sig1.clone());
+            assert!(check_all_signers(&signatures, &config, &data));
+
+            // Missing revocation key signature → false
+            let mut signatures = HashMap::new();
+            signatures.insert(pubkey0.clone(), sig0.clone());
+            assert!(!check_all_signers(&signatures, &config, &data));
+        }
         Ok(())
     }
     // ------------------------------------
