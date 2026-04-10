@@ -9,8 +9,9 @@ use features_lib::{
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
-    FilesToSignResponse, ListPendingResponse, RegisterRepoRequest, RegisterRepoResponse,
-    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    FilesToSignResponse, GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest,
+    RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest,
+    SubmitSignatureResponse,
 };
 use serde::de::DeserializeOwned;
 
@@ -87,6 +88,24 @@ impl Client {
         secret_key: &AsfaloadSecretKeys,
     ) -> AdminLibResult<ListPendingResponse> {
         let url = format!("{}/v1/pending_signatures", self.base_url);
+        let headers = create_auth_headers("", secret_key)?;
+
+        let response = self.client.get(&url).headers(headers).send().await?;
+
+        let response = Self::check_response_status(response).await?;
+        Self::parse_json_response(response).await
+    }
+
+    /// Get signature collection status for a specific file.
+    ///
+    /// Makes an authenticated GET request to `/v1/signatures/{file_path}`.
+    /// The caller must be an authorized signer for the file.
+    pub async fn get_signature_status(
+        &self,
+        file_path: &str,
+        secret_key: &AsfaloadSecretKeys,
+    ) -> AdminLibResult<GetSignatureStatusResponse> {
+        let url = format!("{}/v1/signatures/{}", self.base_url, file_path);
         let headers = create_auth_headers("", secret_key)?;
 
         let response = self.client.get(&url).headers(headers).send().await?;
