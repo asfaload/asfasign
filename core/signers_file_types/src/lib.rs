@@ -3,29 +3,11 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use common::errors::{SignersFileError, keys::KeyError};
+use common::errors::{SignersConfigError, SignersFileError, keys::KeyError};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use signatures::keys::KeyFormat;
 use signatures::signatures_file::SignaturesFile;
 use signatures::{keys::AsfaloadPublicKeyTrait, types::AsfaloadPublicKeys};
-
-pub mod errs {
-    use common::errors::keys::KeyError;
-    use thiserror::Error;
-
-    #[derive(Error, Debug)]
-    pub enum SignersConfigError {
-        #[error("Key error")]
-        KeyError(#[from] KeyError),
-        #[error("Invalid Signer group")]
-        GroupError(String),
-        #[error("Serialisation error")]
-        SerialisationError(#[from] serde_json::Error),
-        #[error("IO error")]
-        IOError(#[from] std::io::Error),
-    }
-}
-use errs::SignersConfigError;
 
 // We set a bound in the serde annotation. Here why, as explained by AI:
 // Without this bound, we get the error `E0277` "the trait bound `P: _::_serde::Deserialize<'_>` is
@@ -97,7 +79,7 @@ impl SignersConfig {
         }
     }
 
-    pub fn from_file<P: AsRef<Path>>(path_in: P) -> Result<Self, errs::SignersConfigError> {
+    pub fn from_file<P: AsRef<Path>>(path_in: P) -> Result<Self, SignersConfigError> {
         let signers_path = path_in.as_ref();
         let signers_content = std::fs::read_to_string(signers_path)?;
         let signers_config = parse_signers_config(&signers_content)?;
@@ -108,9 +90,9 @@ impl SignersConfig {
     fn create_group(
         pubkeys: Vec<AsfaloadPublicKeys>,
         threshold: u32,
-    ) -> Result<SignerGroup, errs::SignersConfigError> {
+    ) -> Result<SignerGroup, SignersConfigError> {
         if pubkeys.is_empty() {
-            return Err(errs::SignersConfigError::GroupError(
+            return Err(SignersConfigError::GroupError(
                 "Empty groups cannot be built".to_string(),
             ));
         }

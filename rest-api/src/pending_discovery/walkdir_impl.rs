@@ -112,7 +112,7 @@ mod tests {
     };
     use rest_api_types::path_validation::build_normalised_absolute_path;
     use signatures::signatures_file::{SignaturesFile, TaggedSignature};
-    use signers_file_types::{SignersConfig, parse_signers_config};
+    use signers_file_types::SignersConfig;
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -273,8 +273,7 @@ mod tests {
         let signers_file = setup_asfald_project_registered(temp_dir.path(), signers_json)?;
         let pending_signatures_file = pending_signatures_path_for(&signers_file)?;
         // First check the signers file was written correctly
-        let json_from_file = fs::read_to_string(&signers_file)?;
-        let signers_config_from_file = parse_signers_config(json_from_file.as_str())?;
+        let signers_config_from_file = SignersConfig::from_file(&signers_file)?;
         assert_eq!(signers_config_from_file.artifact_signers().len(), 1);
         assert_eq!(
             signers_file
@@ -416,8 +415,7 @@ mod tests {
         let pending_signatures_file = pending_signatures_path_for(&signers_file)?;
 
         // First check the signers file was written correctly
-        let json_from_file = fs::read_to_string(&signers_file)?;
-        let signers_config_from_file = parse_signers_config(json_from_file.as_str())?;
+        let signers_config_from_file = SignersConfig::from_file(&signers_file)?;
         assert_eq!(signers_config_from_file.artifact_signers().len(), 1);
         assert_eq!(
             signers_file

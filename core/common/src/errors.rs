@@ -26,6 +26,8 @@ pub enum RevocationError {
     Signature(String),
     #[error("File error: {0}")]
     FileError(String),
+    #[error("Signers config error: {0}")]
+    SignersConfigError(#[from] SignersConfigError),
 }
 
 #[derive(Debug, Error)]
@@ -61,6 +63,20 @@ pub enum AggregateSignatureError {
     DuplicateSignature,
     #[error("Revocation error: {0}")]
     RevocationError(#[from] RevocationError),
+    #[error("Signers config error: {0}")]
+    SignersConfigError(#[from] SignersConfigError),
+}
+
+#[derive(Debug, Error)]
+pub enum SignersConfigError {
+    #[error("Key error: {0}")]
+    KeyError(#[from] keys::KeyError),
+    #[error("Invalid Signer group: {0}")]
+    GroupError(String),
+    #[error("Serialisation error: {0}")]
+    SerialisationError(#[from] serde_json::Error),
+    #[error("IO error: {0}")]
+    IOError(#[from] std::io::Error),
 }
 
 #[derive(Debug, Error)]
@@ -87,6 +103,8 @@ pub enum SignersFileError {
     FileSystemHierarchyError(String),
     #[error("Signers chain validation failed: {0}")]
     ChainValidationFailed(String),
+    #[error("Signers config error: {0}")]
+    SignersConfigError(#[from] SignersConfigError),
 }
 
 impl From<SignatureError> for SignersFileError {
