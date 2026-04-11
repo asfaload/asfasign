@@ -5,7 +5,7 @@ pub mod path_validation;
 pub mod errors {
 
     use axum::{Json, http::StatusCode, response::IntoResponse};
-    use signers_file_types::errs::SignersConfigError;
+    use common::errors::SignersConfigError;
     use thiserror::Error;
 
     use super::models::ErrorResponse;
