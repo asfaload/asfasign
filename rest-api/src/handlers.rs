@@ -1,4 +1,4 @@
-use common::fs::names::subject_path_from_pending_signatures;
+use common::fs::names::{find_global_signers_for, subject_path_from_pending_signatures};
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
@@ -547,19 +547,29 @@ pub async fn get_signature_status_handler(
     // situation where a key that signed the file can't check its status. This seems sensible, as
     // the key might have been removed for security reasons.
     let public_key = extract_public_key_from_headers(&headers)?;
-    let signers_path = common::fs::names::find_global_signers_for(&file_path.absolute_path())
-        .map_err(|e| {
-            tracing::error!(
-                request_id = %request_id,
-                error = %e,
-                "No signers file found"
-            );
-            ApiError::FileNotFound(format!(
-                "No signers file found for: {}",
-                file_path.relative_path().display()
-            ))
-        })?;
-    let signers_config = SignersConfig::from_file(&signers_path)?;
+    let signers_config = tokio::task::spawn_blocking({
+        let file_path = file_path.clone();
+        let request_id = request_id.to_string();
+        move || -> Result<SignersConfig, ApiError> {
+            let signers_path =
+                find_global_signers_for(&file_path.absolute_path()).map_err(|e| {
+                    tracing::error!(
+                        request_id = %request_id,
+                        error = %e,
+                        "No signers file found"
+                    );
+                    ApiError::FileNotFound(format!(
+                        "No signers file found for: {}",
+                        file_path.relative_path().display()
+                    ))
+                })?;
+            Ok(SignersConfig::from_file(&signers_path)?)
+        }
+    })
+    .await
+    // First '?': JoinError (mapped above)
+    // Second '?': ApiError returned from the closure
+    .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
     if !signers_config.all_signer_keys().contains(&public_key) {
         return Err(ApiError::NotAuthorized(format!(
             "caller is not an authorized signer for {}",
