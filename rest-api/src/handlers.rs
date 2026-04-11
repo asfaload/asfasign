@@ -1,6 +1,6 @@
 use common::fs::names::subject_path_from_pending_signatures;
 use constants::SIGNERS_DIR;
-use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
     FilesToSignResponse, GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
@@ -559,13 +559,7 @@ pub async fn get_signature_status_handler(
                 file_path.relative_path().display()
             ))
         })?;
-    let signers_content = std::fs::read_to_string(&signers_path).map_err(|e| {
-        ApiError::InternalServerError(format!("Failed to read signers file: {}", e))
-    })?;
-    let signers_config =
-        signers_file_types::parse_signers_config(&signers_content).map_err(|e| {
-            ApiError::InternalServerError(format!("Failed to parse signers file: {}", e))
-        })?;
+    let signers_config = SignersConfig::from_file(&signers_path)?;
     if !signers_config.all_signer_keys().contains(&public_key) {
         return Err(ApiError::NotAuthorized(format!(
             "caller is not an authorized signer for {}",
