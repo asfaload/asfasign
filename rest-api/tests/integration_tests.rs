@@ -621,6 +621,36 @@ pub mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_get_signature_status_returns_404_for_missing_file() -> Result<(), anyhow::Error> {
+        use rest_api_test_helpers::TestSetupBuilder;
+
+        let setup = TestSetupBuilder::new()
+            .with_artifact("data.txt")
+            .with_artifact_content(b"test data".to_vec())
+            .build()
+            .await?;
+
+        let auth = create_auth_headers("").await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!(
+                "http://127.0.0.1:{}/v1/signatures/does/not/exist.txt",
+                setup.port()
+            ))
+            .header(HEADER_TIMESTAMP, &auth.timestamp)
+            .header(HEADER_NONCE, &auth.nonce)
+            .header(HEADER_SIGNATURE, &auth.signature)
+            .header(HEADER_PUBLIC_KEY, &auth.public_key)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        Ok(())
+    }
 }
 
 #[cfg(all(test, feature = "test-utils"))]

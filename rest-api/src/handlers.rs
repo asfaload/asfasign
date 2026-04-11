@@ -535,7 +535,7 @@ pub async fn get_signature_status_handler(
     .await?;
 
     if !file_path.absolute_path().exists() {
-        return Err(ApiError::InvalidRequestBody(format!(
+        return Err(ApiError::FileNotFound(format!(
             "File not found: {}",
             file_path.relative_path().to_string_lossy()
         )));
