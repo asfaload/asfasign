@@ -1,5 +1,6 @@
 pub mod revocation;
 use std::collections::HashSet;
+use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use common::errors::{SignersFileError, keys::KeyError};
@@ -15,9 +16,13 @@ pub mod errs {
     #[derive(Error, Debug)]
     pub enum SignersConfigError {
         #[error("Key error")]
-        IOError(#[from] KeyError),
+        KeyError(#[from] KeyError),
         #[error("Invalid Signer group")]
         GroupError(String),
+        #[error("Serialisation error")]
+        SerialisationError(#[from] serde_json::Error),
+        #[error("IO error")]
+        IOError(#[from] std::io::Error),
     }
 }
 use errs::SignersConfigError;
@@ -90,6 +95,13 @@ impl SignersConfig {
             admin_keys: p.admin_keys,
             revocation_keys: p.revocation_keys,
         }
+    }
+
+    pub fn from_file<P: AsRef<Path>>(path_in: P) -> Result<Self, errs::SignersConfigError> {
+        let signers_path = path_in.as_ref();
+        let signers_content = std::fs::read_to_string(signers_path)?;
+        let signers_config = parse_signers_config(&signers_content)?;
+        Ok(signers_config)
     }
 
     // Helper function to create a SignerGroup from pubkeys' string representation.
