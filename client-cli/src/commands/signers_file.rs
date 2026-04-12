@@ -162,6 +162,11 @@ pub fn handle_new_signers_file_command(
             all_master_keys_count,
             master_threshold.map_or("none".to_string(), |t| t.to_string())
         );
+        println!(
+            "Revocation keys: {} (threshold: {})",
+            all_revocation_keys_count,
+            revocation_threshold.map_or("none".to_string(), |t| t.to_string())
+        );
     }
 
     Ok(())
