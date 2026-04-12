@@ -29,6 +29,7 @@ client new-signers-file \
 ```
 
 Commit and push it to your repository so the backend can fetch it by URL.
+We advise to commit the file either in your main branch, or in a dedicated branch in which you save all signers files updates.
 
 ### 2. Propose the update
 

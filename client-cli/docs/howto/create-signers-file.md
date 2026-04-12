@@ -41,7 +41,10 @@ Master keys: 0 (threshold: none)
 
 ### 3. Commit and push
 
-Place the signers file in your repository and push it. The backend needs to fetch it by URL during [repository registration](register-repo.md).
+Place the signers file in your repository and push it.
+We advise to commit the file in your main branch (eg under a directory .asfaload.signers) or in a dedicated branch of the repo.
+The best is to not update existing signers files but add a new version alongside it.
+The backend needs to fetch it by URL during [repository registration](register-repo.md).
 
 A common location is at the root of your repo:
 
