@@ -103,6 +103,37 @@ fn test_new_signers_file_json_output() {
     assert!(!json["output_file"].as_str().unwrap().is_empty());
 }
 
+#[test]
+fn test_new_signers_file_human_output_includes_revocation_keys() {
+    let (_key_dir, key_path) = generate_test_keypair();
+    let temp_dir = TempDir::new().unwrap();
+    let output_file = temp_dir.path().join("signers.json");
+
+    let pub_key_path = format!("{}.pub", key_path.to_string_lossy());
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    cmd.arg("new-signers-file")
+        .arg("--artifact-signer-file")
+        .arg(&pub_key_path)
+        .arg("-A")
+        .arg("1")
+        .arg("--revocation-key-file")
+        .arg(&pub_key_path)
+        .arg("-R")
+        .arg("1")
+        .arg("-o")
+        .arg(&output_file);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Artifact signers: 1 (threshold: 1)",
+        ))
+        .stdout(predicate::str::contains(
+            "Revocation keys: 1 (threshold: 1)",
+        ));
+}
+
 // -------------------------------------------------------------------
 // Error as JSON
 // -------------------------------------------------------------------
