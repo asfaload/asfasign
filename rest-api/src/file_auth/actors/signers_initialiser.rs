@@ -148,7 +148,7 @@ impl Message<InitialiseSignersRequest> for SignersInitialiser {
                 project_id = %project_id,
                 "Project directory structure already exists, indicating a pending or completed registration."
             );
-            return Err(ApiError::InvalidRequestBody(format!(
+            return Err(ApiError::ProjectAlreadyRegistered(format!(
                 "Project '{}' is already registered or registration is in progress.",
                 project_id
             )));
@@ -614,10 +614,10 @@ mod tests {
             Ok(_) => panic!("Expected error for existing directory"),
             Err(send_error) => match send_error {
                 kameo::error::SendError::HandlerError(api_error) => match api_error {
-                    ApiError::InvalidRequestBody(msg) => {
+                    ApiError::ProjectAlreadyRegistered(msg) => {
                         assert!(msg.contains("already registered"));
                     }
-                    _ => panic!("Expected InvalidRequestBody error for existing directory"),
+                    _ => panic!("Expected ProjectAlreadyRegistered error for existing directory"),
                 },
                 _ => panic!("Expected HandlerError for existing directory"),
             },

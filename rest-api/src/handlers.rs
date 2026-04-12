@@ -83,7 +83,7 @@ pub async fn register_repo_handler(
             project_id = %project_id,
             "Project directory structure already exists, indicating a pending or completed registration."
         );
-        return Err(ApiError::InvalidRequestBody(format!(
+        return Err(ApiError::ProjectAlreadyRegistered(format!(
             "Project '{}' is already registered or registration is in progress.",
             project_id
         )));

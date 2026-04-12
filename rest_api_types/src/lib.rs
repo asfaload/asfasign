@@ -141,6 +141,12 @@ pub mod errors {
 
         #[error("Release already registered: {0}")]
         ReleaseAlreadyRegistered(String),
+
+        #[error("Project already registered: {0}")]
+        ProjectAlreadyRegistered(String),
+
+        #[error("Signature already collected: {0}")]
+        SignatureAlreadyCollected(String),
     }
 
     #[derive(Error, Debug)]
@@ -239,6 +245,8 @@ pub mod errors {
                 ApiError::FileRevoked(_) => StatusCode::BAD_REQUEST,
                 ApiError::NotAuthorized(_) => StatusCode::FORBIDDEN,
                 ApiError::ReleaseAlreadyRegistered(_) => StatusCode::CONFLICT,
+                ApiError::ProjectAlreadyRegistered(_) => StatusCode::CONFLICT,
+                ApiError::SignatureAlreadyCollected(_) => StatusCode::CONFLICT,
                 ApiError::GitError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::SignersConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }

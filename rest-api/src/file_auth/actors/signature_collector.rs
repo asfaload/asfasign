@@ -467,9 +467,9 @@ impl Message<RevokeFileMessage> for SignatureCollector {
 /// Map an `AggregateSignatureError` to the appropriate `ApiError`.
 fn map_aggregate_signature_error(e: AggregateSignatureError) -> ApiError {
     match e {
-        AggregateSignatureError::DuplicateSignature => {
-            ApiError::InvalidRequestBody("Signature already collected for this key".to_string())
-        }
+        AggregateSignatureError::DuplicateSignature => ApiError::SignatureAlreadyCollected(
+            "Signature already collected for this key".to_string(),
+        ),
         AggregateSignatureError::Signature(msg) => {
             if msg.contains("signature verification failed") {
                 ApiError::SignatureVerificationFailed
@@ -479,7 +479,7 @@ fn map_aggregate_signature_error(e: AggregateSignatureError) -> ApiError {
         }
         AggregateSignatureError::Io(io) => {
             if io.kind() == std::io::ErrorKind::AlreadyExists {
-                ApiError::InvalidRequestBody("Signature already added".to_string())
+                ApiError::SignatureAlreadyCollected("Signature already added".to_string())
             } else {
                 ApiError::InternalServerError(format!("IO error: {}", io))
             }
