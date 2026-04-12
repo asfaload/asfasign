@@ -52,8 +52,9 @@ Fields:
 
 ## Errors
 
-- `400 Bad Request` — invalid or unparseable forge URL, project already registered, or invalid public key.
+- `400 Bad Request` — invalid or unparseable forge URL, or invalid public key.
 - `401 Unauthorized` — missing or invalid authentication headers.
+- `409 Conflict` — project is already registered or registration is in progress.
 - `500 Internal Server Error` — forge validation, signers initialisation, or Git commit failed.
 
 ## Examples
@@ -75,6 +76,6 @@ Fields:
 
 ### Project already registered
 
-    HTTP/1.1 400 Bad Request
+    HTTP/1.1 409 Conflict
 
     {"error":"Project 'https/github.com/443/acme/repo' is already registered or registration is in progress."}

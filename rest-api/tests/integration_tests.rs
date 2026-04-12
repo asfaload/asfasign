@@ -920,7 +920,7 @@ pub mod test_utils_tests {
             .send()
             .await?;
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::CONFLICT);
 
         let response_body: serde_json::Value = response.json().await?;
         assert!(response_body.get("error").is_some());
