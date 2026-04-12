@@ -83,6 +83,7 @@ Human-readable (default):
     Artifact signers: 3 (threshold: 2)
     Admin keys: 1 (threshold: 1)
     Master keys: 0 (threshold: none)
+    Revocation keys: 0 (threshold: none)
 
 JSON (with `--json`):
 
