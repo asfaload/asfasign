@@ -56,14 +56,14 @@ Once every signer has signed, the signers file moves from pending to active. The
 Signers don't need to sign in any particular order. The workflow looks like:
 
 ```
-alice: client list-pending -K alice.key    → sees pending signers
-alice: client sign-pending -K alice.key ...  → "submitted"
+alice: client list-pending --secret-key alice.key    → sees pending signers
+alice: client sign-pending --secret-key alice.key ...  → "submitted"
 
-bob:   client list-pending -K bob.key      → sees pending signers
-bob:   client sign-pending -K bob.key ...    → "submitted"
+bob:   client list-pending --secret-key bob.key      → sees pending signers
+bob:   client sign-pending --secret-key bob.key ...    → "submitted"
 
-carol: client list-pending -K carol.key    → sees pending signers
-carol: client sign-pending -K carol.key ...  → "submitted (complete)"
+carol: client list-pending --secret-key carol.key    → sees pending signers
+carol: client sign-pending --secret-key carol.key ...  → "submitted (complete)"
 ```
 
 ## Scripting the sign step

@@ -65,8 +65,8 @@ https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json: complete
 With three artifact signers and a threshold of 2, only two need to sign:
 
 ```
-alice: client sign-pending -K alice.key ...  → "submitted"
-bob:   client sign-pending -K bob.key ...    → "submitted (complete)"
+alice: client sign-pending --secret-key alice.key ...  → "submitted"
+bob:   client sign-pending --secret-key bob.key ...    → "submitted (complete)"
 # carol doesn't need to sign — threshold already met
 ```
 
