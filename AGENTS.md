@@ -13,8 +13,9 @@ Never open or consider any file specified in ./.agentsignore. The .agentsignore 
 ## Build/Test/Lint Commands
 
 ### Core Commands
-- `cargo test` - Run all tests across workspace
+- `make test` - Run all tests across workspace, also test-utils feature-gated tests. Do not attempt to run all test with `cargo test`.
 - `cargo test <test_name>` - Run a specific test by name
+- `cargo test --features test-util <test_name>` - Run a specific rest-utils feature-gated test by name
 - `cargo test --package <crate_name>` - Run tests for a specific crate
 - `cargo test --package <crate_name> <test_name>` - Run specific test in specific crate
 - `cargo check` - Check code for errors without building
