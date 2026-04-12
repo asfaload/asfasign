@@ -50,6 +50,7 @@ Fields:
 
 - `400 Bad Request` — empty file path, file not found, invalid public key or signature format, or no signature provided for the primary file.
 - `401 Unauthorized` — missing or invalid authentication headers.
+- `409 Conflict` — signature already collected for this key, or signature already added.
 - `500 Internal Server Error` — signature collection or Git commit failed.
 
 ## Examples
