@@ -39,7 +39,11 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
         .route(
             "/signatures/{*file_path}",
             get(get_signature_status_handler),
-        );
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            app_state.clone(),
+            auth_middleware,
+        ));
     let files_router = Router::new().route("/files/{*file_path}", get(get_file_handler));
     let files_to_sign_router = Router::new()
         .route(

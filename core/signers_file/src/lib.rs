@@ -276,8 +276,7 @@ pub fn propose_signers_file<P: AsRef<Path>>(
     }
 
     // Parse the active signers file
-    let active_content = fs::read_to_string(&active_signers_file)?;
-    let active_config: SignersConfig = parse_signers_config(&active_content)?;
+    let active_config = SignersConfig::from_file(&active_signers_file)?;
 
     let proposed_update: SignersConfigProposal = parse_signers_config_proposal(json_content)?;
     if proposed_update.timestamp <= active_config.timestamp() {
@@ -1743,9 +1742,7 @@ mod tests {
         let history_file_path = root_dir.join(SIGNERS_HISTORY_FILE);
 
         // Read the original signers file content
-        let original_signers_content = fs::read_to_string(&signers_file_path)?;
-        let original_signers_config: SignersConfig =
-            parse_signers_config(&original_signers_content)?;
+        let original_signers_config = SignersConfig::from_file(&signers_file_path)?;
 
         // Read the original signatures file content
         let signatures_file_path = signatures_path_for(&signers_file_path)?;
@@ -1854,9 +1851,7 @@ mod tests {
         let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
 
         // Read the original signers file content
-        let original_signers_content = fs::read_to_string(&signers_file_path)?;
-        let original_signers_config: SignersConfig =
-            parse_signers_config(&original_signers_content)?;
+        let original_signers_config = SignersConfig::from_file(&signers_file_path)?;
 
         // Read the original signatures file content
         let signatures_file_path = signatures_path_for(&signers_file_path)?;
@@ -1953,9 +1948,7 @@ mod tests {
         let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
 
         // Read the original signers file content
-        let original_signers_content = fs::read_to_string(&signers_file_path)?;
-        let original_signers_config: SignersConfig =
-            parse_signers_config(&original_signers_content)?;
+        let original_signers_config = SignersConfig::from_file(&signers_file_path)?;
 
         // Read the original signatures file content
         let signatures_file_path = signatures_path_for(&signers_file_path)?;
@@ -2168,9 +2161,7 @@ mod tests {
         let signers_file_path = create_test_active_signers(root_dir, &test_keys)?;
 
         // Read the original signers file content
-        let original_signers_content = fs::read_to_string(&signers_file_path)?;
-        let original_signers_config: SignersConfig =
-            parse_signers_config(&original_signers_content)?;
+        let original_signers_config = SignersConfig::from_file(&signers_file_path)?;
 
         // Read the original signatures file content
         let signatures_file_path = signatures_path_for(&signers_file_path)?;

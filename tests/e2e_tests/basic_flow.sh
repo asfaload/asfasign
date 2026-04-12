@@ -164,6 +164,10 @@ run_step_json "Sign release index with key1" \
 
 assert_release_index_signature_count "0.1" 1
 
+run_step_json "Check signature status for v0.1 index (pending)" \
+    '.is_complete == false' \
+    cargo run --quiet -- signature-status --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
+
 expect_fail "Register release with key3 (fails as already registered)" \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --github-release-url $(release_url 0.1)
 
@@ -177,6 +181,10 @@ run_step_json "Sign release index with key2 (completes, threshold=2)" \
 # --- Backend: verify release index activated ---
 assert_release_index_active "0.1"
 assert_release_index_signers "0.1" "$KEY_0" "$KEY_1" "$KEY_2"
+
+run_step_json "Check signature status for v0.1 index (complete)" \
+    '.is_complete == true' \
+    cargo run --quiet -- signature-status --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
 
 expect_fail "Sign release index with key3 (already completed)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_index 0.1)

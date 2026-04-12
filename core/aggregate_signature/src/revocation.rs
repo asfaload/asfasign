@@ -12,7 +12,7 @@ use signatures::{
     keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
-use signers_file_types::{SignersConfig, parse_signers_config};
+use signers_file_types::SignersConfig;
 use std::fs;
 use std::path::Path;
 
@@ -62,8 +62,7 @@ where
     //  Load the active signers configuration (not the local one copied at time of
     //  signing the signed file we want to revoke)
     let signers_file_path = find_global_signers_for(signed_file_path)?;
-    let signers_content = fs::read_to_string(&signers_file_path)?;
-    let signers_config: SignersConfig = parse_signers_config(&signers_content)?;
+    let signers_config = SignersConfig::from_file(&signers_file_path)?;
 
     // Check if the public key can revoke
     if !can_revoke(pubkey, &signers_config) {

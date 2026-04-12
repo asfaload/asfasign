@@ -258,18 +258,18 @@ pub fn can_revoke(pubkey: &AsfaloadPublicKeys, signers_config: &SignersConfig) -
 pub fn load_signers_config(
     signers_file_path: &Path,
 ) -> Result<SignersConfig, AggregateSignatureError> {
-    let content = std::fs::read_to_string(signers_file_path).map_err(|e| {
-        std::io::Error::other(format!(
-            "could not read {} at {}:{}\n {}",
-            signers_file_path.to_string_lossy(),
-            file!(),
-            line!(),
-            e
-        ))
-    })?;
-    let config = signers_file_types::parse_signers_config(&content)
-        .map_err(AggregateSignatureError::JsonError)?;
-    Ok(config)
+    SignersConfig::from_file(signers_file_path).map_err(|e| match e {
+        common::errors::SignersConfigError::IOError(io_err) => {
+            AggregateSignatureError::Io(std::io::Error::other(format!(
+                "could not read {} at {}:{}\n {}",
+                signers_file_path.to_string_lossy(),
+                file!(),
+                line!(),
+                io_err
+            )))
+        }
+        other => other.into(),
+    })
 }
 
 /// Returns the public keys of signers that are present in `new_config` but not in `old_config`.
