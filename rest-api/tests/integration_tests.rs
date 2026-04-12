@@ -536,6 +536,42 @@ pub mod tests {
             .build()
             .await?;
 
+        let auth = create_auth_headers("").await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!(
+                "http://127.0.0.1:{}/v1/signatures/{}",
+                setup.port(),
+                setup.artifact_path()
+            ))
+            .header(HEADER_TIMESTAMP, &auth.timestamp)
+            .header(HEADER_NONCE, &auth.nonce)
+            .header(HEADER_SIGNATURE, &auth.signature)
+            .header(HEADER_PUBLIC_KEY, &auth.public_key)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let status_body: GetSignatureStatusResponse = response.json().await?;
+
+        assert_eq!(status_body.file_path, "data.txt");
+        assert!(!status_body.is_complete);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_signature_status_rejects_unauthenticated() -> Result<(), anyhow::Error> {
+        use rest_api_test_helpers::TestSetupBuilder;
+
+        let setup = TestSetupBuilder::new()
+            .with_artifact("data.txt")
+            .with_artifact_content(b"test data".to_vec())
+            .build()
+            .await?;
+
         let client = reqwest::Client::new();
         let response = client
             .get(format!(
@@ -546,12 +582,72 @@ pub mod tests {
             .send()
             .await?;
 
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
-        let status_body: GetSignatureStatusResponse = response.json().await?;
+        Ok(())
+    }
 
-        assert_eq!(status_body.file_path, "data.txt");
-        assert!(!status_body.is_complete);
+    #[tokio::test]
+    async fn test_get_signature_status_rejects_non_signer() -> Result<(), anyhow::Error> {
+        use rest_api_test_helpers::TestSetupBuilder;
+
+        // Setup with 1 key (key index 0)
+        let setup = TestSetupBuilder::new()
+            .with_artifact("data.txt")
+            .with_artifact_content(b"test data".to_vec())
+            .build()
+            .await?;
+
+        // Create auth headers with a DIFFERENT key (not in signers file)
+        let extra_keys = test_helpers::TestKeys::new_from(5, 1);
+        let secret_key = extra_keys.sec_key(0).unwrap();
+        let auth = rest_api_test_helpers::create_auth_headers_with_key(secret_key, "").await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!(
+                "http://127.0.0.1:{}/v1/signatures/{}",
+                setup.port(),
+                setup.artifact_path()
+            ))
+            .header(rest_api_auth::HEADER_TIMESTAMP, &auth.timestamp)
+            .header(rest_api_auth::HEADER_NONCE, &auth.nonce)
+            .header(rest_api_auth::HEADER_SIGNATURE, &auth.signature)
+            .header(rest_api_auth::HEADER_PUBLIC_KEY, &auth.public_key)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_signature_status_returns_404_for_missing_file() -> Result<(), anyhow::Error> {
+        use rest_api_test_helpers::TestSetupBuilder;
+
+        let setup = TestSetupBuilder::new()
+            .with_artifact("data.txt")
+            .with_artifact_content(b"test data".to_vec())
+            .build()
+            .await?;
+
+        let auth = create_auth_headers("").await;
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!(
+                "http://127.0.0.1:{}/v1/signatures/does/not/exist.txt",
+                setup.port()
+            ))
+            .header(HEADER_TIMESTAMP, &auth.timestamp)
+            .header(HEADER_NONCE, &auth.nonce)
+            .header(HEADER_SIGNATURE, &auth.signature)
+            .header(HEADER_PUBLIC_KEY, &auth.public_key)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
         Ok(())
     }
@@ -982,8 +1078,19 @@ pub mod test_utils_tests {
             public_key: public_key.to_base64(),
             signatures,
         });
+        let payload_string = payload.to_string();
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
         let response = client
             .post(url_for("signatures", port))
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, auth_signature)
+            .header(HEADER_PUBLIC_KEY, auth_public_key)
             .json(&payload)
             .send()
             .await?;
@@ -1261,8 +1368,19 @@ pub mod test_utils_tests {
             public_key: public_key.to_base64(),
             signatures,
         });
+        let payload_string = payload.to_string();
+        let TestAuthHeaders {
+            timestamp,
+            nonce,
+            signature: auth_signature,
+            public_key: auth_public_key,
+        } = create_auth_headers_with_key(secret_key, &payload_string).await;
         let response = client
             .post(url_for("signatures", port))
+            .header(HEADER_TIMESTAMP, timestamp)
+            .header(HEADER_NONCE, nonce)
+            .header(HEADER_SIGNATURE, auth_signature)
+            .header(HEADER_PUBLIC_KEY, auth_public_key)
             .json(&payload)
             .send()
             .await?;

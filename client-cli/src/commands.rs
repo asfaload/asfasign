@@ -9,6 +9,7 @@ use crate::{
 pub mod keys;
 pub mod list_pending;
 pub mod sign_pending;
+pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
 
@@ -151,6 +152,35 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(sign_pending::handle_sign_pending_command(
+                file_path,
+                &url,
+                &secret_key_args.secret_key,
+                password.as_str(),
+                json_args.json,
+            ))?;
+        }
+        Commands::SignatureStatus {
+            file_path,
+            secret_key_args,
+            password_args,
+            backend_url_args,
+            json_args,
+        } => {
+            let password = get_password(
+                password_args.password.clone(),
+                password_args.password_file.as_deref(),
+                &cli.command.password_env_var(),
+                &cli.command.password_file_env_var(),
+                "Enter password: ",
+                WithoutConfirmation,
+                true,
+            )?;
+            let url = backend_url_args
+                .backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(signature_status::handle_signature_status_command(
                 file_path,
                 &url,
                 &secret_key_args.secret_key,
