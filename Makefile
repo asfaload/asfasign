@@ -114,3 +114,16 @@ docs-serve:
 ## Remove generated documentation files
 docs-clean:
 	rm -rf docs/site/src/client-cli docs/site/src/rest-api docs/site/book
+
+
+RCLONE_CONFIG := private/rclone.conf
+## Configure rclone for deployment.
+## If the configuration file at private/rclone.conf already exists if stops.
+docs-setup-rclone:
+	[[ ! -f $(RCLONE_CONFIG) ]]  || { echo "Config file already exists at $(RCLONE_CONFIG)"; exit 1; }
+	mkdir -p private
+	rclone --config $(RCLONE_CONFIG) config
+
+## Deploy generated static site
+docs-deploy: docs-clean docs
+	rclone --config $(RCLONE_CONFIG) sync --verbose ./docs/site/book/ ovh:/home/asfaloc/www/doc/
