@@ -3838,7 +3838,7 @@ mod tests {
         // Create a test signers file with threshold 1
         let mut signers_config_proposal = create_test_signers_config(&test_keys).as_proposal();
         signers_config_proposal.artifact_signers[0].threshold = 1;
-        let signers_config = signers_config_proposal.build();
+        let signers_config = signers_config_proposal.build()?;
         let signers_content = signers_config.to_json()?;
         let signers_file_path = create_test_signers_file_with_content(dir_path, &signers_content)?;
 
