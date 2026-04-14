@@ -68,7 +68,50 @@ impl SignersConfigProposal {
     }
 }
 impl SignersConfig {
+    // Returns Result<(), _> rather than bool so the error can carry the
+    // offending key for debuggability — a bool could only say "a violation
+    // exists" without naming which key.
+    fn validate_master_disjoint(
+        artifact_signers: &[SignerGroup],
+        admin_keys: Option<&[SignerGroup]>,
+        master_keys: Option<&[SignerGroup]>,
+        revocation_keys: Option<&[SignerGroup]>,
+    ) -> Result<(), SignersConfigError> {
+        let Some(master) = master_keys else {
+            return Ok(());
+        };
+
+        let master_pubkeys: HashSet<&AsfaloadPublicKeys> = master
+            .iter()
+            .flat_map(|g| g.signers.iter().map(|s| &s.data.pubkey))
+            .collect();
+
+        if master_pubkeys.is_empty() {
+            return Ok(());
+        }
+
+        let others = artifact_signers
+            .iter()
+            .chain(admin_keys.into_iter().flatten())
+            .chain(revocation_keys.into_iter().flatten());
+
+        for signer in others.flat_map(|g| &g.signers) {
+            if master_pubkeys.contains(&signer.data.pubkey) {
+                return Err(SignersConfigError::MasterKeyInOtherGroup {
+                    key: signer.data.pubkey.to_base64(),
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub fn new(p: SignersConfigProposal) -> Result<Self, SignersConfigError> {
+        Self::validate_master_disjoint(
+            &p.artifact_signers,
+            p.admin_keys.as_deref(),
+            p.master_keys.as_deref(),
+            p.revocation_keys.as_deref(),
+        )?;
         Ok(Self {
             timestamp: p.timestamp,
             version: p.version,
@@ -729,6 +772,39 @@ mod tests {
         // No revocation → admin_keys() → empty admin → artifact_signers
         let result = pubkeys_from_groups(config.revocation_keys());
         assert_eq!(result, artifact);
+    }
+
+    #[test]
+    fn new_rejects_master_key_also_in_artifact_signers() {
+        let keys = TestKeys::new(2);
+        let shared = keys.pub_key(0).unwrap().clone();
+        let other = keys.pub_key(1).unwrap().clone();
+
+        let proposal = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![SignerGroup {
+                signers: vec![Signer::from_key(&shared).unwrap()],
+                threshold: 1,
+            }],
+            admin_keys: None,
+            master_keys: Some(vec![SignerGroup {
+                signers: vec![
+                    Signer::from_key(&shared).unwrap(),
+                    Signer::from_key(&other).unwrap(),
+                ],
+                threshold: 1,
+            }]),
+            revocation_keys: None,
+        };
+
+        match SignersConfig::new(proposal) {
+            Err(SignersConfigError::MasterKeyInOtherGroup { key }) => {
+                assert_eq!(key, shared.to_base64());
+            }
+            Err(e) => panic!("expected MasterKeyInOtherGroup, got {e:?}"),
+            Ok(_) => panic!("expected Err, got Ok"),
+        }
     }
 }
 
