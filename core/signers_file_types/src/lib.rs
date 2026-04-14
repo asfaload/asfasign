@@ -806,6 +806,168 @@ mod tests {
             Ok(_) => panic!("expected Err, got Ok"),
         }
     }
+
+    #[test]
+    fn new_rejects_master_key_also_in_admin_keys() {
+        let keys = TestKeys::new(2);
+        let shared = keys.pub_key(0).unwrap().clone();
+        let artifact = keys.pub_key(1).unwrap().clone();
+
+        let proposal = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![SignerGroup {
+                signers: vec![Signer::from_key(&artifact).unwrap()],
+                threshold: 1,
+            }],
+            admin_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&shared).unwrap()],
+                threshold: 1,
+            }]),
+            master_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&shared).unwrap()],
+                threshold: 1,
+            }]),
+            revocation_keys: None,
+        };
+
+        match SignersConfig::new(proposal) {
+            Err(SignersConfigError::MasterKeyInOtherGroup { key }) => {
+                assert_eq!(key, shared.to_base64());
+            }
+            Err(e) => panic!("expected MasterKeyInOtherGroup, got {e:?}"),
+            Ok(_) => panic!("expected Err, got Ok"),
+        }
+    }
+
+    #[test]
+    fn new_rejects_master_key_also_in_revocation_keys() {
+        let keys = TestKeys::new(2);
+        let shared = keys.pub_key(0).unwrap().clone();
+        let artifact = keys.pub_key(1).unwrap().clone();
+
+        let proposal = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![SignerGroup {
+                signers: vec![Signer::from_key(&artifact).unwrap()],
+                threshold: 1,
+            }],
+            admin_keys: None,
+            master_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&shared).unwrap()],
+                threshold: 1,
+            }]),
+            revocation_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&shared).unwrap()],
+                threshold: 1,
+            }]),
+        };
+
+        match SignersConfig::new(proposal) {
+            Err(SignersConfigError::MasterKeyInOtherGroup { key }) => {
+                assert_eq!(key, shared.to_base64());
+            }
+            Err(e) => panic!("expected MasterKeyInOtherGroup, got {e:?}"),
+            Ok(_) => panic!("expected Err, got Ok"),
+        }
+    }
+
+    #[test]
+    fn new_accepts_disjoint_groups() {
+        let keys = TestKeys::new(4);
+        let artifact = keys.pub_key(0).unwrap().clone();
+        let admin = keys.pub_key(1).unwrap().clone();
+        let master = keys.pub_key(2).unwrap().clone();
+        let revocation = keys.pub_key(3).unwrap().clone();
+
+        let proposal = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![SignerGroup {
+                signers: vec![Signer::from_key(&artifact).unwrap()],
+                threshold: 1,
+            }],
+            admin_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&admin).unwrap()],
+                threshold: 1,
+            }]),
+            master_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&master).unwrap()],
+                threshold: 1,
+            }]),
+            revocation_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&revocation).unwrap()],
+                threshold: 1,
+            }]),
+        };
+
+        assert!(SignersConfig::new(proposal).is_ok());
+    }
+
+    #[test]
+    fn new_accepts_config_without_master_keys() {
+        // With master_keys: None, the master-disjoint check is skipped entirely.
+        // Use distinct keys per group so this test isn't read as documenting
+        // anything about cross-group sharing in the non-master groups.
+        let keys = TestKeys::new(3);
+        let artifact = keys.pub_key(0).unwrap().clone();
+        let admin = keys.pub_key(1).unwrap().clone();
+        let revocation = keys.pub_key(2).unwrap().clone();
+
+        let proposal = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![SignerGroup {
+                signers: vec![Signer::from_key(&artifact).unwrap()],
+                threshold: 1,
+            }],
+            admin_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&admin).unwrap()],
+                threshold: 1,
+            }]),
+            master_keys: None,
+            revocation_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&revocation).unwrap()],
+                threshold: 1,
+            }]),
+        };
+
+        assert!(SignersConfig::new(proposal).is_ok());
+    }
+
+    #[test]
+    fn new_allows_duplicate_key_within_master_keys_only() {
+        // Invariant is master-vs-others disjointness, not within-master uniqueness.
+        // A master key appearing in two master SignerGroups is allowed, as long as
+        // it does not appear in any other group.
+        let keys = TestKeys::new(2);
+        let master = keys.pub_key(0).unwrap().clone();
+        let artifact = keys.pub_key(1).unwrap().clone();
+
+        let proposal = SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![SignerGroup {
+                signers: vec![Signer::from_key(&artifact).unwrap()],
+                threshold: 1,
+            }],
+            admin_keys: None,
+            master_keys: Some(vec![
+                SignerGroup {
+                    signers: vec![Signer::from_key(&master).unwrap()],
+                    threshold: 1,
+                },
+                SignerGroup {
+                    signers: vec![Signer::from_key(&master).unwrap()],
+                    threshold: 1,
+                },
+            ]),
+            revocation_keys: None,
+        };
+
+        assert!(SignersConfig::new(proposal).is_ok());
+    }
 }
 
 #[cfg(test)]
