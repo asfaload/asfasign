@@ -18,7 +18,7 @@ use signatures::{keys::AsfaloadPublicKeyTrait, types::AsfaloadPublicKeys};
 // represents the public key) is handled manually within the `SignerData<APK>`'s custom `impl
 // Serialize` and `impl Deserialize` blocks, which only require `P: AsfaloadPublicKeyTrait`. `P`
 // itself does not need to implement `serde::Deserialize` or `serde::Serialize` directly.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 // FIXME: check if this needs fixing
 //#[serde(bound(
 //    serialize = "APK: AsfaloadPublicKeyTrait",
@@ -34,6 +34,40 @@ pub struct SignersConfig {
     master_keys: Option<Vec<SignerGroup>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     revocation_keys: Option<Vec<SignerGroup>>,
+}
+
+// Deserialize is hand-written (not derived) so JSON parsing is forced through
+// SignersConfig::new, which enforces the master-keys-disjoint invariant.
+// A derived Deserialize would bypass that validation.
+impl<'de> Deserialize<'de> for SignersConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct SignersConfigHelper {
+            version: u32,
+            timestamp: DateTime<Utc>,
+            artifact_signers: Vec<SignerGroup>,
+            #[serde(default)]
+            admin_keys: Option<Vec<SignerGroup>>,
+            #[serde(default)]
+            master_keys: Option<Vec<SignerGroup>>,
+            #[serde(default)]
+            revocation_keys: Option<Vec<SignerGroup>>,
+        }
+
+        let helper = SignersConfigHelper::deserialize(deserializer)?;
+        let proposal = SignersConfigProposal {
+            version: helper.version,
+            timestamp: helper.timestamp,
+            artifact_signers: helper.artifact_signers,
+            admin_keys: helper.admin_keys,
+            master_keys: helper.master_keys,
+            revocation_keys: helper.revocation_keys,
+        };
+        SignersConfig::new(proposal).map_err(serde::de::Error::custom)
+    }
 }
 
 // Introduced to make fields of SignersConfig private while:
@@ -967,6 +1001,103 @@ mod tests {
         };
 
         assert!(SignersConfig::new(proposal).is_ok());
+    }
+
+    #[test]
+    fn parse_rejects_master_key_in_another_group() {
+        let keys = TestKeys::new(2);
+        let shared = keys.pub_key(0).unwrap().clone();
+        let other = keys.pub_key(1).unwrap().clone();
+
+        let json = format!(
+            r#"{{
+                "version": 1,
+                "timestamp": "2026-04-14T00:00:00Z",
+                "artifact_signers": [{{
+                    "signers": [{{ "kind": "key", "data": {{ "pubkey": "{shared}" }} }}],
+                    "threshold": 1
+                }}],
+                "master_keys": [{{
+                    "signers": [
+                        {{ "kind": "key", "data": {{ "pubkey": "{shared}" }} }},
+                        {{ "kind": "key", "data": {{ "pubkey": "{other}" }} }}
+                    ],
+                    "threshold": 1
+                }}]
+            }}"#,
+            shared = shared.to_base64(),
+            other = other.to_base64(),
+        );
+
+        match parse_signers_config(&json) {
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains(&shared.to_base64()),
+                    "error message should name the offending key: {msg}"
+                );
+            }
+            Ok(_) => panic!("expected Err — master key in another group"),
+        }
+    }
+
+    #[test]
+    fn parse_accepts_disjoint_config() {
+        let keys = TestKeys::new(2);
+        let artifact = keys.pub_key(0).unwrap().clone();
+        let master = keys.pub_key(1).unwrap().clone();
+
+        let json = format!(
+            r#"{{
+                "version": 1,
+                "timestamp": "2026-04-14T00:00:00Z",
+                "artifact_signers": [{{
+                    "signers": [{{ "kind": "key", "data": {{ "pubkey": "{artifact}" }} }}],
+                    "threshold": 1
+                }}],
+                "master_keys": [{{
+                    "signers": [{{ "kind": "key", "data": {{ "pubkey": "{master}" }} }}],
+                    "threshold": 1
+                }}]
+            }}"#,
+            artifact = artifact.to_base64(),
+            master = master.to_base64(),
+        );
+
+        assert!(parse_signers_config(&json).is_ok());
+    }
+
+    #[test]
+    fn signers_config_round_trips_via_serde() {
+        // Serialize and Deserialize are now decoupled (one derived, one hand-written),
+        // so explicitly verify they agree on the wire format.
+        let keys = TestKeys::new(3);
+        let artifact = keys.pub_key(0).unwrap().clone();
+        let admin = keys.pub_key(1).unwrap().clone();
+        let master = keys.pub_key(2).unwrap().clone();
+
+        let original = SignersConfig::new(SignersConfigProposal {
+            timestamp: chrono::Utc::now(),
+            version: 1,
+            artifact_signers: vec![SignerGroup {
+                signers: vec![Signer::from_key(&artifact).unwrap()],
+                threshold: 1,
+            }],
+            admin_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&admin).unwrap()],
+                threshold: 1,
+            }]),
+            master_keys: Some(vec![SignerGroup {
+                signers: vec![Signer::from_key(&master).unwrap()],
+                threshold: 1,
+            }]),
+            revocation_keys: None,
+        })
+        .unwrap();
+
+        let json = serde_json::to_string(&original).unwrap();
+        let round_tripped = parse_signers_config(&json).unwrap();
+        assert_eq!(original, round_tripped);
     }
 }
 
