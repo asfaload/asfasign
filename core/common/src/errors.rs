@@ -73,6 +73,8 @@ pub enum SignersConfigError {
     KeyError(#[from] keys::KeyError),
     #[error("Invalid Signer group: {0}")]
     GroupError(String),
+    #[error("Master key {key} also appears in another group")]
+    MasterKeyInOtherGroup { key: String },
     #[error("Serialisation error: {0}")]
     SerialisationError(#[from] serde_json::Error),
     #[error("IO error: {0}")]
