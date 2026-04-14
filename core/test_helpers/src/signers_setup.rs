@@ -162,7 +162,7 @@ pub fn create_complete_signers_setup(
         revocation_keys,
     };
 
-    let signers_config = signers_config_proposal.build();
+    let signers_config = signers_config_proposal.build()?;
 
     let config_json = serde_json::to_string_pretty(&signers_config)?;
     fs::write(&signers_file, config_json)?;

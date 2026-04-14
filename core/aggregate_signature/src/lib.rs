@@ -1034,7 +1034,7 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         };
-        let signers_config = signers_config_proposal.build();
+        let signers_config = signers_config_proposal.build()?;
         // Write signers configuration
         let signers_dir = temp_dir.path().join(SIGNERS_DIR);
         fs::create_dir_all(&signers_dir).unwrap();
@@ -1075,7 +1075,7 @@ mod tests {
             artifact_signers: vec![high_threshold_group],
             ..signers_config_proposal.clone()
         }
-        .build();
+        .build()?;
 
         let config_json = serde_json::to_string_pretty(&high_threshold_config).unwrap();
         fs::write(&signers_file, config_json).unwrap();
@@ -1723,7 +1723,7 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()?;
 
         // Write signers configuration
         let signers_file = signers_dir.join(SIGNERS_FILE);
@@ -2064,7 +2064,7 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()?;
 
         // Create global signers directory and file
         let signers_dir = root.join(SIGNERS_DIR);
@@ -2257,7 +2257,7 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         };
-        let signers_config = signers_config_proposal.build();
+        let signers_config = signers_config_proposal.build()?;
 
         // Write signers configuration
         let signers_file = signers_dir.join(SIGNERS_FILE);
@@ -2350,7 +2350,7 @@ mod tests {
         // Test with threshold 1 (should be complete with just one valid signature)
         let mut low_threshold_config_proposal = signers_config_proposal.clone();
         low_threshold_config_proposal.artifact_signers[0].threshold = 1;
-        let low_threshold_config = low_threshold_config_proposal.build();
+        let low_threshold_config = low_threshold_config_proposal.build()?;
 
         // Overwrite the global signers file as it is the one looked at for pending signatures.
         let config_json = serde_json::to_string_pretty(&low_threshold_config).unwrap();
@@ -2424,7 +2424,7 @@ mod tests {
             }]),
             revocation_keys: None,
         }
-        .build();
+        .build()?;
 
         // Write current (global) signers configuration
         let global_signers_file = signers_dir.join(SIGNERS_FILE);
@@ -2464,7 +2464,7 @@ mod tests {
             }]),
             revocation_keys: None,
         }
-        .build();
+        .build()?;
 
         // Write new signers configuration to a file in the pending signers directory
         let pending_signers_dir = root.join(PENDING_SIGNERS_DIR);
@@ -2682,7 +2682,7 @@ mod tests {
             }]),
             revocation_keys: None,
         }
-        .build();
+        .build()?;
 
         // Write current (global) signers configuration
         let global_signers_file = signers_dir.join(SIGNERS_FILE);
@@ -2714,7 +2714,7 @@ mod tests {
             }]),
             revocation_keys: None,
         }
-        .build();
+        .build()?;
 
         // Write new signers configuration to a file in the pending signers directory
         let pending_signers_dir = root.join(PENDING_SIGNERS_DIR);
@@ -2799,7 +2799,7 @@ mod tests {
                 admin_keys: None,
                 revocation_keys: None,
             }
-            .build();
+            .build()?;
 
             // Test with valid signature
             let mut signatures = HashMap::new();
@@ -2829,7 +2829,7 @@ mod tests {
                 admin_keys: None,
                 revocation_keys: None,
             }
-            .build();
+            .build()?;
 
             // Test with valid signatures for both groups
             let mut signatures = HashMap::new();
@@ -2853,7 +2853,7 @@ mod tests {
                 admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
                 revocation_keys: None,
             }
-            .build();
+            .build()?;
 
             // Test with valid signature
             let mut signatures = HashMap::new();
@@ -2877,7 +2877,7 @@ mod tests {
                 admin_keys: None,
                 revocation_keys: None,
             }
-            .build();
+            .build()?;
 
             // Test with valid signature
             let mut signatures = HashMap::new();
@@ -2901,7 +2901,7 @@ mod tests {
                 admin_keys: Some(vec![create_group(vec![create_signer(pubkey0.clone())], 1)]),
                 revocation_keys: None,
             }
-            .build();
+            .build()?;
 
             // Test with valid signature (should satisfy both groups)
             let mut signatures = HashMap::new();
@@ -2929,7 +2929,7 @@ mod tests {
                 ]),
                 revocation_keys: None,
             }
-            .build();
+            .build()?;
 
             // Test with overlapping key (pubkey0) satisfying both artifact and admin groups
             let mut signatures = HashMap::new();
@@ -2964,7 +2964,7 @@ mod tests {
                 admin_keys: None,
                 revocation_keys: None,
             }
-            .build();
+            .build()?;
 
             // Test with both signatures
             let mut signatures = HashMap::new();
@@ -2988,7 +2988,7 @@ mod tests {
                 admin_keys: None,
                 revocation_keys: None,
             }
-            .build();
+            .build()?;
 
             // Even with signatures, should return false for empty config
             let mut signatures = HashMap::new();
@@ -3012,7 +3012,7 @@ mod tests {
                 admin_keys: None,
                 revocation_keys: None,
             }
-            .build();
+            .build()?;
 
             // Test with invalid signature (signed for different data)
             let other_data = common::sha512_for_content(b"other data".to_vec())?;
@@ -3033,7 +3033,7 @@ mod tests {
                 admin_keys: None,
                 revocation_keys: Some(vec![create_group(vec![create_signer(pubkey1.clone())], 1)]),
             }
-            .build();
+            .build()?;
 
             // Both artifact + revocation signed → true
             let mut signatures = HashMap::new();
@@ -3332,6 +3332,7 @@ mod tests {
             revocation_keys: None,
         }
         .build()
+        .unwrap()
     }
 
     // Helper function to sign a file and write its signature to disk
@@ -3836,7 +3837,8 @@ mod tests {
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_config = old_config.clone();
 
@@ -3855,7 +3857,8 @@ mod tests {
             admin_keys: Some(vec![create_group(&test_keys, vec![0], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
@@ -3865,7 +3868,8 @@ mod tests {
             artifact_signers: vec![create_group(&test_keys, vec![1, 0], 2)], // Reordered
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert!(new_signers.is_empty());
@@ -3882,7 +3886,8 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
@@ -3892,7 +3897,8 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert_eq!(new_signers.len(), 1);
@@ -3910,7 +3916,8 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
@@ -3920,7 +3927,8 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert_eq!(new_signers.len(), 1);
@@ -3938,7 +3946,8 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
@@ -3948,7 +3957,8 @@ mod tests {
             admin_keys: Some(vec![create_group(&test_keys, vec![1], 1)]), // Added key 1
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert_eq!(new_signers.len(), 1);
@@ -3966,7 +3976,8 @@ mod tests {
             admin_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
@@ -3976,7 +3987,8 @@ mod tests {
             admin_keys: Some(vec![create_group(&test_keys, vec![7], 2)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         let new_signers_set: std::collections::HashSet<_> = new_signers.into_iter().collect();
@@ -4003,7 +4015,8 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
@@ -4013,7 +4026,8 @@ mod tests {
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert_eq!(new_signers.len(), 3);
@@ -4034,7 +4048,8 @@ mod tests {
             admin_keys: Some(vec![create_group(&test_keys, vec![2], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_config = SignersConfigProposal {
             timestamp: chrono::Utc::now(),
@@ -4044,7 +4059,8 @@ mod tests {
             admin_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         let new_signers = get_newly_added_signer_keys(&old_config, &new_config);
         assert!(new_signers.is_empty());
@@ -4071,7 +4087,8 @@ mod tests {
             master_keys: Some(vec![master_group]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         write_signers_config(temp_dir.path(), &config);
         let artifact_path = write_artifact_file(temp_dir.path());
@@ -4103,7 +4120,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         write_signers_config(temp_dir.path(), &config);
         let artifact_path = write_artifact_file(temp_dir.path());
@@ -4133,7 +4151,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         write_signers_config(temp_dir.path(), &config);
         let artifact_path = write_artifact_file(temp_dir.path());
@@ -4163,7 +4182,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &old_config);
 
         // New config: adds artifact signer (key 3), replaces admin (key 0 by key 4)
@@ -4175,7 +4195,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),   // Same master
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
         let authorized =
@@ -4204,7 +4225,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &old_config);
 
         let new_config = SignersConfigProposal {
@@ -4215,7 +4237,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
         let authorized =
@@ -4242,7 +4265,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &old_config);
 
         // New config: identical except adds admin (key 3)
@@ -4254,7 +4278,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
         let authorized =
@@ -4283,7 +4308,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
 
         let authorized =
@@ -4362,7 +4388,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         // Write global signers config
         write_signers_config(temp_dir.path(), &config);
@@ -4400,7 +4427,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         // Write global signers config
         write_signers_config(temp_dir.path(), &config);
@@ -4473,7 +4501,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &old_config);
 
         // New config: adds artifact signer (key 3), replaces admin (key 0 by key 4)
@@ -4485,7 +4514,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
         let metadata_path = common::fs::names::metadata_path_for(&pending_signers_file).unwrap();
@@ -4521,7 +4551,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
 
         write_signers_config(temp_dir.path(), &config);
         let artifact_path = write_artifact_file(temp_dir.path());
@@ -4561,7 +4592,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &config);
 
         let artifact_path = write_artifact_file(temp_dir.path());
@@ -4588,7 +4620,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &config);
 
         let artifact_path = write_artifact_file(temp_dir.path());
@@ -4615,7 +4648,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &config);
 
         let artifact_path = write_artifact_file(temp_dir.path());
@@ -4651,7 +4685,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &config);
 
         let artifact_path = write_artifact_file(temp_dir.path());
@@ -4689,7 +4724,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &old_config);
 
         // New config: adds artifact (3), new admin (4)
@@ -4701,7 +4737,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
         let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
@@ -4727,7 +4764,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &old_config);
 
         let new_config = SignersConfigProposal {
@@ -4738,7 +4776,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
         // Keys 0 and 3 have signed
@@ -4777,7 +4816,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &old_config);
 
         let new_config = SignersConfigProposal {
@@ -4788,7 +4828,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
         // Keys 0,3 and 4 have signed, which makes it ready to transition to complete.
@@ -4827,7 +4868,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         write_signers_config(temp_dir.path(), &old_config);
 
         let new_config = SignersConfigProposal {
@@ -4838,7 +4880,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![1], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &new_config);
 
         // All authorized keys have signed
@@ -4881,7 +4924,8 @@ mod tests {
             master_keys: Some(vec![create_group(&test_keys, vec![3], 1)]),
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
 
         let missing = get_missing_signers(&pending_signers_file).expect("Should succeed");
@@ -4907,7 +4951,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
 
         // Key 0 has signed
@@ -4940,7 +4985,8 @@ mod tests {
             master_keys: None,
             revocation_keys: None,
         }
-        .build();
+        .build()
+        .unwrap();
         let pending_signers_file = write_pending_signers_config(temp_dir.path(), &config);
 
         // All keys have signed
