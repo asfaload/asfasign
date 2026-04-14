@@ -63,20 +63,20 @@ pub struct SignersConfigProposal {
 impl SignersConfigProposal {
     // Implemented so we can call do SignersConfigProposal{...}.build()
     // without having to assign the proposal.
-    pub fn build(&self) -> SignersConfig {
+    pub fn build(&self) -> Result<SignersConfig, SignersConfigError> {
         SignersConfig::new(self.clone())
     }
 }
 impl SignersConfig {
-    pub fn new(p: SignersConfigProposal) -> Self {
-        Self {
+    pub fn new(p: SignersConfigProposal) -> Result<Self, SignersConfigError> {
+        Ok(Self {
             timestamp: p.timestamp,
             version: p.version,
             artifact_signers: p.artifact_signers,
             master_keys: p.master_keys,
             admin_keys: p.admin_keys,
             revocation_keys: p.revocation_keys,
-        }
+        })
     }
 
     pub fn from_file<P: AsRef<Path>>(path_in: P) -> Result<Self, SignersConfigError> {
@@ -150,14 +150,14 @@ impl SignersConfig {
             None => None,
         };
 
-        Ok(Self::new(SignersConfigProposal {
+        Self::new(SignersConfigProposal {
             timestamp: chrono::Utc::now(),
             version,
             artifact_signers,
             admin_keys,
             master_keys,
             revocation_keys,
-        }))
+        })
     }
 
     pub fn with_artifact_signers_only(
