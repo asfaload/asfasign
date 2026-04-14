@@ -27,9 +27,10 @@ Index file path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index
 
 The backend fetches the release, creates an index of the assets, and waits for signatures.
 
-## Register checksum files
+## Register a release from other hoster [EXPERIMENTAL]
 
-If your release uses checksum files instead of a GitHub release:
+Github is currently the only forge publishing digests of the releases' artifacts. If you publish releases on other forges or an http file server, your release needs to
+publish a checksums file (using `sha256sum` or `sha512sum`). It is that checksums file that you will register with Asfaload.
 
 ```sh
 client register-assets \

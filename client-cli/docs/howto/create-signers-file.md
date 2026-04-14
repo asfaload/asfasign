@@ -42,8 +42,24 @@ Master keys: 0 (threshold: none)
 ### 3. Commit and push
 
 Place the signers file in your repository and push it.
-We advise to commit the file in your main branch (eg under a directory .asfaload.signers) or in a dedicated branch of the repo.
-The best is to not update existing signers files but add a new version alongside it.
+We advise to commit the file in your main branch (eg under a directory `.asfaload.signers`) or in a dedicated branch of the repo.
+You can choose any naming convention that suits you, as long as the file stays
+available at the URL, so that downloaders can confirm its validity.
+You could choose to place it in your main branch:
+
+```
+https://github.com/acme/tool/blob/main/asfaload.signers/index.json
+```
+
+or in a dedicated branch (in this example `signers`):
+```
+https://github.com/acme/tool/blob/signers/20260413_signers.json
+```
+If you publish an updated signers file, you must make it available at distinct
+URL. In other words, you must add a new file to your repo, and you must not
+edit an existing signers file.
+
+
 The backend needs to fetch it by URL during [repository registration](register-repo.md).
 
 A common location is at the root of your repo:

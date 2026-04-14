@@ -1,0 +1,15 @@
+[book]
+title = "Asfaload Documentation"
+authors = ["Asfaload"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+additional-js = ["back-to-site.js"]
+git-repository-url = "https://github.com/asfaload/asfasign"

@@ -92,3 +92,38 @@ test-mutants:
 ## Run client-server integration tests
 client-server-tests:
 	cargo test --package client-server-integration-tests
+
+.PHONY: docs docs-serve docs-clean
+
+## Build documentation site
+docs:
+	@mkdir -p docs/site/src/client-cli docs/site/src/rest-api
+	@ln -sfn ../../../../client-cli/docs/howto docs/site/src/client-cli/howto
+	@ln -sfn ../../../../client-cli/docs/manual docs/site/src/client-cli/manual
+	@ln -sfn ../../../../rest-api/docs/manual docs/site/src/rest-api/manual
+	mdbook build docs/site
+
+## Serve documentation site locally for preview
+docs-serve:
+	@mkdir -p docs/site/src/client-cli docs/site/src/rest-api
+	@ln -sfn ../../../../client-cli/docs/howto docs/site/src/client-cli/howto
+	@ln -sfn ../../../../client-cli/docs/manual docs/site/src/client-cli/manual
+	@ln -sfn ../../../../rest-api/docs/manual docs/site/src/rest-api/manual
+	mdbook serve docs/site
+
+## Remove generated documentation files
+docs-clean:
+	rm -rf docs/site/src/client-cli docs/site/src/rest-api docs/site/book
+
+
+RCLONE_CONFIG := private/rclone.conf
+## Configure rclone for deployment.
+## If the configuration file at private/rclone.conf already exists if stops.
+docs-setup-rclone:
+	[[ ! -f $(RCLONE_CONFIG) ]]  || { echo "Config file already exists at $(RCLONE_CONFIG)"; exit 1; }
+	mkdir -p private
+	rclone --config $(RCLONE_CONFIG) config
+
+## Deploy generated static site
+docs-deploy: docs-clean docs
+	rclone --config $(RCLONE_CONFIG) sync --verbose ./docs/site/book/ ovh:/home/asfaloc/www/doc/

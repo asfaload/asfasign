@@ -2,7 +2,7 @@
 
 - **Auth**: required
 - **Source**: [`src/handlers.rs`](../../src/handlers.rs) — `get_signature_status_handler`
-- **Related command**: [`client signature-status`](../../../client-cli/docs/manual/signature-status.md)
+- **Related command**: [`client signature-status`](../../client-cli/manual/signature-status.md)
 
 Return the current signature collection status of a file. Authorization is checked against the current global signers file, not the copy frozen at the file's registration time; this keeps revocation semantics uniform across all authenticated endpoints.
 
