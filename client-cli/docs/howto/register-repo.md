@@ -12,7 +12,8 @@ Registering a repository tells the backend where your signers file lives. Once r
 
 ### 1. Get the signers file URL
 
-You need the public URL that points to your signers file on the forge. For GitHub:
+You need the public URL that points to your signers file on the forge. For GitHub, you can simply copy the URL from your browser when displaying the file of your repo.
+This will give you an URL of this form:
 
 ```
 https://github.com/acme/tool/blob/main/asfaload.signers/index.json
@@ -39,12 +40,12 @@ The backend fetches the signers file, creates a pending signers entry, and waits
 
 ### 3. Point to a non-default backend
 
-If your backend is not at `http://127.0.0.1:3000`:
+If your backend is not Asfaload's:
 
 ```sh
 client register-repo \
     --secret-key ~/.asfaload/mykey \
-    -u https://asfaload.example.com \
+    -u https://my-asfaload-deployment.example.com \
     https://github.com/acme/tool/blob/main/asfaload.signers/index.json
 ```
 

@@ -39,16 +39,6 @@ ls ~/.asfaload/mykey*
 
 You should see both `mykey` and `mykey.pub`.
 
-## Choosing an algorithm
-
-The default algorithm is `minisign`. If your project requires Ed25519 keys:
-
-```sh
-client new-keys --name mykey --output-dir ~/.asfaload --algorithm ed25519
-```
-
-All signers in the same signers file must use the same algorithm.
-
 ## Non-interactive usage
 
 For CI or scripting, pass the password directly:
@@ -57,16 +47,29 @@ For CI or scripting, pass the password directly:
 client new-keys --name ci-key --output-dir ./keys --password "$KEY_PASSWORD"
 ```
 
-Or via environment variable:
+Or read the password from a file with `--password-file` (`-P`):
+
+```sh
+client new-keys --name ci-key --output-dir ./keys --password-file /run/secrets/key-password
+```
+
+The file should contain the password on a single line. Trailing newlines are stripped.
+
+Both options are also available as environment variables:
 
 ```sh
 export ASFALOAD_NEW_KEYS_PASSWORD="$KEY_PASSWORD"
 client new-keys --name ci-key --output-dir ./keys
 ```
 
+```sh
+export ASFALOAD_NEW_KEYS_PASSWORD_FILE="/run/secrets/key-password"
+client new-keys --name ci-key --output-dir ./keys
+```
+
 ## Next step
 
-Share your `.pub` file with whoever maintains the signers file. They'll include it when [creating the signers file](create-signers-file.md).
+Share your `.pub` file with whoever maintains the signers file, it is not secret.  They'll include it when [creating the signers file](create-signers-file.md).
 
 ## Reference
 

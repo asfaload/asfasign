@@ -73,7 +73,7 @@ For CI, supply the password non-interactively:
 ```sh
 client sign-pending \
     --secret-key ~/.asfaload/mykey \
-    --password "$KEY_PASSWORD" \
+    --password-file "/path/to/password-file" \
     https/github.com/443/acme/tool/asfaload.signers.pending/index.json
 ```
 
