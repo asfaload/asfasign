@@ -71,16 +71,16 @@ jobs:
             done
           done
 
-  test-ed25519:
-    name: Run core tests with ed25519 keys
+  test-asfaload:
+    name: Run core tests with asfaload keys
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Install nextest
         uses: taiki-e/install-action@nextest
-      - name: Run core tests with KEY_TYPE=ed25519
+      - name: Run core tests with KEY_TYPE=asfaload
         env:
-          KEY_TYPE: ed25519
+          KEY_TYPE: asfaload
         run: |
           cargo nextest run \
             --package test_helpers \

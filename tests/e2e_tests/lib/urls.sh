@@ -6,10 +6,10 @@ E2E_REPO="asfaload/repo_for_e2e_tests"
 TEST_NAME="$(basename "$0" .sh)"
 
 # Signers file suffix for the e2e test repo, derived from KEY_TYPE.
-# minisign uses no suffix (original files), ed25519 uses "_ed25519".
+# minisign uses no suffix (original files), asfaload uses "_asfaload".
 case "$KEY_TYPE" in
     minisign) _SIGNERS_SUFFIX="" ;;
-    ed25519)  _SIGNERS_SUFFIX="_ed25519" ;;
+    asfaload) _SIGNERS_SUFFIX="_asfaload" ;;
     *)
         printf 'urls.sh: unsupported KEY_TYPE: %s\n' "$KEY_TYPE" >&2
         exit 1
