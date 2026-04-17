@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-signatures = { path = "../signatures" }
+signatures = { path = "../signatures", features = ["test-utils"] }
 minisign = "0.9.0"
 constants = { path = "../constants/" }
 common = { path = "../common/" }

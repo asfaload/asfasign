@@ -4,26 +4,34 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+argon2 = "0.5"
 base64 = "0.22.1"
+chacha20poly1305 = "0.10"
 minisign = "0.9.0"
+ssh-key = { version = "0.6", default-features = false, features = ["alloc", "ed25519", "encryption"] }
+zeroize = "1.8"
 serde_json = "1.0.143"
 thiserror = "2.0.12"
 common = { path = "../common/" }
 constants = { path = "../constants/" }
 serde = "1.0.228"
-ed25519-dalek = { version = "2.1", features = [
-  "pkcs8",
-  "rand_core",
-  "pem",
-  "zeroize",
-] }
-pkcs8 = { version = "0.10", features = ["encryption", "pem", "std"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core", "zeroize"] }
 rand = "0.8"
-scrypt = "0.11"
 
 [dev-dependencies]
 anyhow = "1.0.98"
 tempfile = "3.20.0"
+
+[features]
+# Exposes test-only helpers (e.g., Argon2Params::TEST) to downstream test
+# consumers such as test_helpers and the asfaload_ssh_interop integration
+# test. Gating these ensures weak crypto parameters cannot slip into prod
+# builds.
+test-utils = []
+
+[[test]]
+name = "asfaload_ssh_interop"
+required-features = ["test-utils"]
 
 [lints]
 workspace = true

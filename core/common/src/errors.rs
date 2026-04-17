@@ -134,6 +134,12 @@ pub mod keys {
         NotOverwriting(String),
         #[error("Error: {0}")]
         GenericError(String),
+        #[error("asfaload format error: {0}")]
+        AsfaloadFormat(String),
+        #[error("Cannot create a key of this format: {0}")]
+        ImportOnlyFormat(String),
+        #[error("Does not recognise this key format: {0}")]
+        FormatError(String),
     }
 
     #[derive(Error, Debug)]
@@ -219,12 +225,6 @@ pub mod keys {
     impl From<ed25519_dalek::SignatureError> for SignatureError {
         fn from(e: ed25519_dalek::SignatureError) -> Self {
             SignatureError::FormatError(e.to_string())
-        }
-    }
-
-    impl From<pkcs8::Error> for KeyError {
-        fn from(e: pkcs8::Error) -> Self {
-            KeyError::CreationFailed(e.to_string())
         }
     }
 }

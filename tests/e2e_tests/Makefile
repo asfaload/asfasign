@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 
 TESTS := basic_flow.sh signers_update_by_master.sh basic_flow_local.sh
-KEY_TYPES ?= minisign ed25519
+KEY_TYPES ?= minisign asfaload
 
 ## Run all e2e tests with both oid formats and all key types
 test: test-sha1 test-sha256
@@ -29,7 +29,7 @@ test-sha256:
 test-local:
 	@for t in $(TESTS); do \
 		if [[ $$t == *_local.sh ]]; then \
-			ASFALOAD_GIT_BACKEND=$${ASFALOAD_GIT_BACKEND:-sha256} KEY_TYPE=$${KEY_TYPE:-ed25519} ./$$t || exit 1; \
+			ASFALOAD_GIT_BACKEND=$${ASFALOAD_GIT_BACKEND:-sha256} KEY_TYPE=$${KEY_TYPE:-asfaload} ./$$t || exit 1; \
 		fi; \
 	done
 

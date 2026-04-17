@@ -144,14 +144,15 @@ mod tests {
         // Verify subject digest format
         assert!(json.contains("\"sha512:"));
 
-        // Verify initiator is base64
+        // Verify initiator is a valid key representation (base64 optionally prefixed)
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         let initiator = parsed.get("initiator").unwrap().as_str().unwrap();
         assert!(initiator.chars().all(|c| c.is_alphanumeric()
             || c == '+'
             || c == '/'
             || c == '='
-            || c == ':'));
+            || c == ':'
+            || c == '-'));
     }
 
     #[test]

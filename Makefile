@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := help
 SHELL:=/bin/bash
 
-## Run all tests with ed25519 keys (default)
-test: test-ed25519
+## Run all tests with asfaload keys (default)
+test: test-asfaload
 
 ## Run all tests with minisign keys
 test-minisign:
@@ -22,7 +22,7 @@ test-minisign:
 ## Run tests with test-utils feature enabled (for integration tests)
 # Note that if test-utils is added to other packages, they need to be added here.
 test-with-test-utils:
-	cargo nextest run --features test-utils  --package rest-api --package forge-url
+	cargo nextest run --features test-utils  --package rest-api --package forge-url --package signatures
 
 ## Fix rust code formatting
 format:
@@ -75,19 +75,19 @@ help:
 	}' \
 	| more $(shell test $(shell uname) == Darwin && echo '--no-init --raw-control-chars')
 
-## Run all tests with ed25519 keys
-test-ed25519:
+## Run all tests with asfaload keys
+test-asfaload:
 	$(MAKE) check-format
 	$(MAKE) clippy
-	KEY_TYPE=ed25519 cargo nextest run
-	KEY_TYPE=ed25519 $(MAKE) test-with-test-utils
-	KEY_TYPE=ed25519 $(MAKE) -C rest-api test-sha256
-	KEY_TYPE=ed25519 $(MAKE) -C rest-api test-with-test-utils-sha256
-	KEY_TYPE=ed25519 $(MAKE) -C tests/e2e_tests test-local
+	KEY_TYPE=asfaload cargo nextest run
+	KEY_TYPE=asfaload $(MAKE) test-with-test-utils
+	KEY_TYPE=asfaload $(MAKE) -C rest-api test-sha256
+	KEY_TYPE=asfaload $(MAKE) -C rest-api test-with-test-utils-sha256
+	KEY_TYPE=asfaload $(MAKE) -C tests/e2e_tests test-local
 
-## Run mutation tests (with ed25519 keys). Select packages in .cargo/mutants.toml
+## Run mutation tests (with asfaload keys). Select packages in .cargo/mutants.toml
 test-mutants:
-	KEY_TYPE=ed25519 cargo mutants --test-tool nextest
+	KEY_TYPE=asfaload cargo mutants --test-tool nextest
 
 ## Run client-server integration tests
 client-server-tests:
