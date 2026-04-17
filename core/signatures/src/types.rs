@@ -38,6 +38,9 @@ impl AsfaloadKeyPairs {
                 let kp = AsfaloadKeyPair::<Ed25519KeyPair>::new(pw)?;
                 Ok(Self::Ed25519(kp))
             }
+            KeyFormat::Asfaload | KeyFormat::OpenSsh => Err(KeyError::CreationFailed(
+                "asfaload/openssh key format not yet supported".into(),
+            )),
         }
     }
 
@@ -57,6 +60,9 @@ impl AsfaloadKeyPairs {
                     AsfaloadKeyPair::<Ed25519KeyPair>::new_with_scrypt_log_n(pw, scrypt_log_n)?;
                 Ok(Self::Ed25519(kp))
             }
+            KeyFormat::Asfaload | KeyFormat::OpenSsh => Err(KeyError::CreationFailed(
+                "asfaload/openssh key format not yet supported".into(),
+            )),
         }
     }
 }
@@ -185,6 +191,9 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
                 let pk = AsfaloadPublicKey::<Ed25519PublicKey>::from_base64(s)?;
                 Ok(Self::Ed25519(pk))
             }
+            KeyFormat::Asfaload | KeyFormat::OpenSsh => Err(KeyError::CreationFailed(
+                "asfaload/openssh public keys not yet supported".into(),
+            )),
         }
     }
 
@@ -336,6 +345,9 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
                 let sig = AsfaloadSignature::<Ed25519Signature>::from_base64(s)?;
                 Ok(Self::Ed25519(sig))
             }
+            KeyFormat::Asfaload | KeyFormat::OpenSsh => Err(SignatureError::FormatError(
+                "asfaload/openssh signatures not yet supported".into(),
+            )),
         }
     }
 
