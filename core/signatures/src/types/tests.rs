@@ -604,13 +604,13 @@ fn test_asfaload_openssh_new_returns_error() {
     let result = AsfaloadKeyPairs::new_with_format("pw", &KeyFormat::OpenSsh);
     assert!(result.is_err(), "generating OpenSSH keys should fail");
     match result.unwrap_err() {
-        KeyError::CreationFailed(msg) => {
+        KeyError::ImportOnlyFormat(msg) => {
             assert!(
                 msg.contains("OpenSSH") || msg.contains("SSH") || msg.contains("read-only"),
                 "error should mention OpenSSH / read-only: {msg}"
             );
         }
-        other => panic!("expected CreationFailed, got {other:?}"),
+        other => panic!("expected ImportOnlyFormat, got {other:?}"),
     }
 }
 

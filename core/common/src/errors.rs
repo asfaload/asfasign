@@ -136,6 +136,8 @@ pub mod keys {
         GenericError(String),
         #[error("asfaload format error: {0}")]
         AsfaloadFormat(String),
+        #[error("Cannot create a key of this format: {0}")]
+        ImportOnlyFormat(String),
     }
 
     #[derive(Error, Debug)]

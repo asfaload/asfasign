@@ -51,7 +51,7 @@ impl AsfaloadKeyPairs {
                 let kp = AsfaloadKeyPair::<AsfaloadKeysBlob>::new(pw)?;
                 Ok(Self::Asfaload(kp))
             }
-            KeyFormat::OpenSsh => Err(KeyError::CreationFailed(
+            KeyFormat::OpenSsh => Err(KeyError::ImportOnlyFormat(
                 "cannot generate an openssh-format keypair; asfaload is read-only for SSH".into(),
             )),
         }
