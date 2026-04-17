@@ -8,6 +8,11 @@ use common::{AsfaloadHashes, errors::keys::*};
 pub use minisign::{KeyPair, PublicKey, SecretKey, SignatureBox};
 use std::{fs, io::Cursor, path::Path};
 
+/// First-line prefix of canonical minisign secret-key files (produced by
+/// `minisign::SecretKeyBox::into_string`). Mirrors the `pub(crate)`
+/// `COMMENT_PREFIX` constant inside the minisign crate which is not exported.
+pub const MINISIGN_COMMENT_PREFIX: &str = "untrusted comment: ";
+
 impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<minisign::KeyPair> {
     type PublicKey = AsfaloadPublicKey<minisign::PublicKey>;
     type SecretKey = AsfaloadSecretKey<minisign::SecretKey>;
@@ -63,9 +68,8 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
         Ok(AsfaloadSecretKey { key: k })
     }
 
-    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError> {
-        let k = minisign::SecretKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
-            .into_secret_key(Some(password.into()))?;
+    fn from_string(s: &str, password: &str) -> Result<Self, KeyError> {
+        let k = minisign::SecretKeyBox::from_string(s)?.into_secret_key(Some(password.into()))?;
         Ok(AsfaloadSecretKey { key: k })
     }
 }

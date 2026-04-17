@@ -58,14 +58,14 @@ impl ForgeType {
 pub enum AlgorithmType {
     #[default]
     Minisign,
-    Ed25519,
+    Asfaload,
 }
 
 impl From<AlgorithmType> for KeyFormat {
     fn from(alg: AlgorithmType) -> Self {
         match alg {
             AlgorithmType::Minisign => KeyFormat::Minisign,
-            AlgorithmType::Ed25519 => KeyFormat::Ed25519,
+            AlgorithmType::Asfaload => KeyFormat::Asfaload,
         }
     }
 }
@@ -97,7 +97,7 @@ pub enum Commands {
         #[arg(long, short)]
         output_dir: PathBuf,
 
-        /// Signing algorithm to use (minisign or ed25519)
+        /// Signing algorithm to use (minisign or asfaload)
         #[arg(long, short = 'a', default_value = "minisign")]
         algorithm: AlgorithmType,
 
