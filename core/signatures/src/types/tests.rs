@@ -867,14 +867,8 @@ fn sk_from_file_rejects_unknown_prefix_without_kdf() -> Result<()> {
     let path = temp_dir.path().join("garbage.key");
     std::fs::write(&path, "not-a-key\n")?;
 
-    // The "unrecognised key format" substring is KeyFormat::from_file's contract
-    // and must be emitted verbatim.
     match AsfaloadSecretKeys::from_file(&path, "any-password") {
-        Err(KeyError::CreationFailed(msg)) => {
-            assert!(
-                msg.contains("unrecognised key format"),
-                "error should name the format problem, got: {msg}"
-            );
+        Err(KeyError::FormatError(msg)) => {
             assert!(
                 msg.contains(&path.display().to_string()),
                 "error should include the path, got: {msg}"
@@ -952,14 +946,8 @@ fn pk_from_file_rejects_unknown_prefix() -> Result<()> {
     let path = temp_dir.path().join("garbage.pub");
     std::fs::write(&path, "not-a-key\n")?;
 
-    // The "unrecognised key format" substring is KeyFormat::from_file's contract
-    // and must be emitted verbatim.
     match AsfaloadPublicKeys::from_file(&path) {
-        Err(KeyError::CreationFailed(msg)) => {
-            assert!(
-                msg.contains("unrecognised key format"),
-                "error should name the format problem, got: {msg}"
-            );
+        Err(KeyError::FormatError(msg)) => {
             assert!(
                 msg.contains(&path.display().to_string()),
                 "error should include the path, got: {msg}"
@@ -1070,13 +1058,7 @@ fn ed25519_sk_from_file_rejects_unknown_prefix() -> Result<()> {
     std::fs::write(&path, "not-a-key\n")?;
 
     match crate::keys::asfaload::AsfaloadEd25519SecretKey::from_file(&path, "any-password") {
-        Err(KeyError::CreationFailed(msg)) => {
-            assert!(
-                msg.contains("unrecognised key format"),
-                "error should name the format problem, got: {msg}"
-            );
-            Ok(())
-        }
+        Err(KeyError::FormatError(_msg)) => Ok(()),
         Err(other) => panic!("expected CreationFailed, got {other:?}"),
         Ok(_) => panic!("expected an error, got Ok"),
     }

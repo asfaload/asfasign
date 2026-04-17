@@ -138,6 +138,8 @@ pub mod keys {
         AsfaloadFormat(String),
         #[error("Cannot create a key of this format: {0}")]
         ImportOnlyFormat(String),
+        #[error("Does not recognise this key format: {0}")]
+        FormatError(String),
     }
 
     #[derive(Error, Debug)]
