@@ -1,6 +1,8 @@
 pub mod asfaload;
 pub mod ed25519;
 pub mod minisign;
+
+const OPENSSH_PRIVATE_KEY_PEM_HEADER: &str = "-----BEGIN OPENSSH PRIVATE KEY-----";
 use std::ffi::OsString;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -83,6 +85,43 @@ impl std::str::FromStr for KeyFormat {
                 s
             ))),
         }
+    }
+}
+
+impl KeyFormat {
+    /// Detect the key format from the first bytes of content (no I/O).
+    /// Accepts markers for both private and public keys of any supported format.
+    pub fn from_head(head: &str) -> Result<Self, KeyError> {
+        use asfaload::{ASFALOAD_PRIV_PREFIX, ASFALOAD_PUB_PREFIX, SSH_ED25519_PREFIX};
+        use minisign::MINISIGN_COMMENT_PREFIX;
+
+        if head.starts_with(ASFALOAD_PRIV_PREFIX) || head.starts_with(ASFALOAD_PUB_PREFIX) {
+            Ok(KeyFormat::Asfaload)
+        } else if head.starts_with(OPENSSH_PRIVATE_KEY_PEM_HEADER)
+            || head.starts_with(SSH_ED25519_PREFIX)
+        {
+            Ok(KeyFormat::OpenSsh)
+        } else if head.starts_with(MINISIGN_COMMENT_PREFIX) || head.starts_with("minisign:") {
+            Ok(KeyFormat::Minisign)
+        } else {
+            Err(KeyError::CreationFailed(format!(
+                "unrecognised key format in input starting with '{}'",
+                &head[..head.len().min(32)]
+            )))
+        }
+    }
+
+    /// Detect the key format of a file by inspecting its first-line prefix.
+    /// Accepts both private- and public-key files of any supported format.
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError> {
+        let content = std::fs::read_to_string(path.as_ref())?;
+        let head = content.trim_start();
+        Self::from_head(head).map_err(|_| {
+            KeyError::CreationFailed(format!(
+                "unrecognised key format in {}",
+                path.as_ref().display()
+            ))
+        })
     }
 }
 
@@ -268,7 +307,8 @@ mod key_format_tests {
     #[test]
     fn test_key_format_display() {
         assert_eq!(format!("{}", KeyFormat::Minisign), "minisign");
-        assert_eq!(format!("{}", KeyFormat::Ed25519), "ed25519");
+        assert_eq!(format!("{}", KeyFormat::Asfaload), "asfaload");
+        assert_eq!(format!("{}", KeyFormat::OpenSsh), "openssh");
     }
 
     #[test]
@@ -277,18 +317,23 @@ mod key_format_tests {
             KeyFormat::from_str("minisign").unwrap(),
             KeyFormat::Minisign
         );
-        assert_eq!(KeyFormat::from_str("ed25519").unwrap(), KeyFormat::Ed25519);
+        assert_eq!(
+            KeyFormat::from_str("asfaload").unwrap(),
+            KeyFormat::Asfaload
+        );
+        assert_eq!(KeyFormat::from_str("openssh").unwrap(), KeyFormat::OpenSsh);
     }
 
     #[test]
     fn test_key_format_from_str_invalid() {
         assert!(KeyFormat::from_str("rsa").is_err());
+        assert!(KeyFormat::from_str("ed25519").is_err());
         assert!(KeyFormat::from_str("").is_err());
     }
 
     #[test]
     fn test_key_format_roundtrip() {
-        let formats = [KeyFormat::Minisign, KeyFormat::Ed25519];
+        let formats = [KeyFormat::Minisign, KeyFormat::Asfaload, KeyFormat::OpenSsh];
         for fmt in &formats {
             let s = format!("{}", fmt);
             let parsed = KeyFormat::from_str(&s).unwrap();
