@@ -8,6 +8,7 @@ use signatures::keys::AsfaloadKeyPairTrait;
 use signatures::keys::AsfaloadPublicKeyTrait;
 use signatures::keys::AsfaloadSecretKeyTrait;
 use signatures::keys::KeyFormat;
+use signatures::keys::asfaload::format::Argon2Params;
 use signatures::types::AsfaloadKeyPairs;
 use signatures::types::AsfaloadPublicKeys;
 use signatures::types::AsfaloadSecretKeys;
@@ -23,9 +24,9 @@ const FIXTURE_KEY_COUNT: usize = 10;
 /// Password used for all fixture keypairs.
 const FIXTURE_PASSWORD: &str = "password";
 
-/// Low-cost scrypt for fast test key generation. NOT for production.
-/// Keep in sync with TEST_SCRYPT_LOG_N in signatures/src/keys/ed25519.rs.
-const TEST_SCRYPT_LOG_N: u8 = 10;
+/// Low-cost argon2id for fast test key generation. NOT for production.
+/// Keep in sync with Argon2Params::TEST in signatures/src/keys/asfaload/format.rs.
+const TEST_ARGON2_PARAMS: Argon2Params = Argon2Params::TEST;
 
 pub fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures")
@@ -36,8 +37,8 @@ pub fn fixtures_keys_dir() -> PathBuf {
 pub fn fixtures_pub_key(n: usize) -> PathBuf {
     fixtures_keys_dir().join(format!("key_{}.pub", n))
 }
-pub fn fixtures_ed25519_pub_key(n: usize) -> PathBuf {
-    fixtures_keys_dir().join(format!("ed25519_key_{}.pub", n))
+pub fn fixtures_asfaload_pub_key(n: usize) -> PathBuf {
+    fixtures_keys_dir().join(format!("asfaload_key_{}.pub", n))
 }
 
 /// Select key algorithm from the KEY_TYPE env var, matching the e2e test convention.
@@ -45,9 +46,9 @@ pub fn fixtures_ed25519_pub_key(n: usize) -> PathBuf {
 /// Panics on unrecognised values to surface typos early.
 pub fn default_key_type() -> KeyFormat {
     match std::env::var("KEY_TYPE").as_deref() {
-        Ok("ed25519") => KeyFormat::Ed25519,
+        Ok("asfaload") => KeyFormat::Asfaload,
         Ok("minisign") | Err(_) => KeyFormat::Minisign,
-        Ok(other) => panic!("Unknown KEY_TYPE: {other} (expected: minisign or ed25519)"),
+        Ok(other) => panic!("Unknown KEY_TYPE: {other} (expected: minisign or asfaload)"),
     }
 }
 
@@ -59,7 +60,7 @@ pub struct TestKeys {
 
 impl TestKeys {
     /// Load pre-generated keys based on KEY_TYPE env var.
-    /// KEY_TYPE=ed25519 loads ed25519 fixtures, default loads minisign.
+    /// KEY_TYPE=asfaload loads asfaload fixtures, default loads minisign.
     pub fn new(n: usize) -> Self {
         Self::new_from(0, n)
     }
@@ -67,10 +68,13 @@ impl TestKeys {
     /// Load pre-generated keys based on KEY_TYPE env var, starting at `start`.
     pub fn new_from(start: usize, n: usize) -> Self {
         match default_key_type() {
-            KeyFormat::Ed25519 => Self::new_ed25519_from(start, n),
+            KeyFormat::Asfaload => Self::new_asfaload_from(start, n),
             KeyFormat::Minisign => Self::new_minisign_from(start, n),
-            KeyFormat::Asfaload | KeyFormat::OpenSsh => {
-                panic!("TestKeys does not support asfaload/openssh yet")
+            KeyFormat::OpenSsh => {
+                panic!("TestKeys does not support OpenSsh; use asfaload or minisign")
+            }
+            KeyFormat::Ed25519 => {
+                panic!("legacy ed25519 KEY_TYPE is being removed; use asfaload")
             }
         }
     }
@@ -137,10 +141,10 @@ impl TestKeys {
             sec_keys: Vec::with_capacity(n),
         };
         for _ in 0..n {
-            let key_pair = AsfaloadKeyPairs::new_with_format_and_scrypt_log_n(
+            let key_pair = AsfaloadKeyPairs::new_with_format_and_argon2_params(
                 FIXTURE_PASSWORD,
                 format,
-                TEST_SCRYPT_LOG_N,
+                TEST_ARGON2_PARAMS,
             )
             .unwrap();
             let pub_key = key_pair.public_key();
@@ -153,13 +157,13 @@ impl TestKeys {
         r
     }
 
-    /// Load pre-generated ed25519 keys from fixture files starting at index 0.
-    pub fn new_ed25519(n: usize) -> Self {
-        Self::new_ed25519_from(0, n)
+    /// Load pre-generated asfaload keys from fixture files starting at index 0.
+    pub fn new_asfaload(n: usize) -> Self {
+        Self::new_asfaload_from(0, n)
     }
 
-    /// Load pre-generated ed25519 keys from fixture files starting at `start`.
-    pub fn new_ed25519_from(start: usize, n: usize) -> Self {
+    /// Load pre-generated asfaload keys from fixture files starting at `start`.
+    pub fn new_asfaload_from(start: usize, n: usize) -> Self {
         assert!(
             start + n <= FIXTURE_KEY_COUNT,
             "Only {FIXTURE_KEY_COUNT} fixture keypairs available, requested indices {start}..{}",
@@ -174,16 +178,19 @@ impl TestKeys {
         };
         for i in start..start + n {
             let pk =
-                AsfaloadPublicKeys::from_file(fixtures_dir.join(format!("ed25519_key_{i}.pub")))
+                AsfaloadPublicKeys::from_file(fixtures_dir.join(format!("asfaload_key_{i}.pub")))
                     .unwrap_or_else(|e| {
-                        panic!("Failed to load fixture ed25519 public key ed25519_key_{i}.pub: {e}")
+                        panic!(
+                            "Failed to load fixture asfaload public key asfaload_key_{i}.pub: {e}"
+                        )
                     });
-            let sk = AsfaloadSecretKeys::from_file(
-                fixtures_dir.join(format!("ed25519_key_{i}")),
+            let sk = AsfaloadSecretKeys::from_file_for_format(
+                fixtures_dir.join(format!("asfaload_key_{i}")),
                 FIXTURE_PASSWORD,
+                &KeyFormat::Asfaload,
             )
             .unwrap_or_else(|e| {
-                panic!("Failed to load fixture ed25519 secret key ed25519_key_{i}: {e}")
+                panic!("Failed to load fixture asfaload secret key asfaload_key_{i}: {e}")
             });
             r.pub_keys.push(pk);
             r.sec_keys.push(sk);
@@ -264,33 +271,33 @@ mod tests {
         );
     }
 
-    /// Generate ed25519 fixture keypairs and save them to fixtures/keys/.
-    /// Run with: cargo test --package test_helpers -- gen_fixture_ed25519_keys --ignored --nocapture
+    /// Generate asfaload fixture keypairs and save them to fixtures/keys/.
+    /// Run with: cargo test --package test_helpers -- gen_fixture_asfaload_keys --ignored --nocapture
     #[test]
     #[ignore]
-    fn gen_fixture_ed25519_keys() {
+    fn gen_fixture_asfaload_keys() {
         let fixtures_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("fixtures")
             .join("keys");
         std::fs::create_dir_all(&fixtures_dir).expect("Failed to create fixtures/keys dir");
 
         for i in 0..FIXTURE_KEY_COUNT {
-            let kp = AsfaloadKeyPairs::new_with_format_and_scrypt_log_n(
+            let kp = AsfaloadKeyPairs::new_with_format_and_argon2_params(
                 FIXTURE_PASSWORD,
-                &KeyFormat::Ed25519,
-                TEST_SCRYPT_LOG_N,
+                &KeyFormat::Asfaload,
+                TEST_ARGON2_PARAMS,
             )
-            .expect("Failed to generate ed25519 keypair");
-            let key_path = fixtures_dir.join(format!("ed25519_key_{i}"));
+            .expect("Failed to generate asfaload keypair");
+            let key_path = fixtures_dir.join(format!("asfaload_key_{i}"));
             // Remove existing files to allow regeneration
             let _ = std::fs::remove_file(&key_path);
             let _ = std::fs::remove_file(key_path.with_extension("pub"));
             kp.save(&key_path)
-                .unwrap_or_else(|e| panic!("Failed to save ed25519 keypair {i}: {e}"));
-            println!("Generated ed25519_key_{i}");
+                .unwrap_or_else(|e| panic!("Failed to save asfaload keypair {i}: {e}"));
+            println!("Generated asfaload_key_{i}");
         }
         println!(
-            "Done: generated {FIXTURE_KEY_COUNT} ed25519 keypairs in {}",
+            "Done: generated {FIXTURE_KEY_COUNT} asfaload keypairs in {}",
             fixtures_dir.display()
         );
     }
@@ -315,24 +322,24 @@ mod tests {
     }
 
     #[test]
-    fn test_load_ed25519_fixture_keys() {
-        let keys = TestKeys::new_ed25519(5);
+    fn test_load_asfaload_fixture_keys() {
+        let keys = TestKeys::new_asfaload(5);
         for i in 0..5 {
             assert!(
                 keys.pub_key(i).is_some(),
-                "ed25519 pub_key({i}) should exist"
+                "asfaload pub_key({i}) should exist"
             );
             assert!(
                 keys.sec_key(i).is_some(),
-                "ed25519 sec_key({i}) should exist"
+                "asfaload sec_key({i}) should exist"
             );
         }
         assert!(keys.key_pair(0).is_none());
     }
 
     #[test]
-    fn test_ed25519_fixture_keys_can_sign_and_verify() {
-        let keys = TestKeys::new_ed25519(2);
+    fn test_asfaload_fixture_keys_can_sign_and_verify() {
+        let keys = TestKeys::new_asfaload(2);
         let data = common::sha512_for_content(b"test data".to_vec()).unwrap();
         let sig = keys.sec_key(0).unwrap().sign(&data).unwrap();
         keys.pub_key(0).unwrap().verify(&sig, &data).unwrap();

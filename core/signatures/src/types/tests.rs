@@ -1,6 +1,6 @@
 use crate::keys::{
     AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
-    KeyFormat,
+    KeyFormat, asfaload::format::Argon2Params,
 };
 use anyhow::{Context, Result};
 use common::errors::keys::{KeyError, SignatureError};
@@ -48,27 +48,47 @@ fn get_two_key_pairs() -> Result<(
     Ok((pk1, sk1, pk2, sk2))
 }
 
-/// Load an ed25519 key pair from fixture files.
-fn get_ed25519_key_pair() -> Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
-    let dir = fixtures_dir();
-    let pk = AsfaloadPublicKeys::from_file(dir.join("ed25519_key_0.pub"))?;
-    let sk = AsfaloadSecretKeys::from_file(dir.join("ed25519_key_0"), "password")?;
-    Ok((pk, sk))
+/// Generate a fresh asfaload key pair (fast TEST params) and save to temp dir.
+/// Returns (public key, secret key) via the enum facade.
+fn get_asfaload_key_pair() -> Result<(TempDir, AsfaloadPublicKeys, AsfaloadSecretKeys)> {
+    let temp_dir = tempfile::tempdir()?;
+    let kp = AsfaloadKeyPairs::new_with_format_and_argon2_params(
+        "password",
+        &KeyFormat::Asfaload,
+        Argon2Params::TEST,
+    )?;
+    kp.save(temp_dir.path())?;
+    let pk = AsfaloadPublicKeys::from_file(temp_dir.path().join("key.pub"))?;
+    let sk = AsfaloadSecretKeys::from_file(temp_dir.path().join("key"), "password")?;
+    Ok((temp_dir, pk, sk))
 }
 
-/// Load two ed25519 key pairs from fixture files.
-fn get_two_ed25519_key_pairs() -> Result<(
+/// Generate two fresh asfaload key pairs (fast TEST params).
+fn get_two_asfaload_key_pairs() -> Result<(
+    TempDir,
     AsfaloadPublicKeys,
     AsfaloadSecretKeys,
     AsfaloadPublicKeys,
     AsfaloadSecretKeys,
 )> {
-    let dir = fixtures_dir();
-    let pk1 = AsfaloadPublicKeys::from_file(dir.join("ed25519_key_0.pub"))?;
-    let sk1 = AsfaloadSecretKeys::from_file(dir.join("ed25519_key_0"), "password")?;
-    let pk2 = AsfaloadPublicKeys::from_file(dir.join("ed25519_key_1.pub"))?;
-    let sk2 = AsfaloadSecretKeys::from_file(dir.join("ed25519_key_1"), "password")?;
-    Ok((pk1, sk1, pk2, sk2))
+    let temp_dir = tempfile::tempdir()?;
+    let kp1 = AsfaloadKeyPairs::new_with_format_and_argon2_params(
+        "password1",
+        &KeyFormat::Asfaload,
+        Argon2Params::TEST,
+    )?;
+    kp1.save(temp_dir.path().join("key1"))?;
+    let kp2 = AsfaloadKeyPairs::new_with_format_and_argon2_params(
+        "password2",
+        &KeyFormat::Asfaload,
+        Argon2Params::TEST,
+    )?;
+    kp2.save(temp_dir.path().join("key2"))?;
+    let pk1 = AsfaloadPublicKeys::from_file(temp_dir.path().join("key1.pub"))?;
+    let sk1 = AsfaloadSecretKeys::from_file(temp_dir.path().join("key1"), "password1")?;
+    let pk2 = AsfaloadPublicKeys::from_file(temp_dir.path().join("key2.pub"))?;
+    let sk2 = AsfaloadSecretKeys::from_file(temp_dir.path().join("key2"), "password2")?;
+    Ok((temp_dir, pk1, sk1, pk2, sk2))
 }
 
 // Helper function to create a file to sign
@@ -162,7 +182,7 @@ fn test_new() -> Result<()> {
 
 #[test]
 fn test_keys_methods() -> Result<()> {
-    [KeyFormat::Minisign, KeyFormat::Ed25519]
+    [KeyFormat::Minisign, KeyFormat::Asfaload]
         .iter()
         .try_for_each(|t| -> anyhow::Result<()> {
             // Save keypair in temp dir
@@ -193,8 +213,40 @@ fn test_keys_methods() -> Result<()> {
             // Test AsfaloadPublicKey::from_base64
             let b64 = public_key_from_string.to_base64();
             assert_eq!(b64, public_key_string);
+
             Ok(())
-        })?;
+        })
+}
+
+#[test]
+fn test_keys_methods_asfaload() -> Result<()> {
+    // Uses TEST argon2 params to keep the test fast.
+    let temp_dir = tempfile::tempdir().unwrap();
+    let kp = AsfaloadKeyPairs::new_with_format_and_argon2_params(
+        "mypass",
+        &KeyFormat::Asfaload,
+        Argon2Params::TEST,
+    )?;
+    kp.save(&temp_dir)?;
+
+    let secret_key_path = temp_dir.as_ref().to_path_buf().join("key");
+    let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, "mypass")?;
+
+    let bytes_to_sign = common::sha512_for_content(b"My string to sign".to_vec())?;
+    let signature = secret_key.sign(&bytes_to_sign)?;
+
+    let public_key_path = temp_dir.as_ref().to_path_buf().join("key.pub");
+    let public_key = AsfaloadPublicKeys::from_file(&public_key_path)?;
+    assert_eq!(public_key.key_format(), KeyFormat::Asfaload);
+
+    public_key.verify(&signature, &bytes_to_sign)?;
+
+    let public_key_string = fs::read_to_string(&public_key_path)?;
+    let public_key_from_string = AsfaloadPublicKeys::from_base64(&public_key_string)?;
+    public_key_from_string.verify(&signature, &bytes_to_sign)?;
+
+    let b64 = public_key_from_string.to_base64();
+    assert_eq!(b64, public_key_string);
 
     Ok(())
 }
@@ -521,14 +573,16 @@ fn test_add_to_aggregate_works_without_revocation_file() -> Result<()> {
 }
 
 //------------------------------------------------------------
-// Ed25519 tests
+// Asfaload tests
 //------------------------------------------------------------
 
-// Intentionally uses production scrypt cost (via new_with_format -> new()) to verify
-// the production key creation path works. Other ed25519 tests use TEST_SCRYPT_LOG_N.
 #[test]
-fn test_ed25519_new_with_format() -> Result<()> {
-    let kp = AsfaloadKeyPairs::new_with_format("mypass", &KeyFormat::Ed25519)?;
+fn test_asfaload_new_with_format() -> Result<()> {
+    let kp = AsfaloadKeyPairs::new_with_format_and_argon2_params(
+        "mypass",
+        &KeyFormat::Asfaload,
+        Argon2Params::TEST,
+    )?;
     let temp_dir = tempfile::tempdir()?;
     kp.save(temp_dir.path())?;
     assert!(temp_dir.path().join("key").exists());
@@ -536,9 +590,9 @@ fn test_ed25519_new_with_format() -> Result<()> {
 
     let sk = AsfaloadSecretKeys::from_file(temp_dir.path().join("key"), "mypass")?;
     let pk = AsfaloadPublicKeys::from_file(temp_dir.path().join("key.pub"))?;
-    assert_eq!(pk.key_format(), KeyFormat::Ed25519);
+    assert_eq!(pk.key_format(), KeyFormat::Asfaload);
 
-    let data = common::sha512_for_content(b"ed25519 test".to_vec())?;
+    let data = common::sha512_for_content(b"asfaload test".to_vec())?;
     let sig = sk.sign(&data)?;
     pk.verify(&sig, &data)?;
 
@@ -546,30 +600,45 @@ fn test_ed25519_new_with_format() -> Result<()> {
 }
 
 #[test]
-fn test_ed25519_fixture_sign_and_verify() -> Result<()> {
-    let (pk, sk) = get_ed25519_key_pair()?;
-    assert_eq!(pk.key_format(), KeyFormat::Ed25519);
+fn test_asfaload_openssh_new_returns_error() {
+    let result = AsfaloadKeyPairs::new_with_format("pw", &KeyFormat::OpenSsh);
+    assert!(result.is_err(), "generating OpenSSH keys should fail");
+    match result.unwrap_err() {
+        KeyError::CreationFailed(msg) => {
+            assert!(
+                msg.contains("OpenSSH") || msg.contains("SSH") || msg.contains("read-only"),
+                "error should mention OpenSSH / read-only: {msg}"
+            );
+        }
+        other => panic!("expected CreationFailed, got {other:?}"),
+    }
+}
 
-    let data = common::sha512_for_content(b"ed25519 fixture test".to_vec())?;
+#[test]
+fn test_asfaload_fixture_sign_and_verify() -> Result<()> {
+    let (_dir, pk, sk) = get_asfaload_key_pair()?;
+    assert_eq!(pk.key_format(), KeyFormat::Asfaload);
+
+    let data = common::sha512_for_content(b"asfaload fixture test".to_vec())?;
     let sig = sk.sign(&data)?;
     pk.verify(&sig, &data)?;
     Ok(())
 }
 
 #[test]
-fn test_ed25519_base64_round_trip() -> Result<()> {
-    let (pk, _) = get_ed25519_key_pair()?;
+fn test_asfaload_base64_round_trip() -> Result<()> {
+    let (_dir, pk, _) = get_asfaload_key_pair()?;
     let b64 = pk.to_base64();
-    assert!(b64.starts_with("ed25519:"));
+    assert!(b64.starts_with("asfaload-pub:"));
     let pk2 = AsfaloadPublicKeys::from_base64(&b64)?;
     assert_eq!(pk, pk2);
     Ok(())
 }
 
 #[test]
-fn test_ed25519_signature_serialisation() -> Result<()> {
-    let (pk, sk) = get_ed25519_key_pair()?;
-    let data = common::sha512_for_content(b"serialise me".to_vec())?;
+fn test_asfaload_signature_serialisation() -> Result<()> {
+    let (_dir, pk, sk) = get_asfaload_key_pair()?;
+    let data = common::sha512_for_content(b"serialise me asfaload".to_vec())?;
     let sig = sk.sign(&data)?;
 
     // Base64 round-trip
@@ -579,7 +648,7 @@ fn test_ed25519_signature_serialisation() -> Result<()> {
 
     // File round-trip
     let temp_dir = TempDir::new()?;
-    let sig_path = temp_dir.path().join("ed25519_sig");
+    let sig_path = temp_dir.path().join("asfaload_sig");
     sig.to_file(&sig_path)?;
     let sig3 = AsfaloadSignatures::from_file(&sig_path)?;
     pk.verify(&sig3, &data)?;
@@ -588,16 +657,16 @@ fn test_ed25519_signature_serialisation() -> Result<()> {
 }
 
 #[test]
-fn test_ed25519_public_key_from_secret_key() -> Result<()> {
-    let (pk, sk) = get_ed25519_key_pair()?;
+fn test_asfaload_public_key_from_secret_key() -> Result<()> {
+    let (_dir, pk, sk) = get_asfaload_key_pair()?;
     let derived = AsfaloadPublicKeys::from_secret_key(&sk)?;
     assert_eq!(derived.to_base64(), pk.to_base64());
     Ok(())
 }
 
 #[test]
-fn test_ed25519_public_key_serde_round_trip() -> Result<()> {
-    let (pk, _) = get_ed25519_key_pair()?;
+fn test_asfaload_public_key_serde_round_trip() -> Result<()> {
+    let (_dir, pk, _) = get_asfaload_key_pair()?;
     let json = serde_json::to_string(&pk)?;
     let expected_json = format!("\"{}\"", pk.to_base64());
     assert_eq!(json, expected_json);
@@ -608,13 +677,13 @@ fn test_ed25519_public_key_serde_round_trip() -> Result<()> {
 }
 
 #[test]
-fn test_ed25519_add_to_aggregate() -> Result<()> {
+fn test_asfaload_add_to_aggregate() -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
-    fs::write(&signed_file_path, "ed25519 aggregate test")?;
+    fs::write(&signed_file_path, "asfaload aggregate test")?;
 
-    let (pk1, sk1, pk2, sk2) = get_two_ed25519_key_pairs()?;
-    let data = common::sha512_for_content(b"ed25519 aggregate test".to_vec())?;
+    let (_kdir, pk1, sk1, pk2, sk2) = get_two_asfaload_key_pairs()?;
+    let data = common::sha512_for_content(b"asfaload aggregate test".to_vec())?;
     let sig1 = sk1.sign(&data)?;
     let sig2 = sk2.sign(&data)?;
 
@@ -633,7 +702,7 @@ fn test_ed25519_add_to_aggregate() -> Result<()> {
     assert!(sig_file.entries.contains_key(&pk2.to_base64()));
     assert_eq!(
         sig_file.entries.get(&pk1.to_base64()).unwrap().format,
-        KeyFormat::Ed25519
+        KeyFormat::Asfaload
     );
 
     Ok(())
@@ -646,29 +715,29 @@ fn test_ed25519_add_to_aggregate() -> Result<()> {
 #[test]
 fn test_cross_algorithm_verify_fails() -> Result<()> {
     let (minisign_pk, minisign_sk) = get_key_pair()?;
-    let (ed25519_pk, ed25519_sk) = get_ed25519_key_pair()?;
+    let (_adir, asfaload_pk, asfaload_sk) = get_asfaload_key_pair()?;
 
     let data = common::sha512_for_content(b"cross-algo test".to_vec())?;
     let minisign_sig = minisign_sk.sign(&data)?;
-    let ed25519_sig = ed25519_sk.sign(&data)?;
+    let asfaload_sig = asfaload_sk.sign(&data)?;
 
-    // Minisign key cannot verify ed25519 signature
-    let result = minisign_pk.verify(&ed25519_sig, &data);
+    // Minisign key cannot verify asfaload signature
+    let result = minisign_pk.verify(&asfaload_sig, &data);
     assert!(
         result.is_err(),
-        "Minisign key should not verify ed25519 signature"
+        "Minisign key should not verify asfaload signature"
     );
 
-    // Ed25519 key cannot verify minisign signature
-    let result = ed25519_pk.verify(&minisign_sig, &data);
+    // Asfaload key cannot verify minisign signature
+    let result = asfaload_pk.verify(&minisign_sig, &data);
     assert!(
         result.is_err(),
-        "Ed25519 key should not verify minisign signature"
+        "Asfaload key should not verify minisign signature"
     );
 
     // Same-algorithm verification still works
     minisign_pk.verify(&minisign_sig, &data)?;
-    ed25519_pk.verify(&ed25519_sig, &data)?;
+    asfaload_pk.verify(&asfaload_sig, &data)?;
 
     Ok(())
 }
@@ -680,15 +749,15 @@ fn test_mixed_algorithm_aggregate() -> Result<()> {
     fs::write(&signed_file_path, "mixed algo test")?;
 
     let (minisign_pk, minisign_sk) = get_key_pair()?;
-    let (ed25519_pk, ed25519_sk) = get_ed25519_key_pair()?;
+    let (_adir, asfaload_pk, asfaload_sk) = get_asfaload_key_pair()?;
 
     let data = common::sha512_for_content(b"mixed algo test".to_vec())?;
     let minisign_sig = minisign_sk.sign(&data)?;
-    let ed25519_sig = ed25519_sk.sign(&data)?;
+    let asfaload_sig = asfaload_sk.sign(&data)?;
 
     // Both algorithms can contribute to the same aggregate
     minisign_sig.add_to_aggregate_for_file(&signed_file_path, &minisign_pk)?;
-    ed25519_sig.add_to_aggregate_for_file(&signed_file_path, &ed25519_pk)?;
+    asfaload_sig.add_to_aggregate_for_file(&signed_file_path, &asfaload_pk)?;
 
     let sig_file_path = signed_file_path.with_file_name(format!(
         "{}.{}",
@@ -702,8 +771,313 @@ fn test_mixed_algorithm_aggregate() -> Result<()> {
     // Check format tags
     let minisign_entry = sig_file.entries.get(&minisign_pk.to_base64()).unwrap();
     assert_eq!(minisign_entry.format, KeyFormat::Minisign);
-    let ed25519_entry = sig_file.entries.get(&ed25519_pk.to_base64()).unwrap();
-    assert_eq!(ed25519_entry.format, KeyFormat::Ed25519);
+    let asfaload_entry = sig_file.entries.get(&asfaload_pk.to_base64()).unwrap();
+    assert_eq!(asfaload_entry.format, KeyFormat::Asfaload);
 
     Ok(())
+}
+
+#[test]
+fn test_asfaload_secret_keys_from_file_for_openssh() -> anyhow::Result<()> {
+    use crate::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, asfaload::SshEncryptedKey};
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+    use ssh_key::LineEnding;
+    use ssh_key::private::{Ed25519Keypair, KeypairData};
+
+    // Build an in-memory encrypted OpenSSH ed25519 key, write to tempfile.
+    let sk = SigningKey::generate(&mut OsRng);
+    let seed: [u8; 32] = sk.to_bytes();
+    let ssh_ed = Ed25519Keypair::from_seed(&seed);
+    let private = ssh_key::PrivateKey::new(KeypairData::Ed25519(ssh_ed), "interop-test")
+        .expect("PrivateKey::new");
+    let encrypted = private.encrypt(&mut OsRng, b"pw").expect("encrypt");
+    let pem = encrypted
+        .to_openssh(LineEnding::LF)
+        .expect("to_openssh")
+        .to_string();
+
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("id_ed25519");
+    std::fs::write(&path, &pem)?;
+
+    // Load via the enum facade with explicit OpenSsh format.
+    let loaded = AsfaloadSecretKeys::from_file_for_format(&path, "pw", &KeyFormat::OpenSsh)?;
+
+    // Should end up in the Asfaload variant (shared ed25519 types).
+    assert!(matches!(loaded, AsfaloadSecretKeys::Asfaload(_)));
+
+    // Sign + verify via the shared types works.
+    let data = common::sha512_for_content(b"interop-payload".to_vec())?;
+    let sig = loaded.sign(&data)?;
+
+    // Public key derived by loading via AsfaloadKeyPair<SshEncryptedKey>.
+    let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_file(&path)?;
+    let pk = kp.public_key();
+    let asfaload_pk = AsfaloadPublicKeys::Asfaload(pk);
+    asfaload_pk.verify(&sig, &data)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_asfaload_secret_keys_from_file_for_asfaload() -> anyhow::Result<()> {
+    use crate::keys::{
+        AsfaloadKeyPair, AsfaloadKeyPairTrait,
+        asfaload::{AsfaloadKeysBlob, format::Argon2Params},
+    };
+
+    // Generate an asfaload key and save it to disk.
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("asfaload_key");
+    let kp = AsfaloadKeyPair::<AsfaloadKeysBlob>::new_with_argon2_params("pw", Argon2Params::TEST)?;
+    kp.save(&path)?;
+
+    // Load via the enum facade with explicit Asfaload format.
+    let loaded = AsfaloadSecretKeys::from_file_for_format(&path, "pw", &KeyFormat::Asfaload)?;
+
+    assert!(matches!(loaded, AsfaloadSecretKeys::Asfaload(_)));
+
+    // Sign + verify works end-to-end.
+    let data = common::sha512_for_content(b"payload".to_vec())?;
+    let sig = loaded.sign(&data)?;
+    let pk = AsfaloadPublicKeys::Asfaload(kp.public_key());
+    pk.verify(&sig, &data)?;
+
+    Ok(())
+}
+
+// Prefix-dispatch tests for AsfaloadSecretKeys::from_file / AsfaloadPublicKeys::from_file
+// -------------------------------------------------------------------------------------
+
+#[test]
+fn sk_from_file_dispatches_asfaload_by_prefix() -> Result<()> {
+    let (temp_dir, _pk, _sk) = get_asfaload_key_pair()?;
+    // Re-load via the enum-level dispatcher to assert the variant explicitly.
+    let sk = AsfaloadSecretKeys::from_file(temp_dir.path().join("key"), "password")?;
+    match sk {
+        AsfaloadSecretKeys::Asfaload(_) => Ok(()),
+        other => panic!("expected Asfaload variant, got {other:?}"),
+    }
+}
+
+#[test]
+fn sk_from_file_rejects_unknown_prefix_without_kdf() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let path = temp_dir.path().join("garbage.key");
+    std::fs::write(&path, "not-a-key\n")?;
+
+    // The "unrecognised key format" substring is KeyFormat::from_file's contract
+    // and must be emitted verbatim.
+    match AsfaloadSecretKeys::from_file(&path, "any-password") {
+        Err(KeyError::CreationFailed(msg)) => {
+            assert!(
+                msg.contains("unrecognised key format"),
+                "error should name the format problem, got: {msg}"
+            );
+            assert!(
+                msg.contains(&path.display().to_string()),
+                "error should include the path, got: {msg}"
+            );
+        }
+        Err(other) => panic!("expected CreationFailed, got {other:?}"),
+        Ok(_) => panic!("expected an error, got Ok"),
+    }
+    Ok(())
+}
+
+/// Generate an encrypted OpenSSH ed25519 PEM containing a fresh keypair.
+fn build_encrypted_ssh_ed25519_pem(passphrase: &str) -> String {
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+    use ssh_key::LineEnding;
+    use ssh_key::private::{Ed25519Keypair, KeypairData};
+
+    let sk = SigningKey::generate(&mut OsRng);
+    let seed = sk.to_bytes();
+    let ssh_ed = Ed25519Keypair::from_seed(&seed);
+    let private = ssh_key::PrivateKey::new(KeypairData::Ed25519(ssh_ed), "asfaload-test")
+        .expect("PrivateKey::new");
+    let encrypted = private
+        .encrypt(&mut OsRng, passphrase.as_bytes())
+        .expect("encrypt");
+    encrypted
+        .to_openssh(LineEnding::LF)
+        .expect("to_openssh")
+        .to_string()
+}
+
+#[test]
+fn sk_from_file_dispatches_openssh_by_prefix() -> Result<()> {
+    let pem = build_encrypted_ssh_ed25519_pem("ssh-pw");
+    let temp_dir = tempfile::tempdir()?;
+    let path = temp_dir.path().join("id_ed25519");
+    std::fs::write(&path, &pem)?;
+
+    let sk = AsfaloadSecretKeys::from_file(&path, "ssh-pw")?;
+    match sk {
+        AsfaloadSecretKeys::Asfaload(_) => {}
+        other => panic!("expected Asfaload variant (SSH keys share ed25519 type), got {other:?}"),
+    }
+    Ok(())
+}
+
+#[test]
+fn sk_from_file_wrong_asfaload_password_returns_format_error() -> Result<()> {
+    let (temp_dir, _pk, _sk) = get_asfaload_key_pair()?;
+    match AsfaloadSecretKeys::from_file(temp_dir.path().join("key"), "wrong-pw") {
+        Err(KeyError::AsfaloadFormat(_)) => Ok(()),
+        Err(other) => panic!("expected AsfaloadFormat, got {other:?}"),
+        Ok(_) => panic!("expected an error, got Ok"),
+    }
+}
+
+#[test]
+fn sk_from_file_wrong_ssh_passphrase_returns_creation_failed() -> Result<()> {
+    let pem = build_encrypted_ssh_ed25519_pem("right");
+    let temp_dir = tempfile::tempdir()?;
+    let path = temp_dir.path().join("id_ed25519");
+    std::fs::write(&path, &pem)?;
+
+    match AsfaloadSecretKeys::from_file(&path, "wrong") {
+        Err(KeyError::CreationFailed(_)) => Ok(()),
+        Err(other) => panic!("expected CreationFailed, got {other:?}"),
+        Ok(_) => panic!("expected an error, got Ok"),
+    }
+}
+
+#[test]
+fn pk_from_file_rejects_unknown_prefix() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let path = temp_dir.path().join("garbage.pub");
+    std::fs::write(&path, "not-a-key\n")?;
+
+    // The "unrecognised key format" substring is KeyFormat::from_file's contract
+    // and must be emitted verbatim.
+    match AsfaloadPublicKeys::from_file(&path) {
+        Err(KeyError::CreationFailed(msg)) => {
+            assert!(
+                msg.contains("unrecognised key format"),
+                "error should name the format problem, got: {msg}"
+            );
+            assert!(
+                msg.contains(&path.display().to_string()),
+                "error should include the path, got: {msg}"
+            );
+            Ok(())
+        }
+        Err(other) => panic!("expected CreationFailed, got {other:?}"),
+        Ok(_) => panic!("expected an error, got Ok"),
+    }
+}
+
+#[test]
+fn pk_from_file_dispatches_asfaload_by_prefix() -> Result<()> {
+    let (temp_dir, _pk, _sk) = get_asfaload_key_pair()?;
+    let pk = AsfaloadPublicKeys::from_file(temp_dir.path().join("key.pub"))?;
+    match pk {
+        AsfaloadPublicKeys::Asfaload(_) => Ok(()),
+        other => panic!("expected Asfaload variant, got {other:?}"),
+    }
+}
+
+#[test]
+fn pk_from_file_dispatches_minisign_by_prefix() -> Result<()> {
+    let pk = AsfaloadPublicKeys::from_file(fixtures_dir().join("key_0.pub"))?;
+    match pk {
+        AsfaloadPublicKeys::Minisign(_) => Ok(()),
+        other => panic!("expected Minisign variant, got {other:?}"),
+    }
+}
+
+#[test]
+fn pk_from_file_dispatches_openssh_by_prefix() -> Result<()> {
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+    use ssh_key::private::{Ed25519Keypair, KeypairData};
+
+    // Produce a real SSH-format ed25519 public-key line via the ssh-key crate,
+    // mirroring how build_encrypted_ssh_ed25519_pem uses it for private keys.
+    let sk = SigningKey::generate(&mut OsRng);
+    let seed = sk.to_bytes();
+    let ssh_ed = Ed25519Keypair::from_seed(&seed);
+    let private = ssh_key::PrivateKey::new(KeypairData::Ed25519(ssh_ed), "asfaload-test")
+        .expect("PrivateKey::new");
+    let line = private.public_key().to_openssh().expect("to_openssh");
+
+    let temp_dir = tempfile::tempdir()?;
+    let path = temp_dir.path().join("id_ed25519.pub");
+    std::fs::write(&path, &line)?;
+
+    let pk = AsfaloadPublicKeys::from_file(&path)?;
+    match pk {
+        AsfaloadPublicKeys::Asfaload(_) => Ok(()),
+        other => {
+            panic!("expected Asfaload variant (SSH pub keys share ed25519 type), got {other:?}")
+        }
+    }
+}
+
+// Tests for AsfaloadEd25519SecretKey::from_file (ed25519-specific secret-key loader)
+// ----------------------------------------------------------------------------------
+
+#[test]
+fn ed25519_sk_from_file_loads_asfaload() -> Result<()> {
+    let (temp_dir, _pk, _sk) = get_asfaload_key_pair()?;
+    let sk = crate::keys::asfaload::AsfaloadEd25519SecretKey::from_file(
+        temp_dir.path().join("key"),
+        "password",
+    )?;
+    let data = common::sha512_for_content(b"test".to_vec())?;
+    let _sig = sk.sign(&data)?;
+    Ok(())
+}
+
+#[test]
+fn ed25519_sk_from_file_loads_openssh() -> Result<()> {
+    let pem = build_encrypted_ssh_ed25519_pem("ssh-pw");
+    let temp_dir = tempfile::tempdir()?;
+    let path = temp_dir.path().join("id_ed25519");
+    std::fs::write(&path, &pem)?;
+
+    let sk = crate::keys::asfaload::AsfaloadEd25519SecretKey::from_file(&path, "ssh-pw")?;
+    let data = common::sha512_for_content(b"test".to_vec())?;
+    let _sig = sk.sign(&data)?;
+    Ok(())
+}
+
+#[test]
+fn ed25519_sk_from_file_rejects_minisign() -> Result<()> {
+    // key_0 is a minisign fixture (first line starts with "untrusted comment: ").
+    let path = fixtures_dir().join("key_0");
+    match crate::keys::asfaload::AsfaloadEd25519SecretKey::from_file(&path, "password") {
+        Err(KeyError::CreationFailed(msg)) => {
+            assert!(
+                msg.contains("cannot load a minisign"),
+                "error should explain the format mismatch, got: {msg}"
+            );
+            Ok(())
+        }
+        Err(other) => panic!("expected CreationFailed, got {other:?}"),
+        Ok(_) => panic!("expected an error, got Ok"),
+    }
+}
+
+#[test]
+fn ed25519_sk_from_file_rejects_unknown_prefix() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let path = temp_dir.path().join("garbage.key");
+    std::fs::write(&path, "not-a-key\n")?;
+
+    match crate::keys::asfaload::AsfaloadEd25519SecretKey::from_file(&path, "any-password") {
+        Err(KeyError::CreationFailed(msg)) => {
+            assert!(
+                msg.contains("unrecognised key format"),
+                "error should name the format problem, got: {msg}"
+            );
+            Ok(())
+        }
+        Err(other) => panic!("expected CreationFailed, got {other:?}"),
+        Ok(_) => panic!("expected an error, got Ok"),
+    }
 }
