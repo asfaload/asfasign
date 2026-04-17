@@ -54,6 +54,8 @@ use serde::{Deserialize, Serialize};
 pub enum KeyFormat {
     Minisign,
     Ed25519,
+    Asfaload,
+    OpenSsh,
 }
 
 impl std::fmt::Display for KeyFormat {
@@ -61,6 +63,8 @@ impl std::fmt::Display for KeyFormat {
         match self {
             KeyFormat::Minisign => write!(f, "minisign"),
             KeyFormat::Ed25519 => write!(f, "ed25519"),
+            KeyFormat::Asfaload => write!(f, "asfaload"),
+            KeyFormat::OpenSsh => write!(f, "openssh"),
         }
     }
 }
@@ -72,6 +76,8 @@ impl std::str::FromStr for KeyFormat {
         match s {
             "minisign" => Ok(KeyFormat::Minisign),
             "ed25519" => Ok(KeyFormat::Ed25519),
+            "asfaload" => Ok(KeyFormat::Asfaload),
+            "openssh" => Ok(KeyFormat::OpenSsh),
             _ => Err(KeyError::CreationFailed(format!(
                 "Unknown key format: {}",
                 s

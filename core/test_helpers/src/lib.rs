@@ -69,6 +69,9 @@ impl TestKeys {
         match default_key_type() {
             KeyFormat::Ed25519 => Self::new_ed25519_from(start, n),
             KeyFormat::Minisign => Self::new_minisign_from(start, n),
+            KeyFormat::Asfaload | KeyFormat::OpenSsh => {
+                panic!("TestKeys does not support asfaload/openssh yet")
+            }
         }
     }
 
