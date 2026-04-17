@@ -258,11 +258,6 @@ impl AsfaloadSecretKeyTrait for AsfaloadEd25519SecretKey {
                  use AsfaloadSecretKey::<minisign::SecretKey> instead"
                     .into(),
             )),
-            KeyFormat::Ed25519 => Err(KeyError::CreationFailed(
-                "AsfaloadEd25519SecretKey cannot load a legacy ed25519 PKCS#8 key; \
-                 use AsfaloadSecretKey::<ed25519::Ed25519SecretKey> instead"
-                    .into(),
-            )),
         }
     }
 }

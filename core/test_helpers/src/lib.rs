@@ -73,9 +73,6 @@ impl TestKeys {
             KeyFormat::OpenSsh => {
                 panic!("TestKeys does not support OpenSsh; use asfaload or minisign")
             }
-            KeyFormat::Ed25519 => {
-                panic!("legacy ed25519 KEY_TYPE is being removed; use asfaload")
-            }
         }
     }
 
