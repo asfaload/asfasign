@@ -301,20 +301,33 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKeys {
         Ok(Self::Asfaload(sk))
     }
 
-    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError> {
-        match KeyFormat::from_file(&path)? {
+    fn from_string(s: &str, password: &str) -> Result<Self, KeyError> {
+        match KeyFormat::from_head(s.trim_start())? {
             KeyFormat::Asfaload => {
-                let kp = AsfaloadKeyPair::<AsfaloadKeysBlob>::from_file(&path)?;
+                let kp = AsfaloadKeyPair::<AsfaloadKeysBlob>::from_string(s)?;
                 Ok(Self::Asfaload(kp.secret_key(password)?))
             }
             KeyFormat::OpenSsh => {
-                let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_file(&path)?;
+                let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_string(s)?;
                 Ok(Self::Asfaload(kp.secret_key(password)?))
             }
             KeyFormat::Minisign => Ok(Self::Minisign(
-                AsfaloadSecretKey::<minisign::SecretKey>::from_file(&path, password)?,
+                AsfaloadSecretKey::<minisign::SecretKey>::from_string(s, password)?,
             )),
         }
+    }
+
+    /// Overrides the trait default to preserve the path in the "unrecognised
+    /// key format" error (the from_string path only sees the content).
+    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError> {
+        let path = path.as_ref();
+        let content = std::fs::read_to_string(path)?;
+        Self::from_string(&content, password).map_err(|e| match e {
+            KeyError::CreationFailed(msg) if msg.contains("unrecognised key format") => {
+                KeyError::CreationFailed(format!("unrecognised key format in {}", path.display()))
+            }
+            other => other,
+        })
     }
 }
 
