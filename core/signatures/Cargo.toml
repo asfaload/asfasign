@@ -29,5 +29,9 @@ tempfile = "3.20.0"
 # builds.
 test-utils = []
 
+[[test]]
+name = "asfaload_ssh_interop"
+required-features = ["test-utils"]
+
 [lints]
 workspace = true
