@@ -181,8 +181,8 @@ fn test_new() -> Result<()> {
 }
 
 #[test]
-fn test_keys_methods() -> Result<()> {
-    [KeyFormat::Minisign, KeyFormat::Asfaload]
+fn test_keys_methods_minisign() -> Result<()> {
+    [KeyFormat::Minisign]
         .iter()
         .try_for_each(|t| -> anyhow::Result<()> {
             // Save keypair in temp dir
