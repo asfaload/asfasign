@@ -153,10 +153,14 @@ pub trait AsfaloadSecretKeyTrait: Sized {
     type Signature;
     fn sign(&self, data: &common::AsfaloadHashes) -> Result<Self::Signature, SignError>;
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError>;
-    fn from_string(s: &str) -> Result<Self, KeyError> {
-        Self::from_bytes(s.as_bytes())
+    /// Parse and decrypt the on-disk textual representation of the secret key.
+    fn from_string(s: &str, password: &str) -> Result<Self, KeyError>;
+    /// Default impl: read the file, then call `from_string`. Implementors that
+    /// need custom I/O (e.g., binary file formats) can override.
+    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError> {
+        let content = std::fs::read_to_string(path.as_ref())?;
+        Self::from_string(&content, password)
     }
-    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError>;
 }
 
 // Struct to store a secret key immediately usable.

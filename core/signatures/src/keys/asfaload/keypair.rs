@@ -81,12 +81,11 @@ impl AsfaloadKeyPair<AsfaloadKeysBlob> {
         Self::new_with_argon2_params_inner(password, params)
     }
 
-    /// Parse an `asfaload-priv:<base64>` file into a keypair.
+    /// Parse an `asfaload-priv:<base64>` string into a keypair.
     /// No password is required at load time; decryption happens later in
     /// `secret_key(pw)`. Wrong passwords are caught then.
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError> {
-        let line = fs::read_to_string(path.as_ref())?;
-        let trimmed = line.trim();
+    pub fn from_string(s: &str) -> Result<Self, KeyError> {
+        let trimmed = s.trim();
         let body = trimmed.strip_prefix(ASFALOAD_PRIV_PREFIX).ok_or_else(|| {
             KeyError::CreationFailed(format!(
                 "not an asfaload private key (missing '{ASFALOAD_PRIV_PREFIX}' prefix)"
@@ -105,6 +104,13 @@ impl AsfaloadKeyPair<AsfaloadKeysBlob> {
         Ok(AsfaloadKeyPair {
             key_pair: AsfaloadKeysBlob(bytes),
         })
+    }
+
+    /// Read an `asfaload-priv:<base64>` file and parse it. Default impl for
+    /// the file-loading path; delegates to `from_string`.
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError> {
+        let content = fs::read_to_string(path.as_ref())?;
+        Self::from_string(&content)
     }
 }
 
@@ -134,13 +140,18 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<SshEncryptedKey> {
 }
 
 impl AsfaloadKeyPair<SshEncryptedKey> {
-    /// Parse an openssh-key-v1 PEM file into a keypair.
+    /// Parse an openssh-key-v1 PEM string into a keypair.
     /// No password is required at load time; decryption happens later in
     /// `secret_key(pw)`. Wrong passwords are caught then.
+    pub fn from_string(s: &str) -> Result<Self, KeyError> {
+        let inner = SshEncryptedKey::from_pem(s)?;
+        Ok(AsfaloadKeyPair { key_pair: inner })
+    }
+
+    /// Read an openssh-key-v1 PEM file and parse it. Delegates to `from_string`.
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError> {
         let pem = fs::read_to_string(path.as_ref())?;
-        let inner = SshEncryptedKey::from_pem(pem)?;
-        Ok(AsfaloadKeyPair { key_pair: inner })
+        Self::from_string(&pem)
     }
 }
 

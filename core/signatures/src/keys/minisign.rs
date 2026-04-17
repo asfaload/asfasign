@@ -68,9 +68,8 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKey<minisign::SecretKey> {
         Ok(AsfaloadSecretKey { key: k })
     }
 
-    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError> {
-        let k = minisign::SecretKeyBox::from_string(std::fs::read_to_string(path)?.as_str())?
-            .into_secret_key(Some(password.into()))?;
+    fn from_string(s: &str, password: &str) -> Result<Self, KeyError> {
+        let k = minisign::SecretKeyBox::from_string(s)?.into_secret_key(Some(password.into()))?;
         Ok(AsfaloadSecretKey { key: k })
     }
 }

@@ -240,17 +240,18 @@ impl AsfaloadSecretKeyTrait for AsfaloadEd25519SecretKey {
         Ok(Self(SigningKey::from_bytes(&bytes)))
     }
 
-    /// Load an ed25519 secret key from a file of either supported format.
-    /// Detects the format via `KeyFormat::from_file` and delegates decryption to
-    /// the format-specific keypair type, discarding its wrapper state.
-    fn from_file<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, KeyError> {
-        match KeyFormat::from_file(&path)? {
+    /// Parse an ed25519 secret key from its on-disk textual form (either
+    /// asfaload-priv or openssh-key-v1 PEM) and decrypt it.
+    /// Detects the format via `KeyFormat::from_head` and delegates decryption
+    /// to the format-specific keypair type, discarding its wrapper state.
+    fn from_string(s: &str, password: &str) -> Result<Self, KeyError> {
+        match KeyFormat::from_head(s.trim_start())? {
             KeyFormat::Asfaload => {
-                let kp = AsfaloadKeyPair::<AsfaloadKeysBlob>::from_file(&path)?;
+                let kp = AsfaloadKeyPair::<AsfaloadKeysBlob>::from_string(s)?;
                 kp.secret_key(password)
             }
             KeyFormat::OpenSsh => {
-                let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_file(&path)?;
+                let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_string(s)?;
                 kp.secret_key(password)
             }
             KeyFormat::Minisign => Err(KeyError::CreationFailed(
