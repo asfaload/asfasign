@@ -29,5 +29,12 @@ scrypt = "0.11"
 anyhow = "1.0.98"
 tempfile = "3.20.0"
 
+[features]
+# Exposes test-only helpers (e.g., Argon2Params::TEST) to downstream test
+# consumers such as test_helpers and the asfaload_ssh_interop integration
+# test. Gating these ensures weak crypto parameters cannot slip into prod
+# builds.
+test-utils = []
+
 [lints]
 workspace = true

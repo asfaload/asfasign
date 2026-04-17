@@ -1,3 +1,4 @@
+pub mod asfaload;
 pub mod ed25519;
 pub mod minisign;
 use std::ffi::OsString;
