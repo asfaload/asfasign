@@ -100,7 +100,7 @@ impl KeyFormat {
         } else if head.starts_with(MINISIGN_COMMENT_PREFIX) || head.starts_with("minisign:") {
             Ok(KeyFormat::Minisign)
         } else {
-            Err(KeyError::CreationFailed(format!(
+            Err(KeyError::FormatError(format!(
                 "unrecognised key format in input starting with '{}'",
                 &head[..head.len().min(32)]
             )))
@@ -112,10 +112,11 @@ impl KeyFormat {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, KeyError> {
         let content = std::fs::read_to_string(path.as_ref())?;
         let head = content.trim_start();
-        Self::from_head(head).map_err(|_| {
-            KeyError::CreationFailed(format!(
-                "unrecognised key format in {}",
-                path.as_ref().display()
+        Self::from_head(head).map_err(|e| {
+            KeyError::FormatError(format!(
+                "unrecognised key format in {}: {}",
+                path.as_ref().display(),
+                e
             ))
         })
     }

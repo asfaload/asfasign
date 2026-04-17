@@ -323,8 +323,8 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKeys {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)?;
         Self::from_string(&content, password).map_err(|e| match e {
-            KeyError::CreationFailed(msg) if msg.contains("unrecognised key format") => {
-                KeyError::CreationFailed(format!("unrecognised key format in {}", path.display()))
+            KeyError::FormatError(msg) => {
+                KeyError::FormatError(format!("{} in {}", msg, path.display()))
             }
             other => other,
         })
