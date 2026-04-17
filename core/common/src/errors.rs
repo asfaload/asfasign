@@ -134,6 +134,8 @@ pub mod keys {
         NotOverwriting(String),
         #[error("Error: {0}")]
         GenericError(String),
+        #[error("asfaload format error: {0}")]
+        AsfaloadFormat(String),
     }
 
     #[derive(Error, Debug)]
