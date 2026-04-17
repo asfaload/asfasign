@@ -1,5 +1,4 @@
 pub mod asfaload;
-pub mod ed25519;
 pub mod minisign;
 
 const OPENSSH_PRIVATE_KEY_PEM_HEADER: &str = "-----BEGIN OPENSSH PRIVATE KEY-----";
@@ -55,7 +54,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum KeyFormat {
     Minisign,
-    Ed25519,
     Asfaload,
     OpenSsh,
 }
@@ -64,7 +62,6 @@ impl std::fmt::Display for KeyFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             KeyFormat::Minisign => write!(f, "minisign"),
-            KeyFormat::Ed25519 => write!(f, "ed25519"),
             KeyFormat::Asfaload => write!(f, "asfaload"),
             KeyFormat::OpenSsh => write!(f, "openssh"),
         }
@@ -77,7 +74,6 @@ impl std::str::FromStr for KeyFormat {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "minisign" => Ok(KeyFormat::Minisign),
-            "ed25519" => Ok(KeyFormat::Ed25519),
             "asfaload" => Ok(KeyFormat::Asfaload),
             "openssh" => Ok(KeyFormat::OpenSsh),
             _ => Err(KeyError::CreationFailed(format!(

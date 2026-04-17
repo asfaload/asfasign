@@ -223,11 +223,5 @@ pub mod keys {
             SignatureError::FormatError(e.to_string())
         }
     }
-
-    impl From<pkcs8::Error> for KeyError {
-        fn from(e: pkcs8::Error) -> Self {
-            KeyError::CreationFailed(e.to_string())
-        }
-    }
 }
 use keys::*;

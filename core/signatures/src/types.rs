@@ -54,9 +54,6 @@ impl AsfaloadKeyPairs {
             KeyFormat::OpenSsh => Err(KeyError::CreationFailed(
                 "cannot generate an openssh-format keypair; asfaload is read-only for SSH".into(),
             )),
-            KeyFormat::Ed25519 => Err(KeyError::CreationFailed(
-                "legacy ed25519 PKCS#8 key format is being removed".into(),
-            )),
         }
     }
 
@@ -78,9 +75,6 @@ impl AsfaloadKeyPairs {
             }
             KeyFormat::OpenSsh => Err(KeyError::CreationFailed(
                 "cannot generate an openssh-format keypair; asfaload is read-only for SSH".into(),
-            )),
-            KeyFormat::Ed25519 => Err(KeyError::CreationFailed(
-                "legacy ed25519 PKCS#8 key format is being removed".into(),
             )),
         }
     }
@@ -203,9 +197,6 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
                 let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_file(&path)?;
                 Ok(Self::Minisign(pk))
             }
-            KeyFormat::Ed25519 => Err(KeyError::CreationFailed(
-                "legacy ed25519 PKCS#8 key format is being removed".into(),
-            )),
         }
     }
 
@@ -276,9 +267,6 @@ impl AsfaloadSecretKeys {
                 let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_file(path)?;
                 Ok(Self::Asfaload(kp.secret_key(password)?))
             }
-            KeyFormat::Ed25519 => Err(KeyError::CreationFailed(
-                "legacy ed25519 PKCS#8 key format is being removed".into(),
-            )),
         }
     }
 }
@@ -323,9 +311,6 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKeys {
                 let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_file(&path)?;
                 Ok(Self::Asfaload(kp.secret_key(password)?))
             }
-            KeyFormat::Ed25519 => Err(KeyError::CreationFailed(
-                "legacy ed25519 PKCS#8 key format is being removed".into(),
-            )),
             KeyFormat::Minisign => Ok(Self::Minisign(
                 AsfaloadSecretKey::<minisign::SecretKey>::from_file(&path, password)?,
             )),
@@ -414,9 +399,6 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
                 let sig = AsfaloadEd25519Signature::from_base64(s)?;
                 Ok(Self::Asfaload(sig))
             }
-            KeyFormat::Ed25519 => Err(SignatureError::FormatError(
-                "legacy ed25519 PKCS#8 signatures are being removed".into(),
-            )),
         }
     }
 

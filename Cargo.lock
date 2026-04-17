@@ -736,7 +736,6 @@ dependencies = [
  "ed25519-dalek",
  "hex",
  "minisign",
- "pkcs8",
  "reqwest",
  "serde",
  "serde_json",
@@ -2769,29 +2768,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "pkcs5"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e847e2c91a18bfa887dd028ec33f2fe6f25db77db3619024764914affe8b69a6"
-dependencies = [
- "aes",
- "cbc",
- "der",
- "pbkdf2",
- "scrypt",
- "sha2",
- "spki",
-]
-
-[[package]]
 name = "pkcs8"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f950b2377845cebe5cf8b5165cb3cc1a5e0fa5cfa3e1f7f55707d8fd82e0a7b7"
 dependencies = [
  "der",
- "pkcs5",
- "rand_core 0.6.4",
  "spki",
 ]
 
@@ -3514,7 +3496,6 @@ version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0516a385866c09368f0b5bcd1caff3366aace790fcd46e2bb032697bb172fd1f"
 dependencies = [
- "password-hash",
  "pbkdf2",
  "salsa20",
  "sha2",
@@ -3742,9 +3723,7 @@ dependencies = [
  "constants",
  "ed25519-dalek",
  "minisign",
- "pkcs8",
  "rand 0.8.5",
- "scrypt",
  "serde",
  "serde_json",
  "ssh-key",
