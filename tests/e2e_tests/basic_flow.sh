@@ -21,16 +21,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SERVER_PID=""
 E2E_GIT_REPO_PATH=""
+to_delete_on_filesystem=()
 
 cleanup() {
     if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
         kill "$SERVER_PID" 2>/dev/null
         wait "$SERVER_PID" 2>/dev/null || true
     fi
-    if [[ -n "$E2E_GIT_REPO_PATH" ]] && [[ -d "$E2E_GIT_REPO_PATH" ]]; then
-        rm -rf "$E2E_GIT_REPO_PATH"
-    fi
-    rm -f "${DOWNLOAD_V01:-}" "${DOWNLOAD_V01_HISTORICAL:-}" "${DOWNLOAD_V02:-}" "${DOWNLOAD_V01_bis:-}" "${DOWNLOAD_V02_bis:-}" "${DOWNLOAD_V02_FULL_CHECK:-}"
+    for path in "${to_delete_on_filesystem[@]}"; do
+        if [[ -e "$path" ]]; then
+            rm -rf "$path"
+        fi
+    done
 }
 trap cleanup EXIT
 
@@ -47,6 +49,7 @@ else
     backend="http://localhost:$port"
 
     E2E_GIT_REPO_PATH=$(mktemp -d)
+    to_delete_on_filesystem+=("$E2E_GIT_REPO_PATH")
     init_backend_repo "$E2E_GIT_REPO_PATH"
     export ASFALOAD_GIT_REPO_PATH="$E2E_GIT_REPO_PATH"
 
@@ -190,6 +193,7 @@ expect_fail "Sign release index with key3 (already completed)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_index 0.1)
 
 DOWNLOAD_V01="$(mktemp)"
+to_delete_on_filesystem+=("$DOWNLOAD_V01")
 run_step "Download release artifact (v0.1)" \
     cargo run --quiet -- download -o "$DOWNLOAD_V01" -u "$backend" $(artifact_url 0.1)
 
@@ -266,6 +270,7 @@ assert_signers_active
 assert_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2" "$KEY_3"
 
 DOWNLOAD_V01_HISTORICAL="$(mktemp)"
+to_delete_on_filesystem+=("$DOWNLOAD_V01_HISTORICAL")
 run_step "Download artifact (v0.1, signed with historical signers)" \
     cargo run --quiet -- download -o "$DOWNLOAD_V01_HISTORICAL" -u "$backend" $(artifact_url 0.1)
 
@@ -308,6 +313,7 @@ assert_release_index_active "0.2"
 assert_release_index_signers "0.2" "$KEY_0" "$KEY_1" "$KEY_2" "$KEY_3"
 
 DOWNLOAD_V02="$(mktemp)"
+to_delete_on_filesystem+=("$DOWNLOAD_V02")
 run_step "Download artifact (v0.2)" \
     cargo run --quiet -- download -o "$DOWNLOAD_V02" -u "$backend" $(artifact_url 0.2)
 
@@ -325,6 +331,7 @@ expect_fail "revoke index file for v0.1 again (already pending)" \
     cargo run -- revoke --secret-key "$KEY_5" -p $key_password -u "$backend" $(release_index 0.1)
 
 DOWNLOAD_V01_bis="$(mktemp)"
+to_delete_on_filesystem+=("$DOWNLOAD_V01_bis")
 run_step "Download artifact (v0.1), not yet revoked as need 2 signatures" \
     cargo run --quiet -- download -o "$DOWNLOAD_V01_bis" -u "$backend" $(artifact_url 0.1)
 assert_artifact_hash_matches "0.1" "artifact.bin" "$DOWNLOAD_V01_bis"
@@ -345,11 +352,13 @@ assert_release_index_revoked "0.1"
 assert_revocation_signers "0.1" "$KEY_4" "$KEY_5" "$KEY_6"
 assert_last_commit_contains "$REVOCATION_SUFFIX"
 
+tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
 expect_fail "Download artifact (v0.1, revoked)" \
-    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" $(artifact_url 0.1)
+    cargo run --quiet -- download -o "$tmp" -u "$backend" $(artifact_url 0.1)
 
 # --- v0.2 is unaffected --
 DOWNLOAD_V02_bis="$(mktemp)"
+to_delete_on_filesystem+=("$DOWNLOAD_V02_bis")
 run_step "Download artifact (v0.2), not revoked" \
     cargo run --quiet -- download -o "$DOWNLOAD_V02_bis" -u "$backend" $(artifact_url 0.2)
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_bis"
@@ -364,6 +373,7 @@ section "Download with Full Signers Chain Verification"
 # The forge URLs point to the GitHub test repo, so content comparison should pass.
 
 DOWNLOAD_V02_FULL_CHECK="$(mktemp)"
+to_delete_on_filesystem+=("$DOWNLOAD_V02_FULL_CHECK")
 run_step "Download artifact (v0.2) with --full-check (2-entry chain)" \
     cargo run --quiet -- download --full-check -o "$DOWNLOAD_V02_FULL_CHECK" -u "$backend" $(artifact_url 0.2)
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_FULL_CHECK"
@@ -403,8 +413,9 @@ TAMPERED_HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
     git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
 git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$TAMPERED_HISTORY_BLOB"
 
+tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
 expect_fail "Download with --full-check (tampered metadata URL, content mismatch)" \
-    cargo run --quiet -- download --full-check -o "$(mktemp)" -u "$backend" $(artifact_url 0.2)
+    cargo run --quiet -- download --full-check -o "$tmp" -u "$backend" $(artifact_url 0.2)
 
 git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
 
@@ -420,8 +431,9 @@ NOTFOUND_HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
     git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
 git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$NOTFOUND_HISTORY_BLOB"
 
+tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
 expect_fail "Download with --full-check (tampered metadata URL, 404)" \
-    cargo run --quiet -- download --full-check -o "$(mktemp)" -u "$backend" $(artifact_url 0.2)
+    cargo run --quiet -- download --full-check -o "$tmp" -u "$backend" $(artifact_url 0.2)
 
 git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
 
