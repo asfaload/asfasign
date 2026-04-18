@@ -247,9 +247,11 @@ pub enum AsfaloadSecretKeys {
 }
 
 impl AsfaloadSecretKeys {
-    /// Load a secret key by explicit format. Use this when you know the format
-    /// (e.g., from CLI argument or config). The content-sniffing `from_file`
-    /// does not handle OpenSSH files.
+    /// Load a secret key and assert it is in the specified format.
+    ///
+    /// Use this when the caller wants to reject files that are not in the
+    /// expected format. For permissive loading that auto-detects Minisign,
+    /// Asfaload, and OpenSSH ed25519 files, use `from_file`.
     pub fn from_file_for_format<P: AsRef<std::path::Path>>(
         path: P,
         password: &str,
