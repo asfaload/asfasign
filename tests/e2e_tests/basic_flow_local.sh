@@ -15,6 +15,7 @@ SERVER_PID=""
 FILE_SERVER_PID=""
 FILE_SERVER_DIR=""
 E2E_GIT_REPO_PATH=""
+background_pids=()
 
 cleanup() {
     if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -25,6 +26,11 @@ cleanup() {
         kill "$FILE_SERVER_PID" 2>/dev/null
         wait "$FILE_SERVER_PID" 2>/dev/null || true
     fi
+    for pid in "${background_pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
     if [[ -n "$E2E_GIT_REPO_PATH" ]] && [[ -d "$E2E_GIT_REPO_PATH" ]]; then
         rm -rf "$E2E_GIT_REPO_PATH"
     fi
@@ -119,6 +125,7 @@ printf '%s✓ %s%s\n' "$GREEN" "$FILE_SERVER_URL" "$RESET"
 
 if [[ -n $debug ]]; then
     tail -f "$FILE_SERVER_LOG" &
+    background_pids+=($!)
 fi
 
 # --- Set backend assertion overrides ---
@@ -144,6 +151,7 @@ else
     SERVER_PID=$!
     if [[ -n $debug ]]; then
         tail -f  $E2E_GIT_REPO_PATH/server.log &
+        background_pids+=($!)
     fi
 
 
