@@ -269,4 +269,78 @@ run_step "Active signers signed by SSH key 2" \
     bash -c "jq -e '.entries | has(\"$SSH_PK_2\")' '$ACTIVE_SIG_PATH' > /dev/null"
 
 ################################################################################
+section "Register release artifact"
+################################################################################
+
+RELEASE_VERSION="0.1"
+RELEASE_DIR_ON_FS="$FS_PROJECT_DIR/releases/v$RELEASE_VERSION"
+mkdir -p "$RELEASE_DIR_ON_FS"
+ARTIFACT_NAME="artifact.bin"
+
+# Deterministic content so the hash is stable across test runs.
+printf 'asfaload ssh e2e artifact v%s' "$RELEASE_VERSION" > "$RELEASE_DIR_ON_FS/$ARTIFACT_NAME"
+(cd "$RELEASE_DIR_ON_FS" && sha256sum "$ARTIFACT_NAME" > SHA256SUMS)
+
+CSUM_URL="${FILE_SERVER_URL}/${FS_PROJECT_NAME}/releases/v${RELEASE_VERSION}/SHA256SUMS"
+ARTIFACT_URL="${FILE_SERVER_URL}/${FS_PROJECT_NAME}/releases/v${RELEASE_VERSION}/${ARTIFACT_NAME}"
+RELEASE_INDEX_ID="http/localhost/${FILE_SERVER_PORT}/${FS_PROJECT_NAME}/releases/v${RELEASE_VERSION}/${INDEX_FILE}"
+
+run_step_json "Register release via SHA256SUMS (SSH key 1 as submitter)" \
+    '.success == true' \
+    cargo run --quiet -- register-assets \
+        --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
+        --csum-file "$CSUM_URL"
+
+assert_release_index_exists "$RELEASE_VERSION"
+assert_release_index_pending "$RELEASE_VERSION"
+assert_last_commit_contains "$INDEX_FILE"
+
+################################################################################
+section "Sign release index with both SSH keys"
+################################################################################
+
+run_step_json "Sign release index with SSH key 1" \
+    '.is_complete == false' \
+    cargo run --quiet -- sign-pending \
+        --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
+        "$RELEASE_INDEX_ID"
+
+assert_release_index_signature_count "$RELEASE_VERSION" 1
+
+RELEASE_PENDING_SIG_PATH="$(_release_dir "$RELEASE_VERSION")/$INDEX_FILE.$PENDING_SIGNATURES_SUFFIX"
+run_step "Release index pending signatures include SSH key 1" \
+    bash -c "jq -e '.entries | has(\"$SSH_PK_1\")' '$RELEASE_PENDING_SIG_PATH' > /dev/null"
+
+run_step_json "Sign release index with SSH key 2 (threshold met, activates)" \
+    '.is_complete == true' \
+    cargo run --quiet -- sign-pending \
+        --secret-key "$SSH_KEY_2" -u "$backend" --password "$key_password" \
+        "$RELEASE_INDEX_ID"
+
+assert_release_index_active "$RELEASE_VERSION"
+
+RELEASE_SIG_PATH="$(_release_dir "$RELEASE_VERSION")/$INDEX_FILE.$SIGNATURES_SUFFIX"
+run_step "Release index signed by SSH key 1" \
+    bash -c "jq -e '.entries | has(\"$SSH_PK_1\")' '$RELEASE_SIG_PATH' > /dev/null"
+run_step "Release index signed by SSH key 2" \
+    bash -c "jq -e '.entries | has(\"$SSH_PK_2\")' '$RELEASE_SIG_PATH' > /dev/null"
+
+################################################################################
+section "Verified download of signed artifact"
+################################################################################
+
+DOWNLOAD_PATH="$(mktemp)"
+trap 'rm -f "$DOWNLOAD_PATH"; cleanup' EXIT
+
+run_step "Download artifact with verification" \
+    cargo run --quiet -- download \
+        -o "$DOWNLOAD_PATH" -u "$backend" --type fileserver \
+        "$ARTIFACT_URL"
+
+assert_artifact_hash_matches "$RELEASE_VERSION" "$ARTIFACT_NAME" "$DOWNLOAD_PATH"
+
+run_step "Downloaded content matches source artifact" \
+    cmp "$DOWNLOAD_PATH" "$RELEASE_DIR_ON_FS/$ARTIFACT_NAME"
+
+################################################################################
 print_summary
