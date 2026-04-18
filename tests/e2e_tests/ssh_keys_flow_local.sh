@@ -18,12 +18,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Cleanup trap ---
 
-SSH_KEYS_DIR=""
-FILE_SERVER_DIR=""
 FILE_SERVER_PID=""
 SERVER_PID=""
-E2E_GIT_REPO_PATH=""
 background_pids=()
+to_delete_on_filesystem=()
 
 cleanup() {
     if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -39,15 +37,12 @@ cleanup() {
             kill "$pid" 2>/dev/null || true
         fi
     done
-    if [[ -n "$E2E_GIT_REPO_PATH" ]] && [[ -d "$E2E_GIT_REPO_PATH" ]]; then
-        rm -rf "$E2E_GIT_REPO_PATH"
-    fi
-    if [[ -n "$FILE_SERVER_DIR" ]] && [[ -d "$FILE_SERVER_DIR" ]]; then
-        rm -rf "$FILE_SERVER_DIR"
-    fi
-    if [[ -n "$SSH_KEYS_DIR" ]] && [[ -d "$SSH_KEYS_DIR" ]]; then
-        rm -rf "$SSH_KEYS_DIR"
-    fi
+
+    for path in "${to_delete_on_filesystem[@]}"; do
+        if [[ -e "$path" ]]; then
+            rm -rf "$path"
+        fi
+    done
 }
 trap cleanup EXIT
 
@@ -63,6 +58,7 @@ section "Generate SSH ed25519 keys"
 ################################################################################
 
 SSH_KEYS_DIR=$(mktemp -d)
+to_delete_on_filesystem+=("$SSH_KEYS_DIR")
 SSH_KEY_1="$SSH_KEYS_DIR/id_ed25519_1"
 SSH_KEY_2="$SSH_KEYS_DIR/id_ed25519_2"
 
@@ -84,6 +80,7 @@ section "Create signers file with 2 SSH artifact signers"
 # Place the signers file directly into the file-server tree so it can be
 # served unchanged by register-repo in the next section.
 FILE_SERVER_DIR=$(mktemp -d)
+to_delete_on_filesystem+=("$FILE_SERVER_DIR")
 FS_PROJECT_NAME="e2e_project"
 FS_PROJECT_DIR="$FILE_SERVER_DIR/$FS_PROJECT_NAME"
 mkdir -p "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR"
@@ -175,6 +172,7 @@ export ASFALOAD_SERVER_PORT="$port"
 backend="http://localhost:$port"
 
 E2E_GIT_REPO_PATH=$(mktemp -d)
+to_delete_on_filesystem+=("$E2E_GIT_REPO_PATH")
 init_backend_repo "$E2E_GIT_REPO_PATH"
 export ASFALOAD_GIT_REPO_PATH="$E2E_GIT_REPO_PATH"
 
@@ -338,7 +336,7 @@ section "Verified download of signed artifact"
 ################################################################################
 
 DOWNLOAD_PATH="$(mktemp)"
-trap 'rm -f "$DOWNLOAD_PATH"; cleanup' EXIT
+to_delete_on_filesystem+=("$DOWNLOAD_PATH")
 
 run_step "Download artifact with verification" \
     cargo run --quiet -- download \

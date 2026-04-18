@@ -22,15 +22,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SERVER_PID=""
 E2E_GIT_REPO_PATH=""
+to_delete_on_filesystem=()
 
 cleanup() {
     if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
         kill "$SERVER_PID" 2>/dev/null
         wait "$SERVER_PID" 2>/dev/null || true
     fi
-    if [[ -n "$E2E_GIT_REPO_PATH" ]] && [[ -d "$E2E_GIT_REPO_PATH" ]]; then
-        rm -rf "$E2E_GIT_REPO_PATH"
-    fi
+    for path in "${to_delete_on_filesystem[@]}"; do
+        if [[ -e "$path" ]]; then
+            rm -rf "$path"
+        fi
+    done
 }
 trap cleanup EXIT
 
@@ -47,6 +50,7 @@ else
     backend="http://localhost:$port"
 
     E2E_GIT_REPO_PATH=$(mktemp -d)
+    to_delete_on_filesystem+=("$E2E_GIT_REPO_PATH")
     init_backend_repo "$E2E_GIT_REPO_PATH"
     export ASFALOAD_GIT_REPO_PATH="$E2E_GIT_REPO_PATH"
 
