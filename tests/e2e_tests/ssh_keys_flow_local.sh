@@ -19,14 +19,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # --- Cleanup trap ---
 
 SSH_KEYS_DIR=""
-WORK_DIR=""
+FILE_SERVER_DIR=""
+FILE_SERVER_PID=""
+SERVER_PID=""
+E2E_GIT_REPO_PATH=""
 
 cleanup() {
+    if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+        kill "$SERVER_PID" 2>/dev/null
+        wait "$SERVER_PID" 2>/dev/null || true
+    fi
+    if [[ -n "$FILE_SERVER_PID" ]] && kill -0 "$FILE_SERVER_PID" 2>/dev/null; then
+        kill "$FILE_SERVER_PID" 2>/dev/null
+        wait "$FILE_SERVER_PID" 2>/dev/null || true
+    fi
+    if [[ -n "$E2E_GIT_REPO_PATH" ]] && [[ -d "$E2E_GIT_REPO_PATH" ]]; then
+        rm -rf "$E2E_GIT_REPO_PATH"
+    fi
+    if [[ -n "$FILE_SERVER_DIR" ]] && [[ -d "$FILE_SERVER_DIR" ]]; then
+        rm -rf "$FILE_SERVER_DIR"
+    fi
     if [[ -n "$SSH_KEYS_DIR" ]] && [[ -d "$SSH_KEYS_DIR" ]]; then
         rm -rf "$SSH_KEYS_DIR"
-    fi
-    if [[ -n "$WORK_DIR" ]] && [[ -d "$WORK_DIR" ]]; then
-        rm -rf "$WORK_DIR"
     fi
 }
 trap cleanup EXIT
@@ -52,7 +66,6 @@ run_step "Generate SSH ed25519 key 1 (passphrase-protected)" \
 run_step "Generate SSH ed25519 key 2 (passphrase-protected)" \
     ssh-keygen -t ed25519 -N "$key_password" -C "ssh-e2e-key-2" -f "$SSH_KEY_2" -q
 
-# Sanity check: each key has a matching .pub sibling.
 run_step "SSH key 1 has secret and public files" \
     bash -c "[[ -f '$SSH_KEY_1' ]] && [[ -f '$SSH_KEY_1.pub' ]]"
 run_step "SSH key 2 has secret and public files" \
@@ -62,33 +75,198 @@ run_step "SSH key 2 has secret and public files" \
 section "Create signers file with 2 SSH artifact signers"
 ################################################################################
 
-WORK_DIR=$(mktemp -d)
-SIGNERS_FILE_OUT="$WORK_DIR/signers_file_ssh.json"
+# Place the signers file directly into the file-server tree so it can be
+# served unchanged by register-repo in the next section.
+FILE_SERVER_DIR=$(mktemp -d)
+FS_PROJECT_NAME="e2e_project"
+FS_PROJECT_DIR="$FILE_SERVER_DIR/$FS_PROJECT_NAME"
+mkdir -p "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR"
+SIGNERS_FILE_NAME="signers_file_ssh.json"
+SIGNERS_FILE_ON_FS="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$SIGNERS_FILE_NAME"
 
 run_step "Create signers file with 2 SSH ed25519 artifact signers (threshold 2)" \
     cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
         --artifact-signer-file "$SSH_KEY_1.pub" \
         --artifact-signer-file "$SSH_KEY_2.pub" \
         -A 2 \
-        -o "$SIGNERS_FILE_OUT"
+        -o "$SIGNERS_FILE_ON_FS"
 
 run_step "Signers file exists" \
-    bash -c "[[ -f '$SIGNERS_FILE_OUT' ]]"
+    bash -c "[[ -f '$SIGNERS_FILE_ON_FS' ]]"
 
 run_step "Signers file is valid JSON" \
-    jq empty "$SIGNERS_FILE_OUT"
+    jq empty "$SIGNERS_FILE_ON_FS"
 
 run_step "Signers file records a single artifact-signer group" \
-    bash -c "jq -e '.artifact_signers | length == 1' '$SIGNERS_FILE_OUT' > /dev/null"
+    bash -c "jq -e '.artifact_signers | length == 1' '$SIGNERS_FILE_ON_FS' > /dev/null"
 
 run_step "Artifact-signer group has threshold of 2" \
-    bash -c "jq -e '.artifact_signers[0].threshold == 2' '$SIGNERS_FILE_OUT' > /dev/null"
+    bash -c "jq -e '.artifact_signers[0].threshold == 2' '$SIGNERS_FILE_ON_FS' > /dev/null"
 
 run_step "Artifact-signer group contains 2 keys" \
-    bash -c "jq -e '.artifact_signers[0].signers | length == 2' '$SIGNERS_FILE_OUT' > /dev/null"
+    bash -c "jq -e '.artifact_signers[0].signers | length == 2' '$SIGNERS_FILE_ON_FS' > /dev/null"
 
 run_step "Artifact-signer keys are stored as ed25519 (asfaload-pub: prefix)" \
-    bash -c "jq -e '[.artifact_signers[0].signers[].data.pubkey | startswith(\"asfaload-pub:\")] | all' '$SIGNERS_FILE_OUT' > /dev/null"
+    bash -c "jq -e '[.artifact_signers[0].signers[].data.pubkey] | all(startswith(\"asfaload-pub:\"))' '$SIGNERS_FILE_ON_FS' > /dev/null"
+
+# Read back the normalised pubkey strings the CLI wrote. The backend keys
+# signatures by these strings, so we use them directly in the assertions
+# below rather than deriving them from the SSH .pub files (which use the
+# ssh-ed25519 wire form).
+SSH_PK_1=$(jq -r '.artifact_signers[0].signers[0].data.pubkey' "$SIGNERS_FILE_ON_FS")
+SSH_PK_2=$(jq -r '.artifact_signers[0].signers[1].data.pubkey' "$SIGNERS_FILE_ON_FS")
+
+################################################################################
+section "Start local file server"
+################################################################################
+
+printf '%sBuilding test-file-server...%s ' "$DIM" "$RESET"
+cargo build -p test-file-server --quiet
+printf '%s✓%s\n' "$GREEN" "$RESET"
+
+FILE_SERVER_LOG="$FILE_SERVER_DIR/file_server.log"
+"${base_dir}/target/debug/test-file-server" --dir "$FILE_SERVER_DIR" > "$FILE_SERVER_LOG" 2>&1 &
+FILE_SERVER_PID=$!
+
+printf '%sWaiting for file server...%s ' "$DIM" "$RESET"
+FILE_SERVER_PORT=""
+for i in $(seq 1 30); do
+    if [[ -f "$FILE_SERVER_LOG" ]]; then
+        FILE_SERVER_PORT=$(grep -oP 'LISTENING_PORT=\K[0-9]+' "$FILE_SERVER_LOG" 2>/dev/null || true)
+        [[ -n "$FILE_SERVER_PORT" ]] && break
+    fi
+    if ! kill -0 "$FILE_SERVER_PID" 2>/dev/null; then
+        printf '%s✗%s\n' "$RED" "$RESET"
+        printf '%sFile server process died unexpectedly.%s\n' "$RED" "$RESET"
+        exit 1
+    fi
+    sleep 0.2
+done
+if [[ -z "$FILE_SERVER_PORT" ]]; then
+    printf '%s✗%s\n' "$RED" "$RESET"
+    printf '%sFile server did not report a port in time.%s\n' "$RED" "$RESET"
+    exit 1
+fi
+FILE_SERVER_URL="http://localhost:${FILE_SERVER_PORT}"
+printf '%s✓ %s%s\n' "$GREEN" "$FILE_SERVER_URL" "$RESET"
+
+if [[ -n $debug ]]; then
+    tail -f "$FILE_SERVER_LOG" &
+fi
+
+# backend_assertions.sh uses these to locate the project dir inside the
+# backend git repo (matches forge-url's scheme/host/port path prefix).
+export PROJECT_DIR_OVERRIDE="http/localhost/${FILE_SERVER_PORT}/${FS_PROJECT_NAME}"
+export RELEASE_DIR_TEMPLATE="releases/v%s"
+
+################################################################################
+section "Start backend"
+################################################################################
+
+port="${ASFALOAD_SERVER_PORT:-$((3000 + RANDOM % 1000))}"
+export ASFALOAD_SERVER_PORT="$port"
+backend="http://localhost:$port"
+
+E2E_GIT_REPO_PATH=$(mktemp -d)
+init_backend_repo "$E2E_GIT_REPO_PATH"
+export ASFALOAD_GIT_REPO_PATH="$E2E_GIT_REPO_PATH"
+
+build_rest_api
+"${base_dir}/target/debug/rest-api" > "$E2E_GIT_REPO_PATH/server.log" &
+SERVER_PID=$!
+if [[ -n $debug ]]; then
+    tail -f "$E2E_GIT_REPO_PATH/server.log" &
+fi
+
+printf '%sWaiting for backend at %s with repo %s ...%s ' "$DIM" "$backend" "$ASFALOAD_GIT_REPO_PATH" "$RESET"
+for i in $(seq 1 30); do
+    if curl "$backend" --silent > /dev/null 2>&1; then
+        printf '%s✓%s\n\n' "$GREEN" "$RESET"
+        break
+    fi
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        printf '%s✗%s\n' "$RED" "$RESET"
+        printf '%sBackend process died unexpectedly.%s\n' "$RED" "$RESET"
+        exit 1
+    fi
+    sleep 0.5
+done
+if ! curl "$backend" --silent > /dev/null 2>&1; then
+    printf '%s✗%s\n' "$RED" "$RESET"
+    printf '%sBackend at %s did not become ready in 15s.%s\n' "$RED" "$backend" "$RESET"
+    exit 1
+fi
+
+################################################################################
+section "Register repo with SSH key"
+################################################################################
+
+SIGNERS_FILE_URL="${FILE_SERVER_URL}/${FS_PROJECT_NAME}/${HIDDEN_SIGNERS_DIR}/${SIGNERS_FILE_NAME}"
+
+cd "$base_dir/client-cli/"
+
+run_step_json "Register repo with SSH key 1 (submitter)" \
+    '.success == true' \
+    cargo run --quiet -- register-repo \
+        --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
+        "$SIGNERS_FILE_URL"
+
+# Backend: verify pending signers created (no signatures yet in two-phase flow)
+assert_pending_signers_exist
+assert_pending_metadata_exist
+assert_pending_signers_signature_count 0
+assert_pending_metadata_signature_count 0
+assert_last_commit_contains "$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
+
+# Pending signers file records both SSH pubkeys (in asfaload-pub: form).
+PENDING_SIGNERS_PATH="$(_project_dir)/$PENDING_SIGNERS_DIR/$SIGNERS_FILE"
+run_step "Pending signers contains SSH pubkey 1" \
+    bash -c "jq -e '[.artifact_signers[].signers[].data.pubkey] | any(. == \"$SSH_PK_1\")' '$PENDING_SIGNERS_PATH' > /dev/null"
+run_step "Pending signers contains SSH pubkey 2" \
+    bash -c "jq -e '[.artifact_signers[].signers[].data.pubkey] | any(. == \"$SSH_PK_2\")' '$PENDING_SIGNERS_PATH' > /dev/null"
+
+################################################################################
+section "Activate pending signers (both SSH keys sign)"
+################################################################################
+
+# Backend path identifier for the pending signers file (same shape as
+# urls_local.sh::pending_signers_file but derived from the file-server
+# origin we already have).
+PENDING_SIGNERS_ID="http/localhost/${FILE_SERVER_PORT}/${FS_PROJECT_NAME}/${PENDING_SIGNERS_DIR}/${SIGNERS_FILE}"
+
+run_step_json "Sign pending signers with SSH key 1 (1st of 2)" \
+    '.is_complete == false' \
+    cargo run --quiet -- sign-pending \
+        --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
+        "$PENDING_SIGNERS_ID"
+
+assert_pending_signers_signature_count 1
+assert_pending_metadata_signature_count 1
+
+PENDING_SIG_PATH="$(_project_dir)/$PENDING_SIGNERS_DIR/$SIGNERS_FILE.$PENDING_SIGNATURES_SUFFIX"
+run_step "Pending signers signed by SSH key 1" \
+    bash -c "jq -e '.entries | has(\"$SSH_PK_1\")' '$PENDING_SIG_PATH' > /dev/null"
+
+run_step_json "Sign pending signers with SSH key 2 (threshold met, activates)" \
+    '.is_complete == true' \
+    cargo run --quiet -- sign-pending \
+        --secret-key "$SSH_KEY_2" -u "$backend" --password "$key_password" \
+        "$PENDING_SIGNERS_ID"
+
+# Backend: signers are now active.
+assert_signers_active
+
+ACTIVE_SIGNERS_PATH="$(_project_dir)/$SIGNERS_DIR/$SIGNERS_FILE"
+run_step "Active signers contains SSH pubkey 1" \
+    bash -c "jq -e '[.artifact_signers[].signers[].data.pubkey] | any(. == \"$SSH_PK_1\")' '$ACTIVE_SIGNERS_PATH' > /dev/null"
+run_step "Active signers contains SSH pubkey 2" \
+    bash -c "jq -e '[.artifact_signers[].signers[].data.pubkey] | any(. == \"$SSH_PK_2\")' '$ACTIVE_SIGNERS_PATH' > /dev/null"
+
+ACTIVE_SIG_PATH="$(_project_dir)/$SIGNERS_DIR/$SIGNERS_FILE.$SIGNATURES_SUFFIX"
+run_step "Active signers signed by SSH key 1" \
+    bash -c "jq -e '.entries | has(\"$SSH_PK_1\")' '$ACTIVE_SIG_PATH' > /dev/null"
+run_step "Active signers signed by SSH key 2" \
+    bash -c "jq -e '.entries | has(\"$SSH_PK_2\")' '$ACTIVE_SIG_PATH' > /dev/null"
 
 ################################################################################
 print_summary
