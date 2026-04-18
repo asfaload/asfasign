@@ -21,6 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SERVER_PID=""
 E2E_GIT_REPO_PATH=""
+background_pids=()
 to_delete_on_filesystem=()
 
 cleanup() {
@@ -28,6 +29,11 @@ cleanup() {
         kill "$SERVER_PID" 2>/dev/null
         wait "$SERVER_PID" 2>/dev/null || true
     fi
+    for pid in "${background_pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
     for path in "${to_delete_on_filesystem[@]}"; do
         if [[ -e "$path" ]]; then
             rm -rf "$path"
@@ -58,6 +64,7 @@ else
     SERVER_PID=$!
     if [[ -n $debug ]]; then
         tail -f  $E2E_GIT_REPO_PATH/server.log &
+        background_pids+=($!)
     fi
 
 
