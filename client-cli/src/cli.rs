@@ -18,7 +18,7 @@ pub struct PasswordArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct SecretKeyArgs {
-    /// Path to your secret key file (asfaload, minisign, or OpenSSH ed25519)
+    /// Path to your secret key file (asfaload or OpenSSH ed25519)
     #[arg(short = 'K', long)]
     pub secret_key: PathBuf,
 }

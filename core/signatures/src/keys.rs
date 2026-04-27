@@ -126,7 +126,7 @@ pub trait AsfaloadKeyPairTrait<'a>: Sized {
     // in this newly created file, and save the public key in the same filename with added suffx
     // '.pub'
     fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, KeyError>;
-    // As we use minisign as the first (and initially only) signing scheme, our proposed API is
+    // As we used minisign as the first (and initially only) signing scheme, our proposed API is
     // modelled after it. When we generate a minisign key pair, the private key is encrypted and
     // needs to be decrypted for use.
     // This method returns the decrypted secret key, and thus requires the decryption password as
@@ -140,8 +140,7 @@ pub struct AsfaloadKeyPair<T> {
     key_pair: T,
 }
 
-// This trait should never give access to the private key it manages, as it is non-encrypted (for
-// minisign)
+// This trait should never give access to the private key it manages, as it is non-encrypted
 pub trait AsfaloadSecretKeyTrait: Sized {
     type SecretKey;
     type Signature;
