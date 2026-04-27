@@ -95,8 +95,7 @@ pub enum Commands {
         #[arg(long, short)]
         output_dir: PathBuf,
 
-        /// Signing algorithm to use (minisign or asfaload)
-        #[arg(long, short = 'a', default_value = "minisign")]
+        #[arg(long, short = 'a', default_value = "asfaload")]
         algorithm: AlgorithmType,
 
         #[command(flatten)]
