@@ -4,7 +4,7 @@ set -euo pipefail
 # run with env var debug=1 to print commands and outputs.
 # If you start the backend separately, send the backend env var the the backend url,
 # eg http://localhost:3000
-# Signers files generation (minisign):
+# Signers files generation :
 # -----------------------------------
 # cargo run -- new-signers-file --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_0.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_1.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_2.pub   -A 2 --master-key-file $PWD/../core/test_helpers/fixtures/keys/key_3.pub --master-key-file $PWD/../core/test_helpers/fixtures/keys/key_4.pub -M 1 -o ../../repo_for_e2e_tests/signers_update_by_master/signers_file_1.json
 # cargo run -- new-signers-file --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_5.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_6.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_7.pub   -A 2 --master-key-file $PWD/../core/test_helpers/fixtures/keys/key_3.pub --master-key-file $PWD/../core/test_helpers/fixtures/keys/key_4.pub -M 1 -o ../../repo_for_e2e_tests/signers_update_by_master/signers_file_update_but_same_masters.json
