@@ -7,9 +7,8 @@
 // AsfaloadPublicKey<minisign::PublicKey>. It implements AsfaloadPublicKeyTrait.
 
 use crate::keys::{
-    AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
-    AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
-    KeyFormat,
+    AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
+    AsfaloadSignatureTrait, KeyFormat,
     asfaload::{
         ASFALOAD_PUB_PREFIX, AsfaloadEd25519PublicKey, AsfaloadEd25519SecretKey,
         AsfaloadEd25519Signature, AsfaloadKeysBlob, SSH_ED25519_PREFIX, SshEncryptedKey,
@@ -25,7 +24,6 @@ use std::path::Path;
 mod tests;
 
 pub enum AsfaloadKeyPairs {
-    Minisign(AsfaloadKeyPair<minisign::KeyPair>),
     Asfaload(AsfaloadKeyPair<AsfaloadKeysBlob>),
     OpenSsh(AsfaloadKeyPair<SshEncryptedKey>),
 }
@@ -33,7 +31,6 @@ pub enum AsfaloadKeyPairs {
 impl std::fmt::Debug for AsfaloadKeyPairs {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Minisign(_) => write!(f, "AsfaloadKeyPairs::Minisign(<redacted>)"),
             Self::Asfaload(_) => write!(f, "AsfaloadKeyPairs::Asfaload(<redacted>)"),
             Self::OpenSsh(_) => write!(f, "AsfaloadKeyPairs::OpenSsh(<redacted>)"),
         }
@@ -43,10 +40,6 @@ impl std::fmt::Debug for AsfaloadKeyPairs {
 impl AsfaloadKeyPairs {
     pub fn new_with_format(pw: &str, format: &KeyFormat) -> Result<Self, KeyError> {
         match format {
-            KeyFormat::Minisign => {
-                let kp = AsfaloadKeyPair::<minisign::KeyPair>::new(pw)?;
-                Ok(Self::Minisign(kp))
-            }
             KeyFormat::Asfaload => {
                 let kp = AsfaloadKeyPair::<AsfaloadKeysBlob>::new(pw)?;
                 Ok(Self::Asfaload(kp))
@@ -65,10 +58,6 @@ impl AsfaloadKeyPairs {
         params: crate::keys::asfaload::format::Argon2Params,
     ) -> Result<Self, KeyError> {
         match format {
-            KeyFormat::Minisign => {
-                let kp = AsfaloadKeyPair::<minisign::KeyPair>::new(pw)?;
-                Ok(Self::Minisign(kp))
-            }
             KeyFormat::Asfaload => {
                 let kp = AsfaloadKeyPair::<AsfaloadKeysBlob>::new_with_argon2_params(pw, params)?;
                 Ok(Self::Asfaload(kp))
@@ -84,16 +73,11 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPairs {
     type PublicKey = AsfaloadPublicKeys;
     type SecretKey = AsfaloadSecretKeys;
     fn new(pw: &str) -> Result<Self, KeyError> {
-        // Default to Minisign for backward compatibility.
-        // Use new_with_format() for explicit algorithm selection.
-        let minisign_key = AsfaloadKeyPair::<minisign::KeyPair>::new(pw)?;
-        Ok(Self::Minisign(minisign_key))
+        let asfaload_key = AsfaloadKeyPair::<AsfaloadKeysBlob>::new(pw)?;
+        Ok(Self::Asfaload(asfaload_key))
     }
     fn save<T: AsRef<std::path::Path>>(&self, p: T) -> Result<&Self, KeyError> {
         match self {
-            Self::Minisign(kp) => {
-                kp.save(p)?;
-            }
             Self::Asfaload(kp) => {
                 kp.save(p)?;
             }
@@ -106,7 +90,6 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPairs {
 
     fn secret_key(&self, password: &str) -> Result<Self::SecretKey, KeyError> {
         match self {
-            Self::Minisign(kp) => Ok(AsfaloadSecretKeys::Minisign(kp.secret_key(password)?)),
             Self::Asfaload(kp) => Ok(AsfaloadSecretKeys::Asfaload(kp.secret_key(password)?)),
             Self::OpenSsh(kp) => Ok(AsfaloadSecretKeys::Asfaload(kp.secret_key(password)?)),
         }
@@ -114,7 +97,6 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPairs {
 
     fn public_key(&self) -> Self::PublicKey {
         match self {
-            Self::Minisign(kp) => AsfaloadPublicKeys::Minisign(kp.public_key()),
             Self::Asfaload(kp) => AsfaloadPublicKeys::Asfaload(kp.public_key()),
             Self::OpenSsh(kp) => AsfaloadPublicKeys::Asfaload(kp.public_key()),
         }
@@ -123,7 +105,6 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPairs {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AsfaloadPublicKeys {
-    Minisign(AsfaloadPublicKey<minisign::PublicKey>),
     Asfaload(AsfaloadEd25519PublicKey),
 }
 
@@ -159,29 +140,17 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
         data: &AsfaloadHashes,
     ) -> Result<(), VerifyError> {
         match (self, signature) {
-            (Self::Minisign(pk), AsfaloadSignatures::Minisign(sig)) => pk.verify(sig, data),
             (Self::Asfaload(pk), AsfaloadSignatures::Asfaload(sig)) => pk.verify(sig, data),
-            _ => Err(VerifyError::VerificationFailed(
-                "Algorithm mismatch between key and signature".to_string(),
-            )),
         }
     }
 
     fn to_base64(&self) -> String {
         match self {
-            Self::Minisign(pk) => pk.to_base64(),
             Self::Asfaload(pk) => pk.to_base64(),
         }
     }
 
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
-        // Raw bytes carry no format marker, so we length/structure-sniff:
-        // minisign public keys are ~42 bytes (sig-alg id + key id + 32 pk bytes),
-        // asfaload ed25519 public keys are exactly 32 raw bytes. These are
-        // mutually exclusive by length, so the sequence is unambiguous.
-        if let Ok(pk) = AsfaloadPublicKey::<minisign::PublicKey>::from_bytes(data) {
-            return Ok(Self::Minisign(pk));
-        }
         let pk = AsfaloadEd25519PublicKey::from_bytes(data)?;
         Ok(Self::Asfaload(pk))
     }
@@ -193,10 +162,6 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
                 let pk = AsfaloadEd25519PublicKey::from_base64(content.trim_start())?;
                 Ok(Self::Asfaload(pk))
             }
-            KeyFormat::Minisign => {
-                let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_file(&path)?;
-                Ok(Self::Minisign(pk))
-            }
         }
     }
 
@@ -204,10 +169,6 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
         if s.starts_with(ASFALOAD_PUB_PREFIX) || s.starts_with(SSH_ED25519_PREFIX) {
             let pk = AsfaloadEd25519PublicKey::from_base64(s)?;
             return Ok(Self::Asfaload(pk));
-        }
-        if s.starts_with("minisign:") {
-            let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_base64(s)?;
-            return Ok(Self::Minisign(pk));
         }
         Err(KeyError::CreationFailed(format!(
             "unrecognised public-key prefix in input starting with: {}",
@@ -217,10 +178,6 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
 
     fn from_secret_key(sk_in: &AsfaloadSecretKeys) -> Result<Self, KeyError> {
         match sk_in {
-            AsfaloadSecretKeys::Minisign(sk) => {
-                let pk = AsfaloadPublicKey::<minisign::PublicKey>::from_secret_key(sk)?;
-                Ok(Self::Minisign(pk))
-            }
             AsfaloadSecretKeys::Asfaload(sk) => {
                 let pk = AsfaloadEd25519PublicKey::from_secret_key(sk)?;
                 Ok(Self::Asfaload(pk))
@@ -230,7 +187,6 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
 
     fn key_format(&self) -> KeyFormat {
         match self {
-            Self::Minisign(pk) => pk.key_format(),
             Self::Asfaload(pk) => pk.key_format(),
         }
     }
@@ -242,7 +198,6 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
 
 #[derive(Debug, Clone)]
 pub enum AsfaloadSecretKeys {
-    Minisign(AsfaloadSecretKey<minisign::SecretKey>),
     Asfaload(AsfaloadEd25519SecretKey),
 }
 
@@ -258,9 +213,6 @@ impl AsfaloadSecretKeys {
         format: &KeyFormat,
     ) -> Result<Self, KeyError> {
         match format {
-            KeyFormat::Minisign => Ok(Self::Minisign(
-                AsfaloadSecretKey::<minisign::SecretKey>::from_file(path, password)?,
-            )),
             KeyFormat::Asfaload => {
                 let kp = AsfaloadKeyPair::<AsfaloadKeysBlob>::from_file(path)?;
                 Ok(Self::Asfaload(kp.secret_key(password)?))
@@ -279,10 +231,6 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKeys {
 
     fn sign(&self, data: &AsfaloadHashes) -> Result<Self::Signature, SignError> {
         match self {
-            Self::Minisign(sk) => {
-                let sig = sk.sign(data)?;
-                Ok(AsfaloadSignatures::Minisign(sig))
-            }
             Self::Asfaload(sk) => {
                 let sig = sk.sign(data)?;
                 Ok(AsfaloadSignatures::Asfaload(sig))
@@ -291,14 +239,6 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKeys {
     }
 
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
-        // Raw bytes carry no format marker, so we length/structure-sniff:
-        // minisign secret keys are a structured binary blob (sig-alg + KDF
-        // params + encrypted seed) much longer than 32 bytes; asfaload ed25519
-        // secret keys are exactly a 32-byte raw seed. These are mutually
-        // exclusive by length, so the sequence is unambiguous.
-        if let Ok(sk) = AsfaloadSecretKey::<minisign::SecretKey>::from_bytes(data) {
-            return Ok(Self::Minisign(sk));
-        }
         let sk = AsfaloadEd25519SecretKey::from_bytes(data)?;
         Ok(Self::Asfaload(sk))
     }
@@ -313,9 +253,6 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKeys {
                 let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_string(s)?;
                 Ok(Self::Asfaload(kp.secret_key(password)?))
             }
-            KeyFormat::Minisign => Ok(Self::Minisign(
-                AsfaloadSecretKey::<minisign::SecretKey>::from_string(s, password)?,
-            )),
         }
     }
 
@@ -334,14 +271,12 @@ impl AsfaloadSecretKeyTrait for AsfaloadSecretKeys {
 }
 
 pub enum AsfaloadSignatures {
-    Minisign(AsfaloadSignature<minisign::SignatureBox>),
     Asfaload(AsfaloadEd25519Signature),
 }
 
 impl std::fmt::Debug for AsfaloadSignatures {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Minisign(sig) => write!(f, "AsfaloadSignatures::Minisign({})", sig.to_base64()),
             Self::Asfaload(sig) => write!(f, "AsfaloadSignatures::Asfaload({})", sig.to_base64()),
         }
     }
@@ -350,7 +285,6 @@ impl std::fmt::Debug for AsfaloadSignatures {
 impl Clone for AsfaloadSignatures {
     fn clone(&self) -> Self {
         match self {
-            Self::Minisign(sig) => Self::Minisign(sig.clone()),
             Self::Asfaload(sig) => Self::Asfaload(sig.clone()),
         }
     }
@@ -360,25 +294,17 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
     type PublicKeyType = AsfaloadPublicKeys;
     fn to_string(&self) -> String {
         match self {
-            Self::Minisign(sig) => sig.to_string(),
             Self::Asfaload(sig) => sig.to_string(),
         }
     }
 
     fn from_string(data: &str) -> Result<Self, SignatureError> {
-        // Try minisign first; if it fails, try asfaload.
-        if let Ok(sig) = AsfaloadSignature::<minisign::SignatureBox>::from_string(data) {
-            return Ok(Self::Minisign(sig));
-        }
         let sig = AsfaloadEd25519Signature::from_string(data)?;
         Ok(Self::Asfaload(sig))
     }
 
     fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<&Self, SignatureError> {
         match self {
-            Self::Minisign(sig) => {
-                sig.to_file(path)?;
-            }
             Self::Asfaload(sig) => {
                 sig.to_file(path)?;
             }
@@ -387,29 +313,17 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
     }
 
     fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, SignatureError> {
-        // Try minisign first; if it fails, try asfaload.
-        if let Ok(sig) = AsfaloadSignature::<minisign::SignatureBox>::from_file(&path) {
-            return Ok(Self::Minisign(sig));
-        }
         let sig = AsfaloadEd25519Signature::from_file(path)?;
         Ok(Self::Asfaload(sig))
     }
 
     fn from_base64(s: &str) -> Result<Self, SignatureError> {
-        // Try minisign first; if it fails, try asfaload.
-        if let Ok(sig) = AsfaloadSignature::<minisign::SignatureBox>::from_base64(s) {
-            return Ok(Self::Minisign(sig));
-        }
         let sig = AsfaloadEd25519Signature::from_base64(s)?;
         Ok(Self::Asfaload(sig))
     }
 
     fn from_base64_with_format(s: &str, format: &KeyFormat) -> Result<Self, SignatureError> {
         match format {
-            KeyFormat::Minisign => {
-                let sig = AsfaloadSignature::<minisign::SignatureBox>::from_base64(s)?;
-                Ok(Self::Minisign(sig))
-            }
             KeyFormat::Asfaload | KeyFormat::OpenSsh => {
                 let sig = AsfaloadEd25519Signature::from_base64(s)?;
                 Ok(Self::Asfaload(sig))
@@ -419,7 +333,6 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
 
     fn to_base64(&self) -> String {
         match self {
-            Self::Minisign(sig) => sig.to_base64(),
             Self::Asfaload(sig) => sig.to_base64(),
         }
     }
@@ -430,15 +343,9 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
         pub_key: &AsfaloadPublicKeys,
     ) -> Result<(), SignatureError> {
         match (self, pub_key) {
-            (Self::Minisign(sig), AsfaloadPublicKeys::Minisign(pk)) => {
-                sig.add_to_aggregate_for_file(signed_file, pk)
-            }
             (Self::Asfaload(sig), AsfaloadPublicKeys::Asfaload(pk)) => {
                 sig.add_to_aggregate_for_file(signed_file, pk)
             }
-            _ => Err(SignatureError::FormatError(
-                "Algorithm mismatch between signature and public key".to_string(),
-            )),
         }
     }
 }

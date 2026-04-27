@@ -54,7 +54,7 @@ mod tests {
         sig_file.entries.insert(
             "RWTqI2MWePubKeyBase64".to_string(),
             TaggedSignature {
-                format: KeyFormat::Minisign,
+                format: KeyFormat::Asfaload,
                 signature: "RWQD4YGXRSignatureBase64".to_string(),
             },
         );
@@ -85,7 +85,7 @@ mod tests {
         assert!(sig_file.entries.contains_key("pubkey2"));
 
         let entry1 = &sig_file.entries["pubkey1"];
-        assert_eq!(entry1.format, KeyFormat::Minisign);
+        assert_eq!(entry1.format, KeyFormat::Asfaload);
         assert_eq!(entry1.signature, "sig1");
     }
 
@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn test_tagged_signature_clone() {
         let tagged = TaggedSignature {
-            format: KeyFormat::Minisign,
+            format: KeyFormat::Asfaload,
             signature: "test_sig".to_string(),
         };
         let cloned = tagged.clone();
