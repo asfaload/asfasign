@@ -2,12 +2,12 @@
 _HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Key type selection (must be before sourcing urls.sh which uses KEY_TYPE) ---
-KEY_TYPE="${KEY_TYPE:-minisign}"
+KEY_TYPE="${KEY_TYPE:-asfaload}"
 KEYS_DIR="$(cd "$_HELPERS_DIR/../../.." && pwd)/core/test_helpers/fixtures/keys"
 case "$KEY_TYPE" in
     asfaload) _KEY_PREFIX="" ;;
     *)
-        printf 'Unknown KEY_TYPE: %s (expected: minisign or asfaload)\n' "$KEY_TYPE" >&2
+        printf 'Unknown KEY_TYPE: %s (expected: asfaload)\n' "$KEY_TYPE" >&2
         exit 1
         ;;
 esac
