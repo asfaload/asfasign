@@ -38,7 +38,7 @@ pub fn fixtures_pub_key(n: usize) -> PathBuf {
     fixtures_keys_dir().join(format!("key_{}.pub", n))
 }
 pub fn fixtures_asfaload_pub_key(n: usize) -> PathBuf {
-    fixtures_keys_dir().join(format!("asfaload_key_{}.pub", n))
+    fixtures_keys_dir().join(format!("key_{}.pub", n))
 }
 
 /// Select key algorithm from the KEY_TYPE env var, matching the e2e test convention.
@@ -167,21 +167,16 @@ impl TestKeys {
             sec_keys: Vec::with_capacity(n),
         };
         for i in start..start + n {
-            let pk =
-                AsfaloadPublicKeys::from_file(fixtures_dir.join(format!("asfaload_key_{i}.pub")))
-                    .unwrap_or_else(|e| {
-                        panic!(
-                            "Failed to load fixture asfaload public key asfaload_key_{i}.pub: {e}"
-                        )
-                    });
+            let pk = AsfaloadPublicKeys::from_file(fixtures_dir.join(format!("key_{i}.pub")))
+                .unwrap_or_else(|e| {
+                    panic!("Failed to load fixture asfaload public key key_{i}.pub: {e}")
+                });
             let sk = AsfaloadSecretKeys::from_file_for_format(
-                fixtures_dir.join(format!("asfaload_key_{i}")),
+                fixtures_dir.join(format!("key_{i}")),
                 FIXTURE_PASSWORD,
                 &KeyFormat::Asfaload,
             )
-            .unwrap_or_else(|e| {
-                panic!("Failed to load fixture asfaload secret key asfaload_key_{i}: {e}")
-            });
+            .unwrap_or_else(|e| panic!("Failed to load fixture asfaload secret key key_{i}: {e}"));
             r.pub_keys.push(pk);
             r.sec_keys.push(sk);
         }
@@ -278,13 +273,13 @@ mod tests {
                 TEST_ARGON2_PARAMS,
             )
             .expect("Failed to generate asfaload keypair");
-            let key_path = fixtures_dir.join(format!("asfaload_key_{i}"));
+            let key_path = fixtures_dir.join(format!("key_{i}"));
             // Remove existing files to allow regeneration
             let _ = std::fs::remove_file(&key_path);
             let _ = std::fs::remove_file(key_path.with_extension("pub"));
             kp.save(&key_path)
                 .unwrap_or_else(|e| panic!("Failed to save asfaload keypair {i}: {e}"));
-            println!("Generated asfaload_key_{i}");
+            println!("Generated key_{i}");
         }
         println!(
             "Done: generated {FIXTURE_KEY_COUNT} asfaload keypairs in {}",
