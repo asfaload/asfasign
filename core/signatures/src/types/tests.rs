@@ -754,6 +754,7 @@ fn sk_from_file_dispatches_asfaload_by_prefix() -> Result<()> {
     let (temp_dir, _pk, _sk) = get_asfaload_key_pair()?;
     // Re-load via the enum-level dispatcher to assert the variant explicitly.
     let sk = AsfaloadSecretKeys::from_file(temp_dir.path().join("key"), "password")?;
+    #[allow(unreachable_patterns)]
     match sk {
         AsfaloadSecretKeys::Asfaload(_) => Ok(()),
         other => panic!("expected Asfaload variant, got {other:?}"),
@@ -808,6 +809,7 @@ fn sk_from_file_dispatches_openssh_by_prefix() -> Result<()> {
     std::fs::write(&path, &pem)?;
 
     let sk = AsfaloadSecretKeys::from_file(&path, "ssh-pw")?;
+    #[allow(unreachable_patterns)]
     match sk {
         AsfaloadSecretKeys::Asfaload(_) => {}
         other => panic!("expected Asfaload variant (SSH keys share ed25519 type), got {other:?}"),
@@ -862,6 +864,7 @@ fn pk_from_file_rejects_unknown_prefix() -> Result<()> {
 fn pk_from_file_dispatches_asfaload_by_prefix() -> Result<()> {
     let (temp_dir, _pk, _sk) = get_asfaload_key_pair()?;
     let pk = AsfaloadPublicKeys::from_file(temp_dir.path().join("key.pub"))?;
+    #[allow(unreachable_patterns)]
     match pk {
         AsfaloadPublicKeys::Asfaload(_) => Ok(()),
         other => panic!("expected Asfaload variant, got {other:?}"),
@@ -888,6 +891,7 @@ fn pk_from_file_dispatches_openssh_by_prefix() -> Result<()> {
     std::fs::write(&path, &line)?;
 
     let pk = AsfaloadPublicKeys::from_file(&path)?;
+    #[allow(unreachable_patterns)]
     match pk {
         AsfaloadPublicKeys::Asfaload(_) => Ok(()),
         other => {
