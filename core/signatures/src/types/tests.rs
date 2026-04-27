@@ -25,7 +25,7 @@ fn fixtures_dir() -> PathBuf {
         .join("keys")
 }
 
-/// Load a minisign key pair from fixture files.
+/// Load a key pair from fixture files.
 fn get_key_pair() -> Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
     let dir = fixtures_dir();
     let pk = AsfaloadPublicKeys::from_file(dir.join("key_0.pub"))?;
@@ -33,7 +33,7 @@ fn get_key_pair() -> Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
     Ok((pk, sk))
 }
 
-/// Load two minisign key pairs from fixture files.
+/// Load two key pairs from fixture files.
 fn get_two_key_pairs() -> Result<(
     AsfaloadPublicKeys,
     AsfaloadSecretKeys,
@@ -181,8 +181,8 @@ fn test_new() -> Result<()> {
 }
 
 #[test]
-fn test_keys_methods_minisign() -> Result<()> {
-    [KeyFormat::Minisign]
+fn test_keys_methods() -> Result<()> {
+    [KeyFormat::Asfaload]
         .iter()
         .try_for_each(|t| -> anyhow::Result<()> {
             // Save keypair in temp dir
@@ -216,39 +216,6 @@ fn test_keys_methods_minisign() -> Result<()> {
 
             Ok(())
         })
-}
-
-#[test]
-fn test_keys_methods_asfaload() -> Result<()> {
-    // Uses TEST argon2 params to keep the test fast.
-    let temp_dir = tempfile::tempdir().unwrap();
-    let kp = AsfaloadKeyPairs::new_with_format_and_argon2_params(
-        "mypass",
-        &KeyFormat::Asfaload,
-        Argon2Params::TEST,
-    )?;
-    kp.save(&temp_dir)?;
-
-    let secret_key_path = temp_dir.as_ref().to_path_buf().join("key");
-    let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, "mypass")?;
-
-    let bytes_to_sign = common::sha512_for_content(b"My string to sign".to_vec())?;
-    let signature = secret_key.sign(&bytes_to_sign)?;
-
-    let public_key_path = temp_dir.as_ref().to_path_buf().join("key.pub");
-    let public_key = AsfaloadPublicKeys::from_file(&public_key_path)?;
-    assert_eq!(public_key.key_format(), KeyFormat::Asfaload);
-
-    public_key.verify(&signature, &bytes_to_sign)?;
-
-    let public_key_string = fs::read_to_string(&public_key_path)?;
-    let public_key_from_string = AsfaloadPublicKeys::from_base64(&public_key_string)?;
-    public_key_from_string.verify(&signature, &bytes_to_sign)?;
-
-    let b64 = public_key_from_string.to_base64();
-    assert_eq!(b64, public_key_string);
-
-    Ok(())
 }
 
 #[test]
@@ -445,9 +412,6 @@ fn test_signature_trait_error_mapping() -> Result<()> {
     let r = AsfaloadSignatures::from_base64("invalid");
     assert!(matches!(r, Err(SignatureError::Base64DecodeFailed(_))));
 
-    // With multi-format support, from_string tries minisign first (which
-    // reports this as IoError) then falls back to ed25519 (which fails
-    // with Base64DecodeFailed). The last-tried format's error is returned.
     let r = AsfaloadSignatures::from_string("invalid");
     assert!(r.is_err());
     Ok(())
@@ -713,71 +677,6 @@ fn test_asfaload_add_to_aggregate() -> Result<()> {
 //------------------------------------------------------------
 
 #[test]
-fn test_cross_algorithm_verify_fails() -> Result<()> {
-    let (minisign_pk, minisign_sk) = get_key_pair()?;
-    let (_adir, asfaload_pk, asfaload_sk) = get_asfaload_key_pair()?;
-
-    let data = common::sha512_for_content(b"cross-algo test".to_vec())?;
-    let minisign_sig = minisign_sk.sign(&data)?;
-    let asfaload_sig = asfaload_sk.sign(&data)?;
-
-    // Minisign key cannot verify asfaload signature
-    let result = minisign_pk.verify(&asfaload_sig, &data);
-    assert!(
-        result.is_err(),
-        "Minisign key should not verify asfaload signature"
-    );
-
-    // Asfaload key cannot verify minisign signature
-    let result = asfaload_pk.verify(&minisign_sig, &data);
-    assert!(
-        result.is_err(),
-        "Asfaload key should not verify minisign signature"
-    );
-
-    // Same-algorithm verification still works
-    minisign_pk.verify(&minisign_sig, &data)?;
-    asfaload_pk.verify(&asfaload_sig, &data)?;
-
-    Ok(())
-}
-
-#[test]
-fn test_mixed_algorithm_aggregate() -> Result<()> {
-    let temp_dir = tempfile::tempdir()?;
-    let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
-    fs::write(&signed_file_path, "mixed algo test")?;
-
-    let (minisign_pk, minisign_sk) = get_key_pair()?;
-    let (_adir, asfaload_pk, asfaload_sk) = get_asfaload_key_pair()?;
-
-    let data = common::sha512_for_content(b"mixed algo test".to_vec())?;
-    let minisign_sig = minisign_sk.sign(&data)?;
-    let asfaload_sig = asfaload_sk.sign(&data)?;
-
-    // Both algorithms can contribute to the same aggregate
-    minisign_sig.add_to_aggregate_for_file(&signed_file_path, &minisign_pk)?;
-    asfaload_sig.add_to_aggregate_for_file(&signed_file_path, &asfaload_pk)?;
-
-    let sig_file_path = signed_file_path.with_file_name(format!(
-        "{}.{}",
-        signed_file_path.to_string_lossy(),
-        PENDING_SIGNATURES_SUFFIX
-    ));
-    let content = fs::read_to_string(&sig_file_path)?;
-    let sig_file: crate::signatures_file::SignaturesFile = serde_json::from_str(&content)?;
-    assert_eq!(sig_file.entries.len(), 2);
-
-    // Check format tags
-    let minisign_entry = sig_file.entries.get(&minisign_pk.to_base64()).unwrap();
-    assert_eq!(minisign_entry.format, KeyFormat::Minisign);
-    let asfaload_entry = sig_file.entries.get(&asfaload_pk.to_base64()).unwrap();
-    assert_eq!(asfaload_entry.format, KeyFormat::Asfaload);
-
-    Ok(())
-}
-
-#[test]
 fn test_asfaload_secret_keys_from_file_for_openssh() -> anyhow::Result<()> {
     use crate::keys::{AsfaloadKeyPair, AsfaloadKeyPairTrait, asfaload::SshEncryptedKey};
     use ed25519_dalek::SigningKey;
@@ -970,15 +869,6 @@ fn pk_from_file_dispatches_asfaload_by_prefix() -> Result<()> {
 }
 
 #[test]
-fn pk_from_file_dispatches_minisign_by_prefix() -> Result<()> {
-    let pk = AsfaloadPublicKeys::from_file(fixtures_dir().join("key_0.pub"))?;
-    match pk {
-        AsfaloadPublicKeys::Minisign(_) => Ok(()),
-        other => panic!("expected Minisign variant, got {other:?}"),
-    }
-}
-
-#[test]
 fn pk_from_file_dispatches_openssh_by_prefix() -> Result<()> {
     use ed25519_dalek::SigningKey;
     use rand::rngs::OsRng;
@@ -1032,23 +922,6 @@ fn ed25519_sk_from_file_loads_openssh() -> Result<()> {
     let data = common::sha512_for_content(b"test".to_vec())?;
     let _sig = sk.sign(&data)?;
     Ok(())
-}
-
-#[test]
-fn ed25519_sk_from_file_rejects_minisign() -> Result<()> {
-    // key_0 is a minisign fixture (first line starts with "untrusted comment: ").
-    let path = fixtures_dir().join("key_0");
-    match crate::keys::asfaload::AsfaloadEd25519SecretKey::from_file(&path, "password") {
-        Err(KeyError::CreationFailed(msg)) => {
-            assert!(
-                msg.contains("cannot load a minisign"),
-                "error should explain the format mismatch, got: {msg}"
-            );
-            Ok(())
-        }
-        Err(other) => panic!("expected CreationFailed, got {other:?}"),
-        Ok(_) => panic!("expected an error, got Ok"),
-    }
 }
 
 #[test]
