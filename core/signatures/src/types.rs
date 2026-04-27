@@ -3,8 +3,8 @@
 // each enum hase one case per algorithm we support.
 // These enum simply wrap the corresponding Asfaload type (eg AsfaloadPublicKey<_>), setting its
 // generic type, and implement the same traits, delegating the action of the trait's functions to
-// the wrapped value. For example, AsfaloadPublicKeys has one case Minisign which wrap
-// AsfaloadPublicKey<minisign::PublicKey>. It implements AsfaloadPublicKeyTrait.
+// the wrapped value. For example, AsfaloadPublicKeys has one case Asfaload which wrap
+// AsfaloadPublicKey<VerifyingKey>. It implements AsfaloadPublicKeyTrait.
 
 use crate::keys::{
     AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
@@ -205,7 +205,7 @@ impl AsfaloadSecretKeys {
     /// Load a secret key and assert it is in the specified format.
     ///
     /// Use this when the caller wants to reject files that are not in the
-    /// expected format. For permissive loading that auto-detects Minisign,
+    /// expected format. For permissive loading that auto-detects
     /// Asfaload, and OpenSSH ed25519 files, use `from_file`.
     pub fn from_file_for_format<P: AsRef<std::path::Path>>(
         path: P,

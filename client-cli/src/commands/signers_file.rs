@@ -219,7 +219,7 @@ mod tests {
     use tempfile::TempDir;
     use test_helpers::fixtures_pub_key;
 
-    // A valid minisign public key base64 string (from fixtures key_0)
+    // A valid public key base64 string (from fixtures key_0)
     const VALID_PUBKEY_B64: &str = "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8";
 
     #[test]
