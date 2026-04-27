@@ -69,11 +69,11 @@ mod tests {
         let json = r#"{
             "entries": {
                 "pubkey1": {
-                    "format": "minisign",
+                    "format": "asfaload",
                     "signature": "sig1"
                 },
                 "pubkey2": {
-                    "format": "minisign",
+                    "format": "asfaload",
                     "signature": "sig2"
                 }
             }
