@@ -58,11 +58,11 @@ JSON (with `--json`):
 ## Examples
 
     # register a GitHub-hosted signers file
-    client register-repo -K ~/.asfaload/key.minisign \
+    client register-repo -K ~/.asfaload/key \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 
     # with explicit backend
-    client register-repo -K ~/.asfaload/key.minisign \
+    client register-repo -K ~/.asfaload/key \
         -u https://asfaload.example.com \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 

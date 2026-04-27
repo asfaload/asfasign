@@ -84,7 +84,7 @@ If the file has been [revoked](revoke-release.md), the download fails:
 ```
 This file has been revoked.
   Revoked at: 2025-03-15T10:30:00Z
-  Revoked by: minisign:RWQwtmTQyX/sEi37...
+  Revoked by: asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
 ```
 
 ## Reference
