@@ -35,7 +35,7 @@ Read [producing_better_code.md](./producing_better_code.md) which collects lesso
 - **Functions/Methods**: `snake_case` (e.g., `sha512_for_content`, `add_signature`)
 - **Constants**: `SCREAMING_SNAKE_CASE` (e.g., `SIGNERS_DIR`, `PENDING_SIGNERS_DIR`)
 - **Traits**: Often include descriptive context (e.g., `AsfaloadKeyPairTrait`, `AsfaloadSignatureTrait`)
-- **Enum variants**: `PascalCase` (e.g., `FileType::Artifact`, `KeyFormat::Minisign`)
+- **Enum variants**: `PascalCase` (e.g., `FileType::Artifact`, `KeyFormat::Asfaload`)
 
 ### Error Handling
 - Use `Result<T, ErrorType>` pattern for functions that can fail
