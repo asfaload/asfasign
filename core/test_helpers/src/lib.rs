@@ -47,7 +47,7 @@ pub fn fixtures_asfaload_pub_key(n: usize) -> PathBuf {
 pub fn default_key_type() -> KeyFormat {
     match std::env::var("KEY_TYPE").as_deref() {
         Ok("asfaload") => KeyFormat::Asfaload,
-        Ok("minisign") | Err(_) => KeyFormat::Minisign,
+        Err(_) => KeyFormat::Asfaload,
         Ok(other) => panic!("Unknown KEY_TYPE: {other} (expected: minisign or asfaload)"),
     }
 }
@@ -69,7 +69,6 @@ impl TestKeys {
     pub fn new_from(start: usize, n: usize) -> Self {
         match default_key_type() {
             KeyFormat::Asfaload => Self::new_asfaload_from(start, n),
-            KeyFormat::Minisign => Self::new_minisign_from(start, n),
             KeyFormat::OpenSsh => {
                 panic!("TestKeys does not support OpenSsh; use asfaload or minisign")
             }
@@ -122,12 +121,6 @@ impl TestKeys {
     /// Generate fresh keypairs at runtime using KEY_TYPE env var to select format.
     pub fn new_generated(n: usize) -> Self {
         Self::new_generated_with_format(n, &default_key_type())
-    }
-
-    /// Generate fresh minisign keypairs at runtime. Use only when the full
-    /// AsfaloadKeyPairs is needed (e.g., for .save() or .key_pair()).
-    pub fn new_generated_minisign(n: usize) -> Self {
-        Self::new_generated_with_format(n, &KeyFormat::Minisign)
     }
 
     /// Generate fresh keypairs at runtime with a specific algorithm format.
