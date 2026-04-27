@@ -3,7 +3,7 @@
 - **Usage**: `client new-keys [OPTIONS] -n <NAME> -o <OUTPUT_DIR>`
 - **Source**: [`src/commands/keys.rs`](../../src/commands/keys.rs)
 
-Generate a new signing key pair. The command creates both a secret key and a public key in the specified directory.
+Generate a new signing key pair in the asfaload key format. The command creates both a secret key and a public key in the specified directory.
 
 ## Options
 
@@ -14,15 +14,6 @@ Base name for the key files. Produces `<NAME>` (secret key) and `<NAME>.pub` (pu
 ### `-o --output-dir <DIR>`
 
 Directory to write the key files into. Created automatically if it doesn't exist.
-
-### `-a --algorithm <ALGORITHM>`
-
-Signing algorithm to use. Defaults to `minisign`.
-
-| Value | Description |
-|-------|-------------|
-| `minisign` | Minisign format (default) |
-| `ed25519` | Raw Ed25519 |
 
 ### `-p --password <PASSWORD>`
 
@@ -49,7 +40,7 @@ Emit output as JSON instead of human-readable text.
 
 Human-readable (default):
 
-    Generating Minisign keypair with name 'mykey' in directory "/home/user/.asfaload"
+    Generating Asfaload keypair with name 'mykey' in directory "/home/user/.asfaload"
     Public key saved at /home/user/.asfaload/mykey.pub and secret key at /home/user/.asfaload/mykey
 
 JSON (with `--json`):
@@ -58,11 +49,8 @@ JSON (with `--json`):
 
 ## Examples
 
-    # generate a minisign key pair
+    # generate a key pair
     client new-keys -n mykey -o ~/.asfaload
-
-    # generate an ed25519 key pair
-    client new-keys -n mykey -o ~/.asfaload -a ed25519
 
     # non-interactive usage in CI
     client new-keys -n ci-key -o ./keys -p "$KEY_PASSWORD"

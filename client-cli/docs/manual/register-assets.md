@@ -56,11 +56,11 @@ JSON (with `--json`):
 ## Examples
 
     # register a GitHub release
-    client register-assets -K ~/.asfaload/key.minisign \
+    client register-assets -K ~/.asfaload/key \
         --github-release-url https://github.com/acme/tool/releases/tag/v1.0
 
     # register checksum files
-    client register-assets -K ~/.asfaload/key.minisign \
+    client register-assets -K ~/.asfaload/key \
         --csum-file https://example.com/releases/v1.0/SHA256SUMS \
         --csum-file https://example.com/releases/v1.0/SHA512SUMS
 

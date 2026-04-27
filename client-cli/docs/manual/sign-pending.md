@@ -57,11 +57,11 @@ JSON (with `--json`):
 ## Examples
 
     # sign a pending release index
-    client sign-pending -K ~/.asfaload/key.minisign \
+    client sign-pending -K ~/.asfaload/key \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
     # sign with explicit password (CI usage)
-    client sign-pending -K ~/.asfaload/key.minisign -p "$PASSWORD" \
+    client sign-pending -K ~/.asfaload/key -p "$PASSWORD" \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
 ## Exit codes

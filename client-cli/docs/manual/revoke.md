@@ -53,7 +53,7 @@ JSON (with `--json`):
 ## Examples
 
     # revoke a release index
-    client revoke -K ~/.asfaload/key.minisign \
+    client revoke -K ~/.asfaload/key \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
 ## Exit codes

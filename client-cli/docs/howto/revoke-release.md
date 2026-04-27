@@ -62,7 +62,7 @@ client download https://github.com/acme/tool/releases/download/v1.0/artifact.bin
 ```
 This file has been revoked.
   Revoked at: 2025-03-15T10:30:00Z
-  Revoked by: minisign:RWQwtmTQyX/sEi37...
+  Revoked by: asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
 ```
 
 ## Important notes

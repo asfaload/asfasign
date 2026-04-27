@@ -113,7 +113,7 @@ You can pass public keys as base64 strings instead of files. This is handy when 
 
 ```sh
 client new-signers-file \
-    --artifact-signer "minisign:RWQwtmTQyX/sEi37..." \
+    --artifact-signer "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8" \
     --artifact-signer-file bob.pub \
     --artifact-threshold 1 \
     --output-file signers.json
