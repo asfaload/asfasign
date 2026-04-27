@@ -113,7 +113,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadEd25519PublicKey {
             .try_into()
             .map_err(|_| KeyError::CreationFailed("ed25519 public key must be 32 bytes".into()))?;
         let vk = VerifyingKey::from_bytes(&bytes)?;
-        Ok(Self { key: vk })
+        Ok(vk.into())
     }
 
     fn from_base64(s: &str) -> Result<Self, KeyError> {
@@ -141,9 +141,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadEd25519PublicKey {
     }
 
     fn from_secret_key(sk: &Self::SecretKeyType) -> Result<Self, KeyError> {
-        Ok(Self {
-            key: sk.key.verifying_key(),
-        })
+        Ok(sk.key.verifying_key().into())
     }
 
     fn key_format(&self) -> KeyFormat {
@@ -217,7 +215,7 @@ fn parse_ssh_ed25519_wire(s: &str) -> Result<AsfaloadEd25519PublicKey, KeyError>
         .try_into()
         .unwrap();
     let vk = VerifyingKey::from_bytes(&key_bytes)?;
-    Ok(AsfaloadEd25519PublicKey { key: vk })
+    Ok(vk.into())
 }
 
 // --- SecretKey ---
@@ -230,18 +228,14 @@ impl AsfaloadSecretKeyTrait for AsfaloadEd25519SecretKey {
         let hash_bytes = match data {
             AsfaloadHashes::Sha512(d) => d.as_ref(),
         };
-        Ok(AsfaloadEd25519Signature {
-            signature: self.key.sign(hash_bytes),
-        })
+        Ok(self.key.sign(hash_bytes).into())
     }
 
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
         let bytes: [u8; 32] = data
             .try_into()
             .map_err(|_| KeyError::CreationFailed("ed25519 secret key must be 32 bytes".into()))?;
-        Ok(Self {
-            key: SigningKey::from_bytes(&bytes),
-        })
+        Ok(SigningKey::from_bytes(&bytes).into())
     }
 
     /// Parse an ed25519 secret key from its on-disk textual form (either
@@ -288,9 +282,7 @@ impl AsfaloadSignatureTrait for AsfaloadEd25519Signature {
         let sig_bytes: [u8; 64] = bytes.try_into().map_err(|_| {
             SignatureError::FormatError("ed25519 signature must be 64 bytes".into())
         })?;
-        Ok(Self {
-            signature: ed25519_dalek::Signature::from_bytes(&sig_bytes),
-        })
+        Ok(ed25519_dalek::Signature::from_bytes(&sig_bytes).into())
     }
 
     fn to_base64(&self) -> String {
@@ -428,10 +420,7 @@ mod tests {
     fn random_keypair() -> (AsfaloadEd25519PublicKey, AsfaloadEd25519SecretKey) {
         let sk = SigningKey::generate(&mut OsRng);
         let pk = sk.verifying_key();
-        (
-            AsfaloadEd25519PublicKey { key: pk },
-            AsfaloadEd25519SecretKey { key: sk },
-        )
+        (pk.into(), sk.into())
     }
 
     #[test]

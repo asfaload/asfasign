@@ -162,6 +162,15 @@ pub trait AsfaloadSecretKeyTrait: Sized {
 pub struct AsfaloadSecretKey<K> {
     pub(crate) key: K,
 }
+
+// Allows to simply call .into() on a v:K (eg VerifyingKey) to
+// get the AsfaloadSecretKey { key: v }
+impl<K> From<K> for AsfaloadSecretKey<K> {
+    fn from(key: K) -> Self {
+        Self { key }
+    }
+}
+
 pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone + std::fmt::Debug {
     type Signature: AsfaloadSignatureTrait;
     type KeyType;
@@ -195,6 +204,14 @@ pub struct AsfaloadPublicKey<K> {
     key: K,
 }
 
+// Build a AsfaloadPublicKey<K> simply by calling .into() on
+// the value of type K (eg VerifyingKey).
+impl<K> From<K> for AsfaloadPublicKey<K> {
+    fn from(key: K) -> Self {
+        Self { key }
+    }
+}
+
 impl<K> TryFrom<String> for AsfaloadPublicKey<K>
 where
     AsfaloadPublicKey<K>: AsfaloadPublicKeyTrait,
@@ -210,6 +227,13 @@ pub struct AsfaloadSignature<S> {
     signature: S,
 }
 
+// Build a AsfaloadSignature<S> simply by calling .into() on
+// the value of type S.
+impl<S> From<S> for AsfaloadSignature<S> {
+    fn from(signature: S) -> Self {
+        Self { signature }
+    }
+}
 pub trait AsfaloadSignatureTrait: Sized {
     type PublicKeyType: AsfaloadPublicKeyTrait<Signature = Self>;
     fn to_string(&self) -> String;
