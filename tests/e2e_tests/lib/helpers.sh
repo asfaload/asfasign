@@ -5,8 +5,7 @@ _HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KEY_TYPE="${KEY_TYPE:-minisign}"
 KEYS_DIR="$(cd "$_HELPERS_DIR/../../.." && pwd)/core/test_helpers/fixtures/keys"
 case "$KEY_TYPE" in
-    minisign) _KEY_PREFIX="" ;;
-    asfaload) _KEY_PREFIX="asfaload_" ;;
+    asfaload) _KEY_PREFIX="" ;;
     *)
         printf 'Unknown KEY_TYPE: %s (expected: minisign or asfaload)\n' "$KEY_TYPE" >&2
         exit 1
