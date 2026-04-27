@@ -56,15 +56,15 @@ JSON (with `--json`):
 ## Examples
 
     # check a pending release index
-    client signature-status -K ~/.asfaload/key.minisign \
+    client signature-status -K ~/.asfaload/key \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
     # use a non-default backend
-    client signature-status -K ~/.asfaload/key.minisign -u https://asfaload.example.com \
+    client signature-status -K ~/.asfaload/key -u https://asfaload.example.com \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
     # machine-readable output
-    client signature-status --json -K ~/.asfaload/key.minisign \
+    client signature-status --json -K ~/.asfaload/key \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
 ## Exit codes

@@ -174,36 +174,6 @@ pub mod keys {
         FileRevoked(PathBuf),
     }
 
-    impl From<minisign::PError> for KeyError {
-        fn from(e: minisign::PError) -> Self {
-            match e.kind() {
-                minisign::ErrorKind::Io => KeyError::IOError(std::io::Error::other(e)),
-                _ => KeyError::CreationFailed(e.to_string()),
-            }
-        }
-    }
-
-    impl From<minisign::PError> for SignError {
-        fn from(e: minisign::PError) -> Self {
-            SignError::SignatureFailed(e.to_string())
-        }
-    }
-
-    impl From<minisign::PError> for VerifyError {
-        fn from(e: minisign::PError) -> Self {
-            VerifyError::VerificationFailed(e.to_string())
-        }
-    }
-
-    impl From<minisign::PError> for SignatureError {
-        fn from(e: minisign::PError) -> Self {
-            match e.kind() {
-                minisign::ErrorKind::Io => SignatureError::IoError(std::io::Error::other(e)),
-                _ => SignatureError::FormatError(e.to_string()),
-            }
-        }
-    }
-
     impl From<ed25519_dalek::SignatureError> for KeyError {
         fn from(e: ed25519_dalek::SignatureError) -> Self {
             KeyError::CreationFailed(e.to_string())

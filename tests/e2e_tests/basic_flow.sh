@@ -5,11 +5,10 @@ set -euo pipefail
 # run with env var debug=1 to print commands and outputs.
 # If you start the backend separately, send the backend env var the the backedn url,
 # eg http://localhost:3000
-# Signers file generation (minisign
-# ):
-# ----------------------------------
-# cargo run -- new-signers-file --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_0.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_1.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_2.pub -A 2 -o ../../repo_for_e2e_tests/basic_flow/signers_file_1.json
-# cargo run --quiet -- new-signers-file  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_0.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_1.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_2.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_3.pub  -A 3  --revocation-key-file ../core/test_helpers/fixtures/keys/key_4.pub  --revocation-key-file ../core/test_helpers/fixtures/keys/key_5.pub  --revocation-key-file ../core/test_helpers/fixtures/keys/key_6.pub  -R 2  -o ../../repo_for_e2e_tests/basic_flow/signers_file_2.json
+# Signers file generation (asfaload):
+# -----------------------------------
+# cargo run -- new-signers-file --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_0.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_1.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_2.pub -A 2 -o ../../repo_for_e2e_tests/basic_flow/signers_file_1_asfaload.json
+# cargo run --quiet -- new-signers-file  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_0.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_1.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_2.pub  --artifact-signer-file ../core/test_helpers/fixtures/keys/key_3.pub  -A 3  --revocation-key-file ../core/test_helpers/fixtures/keys/key_4.pub  --revocation-key-file ../core/test_helpers/fixtures/keys/key_5.pub  --revocation-key-file ../core/test_helpers/fixtures/keys/key_6.pub  -R 2  -o ../../repo_for_e2e_tests/basic_flow/signers_file_2_asfaload.json
 # Signers file generation (ed25519):
 # ----------------------------------
 # cargo run -- new-signers-file --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_0.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_1.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/ed25519_key_2.pub -A 2 -o ../../repo_for_e2e_tests/basic_flowsigners_file_1_ed25519.json

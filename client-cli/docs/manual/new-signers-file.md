@@ -111,7 +111,7 @@ JSON (with `--json`):
 
     # mix base64 strings and files
     client new-signers-file \
-        -a "minisign:RWQwtmTQyX/sEi37..." \
+        -a "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8" \
         --artifact-signer-file bob.pub \
         -A 1 \
         -o signers.json

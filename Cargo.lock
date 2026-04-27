@@ -64,7 +64,6 @@ dependencies = [
  "chrono",
  "common",
  "constants",
- "minisign",
  "serde",
  "serde_json",
  "sha2",
@@ -627,7 +626,6 @@ dependencies = [
  "features_lib",
  "forge-url",
  "hex",
- "minisign",
  "mockito",
  "predicates",
  "rest_api_types",
@@ -735,7 +733,6 @@ dependencies = [
  "constants",
  "ed25519-dalek",
  "hex",
- "minisign",
  "reqwest",
  "serde",
  "serde_json",
@@ -910,12 +907,6 @@ dependencies = [
  "rand_core 0.6.4",
  "typenum",
 ]
-
-[[package]]
-name = "ct-codecs"
-version = "1.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b10589d1a5e400d61f9f38f12f884cfd080ff345de8f17efda36fe0e4a02aa8"
 
 [[package]]
 name = "ctr"
@@ -1509,12 +1500,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "139ef39800118c7683f2fd3c98c1b23c09ae076556b435f8e9064ae108aaeeec"
 dependencies = [
  "cfg-if",
- "js-sys",
  "libc",
  "r-efi",
  "wasip2",
  "wasip3",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -2025,7 +2014,6 @@ dependencies = [
  "chrono",
  "common",
  "features_lib",
- "minisign",
  "serde_json",
  "signatures",
  "signers_file",
@@ -2309,18 +2297,6 @@ checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
 dependencies = [
  "mime",
  "unicase",
-]
-
-[[package]]
-name = "minisign"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aefd422a7a8b5efced01cd7cdf3771e62ebecbc90e3d27695002d3af6af94586"
-dependencies = [
- "ct-codecs",
- "getrandom 0.4.1",
- "rpassword",
- "scrypt",
 ]
 
 [[package]]
@@ -2659,7 +2635,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
 dependencies = [
  "digest",
- "hmac",
 ]
 
 [[package]]
@@ -3458,15 +3433,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
-name = "salsa20"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97a22f5af31f73a954c10289c93e8a50cc23d971e80ee446f1f6f7137a088213"
-dependencies = [
- "cipher",
-]
-
-[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3489,17 +3455,6 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
-
-[[package]]
-name = "scrypt"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0516a385866c09368f0b5bcd1caff3366aace790fcd46e2bb032697bb172fd1f"
-dependencies = [
- "pbkdf2",
- "salsa20",
- "sha2",
-]
 
 [[package]]
 name = "sec1"
@@ -3722,7 +3677,6 @@ dependencies = [
  "common",
  "constants",
  "ed25519-dalek",
- "minisign",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -3741,7 +3695,6 @@ dependencies = [
  "chrono",
  "common",
  "constants",
- "minisign",
  "serde",
  "serde_json",
  "sha2",
@@ -3759,7 +3712,6 @@ dependencies = [
  "base64",
  "chrono",
  "common",
- "minisign",
  "mockito",
  "serde",
  "serde_json",
@@ -4046,7 +3998,6 @@ dependencies = [
  "chrono",
  "common",
  "constants",
- "minisign",
  "serde_json",
  "signatures",
  "signers_file_types",
