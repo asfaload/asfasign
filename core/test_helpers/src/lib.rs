@@ -6,7 +6,6 @@ pub use signers_setup::*;
 
 use signatures::keys::AsfaloadKeyPairTrait;
 use signatures::keys::AsfaloadPublicKeyTrait;
-use signatures::keys::AsfaloadSecretKeyTrait;
 use signatures::keys::KeyFormat;
 use signatures::keys::asfaload::format::Argon2Params;
 use signatures::types::AsfaloadKeyPairs;
@@ -42,13 +41,12 @@ pub fn fixtures_asfaload_pub_key(n: usize) -> PathBuf {
 }
 
 /// Select key algorithm from the KEY_TYPE env var, matching the e2e test convention.
-/// Defaults to Minisign so existing tests are unaffected.
 /// Panics on unrecognised values to surface typos early.
 pub fn default_key_type() -> KeyFormat {
     match std::env::var("KEY_TYPE").as_deref() {
         Ok("asfaload") => KeyFormat::Asfaload,
         Err(_) => KeyFormat::Asfaload,
-        Ok(other) => panic!("Unknown KEY_TYPE: {other} (expected: minisign or asfaload)"),
+        Ok(other) => panic!("Unknown KEY_TYPE: {other} (expected: asfaload)"),
     }
 }
 
@@ -60,7 +58,7 @@ pub struct TestKeys {
 
 impl TestKeys {
     /// Load pre-generated keys based on KEY_TYPE env var.
-    /// KEY_TYPE=asfaload loads asfaload fixtures, default loads minisign.
+    /// default is asfaload, KEY_TYPE=asfaload loads asfaload fixtures
     pub fn new(n: usize) -> Self {
         Self::new_from(0, n)
     }
@@ -70,52 +68,9 @@ impl TestKeys {
         match default_key_type() {
             KeyFormat::Asfaload => Self::new_asfaload_from(start, n),
             KeyFormat::OpenSsh => {
-                panic!("TestKeys does not support OpenSsh; use asfaload or minisign")
+                panic!("TestKeys does not support OpenSsh; use asfaload")
             }
         }
-    }
-
-    /// Load pre-generated minisign keys from fixture files starting at index 0.
-    /// Much faster than generating. Panics if n > 10.
-    pub fn new_minisign(n: usize) -> Self {
-        Self::new_minisign_from(0, n)
-    }
-
-    /// Load pre-generated minisign keys from fixture files starting at `start`.
-    /// Use this when you need multiple independent key sets in the same test
-    /// (e.g., `TestKeys::new_minisign(2)` for existing and `TestKeys::new_minisign_from(2, 2)` for new).
-    /// Panics if start + n > 10.
-    pub fn new_minisign_from(start: usize, n: usize) -> Self {
-        assert!(
-            start + n <= FIXTURE_KEY_COUNT,
-            "Only {FIXTURE_KEY_COUNT} fixture keypairs available, requested indices {start}..{}",
-            start + n
-        );
-        let fixtures_dir = fixtures_keys_dir();
-
-        let mut r = TestKeys {
-            key_pairs: Vec::new(),
-            pub_keys: Vec::with_capacity(n),
-            sec_keys: Vec::with_capacity(n),
-        };
-        for i in start..start + n {
-            let key_path = fixtures_dir.join(format!("key_{i}.pub"));
-            let pk = AsfaloadPublicKeys::from_file(&key_path).unwrap_or_else(|e| {
-                panic!(
-                    "Failed to load fixture public key {}: {e}",
-                    key_path.display()
-                )
-            });
-            let sk = AsfaloadSecretKeys::from_file(
-                fixtures_dir.join(format!("key_{i}")),
-                FIXTURE_PASSWORD,
-            )
-            .unwrap_or_else(|e| panic!("Failed to load fixture secret key key_{i}: {e}"));
-            r.pub_keys.push(pk);
-            r.sec_keys.push(sk);
-        }
-
-        r
     }
 
     /// Generate fresh keypairs at runtime using KEY_TYPE env var to select format.
@@ -232,8 +187,9 @@ pub fn test_metadata() -> SignersConfigMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use signatures::keys::AsfaloadSecretKeyTrait;
 
-    /// Generate minisign fixture keypairs and save them to fixtures/keys/.
+    /// Generate fixture keypairs and save them to fixtures/keys/.
     /// Run with: cargo test --package test_helpers -- gen_fixture_keys --ignored --nocapture
     #[test]
     #[ignore]
@@ -251,7 +207,7 @@ mod tests {
             println!("Generated key_{i}");
         }
         println!(
-            "Done: generated {FIXTURE_KEY_COUNT} minisign keypairs in {}",
+            "Done: generated {FIXTURE_KEY_COUNT} keypairs in {}",
             fixtures_dir.display()
         );
     }
