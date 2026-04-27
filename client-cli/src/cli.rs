@@ -57,14 +57,12 @@ impl ForgeType {
 #[derive(clap::ValueEnum, Clone, Debug, Default)]
 pub enum AlgorithmType {
     #[default]
-    Minisign,
     Asfaload,
 }
 
 impl From<AlgorithmType> for KeyFormat {
     fn from(alg: AlgorithmType) -> Self {
         match alg {
-            AlgorithmType::Minisign => KeyFormat::Minisign,
             AlgorithmType::Asfaload => KeyFormat::Asfaload,
         }
     }
