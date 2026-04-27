@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.142"
-minisign = "0.9.0"
 signatures = { path = "../signatures/" }
 thiserror = "2.0.16"
 tempfile = "3.21.0"
