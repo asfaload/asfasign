@@ -2,8 +2,9 @@
 //! OpenSSH importer. Verification and signature bytes are format-agnostic.
 
 use crate::keys::{
-    AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait,
-    AsfaloadSignatureTrait, KeyFormat, asfaload::format::TOTAL_LEN,
+    AsfaloadKeyPair, AsfaloadKeyPairTrait, AsfaloadPublicKey, AsfaloadPublicKeyTrait,
+    AsfaloadSecretKey, AsfaloadSecretKeyTrait, AsfaloadSignature, AsfaloadSignatureTrait,
+    KeyFormat, asfaload::format::TOTAL_LEN,
 };
 use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
 use common::{AsfaloadHashes, errors::keys::*};
@@ -57,31 +58,28 @@ impl EncryptedEd25519Key for AsfaloadKeysBlob {
 
 /// An ed25519 public key used by the asfaload native format and the OpenSSH
 /// importer. Newtype wrapper over `ed25519_dalek::VerifyingKey`.
-#[derive(Debug, Clone)]
-pub struct AsfaloadEd25519PublicKey(pub(crate) VerifyingKey);
+pub type AsfaloadEd25519PublicKey = AsfaloadPublicKey<VerifyingKey>;
 
 /// An ed25519 secret key. Newtype wrapper over `ed25519_dalek::SigningKey`,
 /// which zeroizes its buffer on drop.
 /// The SigningKey is decrypted, and can be obtained from a ssh-format saved key (encrypted or not)
 /// or from a asfaload-format saved key (Argon2id + XChaCha20-Poly1305).
-#[derive(Debug, Clone)]
-pub struct AsfaloadEd25519SecretKey(pub(crate) SigningKey);
+pub type AsfaloadEd25519SecretKey = AsfaloadSecretKey<SigningKey>;
 
 /// An ed25519 signature. Newtype wrapper over `ed25519_dalek::Signature`.
-#[derive(Debug, Clone)]
-pub struct AsfaloadEd25519Signature(pub(crate) ed25519_dalek::Signature);
+pub type AsfaloadEd25519Signature = AsfaloadSignature<ed25519_dalek::Signature>;
 
 // --- PublicKey ---
 
 impl PartialEq for AsfaloadEd25519PublicKey {
     fn eq(&self, other: &Self) -> bool {
-        self.0.as_bytes() == other.0.as_bytes()
+        self.key.as_bytes() == other.key.as_bytes()
     }
 }
 impl Eq for AsfaloadEd25519PublicKey {}
 impl std::hash::Hash for AsfaloadEd25519PublicKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.as_bytes().hash(state);
+        self.key.as_bytes().hash(state);
     }
 }
 
@@ -98,7 +96,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadEd25519PublicKey {
         let hash_bytes = match data {
             AsfaloadHashes::Sha512(d) => d.as_ref(),
         };
-        self.0.verify(hash_bytes, &signature.0)?;
+        self.key.verify(hash_bytes, &signature.signature)?;
         Ok(())
     }
 
@@ -106,7 +104,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadEd25519PublicKey {
         format!(
             "{}{}",
             ASFALOAD_PUB_PREFIX,
-            STANDARD_NO_PAD.encode(self.0.as_bytes())
+            STANDARD_NO_PAD.encode(self.key.as_bytes())
         )
     }
 
@@ -115,7 +113,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadEd25519PublicKey {
             .try_into()
             .map_err(|_| KeyError::CreationFailed("ed25519 public key must be 32 bytes".into()))?;
         let vk = VerifyingKey::from_bytes(&bytes)?;
-        Ok(Self(vk))
+        Ok(vk.into())
     }
 
     fn from_base64(s: &str) -> Result<Self, KeyError> {
@@ -143,20 +141,20 @@ impl AsfaloadPublicKeyTrait for AsfaloadEd25519PublicKey {
     }
 
     fn from_secret_key(sk: &Self::SecretKeyType) -> Result<Self, KeyError> {
-        Ok(Self(sk.0.verifying_key()))
+        Ok(sk.key.verifying_key().into())
     }
 
     fn key_format(&self) -> KeyFormat {
         KeyFormat::Asfaload
     }
     fn key(&self) -> VerifyingKey {
-        self.0
+        self.key
     }
 
     fn to_filename(&self) -> String {
         // Only transform the base64 body; the prefix uses '-' as a literal separator
         // marker, so it must survive round-trip unchanged.
-        let b64 = STANDARD_NO_PAD.encode(self.0.as_bytes());
+        let b64 = STANDARD_NO_PAD.encode(self.key.as_bytes());
         format!(
             "{}{}",
             ASFALOAD_PUB_PREFIX,
@@ -217,7 +215,7 @@ fn parse_ssh_ed25519_wire(s: &str) -> Result<AsfaloadEd25519PublicKey, KeyError>
         .try_into()
         .unwrap();
     let vk = VerifyingKey::from_bytes(&key_bytes)?;
-    Ok(AsfaloadEd25519PublicKey(vk))
+    Ok(vk.into())
 }
 
 // --- SecretKey ---
@@ -230,14 +228,14 @@ impl AsfaloadSecretKeyTrait for AsfaloadEd25519SecretKey {
         let hash_bytes = match data {
             AsfaloadHashes::Sha512(d) => d.as_ref(),
         };
-        Ok(AsfaloadEd25519Signature(self.0.sign(hash_bytes)))
+        Ok(self.key.sign(hash_bytes).into())
     }
 
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
         let bytes: [u8; 32] = data
             .try_into()
             .map_err(|_| KeyError::CreationFailed("ed25519 secret key must be 32 bytes".into()))?;
-        Ok(Self(SigningKey::from_bytes(&bytes)))
+        Ok(SigningKey::from_bytes(&bytes).into())
     }
 
     /// Parse an ed25519 secret key from its on-disk textual form (either
@@ -254,11 +252,6 @@ impl AsfaloadSecretKeyTrait for AsfaloadEd25519SecretKey {
                 let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_string(s)?;
                 kp.secret_key(password)
             }
-            KeyFormat::Minisign => Err(KeyError::CreationFailed(
-                "AsfaloadEd25519SecretKey cannot load a minisign key; \
-                 use AsfaloadSecretKey::<minisign::SecretKey> instead"
-                    .into(),
-            )),
         }
     }
 }
@@ -289,11 +282,11 @@ impl AsfaloadSignatureTrait for AsfaloadEd25519Signature {
         let sig_bytes: [u8; 64] = bytes.try_into().map_err(|_| {
             SignatureError::FormatError("ed25519 signature must be 64 bytes".into())
         })?;
-        Ok(Self(ed25519_dalek::Signature::from_bytes(&sig_bytes)))
+        Ok(ed25519_dalek::Signature::from_bytes(&sig_bytes).into())
     }
 
     fn to_base64(&self) -> String {
-        STANDARD_NO_PAD.encode(self.0.to_bytes())
+        STANDARD_NO_PAD.encode(self.signature.to_bytes())
     }
 }
 
@@ -427,7 +420,7 @@ mod tests {
     fn random_keypair() -> (AsfaloadEd25519PublicKey, AsfaloadEd25519SecretKey) {
         let sk = SigningKey::generate(&mut OsRng);
         let pk = sk.verifying_key();
-        (AsfaloadEd25519PublicKey(pk), AsfaloadEd25519SecretKey(sk))
+        (pk.into(), sk.into())
     }
 
     #[test]
@@ -442,7 +435,7 @@ mod tests {
     #[test]
     fn public_key_from_base64_rejects_padding() {
         let (pk, _) = random_keypair();
-        let body = base64::engine::general_purpose::STANDARD.encode(pk.0.as_bytes());
+        let body = base64::engine::general_purpose::STANDARD.encode(pk.key.as_bytes());
         let padded = format!("{}{}", ASFALOAD_PUB_PREFIX, body);
         assert!(AsfaloadEd25519PublicKey::from_base64(&padded).is_err());
     }
@@ -454,7 +447,7 @@ mod tests {
         blob.extend_from_slice(&11u32.to_be_bytes());
         blob.extend_from_slice(b"ssh-ed25519");
         blob.extend_from_slice(&32u32.to_be_bytes());
-        blob.extend_from_slice(pk.0.as_bytes());
+        blob.extend_from_slice(pk.key.as_bytes());
         let b64 = base64::engine::general_purpose::STANDARD.encode(&blob);
         let ssh_line = format!("ssh-ed25519 {} user@host", b64);
         let parsed = AsfaloadEd25519PublicKey::from_base64(&ssh_line).unwrap();
@@ -486,7 +479,7 @@ mod tests {
         let s = sig.to_base64();
         assert!(!s.contains('='), "unpadded base64 expected, got {s}");
         let sig2 = AsfaloadEd25519Signature::from_base64(&s).unwrap();
-        assert_eq!(sig.0.to_bytes(), sig2.0.to_bytes());
+        assert_eq!(sig.signature.to_bytes(), sig2.signature.to_bytes());
     }
 
     #[test]
@@ -494,7 +487,7 @@ mod tests {
         let (_, sk) = random_keypair();
         let data = common::sha512_for_content(b"x".to_vec()).unwrap();
         let sig = sk.sign(&data).unwrap();
-        let padded = base64::engine::general_purpose::STANDARD.encode(sig.0.to_bytes());
+        let padded = base64::engine::general_purpose::STANDARD.encode(sig.signature.to_bytes());
         assert!(AsfaloadEd25519Signature::from_base64(&padded).is_err());
     }
 

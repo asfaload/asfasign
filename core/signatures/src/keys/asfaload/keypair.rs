@@ -43,11 +43,11 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<AsfaloadKeysBlob> {
     }
 
     fn secret_key(&self, password: &str) -> Result<Self::SecretKey, KeyError> {
-        Ok(AsfaloadEd25519SecretKey(self.key_pair.decrypt(password)?))
+        Ok(self.key_pair.decrypt(password)?.into())
     }
 
     fn public_key(&self) -> Self::PublicKey {
-        AsfaloadEd25519PublicKey(self.key_pair.public_key())
+        self.key_pair.public_key().into()
     }
 }
 
@@ -131,11 +131,11 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<SshEncryptedKey> {
     }
 
     fn secret_key(&self, password: &str) -> Result<Self::SecretKey, KeyError> {
-        Ok(AsfaloadEd25519SecretKey(self.key_pair.decrypt(password)?))
+        Ok(self.key_pair.decrypt(password)?.into())
     }
 
     fn public_key(&self) -> Self::PublicKey {
-        AsfaloadEd25519PublicKey(self.key_pair.public_key())
+        self.key_pair.public_key().into()
     }
 }
 
@@ -207,7 +207,7 @@ mod tests {
         std::fs::write(&path, &pem).unwrap();
 
         let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_file(&path).unwrap();
-        assert_eq!(kp.public_key().0, expected_pk);
+        assert_eq!(kp.public_key().key, expected_pk);
 
         let loaded_sk = kp.secret_key("pw").unwrap();
         let data = sha512_for_content(b"payload".to_vec()).unwrap();

@@ -155,7 +155,8 @@ fn test_error_output_as_json() {
     assert!(!output.status.success());
 
     let stderr = String::from_utf8(output.stderr).unwrap();
-    let json: Value = serde_json::from_str(&stderr).expect("stderr should be valid JSON");
+    let json: Value = serde_json::from_str(&stderr)
+        .unwrap_or_else(|_| panic!("stderr should be valid JSON but is {}", stderr));
 
     assert!(json["error"].as_str().is_some());
     assert!(!json["error"].as_str().unwrap().is_empty());

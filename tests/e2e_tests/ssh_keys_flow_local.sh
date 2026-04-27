@@ -7,7 +7,7 @@ set -euo pipefail
 # artifact signers. This exercises the import-only OpenSsh key format
 # end-to-end through the admin + client CLI.
 
-# helpers.sh's urls.sh branch requires KEY_TYPE to be minisign|asfaload.
+# helpers.sh's urls.sh branch requires KEY_TYPE to be asfaload.
 # This test uses neither shared fixture set — it generates its own keys —
 # but we still source helpers.sh for run_step / section / color output,
 # so we pin a valid value to satisfy the check.

@@ -51,10 +51,10 @@ JSON (with `--json`):
 ## Examples
 
     # list pending files
-    client list-pending -K ~/.asfaload/key.minisign
+    client list-pending -K ~/.asfaload/key
 
     # non-interactive, piped into sign-pending
-    client list-pending --json -K ~/.asfaload/key.minisign -p "$PASSWORD" \
+    client list-pending --json -K ~/.asfaload/key -p "$PASSWORD" \
         | jq -r '.file_paths[]'
 
 ## Exit codes

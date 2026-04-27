@@ -1,5 +1,4 @@
 pub mod asfaload;
-pub mod minisign;
 
 const OPENSSH_PRIVATE_KEY_PEM_HEADER: &str = "-----BEGIN OPENSSH PRIVATE KEY-----";
 use std::ffi::OsString;
@@ -53,7 +52,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KeyFormat {
-    Minisign,
     Asfaload,
     OpenSsh,
 }
@@ -61,7 +59,6 @@ pub enum KeyFormat {
 impl std::fmt::Display for KeyFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            KeyFormat::Minisign => write!(f, "minisign"),
             KeyFormat::Asfaload => write!(f, "asfaload"),
             KeyFormat::OpenSsh => write!(f, "openssh"),
         }
@@ -73,7 +70,6 @@ impl std::str::FromStr for KeyFormat {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "minisign" => Ok(KeyFormat::Minisign),
             "asfaload" => Ok(KeyFormat::Asfaload),
             "openssh" => Ok(KeyFormat::OpenSsh),
             _ => Err(KeyError::CreationFailed(format!(
@@ -89,7 +85,6 @@ impl KeyFormat {
     /// Accepts markers for both private and public keys of any supported format.
     pub fn from_head(head: &str) -> Result<Self, KeyError> {
         use asfaload::{ASFALOAD_PRIV_PREFIX, ASFALOAD_PUB_PREFIX, SSH_ED25519_PREFIX};
-        use minisign::MINISIGN_COMMENT_PREFIX;
 
         if head.starts_with(ASFALOAD_PRIV_PREFIX) || head.starts_with(ASFALOAD_PUB_PREFIX) {
             Ok(KeyFormat::Asfaload)
@@ -97,8 +92,6 @@ impl KeyFormat {
             || head.starts_with(SSH_ED25519_PREFIX)
         {
             Ok(KeyFormat::OpenSsh)
-        } else if head.starts_with(MINISIGN_COMMENT_PREFIX) || head.starts_with("minisign:") {
-            Ok(KeyFormat::Minisign)
         } else {
             Err(KeyError::FormatError(format!(
                 "unrecognised key format in input starting with '{}'",
@@ -122,7 +115,7 @@ impl KeyFormat {
     }
 }
 
-// Trait that we will implement for keypairs we support. Initially only minisign::KeyPair
+// Trait that we will implement for keypairs we support.
 pub trait AsfaloadKeyPairTrait<'a>: Sized {
     type PublicKey;
     type SecretKey;
@@ -133,7 +126,7 @@ pub trait AsfaloadKeyPairTrait<'a>: Sized {
     // in this newly created file, and save the public key in the same filename with added suffx
     // '.pub'
     fn save<T: AsRef<Path>>(&self, p: T) -> Result<&Self, KeyError>;
-    // As we use minisign as the first (and initially only) signing scheme, our proposed API is
+    // As we used minisign as the first (and initially only) signing scheme, our proposed API is
     // modelled after it. When we generate a minisign key pair, the private key is encrypted and
     // needs to be decrypted for use.
     // This method returns the decrypted secret key, and thus requires the decryption password as
@@ -147,8 +140,7 @@ pub struct AsfaloadKeyPair<T> {
     key_pair: T,
 }
 
-// This trait should never give access to the private key it manages, as it is non-encrypted (for
-// minisign)
+// This trait should never give access to the private key it manages, as it is non-encrypted
 pub trait AsfaloadSecretKeyTrait: Sized {
     type SecretKey;
     type Signature;
@@ -165,12 +157,20 @@ pub trait AsfaloadSecretKeyTrait: Sized {
 }
 
 // Struct to store a secret key immediately usable.
-// This means that for minisign, it holds the non-encrypted secret key.
+// This means it holds the non-encrypted secret key.
 #[derive(Debug, Clone)]
 pub struct AsfaloadSecretKey<K> {
-    // Keep it private as for minisign it is the decrypted key, i.e. non password protected.
-    key: K,
+    pub(crate) key: K,
 }
+
+// Allows to simply call .into() on a v:K (eg VerifyingKey) to
+// get the AsfaloadSecretKey { key: v }
+impl<K> From<K> for AsfaloadSecretKey<K> {
+    fn from(key: K) -> Self {
+        Self { key }
+    }
+}
+
 pub trait AsfaloadPublicKeyTrait: Sized + Eq + std::hash::Hash + Clone + std::fmt::Debug {
     type Signature: AsfaloadSignatureTrait;
     type KeyType;
@@ -204,6 +204,14 @@ pub struct AsfaloadPublicKey<K> {
     key: K,
 }
 
+// Build a AsfaloadPublicKey<K> simply by calling .into() on
+// the value of type K (eg VerifyingKey).
+impl<K> From<K> for AsfaloadPublicKey<K> {
+    fn from(key: K) -> Self {
+        Self { key }
+    }
+}
+
 impl<K> TryFrom<String> for AsfaloadPublicKey<K>
 where
     AsfaloadPublicKey<K>: AsfaloadPublicKeyTrait,
@@ -219,6 +227,13 @@ pub struct AsfaloadSignature<S> {
     signature: S,
 }
 
+// Build a AsfaloadSignature<S> simply by calling .into() on
+// the value of type S.
+impl<S> From<S> for AsfaloadSignature<S> {
+    fn from(signature: S) -> Self {
+        Self { signature }
+    }
+}
 pub trait AsfaloadSignatureTrait: Sized {
     type PublicKeyType: AsfaloadPublicKeyTrait<Signature = Self>;
     fn to_string(&self) -> String;
@@ -307,17 +322,12 @@ mod key_format_tests {
 
     #[test]
     fn test_key_format_display() {
-        assert_eq!(format!("{}", KeyFormat::Minisign), "minisign");
         assert_eq!(format!("{}", KeyFormat::Asfaload), "asfaload");
         assert_eq!(format!("{}", KeyFormat::OpenSsh), "openssh");
     }
 
     #[test]
     fn test_key_format_from_str() {
-        assert_eq!(
-            KeyFormat::from_str("minisign").unwrap(),
-            KeyFormat::Minisign
-        );
         assert_eq!(
             KeyFormat::from_str("asfaload").unwrap(),
             KeyFormat::Asfaload
@@ -334,7 +344,7 @@ mod key_format_tests {
 
     #[test]
     fn test_key_format_roundtrip() {
-        let formats = [KeyFormat::Minisign, KeyFormat::Asfaload, KeyFormat::OpenSsh];
+        let formats = [KeyFormat::Asfaload, KeyFormat::OpenSsh];
         for fmt in &formats {
             let s = format!("{}", fmt);
             let parsed = KeyFormat::from_str(&s).unwrap();

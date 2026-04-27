@@ -18,7 +18,7 @@ pub struct PasswordArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct SecretKeyArgs {
-    /// Path to your secret key file (asfaload, minisign, or OpenSSH ed25519)
+    /// Path to your secret key file (asfaload or OpenSSH ed25519)
     #[arg(short = 'K', long)]
     pub secret_key: PathBuf,
 }
@@ -57,14 +57,12 @@ impl ForgeType {
 #[derive(clap::ValueEnum, Clone, Debug, Default)]
 pub enum AlgorithmType {
     #[default]
-    Minisign,
     Asfaload,
 }
 
 impl From<AlgorithmType> for KeyFormat {
     fn from(alg: AlgorithmType) -> Self {
         match alg {
-            AlgorithmType::Minisign => KeyFormat::Minisign,
             AlgorithmType::Asfaload => KeyFormat::Asfaload,
         }
     }
@@ -97,8 +95,7 @@ pub enum Commands {
         #[arg(long, short)]
         output_dir: PathBuf,
 
-        /// Signing algorithm to use (minisign or asfaload)
-        #[arg(long, short = 'a', default_value = "minisign")]
+        #[arg(long, short = 'a', default_value = "asfaload")]
         algorithm: AlgorithmType,
 
         #[command(flatten)]

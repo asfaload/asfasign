@@ -778,7 +778,7 @@ mod tests {
         {
           "signers": [
             { "kind": "key", "data": { "pubkey": "PUBKEY0_PLACEHOLDER"} },
-            { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyvinvalid"} },
+            { "kind": "key", "data": { "pubkey": "asfaload-pub:not-valid-base64-at-all"} },
             { "kind": "key", "data": { "pubkey": "PUBKEY2_PLACEHOLDER"} }
           ],
           "threshold": 2
@@ -1910,7 +1910,7 @@ mod tests {
             })
             .to_string(),
             signatures: serde_json::from_str(
-                r#"{"entries":{"key1":{"format":"minisign","signature":"sig1"}}}"#,
+                r#"{"entries":{"key1":{"format":"asfaload","signature":"sig1"}}}"#,
             )
             .unwrap(),
             metadata: metadata_json.clone(),
@@ -1927,7 +1927,7 @@ mod tests {
             })
             .to_string(),
             signatures: serde_json::from_str(
-                r#"{"entries":{"key2":{"format":"minisign","signature":"sig2"}}}"#,
+                r#"{"entries":{"key2":{"format":"asfaload","signature":"sig2"}}}"#,
             )
             .unwrap(),
             metadata: metadata_json,
@@ -3304,7 +3304,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"} }
               ],
               "threshold": 1
             }
@@ -3350,7 +3350,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"} }
               ],
               "threshold": 1
             }
@@ -3395,7 +3395,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"} }
               ],
               "threshold": 1
             }
@@ -3434,7 +3434,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"} }
               ],
               "threshold": 1
             }
@@ -3476,7 +3476,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"} }
               ],
               "threshold": 1
             }
@@ -3519,7 +3519,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"} }
               ],
               "threshold": 1
             }
@@ -3562,7 +3562,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"} }
               ],
               "threshold": 1
             }
@@ -3595,7 +3595,7 @@ mod tests {
           "artifact_signers": [
             {
               "signers": [
-                { "kind": "key", "data": { "pubkey": "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv"} }
+                { "kind": "key", "data": { "pubkey": "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8"} }
               ],
               "threshold": 1
             }

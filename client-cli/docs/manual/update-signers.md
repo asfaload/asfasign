@@ -56,7 +56,7 @@ JSON (with `--json`):
 ## Examples
 
     # propose a signers update
-    client update-signers -K ~/.asfaload/key.minisign \
+    client update-signers -K ~/.asfaload/key \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 
 ## Exit codes

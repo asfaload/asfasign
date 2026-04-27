@@ -14,17 +14,10 @@ _project_dir() {
 }
 
 # Extract bare base64 public key string from a key file path.
-# Detects algorithm by line count: minisign .pub has 2 lines, ed25519 has 1.
 # Usage: pubkey_of "$KEY_0"  ->  "RWS1kZ..."   (bare base64, matches .data.pubkey in signers JSON)
 pubkey_of() {
     local pub_file="${1}.pub"
-    local lines
-    lines=$(wc -l < "$pub_file")
-    if [ "$lines" -ge 2 ]; then
-        sed -n 2p "$pub_file"
-    else
-        cat "$pub_file"
-    fi
+    cat "$pub_file"
 }
 
 # Stored key is always with prefix, which was not the case initially

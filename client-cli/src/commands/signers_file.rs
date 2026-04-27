@@ -219,9 +219,8 @@ mod tests {
     use tempfile::TempDir;
     use test_helpers::fixtures_pub_key;
 
-    // A valid minisign public key base64 string (from fixtures key_0)
-    const VALID_PUBKEY_B64: &str =
-        "minisign:RWQwtmTQyX/sEi37vH0S8oyXWO0C7730/Y6j5Jikc0RLgHJpswmPWUGe";
+    // A valid public key base64 string (from fixtures key_0)
+    const VALID_PUBKEY_B64: &str = "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8";
 
     #[test]
     fn combine_key_sources_empty_inputs() {
@@ -243,8 +242,8 @@ mod tests {
     #[test]
     fn combine_key_sources_multiple_valid_base64_strings() {
         let keys = vec![
-            "minisign:RWTsbRMhBdOyL8hSYo/Z4nRD6O5OvrydjXWyvd8W7QOTftBOKSSn3PH3".to_string(),
-            "minisign:RWTUManqs3axpHvnTGZVvmaIOOz0jaV+SAKax8uxsWHFkcnACqzL1xyv".to_string(),
+            "asfaload-pub:p8p1Hb8ux9xf9mo8BGedkpv4RUFZgwXuYGu5x0grsdU".to_string(),
+            "asfaload-pub:YCuPAtMNZQaYPDjWmp8voWh6bVg0bRyLu2zEkH6zYZI".to_string(),
         ];
         let result = combine_key_sources::<AsfaloadPublicKeys>(&keys, &[]);
         assert!(result.is_ok());
