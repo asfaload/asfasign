@@ -336,16 +336,4 @@ impl AsfaloadSignatureTrait for AsfaloadSignatures {
             Self::Asfaload(sig) => sig.to_base64(),
         }
     }
-
-    fn add_to_aggregate_for_file<P: AsRef<Path>>(
-        &self,
-        signed_file: P,
-        pub_key: &AsfaloadPublicKeys,
-    ) -> Result<(), SignatureError> {
-        match (self, pub_key) {
-            (Self::Asfaload(sig), AsfaloadPublicKeys::Asfaload(pk)) => {
-                sig.add_to_aggregate_for_file(signed_file, pk)
-            }
-        }
-    }
 }
