@@ -1,3 +1,4 @@
+use crate::keys::add_to_aggregate_for_file;
 use crate::keys::{
     AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
     KeyFormat, asfaload::format::Argon2Params,
@@ -282,7 +283,7 @@ fn test_add_to_aggregate() -> Result<()> {
     let wrong_signature = seckey.sign(&wrong_data)?;
 
     // Signing a directory causes an error
-    let result = signature.add_to_aggregate_for_file(dir_path, &pubkey);
+    let result = add_to_aggregate_for_file(&signature, dir_path, &pubkey);
     assert!(result.is_err());
     match result.as_ref().unwrap_err() {
         SignatureError::IoError(io_err) => {
@@ -301,7 +302,7 @@ fn test_add_to_aggregate() -> Result<()> {
     }
 
     // Attempting to add the signature of another data than the signed file's hash to the aggregate should fail.
-    let result = wrong_signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+    let result = add_to_aggregate_for_file(&wrong_signature, &signed_file_path, &pubkey);
     match result {
         Err(SignatureError::InvalidSignatureForAggregate(_)) => {
             // Expected
@@ -314,7 +315,7 @@ fn test_add_to_aggregate() -> Result<()> {
     }
 
     // Add the signature to the aggregate
-    signature.add_to_aggregate_for_file(&signed_file_path, &pubkey)?;
+    add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey)?;
 
     // Verify that the signature file was created
     let sig_file_path = signed_file_path.with_file_name(format!(
@@ -347,7 +348,7 @@ fn test_add_to_aggregate() -> Result<()> {
     );
 
     // Add second signature to aggregate
-    signature2.add_to_aggregate_for_file(signed_file_path, &pubkey2)?;
+    add_to_aggregate_for_file(&signature2, signed_file_path, &pubkey2)?;
 
     // Re-read the signatures file as it should have been modified
     let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
@@ -390,10 +391,10 @@ fn test_add_to_aggregate_duplicate_signature() -> Result<()> {
     let signature = seckey.sign(&data)?;
 
     // First signature should succeed
-    signature.add_to_aggregate_for_file(&signed_file_path, &pubkey)?;
+    add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey)?;
 
     // Attempting to sign again with the same key should fail with DuplicateSignature
-    let result = signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+    let result = add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey);
     match result {
         Err(SignatureError::DuplicateSignature) => {}
         Ok(_) => panic!("Expected DuplicateSignature error, but got Ok"),
@@ -465,7 +466,7 @@ fn test_add_to_aggregate_rejects_revoked_file() -> Result<()> {
     fs::write(&revocation_path, r#"{"revoked": true}"#)?;
 
     // Attempting to add a signature should fail with FileRevoked
-    let result = signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+    let result = add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey);
     assert!(result.is_err());
     match result.unwrap_err() {
         SignatureError::FileRevoked(path) => {
@@ -498,7 +499,7 @@ fn test_add_to_aggregate_allows_pending_revocation() -> Result<()> {
     fs::write(&pending_revocation_path, r#"{"revoked": true}"#)?;
 
     // Attempting to add a signature should succeed
-    let result = signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+    let result = add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey);
     assert!(
         result.is_ok(),
         "Pending revocation should not block signature addition, but got: {:?}",
@@ -526,7 +527,7 @@ fn test_add_to_aggregate_works_without_revocation_file() -> Result<()> {
         "Revocation file should not exist in this test"
     );
 
-    let result = signature.add_to_aggregate_for_file(&signed_file_path, &pubkey);
+    let result = add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey);
     assert!(
         result.is_ok(),
         "Signature should succeed when no revocation file exists, but got: {:?}",
@@ -651,8 +652,8 @@ fn test_asfaload_add_to_aggregate() -> Result<()> {
     let sig1 = sk1.sign(&data)?;
     let sig2 = sk2.sign(&data)?;
 
-    sig1.add_to_aggregate_for_file(&signed_file_path, &pk1)?;
-    sig2.add_to_aggregate_for_file(&signed_file_path, &pk2)?;
+    add_to_aggregate_for_file(&sig1, &signed_file_path, &pk1)?;
+    add_to_aggregate_for_file(&sig2, &signed_file_path, &pk2)?;
 
     let sig_file_path = signed_file_path.with_file_name(format!(
         "{}.{}",

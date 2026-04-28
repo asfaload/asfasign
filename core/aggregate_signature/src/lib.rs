@@ -7,7 +7,7 @@ use common::fs::names::{
     subject_path_from_pending_signatures,
 };
 use common::{AsfaloadHashes, FileType, SignedFileLoader, SignedFileWithKind};
-use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait};
+use signatures::keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, add_to_aggregate_for_file};
 use signatures::signatures_file::{SignaturesFile, TaggedSignature};
 use signatures::types::{AsfaloadPublicKeys, AsfaloadSignatures};
 use signers_file_types::{SignerGroup, SignersConfig};
@@ -834,8 +834,8 @@ impl AggregateSignature<PendingSignature> {
         pubkey: &AsfaloadPublicKeys,
     ) -> Result<SignatureWithState, AggregateSignatureError> {
         // Add the signature to the aggregate
-        sig.add_to_aggregate_for_file(self.subject.location().clone(), pubkey)
-            .map_err(|e| match e {
+        add_to_aggregate_for_file(sig, self.subject.location().clone(), pubkey).map_err(
+            |e| match e {
                 common::errors::keys::SignatureError::DuplicateSignature => {
                     AggregateSignatureError::DuplicateSignature
                 }
@@ -849,7 +849,8 @@ impl AggregateSignature<PendingSignature> {
                     AggregateSignatureError::Base64Decode(err)
                 }
                 other => AggregateSignatureError::Signature(other.to_string()),
-            })?;
+            },
+        )?;
         let agg_sig_with_state = SignatureWithState::load_for_file(self.subject.location().clone());
         match agg_sig_with_state {
             Ok(SignatureWithState::Pending(pending_agg_sig)) => {
@@ -5855,13 +5856,13 @@ mod tests {
 
         let metadata_hash = common::sha512_for_file(&metadata_path)?;
         let sig0 = test_keys.sec_key(0).unwrap().sign(&metadata_hash)?;
-        sig0.add_to_aggregate_for_file(&metadata_path, test_keys.pub_key(0).unwrap())?;
+        add_to_aggregate_for_file(&sig0, &metadata_path, test_keys.pub_key(0).unwrap())?;
 
         // Should NOT be complete (requires ALL signers, not just threshold)
         assert!(!is_aggregate_signature_complete(&metadata_path, true)?);
 
         let sig1 = test_keys.sec_key(1).unwrap().sign(&metadata_hash)?;
-        sig1.add_to_aggregate_for_file(&metadata_path, test_keys.pub_key(1).unwrap())?;
+        add_to_aggregate_for_file(&sig1, &metadata_path, test_keys.pub_key(1).unwrap())?;
 
         // Now should be complete
         assert!(is_aggregate_signature_complete(&metadata_path, true)?);
@@ -5907,7 +5908,7 @@ mod tests {
         // Sign with key 0
         let metadata_hash = common::sha512_for_file(&metadata_path)?;
         let sig0 = test_keys.sec_key(0).unwrap().sign(&metadata_hash)?;
-        sig0.add_to_aggregate_for_file(&metadata_path, test_keys.pub_key(0).unwrap())?;
+        add_to_aggregate_for_file(&sig0, &metadata_path, test_keys.pub_key(0).unwrap())?;
 
         // Now only key 1 should be missing
         let missing = get_missing_signers(&metadata_path)?;
