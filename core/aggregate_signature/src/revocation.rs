@@ -110,12 +110,6 @@ where
     // First revocation: write pending revocation JSON file
     fs::write(&pending_revocation_file_path, json_content)?;
 
-    // Add signature to the pending revocation signatures file
-    // (loads existing signatures if present, appends, and writes back)
-    signature
-        .add_to_aggregate_for_file(&pending_revocation_file_path, pubkey)
-        .map_err(|e| RevocationError::Signature(e.to_string()))?;
-
     let load_error_to_revocation_error = |e| {
         RevocationError::Signature(format!(
             "Could not load signature with state for {}: {}",
@@ -125,18 +119,17 @@ where
     };
     let signature_with_state = SignatureWithState::load_for_file(&pending_revocation_file_path)
         .map_err(load_error_to_revocation_error)?;
+    let pending_signature =
+        signature_with_state
+            .get_pending()
+            .ok_or(RevocationError::Signature(
+                "Could not get pending signature for new revocation.".into(),
+            ))?;
+    let signature_with_state = pending_signature
+        .add_individual_signature(signature, pubkey)
+        .map_err(load_error_to_revocation_error)?;
 
-    if is_aggregate_signature_complete(&pending_revocation_file_path, true)
-        .map_err(|e| RevocationError::Signature(format!("Error checking completeness: {}", e)))?
-    {
-        finalise_revocation_for(signed_file_path)?;
-        let revocation_file_path = revocation_path_for(signed_file_path)?;
-        let complete = SignatureWithState::load_for_file(&revocation_file_path)
-            .map_err(load_error_to_revocation_error)?;
-        Ok(complete)
-    } else {
-        Ok(signature_with_state)
-    }
+    Ok(signature_with_state)
 }
 
 pub fn finalise_revocation_for<P: AsRef<Path>>(
