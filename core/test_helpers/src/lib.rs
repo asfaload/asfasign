@@ -2,6 +2,7 @@ pub mod history_helpers;
 pub mod scenarios;
 pub mod signers_setup;
 
+use signatures::keys::AsfaloadSecretKeyTrait;
 pub use signers_setup::*;
 
 use signatures::keys::AsfaloadKeyPairTrait;
@@ -16,6 +17,7 @@ use signers_file_types::ForgeOrigin;
 use signers_file_types::SignersConfigMetadata;
 use signers_file_types::VerifiedForgeContent;
 use std::path::PathBuf;
+use tempfile::TempDir;
 
 /// Number of pre-generated fixture keypairs available.
 const FIXTURE_KEY_COUNT: usize = 10;
@@ -40,6 +42,71 @@ pub fn fixtures_asfaload_pub_key(n: usize) -> PathBuf {
     fixtures_keys_dir().join(format!("key_{}.pub", n))
 }
 
+/// Load a key pair from fixture files.
+pub fn get_key_pair() -> anyhow::Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
+    let dir = fixtures_keys_dir();
+    let pk = AsfaloadPublicKeys::from_file(dir.join("key_0.pub"))?;
+    let sk = AsfaloadSecretKeys::from_file(dir.join("key_0"), "password")?;
+    Ok((pk, sk))
+}
+/// Load two key pairs from fixture files.
+pub fn get_two_key_pairs() -> anyhow::Result<(
+    AsfaloadPublicKeys,
+    AsfaloadSecretKeys,
+    AsfaloadPublicKeys,
+    AsfaloadSecretKeys,
+)> {
+    let dir = fixtures_keys_dir();
+    let pk1 = AsfaloadPublicKeys::from_file(dir.join("key_0.pub"))?;
+    let sk1 = AsfaloadSecretKeys::from_file(dir.join("key_0"), "password")?;
+    let pk2 = AsfaloadPublicKeys::from_file(dir.join("key_1.pub"))?;
+    let sk2 = AsfaloadSecretKeys::from_file(dir.join("key_1"), "password")?;
+    Ok((pk1, sk1, pk2, sk2))
+}
+
+/// Generate a fresh asfaload key pair (fast TEST params) and save to temp dir.
+/// Returns (public key, secret key) via the enum facade.
+pub fn get_asfaload_key_pair() -> anyhow::Result<(TempDir, AsfaloadPublicKeys, AsfaloadSecretKeys)>
+{
+    let temp_dir = tempfile::tempdir()?;
+    let kp = AsfaloadKeyPairs::new_with_format_and_argon2_params(
+        "password",
+        &KeyFormat::Asfaload,
+        Argon2Params::TEST,
+    )?;
+    kp.save(temp_dir.path())?;
+    let pk = AsfaloadPublicKeys::from_file(temp_dir.path().join("key.pub"))?;
+    let sk = AsfaloadSecretKeys::from_file(temp_dir.path().join("key"), "password")?;
+    Ok((temp_dir, pk, sk))
+}
+
+/// Generate two fresh asfaload key pairs (fast TEST params).
+pub fn get_two_asfaload_key_pairs() -> anyhow::Result<(
+    TempDir,
+    AsfaloadPublicKeys,
+    AsfaloadSecretKeys,
+    AsfaloadPublicKeys,
+    AsfaloadSecretKeys,
+)> {
+    let temp_dir = tempfile::tempdir()?;
+    let kp1 = AsfaloadKeyPairs::new_with_format_and_argon2_params(
+        "password1",
+        &KeyFormat::Asfaload,
+        Argon2Params::TEST,
+    )?;
+    kp1.save(temp_dir.path().join("key1"))?;
+    let kp2 = AsfaloadKeyPairs::new_with_format_and_argon2_params(
+        "password2",
+        &KeyFormat::Asfaload,
+        Argon2Params::TEST,
+    )?;
+    kp2.save(temp_dir.path().join("key2"))?;
+    let pk1 = AsfaloadPublicKeys::from_file(temp_dir.path().join("key1.pub"))?;
+    let sk1 = AsfaloadSecretKeys::from_file(temp_dir.path().join("key1"), "password1")?;
+    let pk2 = AsfaloadPublicKeys::from_file(temp_dir.path().join("key2.pub"))?;
+    let sk2 = AsfaloadSecretKeys::from_file(temp_dir.path().join("key2"), "password2")?;
+    Ok((temp_dir, pk1, sk1, pk2, sk2))
+}
 /// Select key algorithm from the KEY_TYPE env var, matching the e2e test convention.
 /// Panics on unrecognised values to surface typos early.
 pub fn default_key_type() -> KeyFormat {
