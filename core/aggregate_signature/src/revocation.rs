@@ -9,14 +9,14 @@ use common::{
     },
 };
 use signatures::{
-    keys::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait},
+    keys::AsfaloadPublicKeyTrait,
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
 use signers_file_types::SignersConfig;
 use std::fs;
 use std::path::Path;
 
-use crate::{SignatureWithState, can_revoke, is_aggregate_signature_complete};
+use crate::{SignatureWithState, can_revoke};
 
 /// Revoke a signed file by creating a revocation file.
 ///
@@ -228,7 +228,7 @@ mod tests {
         },
     };
     use constants::SIGNERS_SUFFIX;
-    use signatures::types::AsfaloadPublicKeys;
+    use signatures::{keys::AsfaloadSignatureTrait, types::AsfaloadPublicKeys};
     use std::path::PathBuf;
 
     #[test]

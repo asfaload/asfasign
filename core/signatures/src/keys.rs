@@ -249,69 +249,69 @@ pub trait AsfaloadSignatureTrait: Sized {
     }
 
     fn to_base64(&self) -> String;
-    // Warning: this only adds the file to a pending signatures file, but it does not transition
-    // to complete if needed. So the way to add a signature to an aggregate on the backend should be by
-    // calling AggregateSignature::add_individual_signature.
-    // This method is useful for use on the client though, where the signers file used to
-    // evaluate completeness is not available.
-    fn add_to_aggregate_for_file<P: AsRef<Path>>(
-        &self,
-        signed_file: P,
-        pub_key: &Self::PublicKeyType,
-    ) -> Result<(), SignatureError> {
-        if signed_file.as_ref().is_dir() {
-            return Err(SignatureError::IoError(std::io::Error::new(
-                std::io::ErrorKind::IsADirectory,
-                "Requires a file, cannot sign a directory",
-            )));
+}
+
+// Warning: this only adds the file to a pending signatures file, but it does not transition
+// to complete if needed. So the way to add a signature to an aggregate on the backend should be by
+// calling AggregateSignature::add_individual_signature.
+#[doc(hidden)]
+pub fn add_to_aggregate_for_file<P: AsRef<Path>, S: AsfaloadSignatureTrait>(
+    sig: &S,
+    signed_file: P,
+    pub_key: &S::PublicKeyType,
+) -> Result<(), SignatureError> {
+    if signed_file.as_ref().is_dir() {
+        return Err(SignatureError::IoError(std::io::Error::new(
+            std::io::ErrorKind::IsADirectory,
+            "Requires a file, cannot sign a directory",
+        )));
+    }
+    let signed_file_path = signed_file.as_ref();
+    let signatures_path = signatures_path_for(signed_file_path)?;
+
+    if signatures_path.exists() && signatures_path.is_file() {
+        return Err(SignatureError::IoError(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "Aggregate signature is already complete",
+        )));
+    }
+
+    let revocation_path = revocation_path_for(signed_file_path)?;
+    if revocation_path.exists() && revocation_path.is_file() {
+        return Err(SignatureError::FileRevoked(signed_file_path.to_path_buf()));
+    }
+
+    let pending_sig_file_path = pending_signatures_path_for(signed_file_path)?;
+
+    let mut sig_file: SignaturesFile = match File::open(&pending_sig_file_path) {
+        Ok(file) => serde_json::from_reader(file)?,
+        Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => SignaturesFile::new(),
+        Err(e) => return Err(e.into()),
+    };
+
+    let signed_data = common::sha512_for_file(signed_file_path)?;
+    if pub_key.verify(sig, &signed_data).is_ok() {
+        let key_format = pub_key.key_format();
+        let pubkey_b64 = pub_key.to_base64();
+        if sig_file.entries.contains_key(&pubkey_b64) {
+            return Err(SignatureError::DuplicateSignature);
         }
-        let signed_file_path = signed_file.as_ref();
-        let signatures_path = signatures_path_for(signed_file_path)?;
+        sig_file.entries.insert(
+            pubkey_b64,
+            TaggedSignature {
+                format: key_format,
+                signature: sig.to_base64(),
+            },
+        );
 
-        if signatures_path.exists() && signatures_path.is_file() {
-            return Err(SignatureError::IoError(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                "Aggregate signature is already complete",
-            )));
-        }
+        let file = File::create(&pending_sig_file_path)?;
+        serde_json::to_writer_pretty(file, &sig_file)?;
 
-        let revocation_path = revocation_path_for(signed_file_path)?;
-        if revocation_path.exists() && revocation_path.is_file() {
-            return Err(SignatureError::FileRevoked(signed_file_path.to_path_buf()));
-        }
-
-        let pending_sig_file_path = pending_signatures_path_for(signed_file_path)?;
-
-        let mut sig_file: SignaturesFile = match File::open(&pending_sig_file_path) {
-            Ok(file) => serde_json::from_reader(file)?,
-            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => SignaturesFile::new(),
-            Err(e) => return Err(e.into()),
-        };
-
-        let signed_data = common::sha512_for_file(signed_file_path)?;
-        if pub_key.verify(self, &signed_data).is_ok() {
-            let key_format = pub_key.key_format();
-            let pubkey_b64 = pub_key.to_base64();
-            if sig_file.entries.contains_key(&pubkey_b64) {
-                return Err(SignatureError::DuplicateSignature);
-            }
-            sig_file.entries.insert(
-                pubkey_b64,
-                TaggedSignature {
-                    format: key_format,
-                    signature: self.to_base64(),
-                },
-            );
-
-            let file = File::create(&pending_sig_file_path)?;
-            serde_json::to_writer_pretty(file, &sig_file)?;
-
-            Ok(())
-        } else {
-            Err(SignatureError::InvalidSignatureForAggregate(
-                signed_file_path.to_path_buf(),
-            ))
-        }
+        Ok(())
+    } else {
+        Err(SignatureError::InvalidSignatureForAggregate(
+            signed_file_path.to_path_buf(),
+        ))
     }
 }
 
