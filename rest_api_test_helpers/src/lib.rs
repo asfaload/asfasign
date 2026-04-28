@@ -568,6 +568,7 @@ pub struct TestSetupBuilder {
     artifact_path: String,
     artifact_content: Vec<u8>,
     commit_signers: bool,
+    print_server_logs: bool,
     history: Option<signers_file_types::HistoryFile>,
 }
 
@@ -586,6 +587,7 @@ impl TestSetupBuilder {
             artifact_path: "releases/artifact.bin".to_string(),
             artifact_content: b"artifact content".to_vec(),
             commit_signers: true,
+            print_server_logs: false,
             history: None,
         }
     }
@@ -600,6 +602,12 @@ impl TestSetupBuilder {
     /// Override the threshold independently of the number of keys.
     pub fn with_threshold(mut self, t: usize) -> Self {
         self.threshold = t;
+        self
+    }
+
+    /// Override the server_logs printing
+    pub fn with_server_logs(mut self) -> Self {
+        self.print_server_logs = true;
         self
     }
 
@@ -723,6 +731,9 @@ impl TestSetupBuilder {
         .await?;
 
         // Start server
+        if self.print_server_logs {
+            print_logs();
+        }
         let port = get_random_port().await?;
         let config = build_test_config(&repo_path, port);
         let config_clone = config.clone();
