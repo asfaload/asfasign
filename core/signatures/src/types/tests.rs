@@ -1,57 +1,39 @@
-use crate::keys::add_to_aggregate_for_file;
 use crate::keys::{
     AsfaloadKeyPairTrait, AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
     KeyFormat, asfaload::format::Argon2Params,
 };
 use anyhow::{Context, Result};
-use common::errors::keys::{KeyError, SignatureError};
-use constants::PENDING_SIGNATURES_SUFFIX;
-use std::fs::{self, File};
-use std::path::PathBuf;
+use common::errors::keys::KeyError;
+use std::{
+    fs::{self, File},
+    path::PathBuf,
+};
 use tempfile::TempDir;
 
 use super::*;
 
 //------------------------------------------------------------
-// Keypairs
+// Duplicates to fix dependency cycles with test_helpers
 //------------------------------------------------------------
-
-/// Path to the pre-generated fixture keys directory.
-fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .join("test_helpers")
-        .join("fixtures")
-        .join("keys")
+// Tried to make it works with workspace dependencies, but it didn't work out.
+pub fn fixtures_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../test_helpers/fixtures")
 }
-
+pub fn fixtures_keys_dir() -> PathBuf {
+    fixtures_dir().join("keys")
+}
 /// Load a key pair from fixture files.
-fn get_key_pair() -> Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
-    let dir = fixtures_dir();
+pub fn get_key_pair() -> anyhow::Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
+    let dir = fixtures_keys_dir();
+    println!("dir={}", dir.display());
     let pk = AsfaloadPublicKeys::from_file(dir.join("key_0.pub"))?;
     let sk = AsfaloadSecretKeys::from_file(dir.join("key_0"), "password")?;
     Ok((pk, sk))
 }
-
-/// Load two key pairs from fixture files.
-fn get_two_key_pairs() -> Result<(
-    AsfaloadPublicKeys,
-    AsfaloadSecretKeys,
-    AsfaloadPublicKeys,
-    AsfaloadSecretKeys,
-)> {
-    let dir = fixtures_dir();
-    let pk1 = AsfaloadPublicKeys::from_file(dir.join("key_0.pub"))?;
-    let sk1 = AsfaloadSecretKeys::from_file(dir.join("key_0"), "password")?;
-    let pk2 = AsfaloadPublicKeys::from_file(dir.join("key_1.pub"))?;
-    let sk2 = AsfaloadSecretKeys::from_file(dir.join("key_1"), "password")?;
-    Ok((pk1, sk1, pk2, sk2))
-}
-
 /// Generate a fresh asfaload key pair (fast TEST params) and save to temp dir.
 /// Returns (public key, secret key) via the enum facade.
-fn get_asfaload_key_pair() -> Result<(TempDir, AsfaloadPublicKeys, AsfaloadSecretKeys)> {
+pub fn get_asfaload_key_pair() -> anyhow::Result<(TempDir, AsfaloadPublicKeys, AsfaloadSecretKeys)>
+{
     let temp_dir = tempfile::tempdir()?;
     let kp = AsfaloadKeyPairs::new_with_format_and_argon2_params(
         "password",
@@ -64,40 +46,9 @@ fn get_asfaload_key_pair() -> Result<(TempDir, AsfaloadPublicKeys, AsfaloadSecre
     Ok((temp_dir, pk, sk))
 }
 
-/// Generate two fresh asfaload key pairs (fast TEST params).
-fn get_two_asfaload_key_pairs() -> Result<(
-    TempDir,
-    AsfaloadPublicKeys,
-    AsfaloadSecretKeys,
-    AsfaloadPublicKeys,
-    AsfaloadSecretKeys,
-)> {
-    let temp_dir = tempfile::tempdir()?;
-    let kp1 = AsfaloadKeyPairs::new_with_format_and_argon2_params(
-        "password1",
-        &KeyFormat::Asfaload,
-        Argon2Params::TEST,
-    )?;
-    kp1.save(temp_dir.path().join("key1"))?;
-    let kp2 = AsfaloadKeyPairs::new_with_format_and_argon2_params(
-        "password2",
-        &KeyFormat::Asfaload,
-        Argon2Params::TEST,
-    )?;
-    kp2.save(temp_dir.path().join("key2"))?;
-    let pk1 = AsfaloadPublicKeys::from_file(temp_dir.path().join("key1.pub"))?;
-    let sk1 = AsfaloadSecretKeys::from_file(temp_dir.path().join("key1"), "password1")?;
-    let pk2 = AsfaloadPublicKeys::from_file(temp_dir.path().join("key2.pub"))?;
-    let sk2 = AsfaloadSecretKeys::from_file(temp_dir.path().join("key2"), "password2")?;
-    Ok((temp_dir, pk1, sk1, pk2, sk2))
-}
-
-// Helper function to create a file to sign
-pub fn create_file_to_sign(dir: std::path::PathBuf) -> Result<std::path::PathBuf, std::io::Error> {
-    let to_signed_file_name = "my_signed_file";
-    let to_signed_file_path = dir.as_path().join(to_signed_file_name);
-    std::fs::write(&to_signed_file_path, "data").map(|_| to_signed_file_path)
-}
+//------------------------------------------------------------
+// Keypairs
+//------------------------------------------------------------
 
 #[test]
 fn test_new() -> Result<()> {
@@ -261,414 +212,6 @@ fn test_signature_from_string_formats() -> Result<()> {
     // Reading signature from file
     let sig_from_file = AsfaloadSignatures::from_file(sig_path)?;
     pk.verify(&sig_from_file, &data)?;
-
-    Ok(())
-}
-
-#[test]
-fn test_add_to_aggregate() -> Result<()> {
-    // Create a temporary directory
-    let temp_dir = tempfile::tempdir()?;
-    let dir_path = temp_dir.path();
-    let signed_file_path = create_file_to_sign(dir_path.to_path_buf())?;
-    std::fs::write(&signed_file_path, "test data")?;
-
-    // Load keypairs from fixtures
-    let (pubkey, seckey, pubkey2, seckey2) = get_two_key_pairs()?;
-
-    let data = common::sha512_for_content(b"test data".to_vec())?;
-    let wrong_data = common::sha512_for_content(b"wrong data".to_vec())?;
-    let signature = seckey.sign(&data)?;
-    let signature2 = seckey2.sign(&data)?;
-    let wrong_signature = seckey.sign(&wrong_data)?;
-
-    // Signing a directory causes an error
-    let result = add_to_aggregate_for_file(&signature, dir_path, &pubkey);
-    assert!(result.is_err());
-    match result.as_ref().unwrap_err() {
-        SignatureError::IoError(io_err) => {
-            let err: &std::io::Error = io_err; // Explicit type annotation
-            if err.kind() != std::io::ErrorKind::IsADirectory {
-                panic!(
-                    "Expected IoError with IsADirectory kind, got something else: {:?}",
-                    err
-                )
-            }
-        }
-        _ => panic!(
-            "Expected SignatureError, got something else: {:?}",
-            result.unwrap_err()
-        ),
-    }
-
-    // Attempting to add the signature of another data than the signed file's hash to the aggregate should fail.
-    let result = add_to_aggregate_for_file(&wrong_signature, &signed_file_path, &pubkey);
-    match result {
-        Err(SignatureError::InvalidSignatureForAggregate(_)) => {
-            // Expected
-        }
-        Ok(_) => panic!("Expected an error, but got Ok"),
-        _ => panic!(
-            "Expected InvalidsignatureForAggregate, got something else: {:?}",
-            result.unwrap_err()
-        ),
-    }
-
-    // Add the signature to the aggregate
-    add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey)?;
-
-    // Verify that the signature file was created
-    let sig_file_path = signed_file_path.with_file_name(format!(
-        "{}.{}",
-        signed_file_path.to_string_lossy(),
-        PENDING_SIGNATURES_SUFFIX
-    ));
-    assert!(
-        sig_file_path.exists(),
-        "Pending signature file should exist"
-    );
-
-    // Verify the content of the signatures file
-    let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
-    let sig_file: crate::signatures_file::SignaturesFile = serde_json::from_str(&sig_file_content)?;
-    let pubkey_b64 = pubkey.to_base64();
-    let pubkey2_b64 = pubkey2.to_base64();
-    assert!(
-        sig_file.entries.contains_key(&pubkey_b64),
-        "Signatures file should contain an entry for the public key"
-    );
-    assert!(
-        !sig_file.entries.contains_key(&pubkey2_b64),
-        "Signatures file should NOT contain an entry for the second public key"
-    );
-    assert_eq!(
-        sig_file.entries.get(&pubkey_b64).unwrap().signature,
-        signature.to_base64(),
-        "Signatures file should contain the correct signature"
-    );
-
-    // Add second signature to aggregate
-    add_to_aggregate_for_file(&signature2, signed_file_path, &pubkey2)?;
-
-    // Re-read the signatures file as it should have been modified
-    let sig_file_content = std::fs::read_to_string(&sig_file_path)?;
-    let sig_file: crate::signatures_file::SignaturesFile = serde_json::from_str(&sig_file_content)?;
-    // First signature is still there
-    assert!(
-        sig_file.entries.contains_key(&pubkey_b64),
-        "Signatures file should contain an entry for the public key"
-    );
-    assert_eq!(
-        sig_file.entries.get(&pubkey_b64).unwrap().signature,
-        signature.to_base64(),
-        "Signatures file should contain the correct signature"
-    );
-    // Second signature is added
-    assert!(
-        sig_file.entries.contains_key(&pubkey2_b64),
-        "Signatures file should contain an entry for the second public key"
-    );
-    assert_eq!(
-        sig_file.entries.get(&pubkey2_b64).unwrap().signature,
-        signature2.to_base64(),
-        "Signatures file should contain the correct second signature"
-    );
-    Ok(())
-}
-
-#[test]
-fn test_add_to_aggregate_duplicate_signature() -> Result<()> {
-    // Create a temporary directory
-    let temp_dir = tempfile::tempdir()?;
-    let dir_path = temp_dir.path();
-    let signed_file_path = create_file_to_sign(dir_path.to_path_buf())?;
-    std::fs::write(&signed_file_path, "test data")?;
-
-    // Load keypair from fixtures
-    let (pubkey, seckey) = get_key_pair()?;
-
-    let data = common::sha512_for_content(b"test data".to_vec())?;
-    let signature = seckey.sign(&data)?;
-
-    // First signature should succeed
-    add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey)?;
-
-    // Attempting to sign again with the same key should fail with DuplicateSignature
-    let result = add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey);
-    match result {
-        Err(SignatureError::DuplicateSignature) => {}
-        Ok(_) => panic!("Expected DuplicateSignature error, but got Ok"),
-        Err(e) => panic!("Expected DuplicateSignature error, got: {:?}", e),
-    }
-
-    Ok(())
-}
-
-#[test]
-fn test_signature_trait_error_mapping() -> Result<()> {
-    // Check underlying IO errors are mapped correctly to our IO error.
-    let r = AsfaloadSignatures::from_file("/tmp/inexisting_path");
-    assert!(matches!(r, Err(SignatureError::IoError(_))));
-
-    let r = AsfaloadSignatures::from_base64("invalid");
-    assert!(matches!(r, Err(SignatureError::Base64DecodeFailed(_))));
-
-    let r = AsfaloadSignatures::from_string("invalid");
-    assert!(r.is_err());
-    Ok(())
-}
-
-#[test]
-fn test_public_key_from_secret_key() -> Result<()> {
-    let (pubkey, seckey) = get_key_pair()?;
-
-    let derived_pubkey = AsfaloadPublicKeys::from_secret_key(&seckey)?;
-    assert_eq!(derived_pubkey.to_base64(), pubkey.to_base64());
-    Ok(())
-}
-
-#[test]
-fn test_public_key_serde_round_trip() -> Result<()> {
-    let (pubkey, _) = get_key_pair()?;
-
-    // Serialize to JSON (should produce a base64 string)
-    let json = serde_json::to_string(&pubkey)?;
-    // The JSON value should be a quoted string matching to_base64()
-    let expected_json = format!("\"{}\"", pubkey.to_base64());
-    assert_eq!(json, expected_json);
-
-    // Deserialize back from JSON
-    let deserialized: AsfaloadPublicKeys = serde_json::from_str(&json)?;
-    assert_eq!(deserialized.to_base64(), pubkey.to_base64());
-    assert_eq!(deserialized, pubkey);
-
-    // Deserializing invalid base64 should produce an error
-    let bad_json = "\"not-a-valid-key\"";
-    let result: std::result::Result<AsfaloadPublicKeys, _> = serde_json::from_str(bad_json);
-    assert!(result.is_err());
-
-    Ok(())
-}
-
-#[test]
-fn test_add_to_aggregate_rejects_revoked_file() -> Result<()> {
-    // Create a temporary directory and a file to sign
-    let temp_dir = tempfile::tempdir()?;
-    let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
-
-    // Load a key pair and create a valid signature
-    let (pubkey, seckey) = get_key_pair()?;
-    let data = common::sha512_for_file(&signed_file_path)?;
-    let signature = seckey.sign(&data)?;
-
-    // Create a completed revocation file (filename.revocation.json)
-    let revocation_path = common::fs::names::revocation_path_for(&signed_file_path)?;
-    fs::write(&revocation_path, r#"{"revoked": true}"#)?;
-
-    // Attempting to add a signature should fail with FileRevoked
-    let result = add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey);
-    assert!(result.is_err());
-    match result.unwrap_err() {
-        SignatureError::FileRevoked(path) => {
-            assert_eq!(path, signed_file_path);
-        }
-        other => panic!("Expected FileRevoked error, got: {:?}", other),
-    }
-
-    Ok(())
-}
-
-#[test]
-fn test_add_to_aggregate_allows_pending_revocation() -> Result<()> {
-    // Create a temporary directory and a file to sign
-    let temp_dir = tempfile::tempdir()?;
-    let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
-
-    // Load a key pair and create a valid signature
-    let (pubkey, seckey) = get_key_pair()?;
-    let data = common::sha512_for_file(&signed_file_path)?;
-    let signature = seckey.sign(&data)?;
-
-    // Create a PENDING revocation file (should NOT block)
-    let revocation_path = common::fs::names::revocation_path_for(&signed_file_path)?;
-    let pending_revocation_path = PathBuf::from(format!(
-        "{}.{}",
-        revocation_path.to_string_lossy(),
-        constants::PENDING_SUFFIX
-    ));
-    fs::write(&pending_revocation_path, r#"{"revoked": true}"#)?;
-
-    // Attempting to add a signature should succeed
-    let result = add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey);
-    assert!(
-        result.is_ok(),
-        "Pending revocation should not block signature addition, but got: {:?}",
-        result.unwrap_err()
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_add_to_aggregate_works_without_revocation_file() -> Result<()> {
-    // Create a temporary directory and a file to sign
-    let temp_dir = tempfile::tempdir()?;
-    let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
-
-    // Load a key pair and create a valid signature
-    let (pubkey, seckey) = get_key_pair()?;
-    let data = common::sha512_for_file(&signed_file_path)?;
-    let signature = seckey.sign(&data)?;
-
-    // No revocation file exists — signature should succeed
-    let revocation_path = common::fs::names::revocation_path_for(&signed_file_path)?;
-    assert!(
-        !revocation_path.exists(),
-        "Revocation file should not exist in this test"
-    );
-
-    let result = add_to_aggregate_for_file(&signature, &signed_file_path, &pubkey);
-    assert!(
-        result.is_ok(),
-        "Signature should succeed when no revocation file exists, but got: {:?}",
-        result.unwrap_err()
-    );
-
-    Ok(())
-}
-
-//------------------------------------------------------------
-// Asfaload tests
-//------------------------------------------------------------
-
-#[test]
-fn test_asfaload_new_with_format() -> Result<()> {
-    let kp = AsfaloadKeyPairs::new_with_format_and_argon2_params(
-        "mypass",
-        &KeyFormat::Asfaload,
-        Argon2Params::TEST,
-    )?;
-    let temp_dir = tempfile::tempdir()?;
-    kp.save(temp_dir.path())?;
-    assert!(temp_dir.path().join("key").exists());
-    assert!(temp_dir.path().join("key.pub").exists());
-
-    let sk = AsfaloadSecretKeys::from_file(temp_dir.path().join("key"), "mypass")?;
-    let pk = AsfaloadPublicKeys::from_file(temp_dir.path().join("key.pub"))?;
-    assert_eq!(pk.key_format(), KeyFormat::Asfaload);
-
-    let data = common::sha512_for_content(b"asfaload test".to_vec())?;
-    let sig = sk.sign(&data)?;
-    pk.verify(&sig, &data)?;
-
-    Ok(())
-}
-
-#[test]
-fn test_asfaload_openssh_new_returns_error() {
-    let result = AsfaloadKeyPairs::new_with_format("pw", &KeyFormat::OpenSsh);
-    assert!(result.is_err(), "generating OpenSSH keys should fail");
-    match result.unwrap_err() {
-        KeyError::ImportOnlyFormat(msg) => {
-            assert!(
-                msg.contains("OpenSSH") || msg.contains("SSH") || msg.contains("read-only"),
-                "error should mention OpenSSH / read-only: {msg}"
-            );
-        }
-        other => panic!("expected ImportOnlyFormat, got {other:?}"),
-    }
-}
-
-#[test]
-fn test_asfaload_fixture_sign_and_verify() -> Result<()> {
-    let (_dir, pk, sk) = get_asfaload_key_pair()?;
-    assert_eq!(pk.key_format(), KeyFormat::Asfaload);
-
-    let data = common::sha512_for_content(b"asfaload fixture test".to_vec())?;
-    let sig = sk.sign(&data)?;
-    pk.verify(&sig, &data)?;
-    Ok(())
-}
-
-#[test]
-fn test_asfaload_base64_round_trip() -> Result<()> {
-    let (_dir, pk, _) = get_asfaload_key_pair()?;
-    let b64 = pk.to_base64();
-    assert!(b64.starts_with("asfaload-pub:"));
-    let pk2 = AsfaloadPublicKeys::from_base64(&b64)?;
-    assert_eq!(pk, pk2);
-    Ok(())
-}
-
-#[test]
-fn test_asfaload_signature_serialisation() -> Result<()> {
-    let (_dir, pk, sk) = get_asfaload_key_pair()?;
-    let data = common::sha512_for_content(b"serialise me asfaload".to_vec())?;
-    let sig = sk.sign(&data)?;
-
-    // Base64 round-trip
-    let b64 = sig.to_base64();
-    let sig2 = AsfaloadSignatures::from_base64(&b64)?;
-    pk.verify(&sig2, &data)?;
-
-    // File round-trip
-    let temp_dir = TempDir::new()?;
-    let sig_path = temp_dir.path().join("asfaload_sig");
-    sig.to_file(&sig_path)?;
-    let sig3 = AsfaloadSignatures::from_file(&sig_path)?;
-    pk.verify(&sig3, &data)?;
-
-    Ok(())
-}
-
-#[test]
-fn test_asfaload_public_key_from_secret_key() -> Result<()> {
-    let (_dir, pk, sk) = get_asfaload_key_pair()?;
-    let derived = AsfaloadPublicKeys::from_secret_key(&sk)?;
-    assert_eq!(derived.to_base64(), pk.to_base64());
-    Ok(())
-}
-
-#[test]
-fn test_asfaload_public_key_serde_round_trip() -> Result<()> {
-    let (_dir, pk, _) = get_asfaload_key_pair()?;
-    let json = serde_json::to_string(&pk)?;
-    let expected_json = format!("\"{}\"", pk.to_base64());
-    assert_eq!(json, expected_json);
-
-    let deserialized: AsfaloadPublicKeys = serde_json::from_str(&json)?;
-    assert_eq!(deserialized, pk);
-    Ok(())
-}
-
-#[test]
-fn test_asfaload_add_to_aggregate() -> Result<()> {
-    let temp_dir = tempfile::tempdir()?;
-    let signed_file_path = create_file_to_sign(temp_dir.path().to_path_buf())?;
-    fs::write(&signed_file_path, "asfaload aggregate test")?;
-
-    let (_kdir, pk1, sk1, pk2, sk2) = get_two_asfaload_key_pairs()?;
-    let data = common::sha512_for_content(b"asfaload aggregate test".to_vec())?;
-    let sig1 = sk1.sign(&data)?;
-    let sig2 = sk2.sign(&data)?;
-
-    add_to_aggregate_for_file(&sig1, &signed_file_path, &pk1)?;
-    add_to_aggregate_for_file(&sig2, &signed_file_path, &pk2)?;
-
-    let sig_file_path = signed_file_path.with_file_name(format!(
-        "{}.{}",
-        signed_file_path.to_string_lossy(),
-        PENDING_SIGNATURES_SUFFIX
-    ));
-    let content = fs::read_to_string(&sig_file_path)?;
-    let sig_file: crate::signatures_file::SignaturesFile = serde_json::from_str(&content)?;
-    assert_eq!(sig_file.entries.len(), 2);
-    assert!(sig_file.entries.contains_key(&pk1.to_base64()));
-    assert!(sig_file.entries.contains_key(&pk2.to_base64()));
-    assert_eq!(
-        sig_file.entries.get(&pk1.to_base64()).unwrap().format,
-        KeyFormat::Asfaload
-    );
 
     Ok(())
 }
