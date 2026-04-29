@@ -476,13 +476,15 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
     {
         let c1 = with_admin(&keys, (&[0], 1), (&[4], 1));
         let c2 = with_admin(&keys, (&[0, 1], 1), (&[4], 1));
+        let c3 = with_admin(&keys, (&[0, 1, 2], 1), (&[4], 1));
         let entry1 = make_entry(&c1, &keys, &[0, 4], &[0, 4], t(20));
         let entry2 = make_entry(&c2, &keys, &[1, 4], &[1, 4], t(10));
+        let entry3 = make_entry(&c3, &keys, &[2, 4], &[2, 4], t(30));
         scenarios.push(RotationScenario {
             name: "entries_with_decreasing_obsoleted_at",
             chain: SignersChain {
-                history_entries: vec![entry1],
-                current_signers_info: current_from_he(entry2),
+                history_entries: vec![entry1, entry2],
+                current_signers_info: current_from_he(entry3),
             },
             expected_valid: false,
         });
@@ -492,15 +494,19 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
     {
         // In practice this should never happen, but two entries sharing an
         // obsolescence instant must still be rejected — strict ordering.
+        // Both timestamp-clashing entries must live in `history_entries`;
+        // `CurrentSignersInfo` carries no `obsoleted_at`.
         let c1 = with_admin(&keys, (&[0], 1), (&[4], 1));
         let c2 = with_admin(&keys, (&[0, 1], 1), (&[4], 1));
+        let c3 = with_admin(&keys, (&[0, 1, 2], 1), (&[4], 1));
         let entry1 = make_entry(&c1, &keys, &[0, 4], &[0, 4], t(10));
         let entry2 = make_entry(&c2, &keys, &[1, 4], &[1, 4], t(10));
+        let entry3 = make_entry(&c3, &keys, &[2, 4], &[2, 4], t(20));
         scenarios.push(RotationScenario {
             name: "entries_with_equal_obsoleted_at",
             chain: SignersChain {
-                history_entries: vec![entry1],
-                current_signers_info: current_from_he(entry2),
+                history_entries: vec![entry1, entry2],
+                current_signers_info: current_from_he(entry3),
             },
             expected_valid: false,
         });
