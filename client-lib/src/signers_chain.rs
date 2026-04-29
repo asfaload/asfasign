@@ -144,7 +144,9 @@ mod tests {
     #[tokio::test]
     async fn verify_signers_chain_returns_error_on_empty_chain() {
         let mut server = mockito::Server::new_async().await;
-        let response_body = serde_json::json!({ "history": { "entries": [] } });
+        let response_body = GetSignersChainResponse {
+            chain: features_lib::SignersChain::default(),
+        };
 
         let _mock = server
             .mock("GET", "/v1/get_signers_chain/test/path")
