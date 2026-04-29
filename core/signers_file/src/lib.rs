@@ -4452,11 +4452,13 @@ mod tests {
             cutoff,
         )?;
 
-        // Should include entries at t1 and t2 (both <= cutoff), plus the appended active entry
-        assert_eq!(chain.entries().len(), 3);
-        assert_eq!(chain.entries()[0].obsoleted_at().unwrap(), t1);
-        assert_eq!(chain.entries()[1].obsoleted_at().unwrap(), t2);
-        assert_eq!(chain.entries()[2].obsoleted_at().unwrap(), cutoff);
+        // History should include entries at t1 and t2 (both <= cutoff). t3
+        // is filtered out. The active config is set as `current_signers_info`,
+        // which carries no `obsoleted_at`.
+        assert_eq!(chain.history_entries().len(), 2);
+        assert_eq!(chain.history_entries()[0].obsoleted_at, t1);
+        assert_eq!(chain.history_entries()[1].obsoleted_at, t2);
+        assert!(chain.current_signers_info().is_some());
         Ok(())
     }
 
@@ -4483,9 +4485,9 @@ mod tests {
             cutoff,
         )?;
 
-        // Only the appended active entry
-        assert_eq!(chain.entries().len(), 1);
-        assert_eq!(chain.entries()[0].obsoleted_at().unwrap(), cutoff);
+        // No history, only the active config as `current_signers_info`.
+        assert!(chain.history_entries().is_empty());
+        assert!(chain.current_signers_info().is_some());
         Ok(())
     }
 

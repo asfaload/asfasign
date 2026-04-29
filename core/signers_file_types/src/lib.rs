@@ -877,6 +877,17 @@ impl SignersChain {
 
         all_entries
     }
+
+    pub fn first_entry(&self) -> Option<SignersChainEntry> {
+        if self.history_entries().is_empty() {
+            self.current_signers_info()
+                .map(|v| SignersChainEntry::Current(v.clone()))
+        } else {
+            self.history_entries()
+                .first()
+                .map(|v| SignersChainEntry::History(v.clone()))
+        }
+    }
 }
 impl Default for HistoryFile {
     fn default() -> Self {

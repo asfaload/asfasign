@@ -1,5 +1,4 @@
 use crate::{AsfaloadLibResult, ClientLibError};
-use features_lib::SignersInfoTrait;
 use rest_api_types::GetSignersChainResponse;
 
 /// Result of a successful signers chain validation.
@@ -71,9 +70,9 @@ pub async fn verify_signers_chain(
 
     // Trust-anchor check: first entry's forge content must match.
     let first = chain
-        .current_signers_info()
+        .first_entry()
         .ok_or(ClientLibError::SignersChainFirstEntryMismatch)?;
-    validate_trust_anchor(&http_client, first).await?;
+    validate_trust_anchor(&http_client, &first).await?;
 
     Ok(SignersChainResult {
         entries_count: chain.entries().len(),
@@ -88,7 +87,7 @@ pub async fn verify_signers_chain(
 /// content comparison.
 pub(crate) async fn validate_trust_anchor(
     client: &reqwest::Client,
-    entry: &features_lib::CurrentSignersInfo,
+    entry: &features_lib::SignersChainEntry,
 ) -> AsfaloadLibResult<()> {
     let metadata = entry
         .metadata()
@@ -116,7 +115,7 @@ pub(crate) async fn validate_trust_anchor(
         .await
         .map_err(|e| ClientLibError::SignersChainForgeFetchError(e.to_string()))?;
 
-    if forge_content != entry.signers_file {
+    if forge_content != entry.signers_file() {
         return Err(ClientLibError::SignersChainFirstEntryMismatch);
     }
 
@@ -185,7 +184,8 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let result = validate_trust_anchor(&client, &entry).await;
+        let result =
+            validate_trust_anchor(&client, &features_lib::SignersChainEntry::History(entry)).await;
         assert!(result.is_ok(), "{:?}", result);
     }
 
@@ -209,7 +209,8 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let result = validate_trust_anchor(&client, &entry).await;
+        let result =
+            validate_trust_anchor(&client, &features_lib::SignersChainEntry::History(entry)).await;
         assert!(matches!(
             result,
             Err(ClientLibError::SignersChainForgeFetchError(_))
@@ -236,7 +237,8 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let result = validate_trust_anchor(&client, &entry).await;
+        let result =
+            validate_trust_anchor(&client, &features_lib::SignersChainEntry::History(entry)).await;
         assert!(matches!(
             result,
             Err(ClientLibError::SignersChainForgeFetchError(_))
@@ -263,7 +265,8 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let result = validate_trust_anchor(&client, &entry).await;
+        let result =
+            validate_trust_anchor(&client, &features_lib::SignersChainEntry::History(entry)).await;
         assert!(matches!(
             result,
             Err(ClientLibError::SignersChainFirstEntryMismatch)
@@ -291,7 +294,8 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let result = validate_trust_anchor(&client, &entry).await;
+        let result =
+            validate_trust_anchor(&client, &features_lib::SignersChainEntry::History(entry)).await;
         assert!(matches!(
             result,
             Err(ClientLibError::SignersChainFirstEntryMismatch)
@@ -311,7 +315,8 @@ mod tests {
             make_history_entry(&config, &keys, &[0], "http://127.0.0.1:1", timestamp).unwrap();
 
         let client = reqwest::Client::new();
-        let result = validate_trust_anchor(&client, &entry).await;
+        let result =
+            validate_trust_anchor(&client, &features_lib::SignersChainEntry::History(entry)).await;
         assert!(matches!(
             result,
             Err(ClientLibError::SignersChainForgeFetchError(_))
