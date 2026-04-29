@@ -499,11 +499,11 @@ pub fn validate_history_transitions(history: &SignersChain) -> bool {
 /// Full cryptographic validation of a signers chain: genesis entry plus all
 /// transitions. Callers that want "validate the whole chain" should use this.
 ///
-/// An empty history is considered valid.
+/// An empty chain is considered invalid: a current signers entry is required.
 pub fn validate_chain(chain: &SignersChain) -> bool {
     let current = match chain.current_signers_info() {
-        // No current signers: only valid if there are no history entries either.
-        None => return chain.history_entries().is_empty(),
+        // No current signers: we need at least a current signers file in the chain
+        None => return false,
         Some(c) => c,
     };
 
@@ -4930,9 +4930,9 @@ mod validate_history_tests {
     }
 
     #[test]
-    fn validate_history_empty_is_valid() {
+    fn validate_chain_rejects_empty_chain() {
         let chain = SignersChain::default();
-        assert!(validate_chain(&chain));
+        assert!(!validate_chain(&chain));
     }
 
     #[test]
