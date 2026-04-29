@@ -48,13 +48,13 @@ async fn test_get_signers_chain_no_history() -> Result<()> {
     // With no history (no signers rotation), the chain should have exactly 1 entry:
     // the active signers config at signing time
     assert_eq!(
-        body.history.entries().len(),
+        body.chain.entries().len(),
         1,
         "Chain should have exactly 1 entry when no signers rotation occurred"
     );
 
     // Verify the entry contains a valid signers config
-    let entry = &body.history.entries()[0];
+    let entry = &body.chain.entries()[0];
     let signers_config = entry
         .signers_config()
         .expect("Entry should contain valid signers config");
@@ -248,13 +248,13 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
 
     // Validate chain has 2 entries
     assert_eq!(
-        body.history.entries().len(),
+        body.chain.entries().len(),
         2,
         "Chain should have exactly 2 entries (1 historical + 1 active)"
     );
 
     // First entry: the old signers config (key 0)
-    let historical_entry = &body.history.entries()[0];
+    let historical_entry = &body.chain.entries()[0];
     let historical_config = historical_entry
         .signers_config()
         .expect("Historical entry should contain valid signers config");
@@ -269,7 +269,7 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
     );
 
     // Second entry: the current/active signers config (should contain key 1)
-    let active_entry = &body.history.entries()[1];
+    let active_entry = &body.chain.entries()[1];
     let active_config = active_entry
         .signers_config()
         .expect("Active entry should contain valid signers config");
@@ -387,13 +387,13 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
 
     // Chain should STILL have exactly 2 entries -- the post-signing rotation must NOT appear
     assert_eq!(
-        body_after.history.entries().len(),
+        body_after.chain.entries().len(),
         2,
         "Chain should still have 2 entries after post-signing rotation (rotation should be excluded)"
     );
 
     // First entry should still be the old config (key 0)
-    let historical_after = &body_after.history.entries()[0];
+    let historical_after = &body_after.chain.entries()[0];
     let historical_config_after = historical_after
         .signers_config()
         .expect("Historical entry should still be valid after rotation");
@@ -407,7 +407,7 @@ async fn test_get_signers_chain_with_history() -> Result<()> {
     );
 
     // Second entry should still be the pre-rotation active config (key 1), NOT key 2 only
-    let active_after = &body_after.history.entries()[1];
+    let active_after = &body_after.chain.entries()[1];
     let active_config_after = active_after
         .signers_config()
         .expect("Active entry should still be valid after rotation");
