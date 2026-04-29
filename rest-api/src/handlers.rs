@@ -1372,5 +1372,5 @@ pub async fn get_signers_chain_handler(
         "Successfully built signers chain"
     );
 
-    Ok(Json(GetSignersChainResponse { history: chain }))
+    Ok(Json(GetSignersChainResponse { chain }))
 }

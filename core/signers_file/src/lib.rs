@@ -19,10 +19,11 @@ use signatures::{
     types::{AsfaloadPublicKeys, AsfaloadSignatures},
 };
 use signers_file_types::{
-    HistoryEntry, HistoryFile, SignersConfig, SignersConfigMetadata, SignersConfigProposal,
-    parse_signers_config, parse_signers_config_proposal,
+    CurrentSignersInfo, HistoryEntry, HistoryFile, SignersChain, SignersConfig,
+    SignersConfigMetadata, SignersConfigProposal, parse_signers_config,
+    parse_signers_config_proposal,
 };
-use std::{borrow::Borrow, ffi::OsStr, fs, io::Write, path::Path};
+use std::{borrow::Borrow, convert::identity, ffi::OsStr, fs, io::Write, path::Path};
 //
 
 /// Validate that the pubkey is authorized to initialize a signers file.
@@ -404,30 +405,37 @@ where
 /// listed in its config must have signed both the `signers_file` bytes and
 /// the `metadata` bytes. This is the cryptographic counterpart to the
 /// trust-anchor forge-content check performed by callers separately.
-pub fn validate_genesis_entry(entry: &HistoryEntry) -> bool {
-    let signers = match entry.signers_config() {
+pub fn validate_genesis_entry(entry: &CurrentSignersInfo) -> bool {
+    validate_full_signatures(
+        &entry.signers_file,
+        &entry.signatures,
+        &entry.metadata,
+        &entry.metadata_signatures,
+    )
+}
+
+/// Verify that every signer listed in `signers_file`'s parsed config has signed
+/// both the `signers_file` bytes and the `metadata` bytes. This is the
+/// trust-anchor check applied to the genesis entry of a chain — whichever
+/// entry that is.
+fn validate_full_signatures(
+    signers_file: &str,
+    signatures: &SignaturesFile,
+    metadata: &str,
+    metadata_signatures: &SignaturesFile,
+) -> bool {
+    let signers = match parse_signers_config(signers_file) {
         Ok(c) => c,
         Err(_) => return false,
     };
-    let signers_file_ok = matches!(
-        aggregate_signature::verify_all_signers_signed(
-            entry.signers_file.as_bytes(),
-            &entry.signatures,
+    aggregate_signature::verify_all_signers_signed(signers_file.as_bytes(), signatures, &signers)
+        .is_ok_and(identity)
+        && aggregate_signature::verify_all_signers_signed(
+            metadata.as_bytes(),
+            metadata_signatures,
             &signers,
-        ),
-        Ok(true)
-    );
-    if !signers_file_ok {
-        return false;
-    }
-    matches!(
-        aggregate_signature::verify_all_signers_signed(
-            entry.metadata.as_bytes(),
-            &entry.metadata_signatures,
-            &signers,
-        ),
-        Ok(true)
-    )
+        )
+        .is_ok_and(identity)
 }
 
 /// Validate that every transition between consecutive entries in a signers
@@ -440,12 +448,13 @@ pub fn validate_genesis_entry(entry: &HistoryEntry) -> bool {
 ///
 /// An empty or single-entry history is considered valid (vacuously, as there
 /// are no transitions to verify).
-pub fn validate_history_transitions(history: &HistoryFile) -> bool {
+pub fn validate_history_transitions(history: &SignersChain) -> bool {
     // Strict ordering: equal `obsoleted_at` timestamps are rejected. In
     // practice two entries should never share an obsolescence instant, and
-    // accepting it would weaken chain auditability.
+    // accepting it would weaken chain auditability. Only history entries
+    // carry an `obsoleted_at` — the current entry is the still-active one.
     if !history
-        .entries()
+        .history_entries()
         .windows(2)
         .all(|p| p[0].obsoleted_at < p[1].obsoleted_at)
     {
@@ -466,13 +475,14 @@ pub fn validate_history_transitions(history: &HistoryFile) -> bool {
         };
 
         // Hash the raw JSON bytes (exactly what was originally signed)
-        let file_hash = match common::sha512_for_content(updated.signers_file.as_bytes().to_vec()) {
+        let file_hash = match common::sha512_for_content(updated.signers_file().as_bytes().to_vec())
+        {
             Ok(h) => h,
             Err(_) => return false,
         };
 
         let signatures =
-            match aggregate_signature::parse_tagged_signatures(&updated.signatures.entries) {
+            match aggregate_signature::parse_tagged_signatures(&updated.signatures().entries) {
                 Ok(s) => s,
                 Err(_) => return false,
             };
@@ -489,12 +499,31 @@ pub fn validate_history_transitions(history: &HistoryFile) -> bool {
 /// Full cryptographic validation of a signers chain: genesis entry plus all
 /// transitions. Callers that want "validate the whole chain" should use this.
 ///
-/// An empty history is considered valid.
-pub fn validate_chain(history: &HistoryFile) -> bool {
-    match history.entries().first() {
-        None => true,
-        Some(first) => validate_genesis_entry(first) && validate_history_transitions(history),
+/// An empty chain is considered invalid: a current signers entry is required.
+pub fn validate_chain(chain: &SignersChain) -> bool {
+    let current = match chain.current_signers_info() {
+        // No current signers: we need at least a current signers file in the chain
+        None => return false,
+        Some(c) => c,
+    };
+
+    // Genesis is the oldest entry in the chain — the first history entry if any,
+    // otherwise the current entry. The genesis must be fully signed (every key
+    // in its config signed both file and metadata).
+    let genesis_ok = match chain.history_entries().first() {
+        Some(h) => validate_full_signatures(
+            &h.signers_file,
+            &h.signatures,
+            &h.metadata,
+            &h.metadata_signatures,
+        ),
+        None => validate_genesis_entry(current),
+    };
+    if !genesis_ok {
+        return false;
     }
+
+    validate_history_transitions(chain)
 }
 
 /// Build a HistoryFile representing the signers chain applicable to an artifact.
@@ -509,18 +538,20 @@ pub fn signers_chain_for_artifact(
     active_metadata_content: &str,
     active_metadata_signatures: &SignaturesFile,
     cutoff: chrono::DateTime<chrono::Utc>,
-) -> Result<HistoryFile, SignersFileError> {
-    let mut chain = HistoryFile::new();
+) -> Result<SignersChain, SignersFileError> {
+    //
+    // Create empty chain
+    let mut chain = SignersChain::default();
 
+    // Collect relevant history entries
     for entry in history.entries() {
         if entry.obsoleted_at <= cutoff {
             chain.add_entry(entry.clone());
         }
     }
 
-    // Append the active-at-that-time signers config as the final entry
-    chain.add_entry(HistoryEntry {
-        obsoleted_at: cutoff,
+    // Set the active-at-that-time signers config
+    chain.set_current_info(CurrentSignersInfo {
         signers_file: active_signers_content.to_string(),
         signatures: active_signatures.clone(),
         metadata: active_metadata_content.to_string(),
@@ -528,51 +559,6 @@ pub fn signers_chain_for_artifact(
     });
 
     Ok(chain)
-}
-
-/// Build a `HistoryEntry` from a signers file on disk by loading the file
-/// itself, its `.signatures.json` sidecar, its `.metadata.json` sidecar, and
-/// the metadata's `.signatures.json`.
-///
-/// The `signers_file` and `metadata` fields hold the raw bytes (as `String`),
-/// preserving the exact bytes that were originally signed.
-pub fn build_history_entry_for(signers_file_path: &Path) -> Result<HistoryEntry, SignersFileError> {
-    let chain_err =
-        |msg: String| -> SignersFileError { SignersFileError::ChainValidationFailed(msg) };
-
-    let signers_file_raw = fs::read_to_string(signers_file_path).map_err(|e| {
-        chain_err(format!(
-            "read signers file {}: {e}",
-            signers_file_path.display()
-        ))
-    })?;
-
-    let signatures_path = signatures_path_for(signers_file_path)
-        .map_err(|e| chain_err(format!("compute signatures path: {e}")))?;
-    let signatures_str = fs::read_to_string(&signatures_path)
-        .map_err(|e| chain_err(format!("read {}: {e}", signatures_path.display())))?;
-    let signatures: SignaturesFile = serde_json::from_str(&signatures_str)
-        .map_err(|e| chain_err(format!("parse signatures: {e}")))?;
-
-    let metadata_path = metadata_path_for(signers_file_path)
-        .map_err(|e| chain_err(format!("compute metadata path: {e}")))?;
-    let metadata_raw = fs::read_to_string(&metadata_path)
-        .map_err(|e| chain_err(format!("read {}: {e}", metadata_path.display())))?;
-
-    let meta_sigs_path = metadata_signatures_path_for(signers_file_path)
-        .map_err(|e| chain_err(format!("compute metadata signatures path: {e}")))?;
-    let meta_sigs_str = fs::read_to_string(&meta_sigs_path)
-        .map_err(|e| chain_err(format!("read {}: {e}", meta_sigs_path.display())))?;
-    let metadata_signatures: SignaturesFile = serde_json::from_str(&meta_sigs_str)
-        .map_err(|e| chain_err(format!("parse metadata signatures: {e}")))?;
-
-    Ok(HistoryEntry {
-        obsoleted_at: chrono::Utc::now(),
-        signers_file: signers_file_raw,
-        signatures,
-        metadata: metadata_raw,
-        metadata_signatures,
-    })
 }
 
 /// Validate the cryptographic chain for a signers file found on disk.
@@ -590,7 +576,7 @@ pub fn validate_signers_chain_on_disk(signers_file_path: &Path) -> Result<(), Si
         ))
     })?;
     let history_file_path = history_file_path_for(signers_dir);
-    let mut history = if history_file_path.exists() {
+    let history = if history_file_path.exists() {
         HistoryFile::load_from_file(&history_file_path).map_err(|e| {
             chain_err(format!(
                 "load history file {}: {e}",
@@ -601,10 +587,12 @@ pub fn validate_signers_chain_on_disk(signers_file_path: &Path) -> Result<(), Si
         HistoryFile::new()
     };
 
-    let entry = build_history_entry_for(signers_file_path)?;
-    history.entries.push(entry);
+    let mut chain = SignersChain::default();
+    chain.set_entries_from_history(history);
 
-    if validate_chain(&history) {
+    let entry = CurrentSignersInfo::for_path(signers_file_path)?;
+    chain.set_current_info(entry);
+    if validate_chain(&chain) {
         Ok(())
     } else {
         Err(SignersFileError::ChainValidationFailed(
@@ -627,6 +615,7 @@ mod tests {
     use signatures::keys::AsfaloadSignatureTrait;
     use signatures::signatures_file::TaggedSignature;
     use signers_file_types::SignerKind;
+    use signers_file_types::SignersInfoTrait;
     use signers_file_types::parse_history_file;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -4463,11 +4452,13 @@ mod tests {
             cutoff,
         )?;
 
-        // Should include entries at t1 and t2 (both <= cutoff), plus the appended active entry
-        assert_eq!(chain.entries().len(), 3);
-        assert_eq!(chain.entries()[0].obsoleted_at, t1);
-        assert_eq!(chain.entries()[1].obsoleted_at, t2);
-        assert_eq!(chain.entries()[2].obsoleted_at, cutoff);
+        // History should include entries at t1 and t2 (both <= cutoff). t3
+        // is filtered out. The active config is set as `current_signers_info`,
+        // which carries no `obsoleted_at`.
+        assert_eq!(chain.history_entries().len(), 2);
+        assert_eq!(chain.history_entries()[0].obsoleted_at, t1);
+        assert_eq!(chain.history_entries()[1].obsoleted_at, t2);
+        assert!(chain.current_signers_info().is_some());
         Ok(())
     }
 
@@ -4494,9 +4485,9 @@ mod tests {
             cutoff,
         )?;
 
-        // Only the appended active entry
-        assert_eq!(chain.entries().len(), 1);
-        assert_eq!(chain.entries()[0].obsoleted_at, cutoff);
+        // No history, only the active config as `current_signers_info`.
+        assert!(chain.history_entries().is_empty());
+        assert!(chain.current_signers_info().is_some());
         Ok(())
     }
 
@@ -4765,11 +4756,25 @@ mod tests {
 mod validate_history_tests {
     use anyhow::Result;
     use chrono::Utc;
-    use signers_file_types::{HistoryEntry, HistoryFile, SignersConfig};
+    use signers_file_types::{
+        CurrentSignersInfo, HistoryEntry, HistoryFile, SignersChain, SignersConfig,
+    };
     use test_helpers::history_helpers::{sign_config, sign_json_bytes, sign_metadata};
     use test_helpers::{TestKeys, test_metadata};
 
     use super::validate_chain;
+
+    /// Promote a `HistoryEntry` (only used for legacy-style test fixtures) to a
+    /// `CurrentSignersInfo`, dropping the `obsoleted_at` field which has no place
+    /// on the active entry.
+    fn current_from_he(e: HistoryEntry) -> Option<CurrentSignersInfo> {
+        Some(CurrentSignersInfo {
+            signers_file: e.signers_file,
+            signatures: e.signatures,
+            metadata: e.metadata,
+            metadata_signatures: e.metadata_signatures,
+        })
+    }
 
     #[test]
     fn validate_history_valid_two_entries() -> Result<()> {
@@ -4812,26 +4817,26 @@ mod validate_history_tests {
         let (metadata_json1, meta_sigs1) = sign_metadata(&metadata, &keys, &[0, 1])?;
         let (metadata_json2, meta_sigs2) = sign_metadata(&metadata, &keys, &[0, 1, 2])?;
 
-        let history = HistoryFile {
-            entries: vec![
-                HistoryEntry {
-                    obsoleted_at: Utc::now() - chrono::Duration::seconds(1),
-                    signers_file: json1,
-                    signatures: sig1,
-                    metadata: metadata_json1,
-                    metadata_signatures: meta_sigs1,
-                },
-                HistoryEntry {
-                    obsoleted_at: Utc::now(),
-                    signers_file: json2,
-                    signatures: sig2,
-                    metadata: metadata_json2,
-                    metadata_signatures: meta_sigs2,
-                },
-            ],
+        let entry1 = HistoryEntry {
+            obsoleted_at: Utc::now() - chrono::Duration::seconds(1),
+            signers_file: json1,
+            signatures: sig1,
+            metadata: metadata_json1,
+            metadata_signatures: meta_sigs1,
+        };
+        let entry2 = HistoryEntry {
+            obsoleted_at: Utc::now(),
+            signers_file: json2,
+            signatures: sig2,
+            metadata: metadata_json2,
+            metadata_signatures: meta_sigs2,
+        };
+        let chain = SignersChain {
+            history_entries: vec![entry1],
+            current_signers_info: current_from_he(entry2),
         };
 
-        assert!(validate_chain(&history));
+        assert!(validate_chain(&chain));
         Ok(())
     }
 
@@ -4871,26 +4876,26 @@ mod validate_history_tests {
         let metadata = test_metadata();
         let (metadata_json, meta_sigs) = sign_metadata(&metadata, &keys, &[0, 1])?;
 
-        let history = HistoryFile {
-            entries: vec![
-                HistoryEntry {
-                    obsoleted_at: Utc::now() - chrono::Duration::seconds(1),
-                    signers_file: json1,
-                    signatures: sig1,
-                    metadata: metadata_json.clone(),
-                    metadata_signatures: meta_sigs.clone(),
-                },
-                HistoryEntry {
-                    obsoleted_at: Utc::now(),
-                    signers_file: json2,
-                    signatures: sig2,
-                    metadata: metadata_json,
-                    metadata_signatures: meta_sigs,
-                },
-            ],
+        let entry1 = HistoryEntry {
+            obsoleted_at: Utc::now() - chrono::Duration::seconds(1),
+            signers_file: json1,
+            signatures: sig1,
+            metadata: metadata_json.clone(),
+            metadata_signatures: meta_sigs.clone(),
+        };
+        let entry2 = HistoryEntry {
+            obsoleted_at: Utc::now(),
+            signers_file: json2,
+            signatures: sig2,
+            metadata: metadata_json,
+            metadata_signatures: meta_sigs,
+        };
+        let chain = SignersChain {
+            history_entries: vec![entry1],
+            current_signers_info: current_from_he(entry2),
         };
 
-        assert!(!validate_chain(&history));
+        assert!(!validate_chain(&chain));
         Ok(())
     }
 
@@ -4908,24 +4913,26 @@ mod validate_history_tests {
         let metadata = test_metadata();
         let (metadata_json, meta_sigs) = sign_metadata(&metadata, &keys, &[0])?;
 
-        let history = HistoryFile {
-            entries: vec![HistoryEntry {
-                obsoleted_at: Utc::now(),
-                signers_file: json,
-                signatures: sig,
-                metadata: metadata_json,
-                metadata_signatures: meta_sigs,
-            }],
+        let entry = HistoryEntry {
+            obsoleted_at: Utc::now(),
+            signers_file: json,
+            signatures: sig,
+            metadata: metadata_json,
+            metadata_signatures: meta_sigs,
+        };
+        let chain = SignersChain {
+            history_entries: vec![],
+            current_signers_info: current_from_he(entry),
         };
 
-        assert!(validate_chain(&history));
+        assert!(validate_chain(&chain));
         Ok(())
     }
 
     #[test]
-    fn validate_history_empty_is_valid() {
-        let history = HistoryFile::new();
-        assert!(validate_chain(&history));
+    fn validate_chain_rejects_empty_chain() {
+        let chain = SignersChain::default();
+        assert!(!validate_chain(&chain));
     }
 
     #[test]
@@ -4948,18 +4955,20 @@ mod validate_history_tests {
         let metadata = test_metadata();
         let (meta_json, meta_sig) = sign_metadata(&metadata, &keys, &[0, 1])?;
 
-        let history = HistoryFile {
-            entries: vec![HistoryEntry {
-                obsoleted_at: Utc::now(),
-                signers_file: json,
-                signatures: sig_partial,
-                metadata: meta_json,
-                metadata_signatures: meta_sig,
-            }],
+        let entry = HistoryEntry {
+            obsoleted_at: Utc::now(),
+            signers_file: json,
+            signatures: sig_partial,
+            metadata: meta_json,
+            metadata_signatures: meta_sig,
+        };
+        let chain = SignersChain {
+            history_entries: vec![],
+            current_signers_info: current_from_he(entry),
         };
 
         assert!(
-            !validate_chain(&history),
+            !validate_chain(&chain),
             "first entry missing a signersfile signer must fail"
         );
 
@@ -4968,18 +4977,20 @@ mod validate_history_tests {
         let metadata = test_metadata();
         let (meta_json, meta_sig) = sign_metadata(&metadata, &keys, &[1])?;
 
-        let history = HistoryFile {
-            entries: vec![HistoryEntry {
-                obsoleted_at: Utc::now(),
-                signers_file: json,
-                signatures: sig_partial,
-                metadata: meta_json,
-                metadata_signatures: meta_sig,
-            }],
+        let entry = HistoryEntry {
+            obsoleted_at: Utc::now(),
+            signers_file: json,
+            signatures: sig_partial,
+            metadata: meta_json,
+            metadata_signatures: meta_sig,
+        };
+        let chain = SignersChain {
+            history_entries: vec![],
+            current_signers_info: current_from_he(entry),
         };
 
         assert!(
-            !validate_chain(&history),
+            !validate_chain(&chain),
             "first entry missing a metadata signer must fail"
         );
         Ok(())
@@ -5022,27 +5033,36 @@ mod validate_history_tests {
         let now = Utc::now();
         let earlier = now - chrono::Duration::hours(1);
 
-        // Place the later timestamp first — entries are not sorted by obsoleted_at
-        let history = HistoryFile {
-            entries: vec![
-                HistoryEntry {
-                    obsoleted_at: now,
-                    signers_file: json1,
-                    signatures: sig1,
-                    metadata: metadata_json1,
-                    metadata_signatures: meta_sigs1,
-                },
-                HistoryEntry {
-                    obsoleted_at: earlier,
-                    signers_file: json2,
-                    signatures: sig2,
-                    metadata: metadata_json2,
-                    metadata_signatures: meta_sigs2,
-                },
-            ],
+        // Place the later timestamp first — history entries are not sorted by
+        // obsoleted_at. The chain's `current_signers_info` reuses entry2's bytes
+        // so genesis and signature transitions could otherwise pass — only the
+        // timestamp ordering check on `history_entries` should reject this chain.
+        let entry1 = HistoryEntry {
+            obsoleted_at: now,
+            signers_file: json1,
+            signatures: sig1,
+            metadata: metadata_json1,
+            metadata_signatures: meta_sigs1,
+        };
+        let entry2 = HistoryEntry {
+            obsoleted_at: earlier,
+            signers_file: json2.clone(),
+            signatures: sig2.clone(),
+            metadata: metadata_json2.clone(),
+            metadata_signatures: meta_sigs2.clone(),
+        };
+        let current = CurrentSignersInfo {
+            signers_file: json2,
+            signatures: sig2,
+            metadata: metadata_json2,
+            metadata_signatures: meta_sigs2,
+        };
+        let chain = SignersChain {
+            history_entries: vec![entry1, entry2],
+            current_signers_info: Some(current),
         };
 
-        assert!(!validate_chain(&history));
+        assert!(!validate_chain(&chain));
         Ok(())
     }
 
@@ -5121,10 +5141,18 @@ mod validate_history_tests {
     fn validate_history_from_fixture_with_non_canonical_json() -> Result<()> {
         let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../test_helpers/fixtures/history_with_non_canonical_json.json");
-        let history = HistoryFile::load_from_file(&fixture_path)?;
+        let mut history = HistoryFile::load_from_file(&fixture_path)?;
+
+        // The fixture is on-disk in `HistoryFile` format; convert to a `SignersChain`
+        // by treating the last entry as the current active config.
+        let last = history.entries.pop();
+        let chain = SignersChain {
+            history_entries: history.entries,
+            current_signers_info: last.and_then(current_from_he),
+        };
 
         assert!(
-            validate_chain(&history),
+            validate_chain(&chain),
             "validate_chain should accept valid signatures regardless of JSON formatting"
         );
         Ok(())
@@ -5132,7 +5160,7 @@ mod validate_history_tests {
 
     struct FirstEntryScenario {
         name: &'static str,
-        history: HistoryFile,
+        chain: SignersChain,
         expected_valid: bool,
     }
 
@@ -5146,9 +5174,10 @@ mod validate_history_tests {
         let keys_3 = TestKeys::new(3);
         let keys_5 = TestKeys::new(5);
 
-        let single = |entry: HistoryEntry| -> HistoryFile {
-            HistoryFile {
-                entries: vec![entry],
+        let single = |entry: HistoryEntry| -> SignersChain {
+            SignersChain {
+                history_entries: vec![],
+                current_signers_info: current_from_he(entry),
             }
         };
 
@@ -5176,7 +5205,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_1, &[0]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "valid_single_signer",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5204,7 +5233,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_2, &[0, 1]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "valid_multiple_signers",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5230,7 +5259,7 @@ mod validate_history_tests {
                 sign_metadata(&default_metadata, &keys_5, &[0, 1, 2, 3]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "valid_with_full_key_config",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5258,7 +5287,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_2, &[0, 1]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "missing_one_signer_signature_of_signers_file",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5285,7 +5314,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_2, &[1]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "missing_one_signer_signature_of_metadata",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5306,7 +5335,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_1, &[0]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "no_signatures_at_all_of_signers_file",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: SignaturesFile::new(),
@@ -5327,7 +5356,7 @@ mod validate_history_tests {
             let (json, sig) = sign_config(&config, &keys_1, &[0]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "no_signatures_at_all_of_signers_file",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5355,7 +5384,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_3, &[0]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "signature_from_wrong_key",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5383,7 +5412,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_3, &[2]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "signature_from_wrong_key_of_metadata",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5413,7 +5442,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_1, &[0]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "invalid_signature_base64",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig_file,
@@ -5443,7 +5472,7 @@ mod validate_history_tests {
             );
             scenarios.push(FirstEntryScenario {
                 name: "invalid_signature_base64_of_metadata",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5459,7 +5488,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_1, &[0]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "invalid_signers_config_json",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: "not valid json".to_string(),
                     signatures: SignaturesFile::new(),
@@ -5475,7 +5504,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_1, &[0]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "empty_signers_file",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: String::new(),
                     signatures: SignaturesFile::new(),
@@ -5502,7 +5531,7 @@ mod validate_history_tests {
                 sign_metadata(&default_metadata, &keys_5, &[0, 2, 3]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "missing_admin_key_signature",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5527,7 +5556,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_5, &[0, 2]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "missing_admin_key_signature_of_metadata",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5552,7 +5581,7 @@ mod validate_history_tests {
             let (b_json, _b_sig) = sign_metadata(&metadata_b, &keys_1, &[0]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "tampered_metadata_signatures",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5575,7 +5604,7 @@ mod validate_history_tests {
             let (meta_json, meta_sig) = sign_metadata(&default_metadata, &keys_3, &[2]).unwrap();
             scenarios.push(FirstEntryScenario {
                 name: "metadata_signed_by_wrong_key",
-                history: single(HistoryEntry {
+                chain: single(HistoryEntry {
                     obsoleted_at: Utc::now(),
                     signers_file: json,
                     signatures: sig,
@@ -5592,7 +5621,7 @@ mod validate_history_tests {
     #[test]
     fn validate_history_first_entry_scenarios() {
         for sc in first_entry_scenarios() {
-            let result = validate_chain(&sc.history);
+            let result = validate_chain(&sc.chain);
             assert_eq!(
                 result, sc.expected_valid,
                 "Scenario '{}': expected valid={}, got valid={}",
