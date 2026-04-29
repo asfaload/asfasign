@@ -403,7 +403,7 @@ pub mod models {
     /// filtered to entries up to and including the active config at signing time.
     #[derive(Debug, Serialize, Deserialize)]
     pub struct GetSignersChainResponse {
-        pub history: signers_file_types::HistoryFile,
+        pub chain: signers_file_types::SignersChain,
     }
 }
 

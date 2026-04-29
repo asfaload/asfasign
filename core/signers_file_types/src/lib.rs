@@ -1,9 +1,11 @@
 pub mod revocation;
 use std::collections::HashSet;
+use std::fs;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use common::errors::{SignersConfigError, SignersFileError, keys::KeyError};
+use common::fs::names::{metadata_path_for, metadata_signatures_path_for, signatures_path_for};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use signatures::keys::KeyFormat;
 use signatures::signatures_file::SignaturesFile;
@@ -617,6 +619,89 @@ mod base64_serde {
     }
 }
 
+/// Trait implemented by structs containing signers files information, like CurrentSignersInfo and
+/// HistoryEntry
+pub trait SignersInfoTrait {
+    /// Parse the raw JSON into a SignersConfig.
+    fn signers_config(&self) -> Result<SignersConfig, serde_json::Error>;
+    /// Parse the raw JSON into a SignersConfigMetadata.
+    fn metadata(&self) -> Result<SignersConfigMetadata, serde_json::Error>;
+}
+/// Information about the current signers file. Similar to a HistoryEntry, but without the
+/// obsoleted_at field.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CurrentSignersInfo {
+    /// Content of the signers file as raw JSON, base64-encoded in serialized form.
+    /// Base64 encoding makes the content completely opaque to JSON formatters,
+    /// preventing accidental modification of the signed bytes.
+    /// Use `signers_config()` to parse into a `SignersConfig`.
+    #[serde(with = "base64_serde")]
+    pub signers_file: String,
+    /// Signatures collected for the signers file
+    pub signatures: SignaturesFile,
+    /// Content of the metadata file as raw JSON, base64-encoded in serialized form.
+    /// Base64 encoding preserves the exact bytes that were signed.
+    /// Use `metadata()` to parse into a `SignersConfigMetadata`.
+    #[serde(with = "base64_serde")]
+    pub metadata: String,
+    /// Signatures collected for the metadata file
+    pub metadata_signatures: SignaturesFile,
+}
+
+impl CurrentSignersInfo {
+    pub fn for_path<P: AsRef<Path>>(signers_path_in: P) -> Result<Self, SignersFileError> {
+        let signers_file_path = signers_path_in.as_ref();
+
+        let chain_err =
+            |msg: String| -> SignersFileError { SignersFileError::ChainValidationFailed(msg) };
+
+        let signers_file_raw = fs::read_to_string(signers_file_path).map_err(|e| {
+            chain_err(format!(
+                "read signers file {}: {e}",
+                signers_file_path.display()
+            ))
+        })?;
+
+        let signatures_path = signatures_path_for(signers_file_path)
+            .map_err(|e| chain_err(format!("compute signatures path: {e}")))?;
+        let signatures_str = fs::read_to_string(&signatures_path)
+            .map_err(|e| chain_err(format!("read {}: {e}", signatures_path.display())))?;
+        let signatures: SignaturesFile = serde_json::from_str(&signatures_str)
+            .map_err(|e| chain_err(format!("parse signatures: {e}")))?;
+
+        let metadata_path = metadata_path_for(signers_file_path)
+            .map_err(|e| chain_err(format!("compute metadata path: {e}")))?;
+        let metadata_raw = fs::read_to_string(&metadata_path)
+            .map_err(|e| chain_err(format!("read {}: {e}", metadata_path.display())))?;
+
+        let meta_sigs_path = metadata_signatures_path_for(signers_file_path)
+            .map_err(|e| chain_err(format!("compute metadata signatures path: {e}")))?;
+        let meta_sigs_str = fs::read_to_string(&meta_sigs_path)
+            .map_err(|e| chain_err(format!("read {}: {e}", meta_sigs_path.display())))?;
+        let metadata_signatures: SignaturesFile = serde_json::from_str(&meta_sigs_str)
+            .map_err(|e| chain_err(format!("parse metadata signatures: {e}")))?;
+
+        Ok(CurrentSignersInfo {
+            signers_file: signers_file_raw,
+            signatures,
+            metadata: metadata_raw,
+            metadata_signatures,
+        })
+    }
+}
+
+impl SignersInfoTrait for CurrentSignersInfo {
+    /// Parse the raw JSON into a SignersConfig.
+    fn signers_config(&self) -> Result<SignersConfig, serde_json::Error> {
+        parse_signers_config(&self.signers_file)
+    }
+
+    /// Parse the raw JSON into a SignersConfigMetadata.
+    fn metadata(&self) -> Result<SignersConfigMetadata, serde_json::Error> {
+        serde_json::from_str(&self.metadata)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HistoryEntry {
     /// ISO8601 formatted UTC date and time
@@ -638,14 +723,14 @@ pub struct HistoryEntry {
     pub metadata_signatures: SignaturesFile,
 }
 
-impl HistoryEntry {
+impl SignersInfoTrait for HistoryEntry {
     /// Parse the raw JSON into a SignersConfig.
-    pub fn signers_config(&self) -> Result<SignersConfig, serde_json::Error> {
+    fn signers_config(&self) -> Result<SignersConfig, serde_json::Error> {
         parse_signers_config(&self.signers_file)
     }
 
     /// Parse the raw JSON into a SignersConfigMetadata.
-    pub fn metadata(&self) -> Result<SignersConfigMetadata, serde_json::Error> {
+    fn metadata(&self) -> Result<SignersConfigMetadata, serde_json::Error> {
         serde_json::from_str(&self.metadata)
     }
 }
@@ -704,6 +789,95 @@ impl HistoryFile {
     }
 }
 
+pub enum SignersChainEntry {
+    History(HistoryEntry),
+    Current(CurrentSignersInfo),
+}
+
+impl SignersChainEntry {
+    pub fn obsoleted_at(&self) -> Option<DateTime<Utc>> {
+        match self {
+            Self::History(h) => Some(h.obsoleted_at),
+            Self::Current(_) => None,
+        }
+    }
+    pub fn metadata(&self) -> Result<SignersConfigMetadata, serde_json::Error> {
+        match self {
+            Self::History(h) => h.metadata(),
+            Self::Current(c) => c.metadata(),
+        }
+    }
+    pub fn signers_config(&self) -> Result<SignersConfig, serde_json::Error> {
+        match self {
+            Self::History(h) => h.signers_config(),
+            Self::Current(c) => c.signers_config(),
+        }
+    }
+    pub fn signers_file(&self) -> String {
+        match self {
+            Self::History(h) => h.signers_file.clone(),
+            Self::Current(c) => c.signers_file.clone(),
+        }
+    }
+    pub fn signatures(&self) -> SignaturesFile {
+        match self {
+            Self::History(h) => h.signatures.clone(),
+            Self::Current(c) => c.signatures.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct SignersChain {
+    pub history_entries: Vec<HistoryEntry>,
+    pub current_signers_info: Option<CurrentSignersInfo>,
+}
+
+impl SignersChain {
+    pub fn new(history: HistoryFile, current: CurrentSignersInfo) -> Self {
+        Self {
+            history_entries: history.entries().clone(),
+            current_signers_info: Some(current),
+        }
+    }
+    /// Add a new entry to the history entries
+    pub fn add_entry(&mut self, entry: HistoryEntry) {
+        self.history_entries.push(entry.clone());
+    }
+    /// Take entries from history
+    pub fn set_entries_from_history(&mut self, history: HistoryFile) {
+        for entry in history.entries() {
+            self.history_entries.push(entry.clone())
+        }
+    }
+    /// Add a new entry to the history entries
+    pub fn set_current_info(&mut self, signers_info: CurrentSignersInfo) {
+        self.current_signers_info = Some(signers_info);
+    }
+
+    pub fn history_entries(&self) -> &[HistoryEntry] {
+        &self.history_entries
+    }
+
+    pub fn current_signers_info(&self) -> Option<&CurrentSignersInfo> {
+        self.current_signers_info.as_ref()
+    }
+
+    pub fn entries(&self) -> Vec<SignersChainEntry> {
+        let mut all_entries: Vec<SignersChainEntry> = self
+            .history_entries
+            .iter()
+            .cloned() // Assumes HistoryEntry is Clone
+            .map(SignersChainEntry::History)
+            .collect();
+
+        if let Some(ref current) = self.current_signers_info {
+            all_entries.push(SignersChainEntry::Current(current.clone()));
+        }
+
+        all_entries
+    }
+}
 impl Default for HistoryFile {
     fn default() -> Self {
         Self::new()

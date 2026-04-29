@@ -15,7 +15,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 use signatures::types::AsfaloadPublicKeys;
-use signers_file_types::{HistoryEntry, HistoryFile, SignersConfig};
+use signers_file_types::{CurrentSignersInfo, HistoryEntry, SignersChain, SignersConfig};
 use test_helpers::history_helpers::{sign_config, sign_metadata};
 use test_helpers::{TestKeys, test_metadata};
 
@@ -23,7 +23,7 @@ use crate::validate_chain;
 
 struct RotationScenario {
     name: &'static str,
-    history: HistoryFile,
+    chain: SignersChain,
     expected_valid: bool,
 }
 
@@ -91,6 +91,15 @@ fn with_admin_and_revocation(
     .unwrap()
 }
 
+/// Create a CurrentSignersInfo from a HistoryEntry. Useful only in tests
+fn current_from_he(e: HistoryEntry) -> Option<CurrentSignersInfo> {
+    Some(CurrentSignersInfo {
+        signers_file: e.signers_file,
+        signatures: e.signatures,
+        metadata: e.metadata,
+        metadata_signatures: e.metadata_signatures,
+    })
+}
 fn rotation_scenarios() -> Vec<RotationScenario> {
     // Key index allocation (kept stable across scenarios for readability):
     //   0..3 — artifact signer keys (X, Y, Z, W)
@@ -120,8 +129,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&new, &keys, &[1, 4], &[1, 4], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_adds_one_signer",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: true,
         });
@@ -138,8 +148,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&new, &keys, &[4], &[4], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_removes_one_signer",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: true,
         });
@@ -156,8 +167,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&new, &keys, &[2, 4], &[2, 4], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_replaces_one_signer",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: true,
         });
@@ -173,8 +185,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&new, &keys, &[4], &[4], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_raises_threshold",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: true,
         });
@@ -188,8 +201,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&new, &keys, &[4], &[4], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_lowers_threshold",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: true,
         });
@@ -205,8 +219,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&new, &keys, &[4, 5], &[4, 5], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_changes_admin_key",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: true,
         });
@@ -225,8 +240,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&new, &keys, &[4, 7], &[4, 7], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_changes_revocation_key",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: true,
         });
@@ -244,8 +260,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry3 = make_entry(&c3, &keys, &[2, 4], &[2, 4], t(30));
         scenarios.push(RotationScenario {
             name: "rotation_three_entry_chain",
-            history: HistoryFile {
-                entries: vec![entry1, entry2, entry3],
+            chain: SignersChain {
+                history_entries: vec![entry1, entry2],
+                current_signers_info: current_from_he(entry3),
             },
             expected_valid: true,
         });
@@ -260,8 +277,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&cfg, &keys, &[4], &[4], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_no_op_same_config",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: true,
         });
@@ -280,8 +298,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&cfg, &keys, &[0], &[0], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_missing_old_admin_signature",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: false,
         });
@@ -299,8 +318,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&new, &keys, &[4], &[4], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_signed_only_by_old_admin_after_admin_change",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: false,
         });
@@ -316,8 +336,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&new, &keys, &[4], &[4], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_missing_added_signer_signature",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: false,
         });
@@ -334,8 +355,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&new, &keys, &[1], &[1], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_signed_only_by_removed_signer",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: false,
         });
@@ -349,8 +371,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&cfg, &keys, &[3], &[3], t(20));
         scenarios.push(RotationScenario {
             name: "rotation_signed_by_unrelated_key",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: false,
         });
@@ -372,8 +395,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         entry2.signers_file.push(' ');
         scenarios.push(RotationScenario {
             name: "tampered_middle_entry_signers_file",
-            history: HistoryFile {
-                entries: vec![entry1, entry2, entry3],
+            chain: SignersChain {
+                history_entries: vec![entry1, entry2],
+                current_signers_info: current_from_he(entry3),
             },
             expected_valid: false,
         });
@@ -401,8 +425,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         );
         scenarios.push(RotationScenario {
             name: "tampered_middle_entry_signatures_base64",
-            history: HistoryFile {
-                entries: vec![entry1, entry2, entry3],
+            chain: SignersChain {
+                history_entries: vec![entry1, entry2],
+                current_signers_info: current_from_he(entry3),
             },
             expected_valid: false,
         });
@@ -421,8 +446,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         entry2.signatures = SignaturesFile::new();
         scenarios.push(RotationScenario {
             name: "middle_entry_with_empty_signatures",
-            history: HistoryFile {
-                entries: vec![entry1, entry2, entry3],
+            chain: SignersChain {
+                history_entries: vec![entry1, entry2],
+                current_signers_info: current_from_he(entry3),
             },
             expected_valid: false,
         });
@@ -438,8 +464,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry3 = make_entry(&c3, &keys, &[2, 4], &[2, 4], t(30));
         scenarios.push(RotationScenario {
             name: "middle_entry_invalid_signers_config_json",
-            history: HistoryFile {
-                entries: vec![entry1, entry2, entry3],
+            chain: SignersChain {
+                history_entries: vec![entry1, entry2],
+                current_signers_info: current_from_he(entry3),
             },
             expected_valid: false,
         });
@@ -453,8 +480,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&c2, &keys, &[1, 4], &[1, 4], t(10));
         scenarios.push(RotationScenario {
             name: "entries_with_decreasing_obsoleted_at",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: false,
         });
@@ -470,8 +498,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&c2, &keys, &[1, 4], &[1, 4], t(10));
         scenarios.push(RotationScenario {
             name: "entries_with_equal_obsoleted_at",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: false,
         });
@@ -491,8 +520,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry3 = make_entry(&c3, &keys, &[4], &[4], t(30));
         scenarios.push(RotationScenario {
             name: "valid_prefix_with_invalid_third_entry",
-            history: HistoryFile {
-                entries: vec![entry1, entry2, entry3],
+            chain: SignersChain {
+                history_entries: vec![entry1, entry2],
+                current_signers_info: current_from_he(entry3),
             },
             expected_valid: false,
         });
@@ -516,8 +546,9 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
         let entry2 = make_entry(&c2, &keys, &[2, 4], &[2, 4], t(20));
         scenarios.push(RotationScenario {
             name: "invalid_first_entry_with_valid_rotations",
-            history: HistoryFile {
-                entries: vec![entry1, entry2],
+            chain: SignersChain {
+                history_entries: vec![entry1],
+                current_signers_info: current_from_he(entry2),
             },
             expected_valid: false,
         });
@@ -529,7 +560,7 @@ fn rotation_scenarios() -> Vec<RotationScenario> {
 #[test]
 fn validate_history_rotation_scenarios() {
     for sc in rotation_scenarios() {
-        let result = validate_chain(&sc.history);
+        let result = validate_chain(&sc.chain);
         assert_eq!(
             result, sc.expected_valid,
             "Scenario '{}': expected valid={}, got valid={}",

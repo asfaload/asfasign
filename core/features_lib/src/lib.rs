@@ -31,10 +31,11 @@ pub use signatures::types::AsfaloadSignatures;
 
 pub use signers_file::activate_signers_file;
 pub use signers_file::sign_signers_and_metadata_file;
-pub use signers_file::{build_history_entry_for, validate_signers_chain_on_disk};
+pub use signers_file::validate_signers_chain_on_disk;
 pub use signers_file::{validate_chain, validate_genesis_entry, validate_history_transitions};
 pub use signers_file_types::{
-    Forge, ForgeOrigin, HistoryEntry, HistoryFile, SignersConfigMetadata, SignersConfigOrigin,
+    CurrentSignersInfo, Forge, ForgeOrigin, HistoryEntry, HistoryFile, SignersChain,
+    SignersChainEntry, SignersConfigMetadata, SignersConfigOrigin, SignersInfoTrait,
     VerifiedForgeContent,
 };
 pub use signers_file_types::{SignersConfig, parse_signers_config};

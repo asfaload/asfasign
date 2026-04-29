@@ -1,4 +1,5 @@
 use crate::{AsfaloadLibResult, ClientLibError};
+use features_lib::SignersInfoTrait;
 use rest_api_types::GetSignersChainResponse;
 
 /// Result of a successful signers chain validation.
@@ -55,25 +56,27 @@ pub async fn verify_signers_chain(
 
     let chain_response = get_signers_chain(&http_client, backend_url, artifact_path).await?;
 
-    let history = chain_response.history;
+    let chain = chain_response.chain;
 
-    if history.entries().is_empty() {
+    if chain.entries().is_empty() {
         return Err(ClientLibError::SignersChainEmpty);
     }
 
     // Cryptographic validation of the entire chain (incl. first-entry all-signers).
-    if !features_lib::validate_chain(&history) {
+    if !features_lib::validate_chain(&chain) {
         return Err(ClientLibError::SignersChainFirstEntryInvalid(
             "signers chain validation failed".into(),
         ));
     }
 
     // Trust-anchor check: first entry's forge content must match.
-    let first = history.entries().first().unwrap();
+    let first = chain
+        .current_signers_info()
+        .ok_or(ClientLibError::SignersChainFirstEntryMismatch)?;
     validate_trust_anchor(&http_client, first).await?;
 
     Ok(SignersChainResult {
-        entries_count: history.entries().len(),
+        entries_count: chain.entries().len(),
     })
 }
 
@@ -85,7 +88,7 @@ pub async fn verify_signers_chain(
 /// content comparison.
 pub(crate) async fn validate_trust_anchor(
     client: &reqwest::Client,
-    entry: &features_lib::HistoryEntry,
+    entry: &features_lib::CurrentSignersInfo,
 ) -> AsfaloadLibResult<()> {
     let metadata = entry
         .metadata()
