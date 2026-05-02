@@ -1,0 +1,12 @@
+FROM rust:1.95-bookworm AS build
+
+COPY . /src
+RUN cd src/rest-api && cargo build -r
+
+FROM rust:1.95-bookworm
+
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+WORKDIR /app
+COPY --chown=appuser:appgroup --from=build /src/target/release /app
+
+CMD ["./rest-api"]
