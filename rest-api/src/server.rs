@@ -2,6 +2,7 @@ use crate::{state::init_state, v1::routes::v1_router};
 use axum::Router;
 use rest_api_types::{errors::ApiError, rustls::setup_crypto_provider};
 use std::net::SocketAddr;
+use tokio::signal;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
@@ -56,6 +57,34 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
     Ok(())
+}
+
+// Helper so the Axum server can be gracefully stopped when it is reunning as PID 1 in a container.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("signal received, starting graceful shutdown");
 }
