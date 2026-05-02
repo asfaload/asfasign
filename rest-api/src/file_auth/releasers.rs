@@ -7,6 +7,8 @@ use crate::file_auth::release_types::{
 use forge_url::github::GITHUB_HOSTS;
 use rest_api_types::errors::ApiError;
 use rest_api_types::path_validation::NormalisedPaths;
+#[cfg(all(test, feature = "test-utils"))]
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 use tokio::fs::File;
 
@@ -172,6 +174,7 @@ mod test_utils_tests {
         };
         let mock_config = crate::config::AppConfig {
             server_port: port,
+            server_address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
             git_backend,
@@ -226,6 +229,7 @@ mod test_utils_tests {
         };
         let mock_config = crate::config::AppConfig {
             server_port: port,
+            server_address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
             git_backend,
@@ -262,6 +266,7 @@ mod test_utils_tests {
         };
         let mock_config = crate::config::AppConfig {
             server_port: port,
+            server_address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
             git_backend,

@@ -48,7 +48,7 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
         .with_state(app_state);
 
     // Start the server
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.server_port));
+    let addr = SocketAddr::from((config.server_address, config.server_port));
     tracing::info!(address = %addr, "Server listening");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;

@@ -1,7 +1,10 @@
 use config::{Config, Environment};
 use rest_api_types::errors::ServerConfigError;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+};
 
 fn default_log_level() -> String {
     "info".to_string()
@@ -17,6 +20,7 @@ pub enum GitBackendConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AppConfig {
+    pub server_address: IpAddr,
     pub server_port: u16,
     pub git_repo_path: PathBuf,
     #[serde(default = "default_log_level")]
@@ -29,6 +33,7 @@ pub struct AppConfig {
 
 #[derive(Debug, Serialize, Clone)]
 pub struct AppConfigOptions {
+    pub server_address: Option<IpAddr>,
     pub server_port: Option<u16>,
     pub git_repo_path: Option<PathBuf>,
     pub log_level: Option<String>,
@@ -41,6 +46,7 @@ pub struct AppConfigOptions {
 impl Default for AppConfigOptions {
     fn default() -> Self {
         Self {
+            server_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
             server_port: Some(3000),
             git_repo_path: None,
             log_level: Some("info".to_string()),
@@ -147,6 +153,7 @@ mod tests {
         // Test that build_config_from_defaults fails when no git_repo_path is provided
         // and no environment variables are set
         let defaults = AppConfigOptions {
+            server_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
             server_port: Some(3000),
             git_repo_path: None,
             log_level: None,
@@ -186,6 +193,7 @@ mod tests {
         let git_path = temp_dir.path().to_path_buf();
 
         let defaults = AppConfigOptions {
+            server_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
             server_port: Some(8080),
             git_repo_path: Some(git_path.clone()),
             log_level: Some("info".to_string()),
@@ -214,6 +222,7 @@ mod tests {
         // Test that build_config_from_defaults fails when no log_level is provided
         // and no environment variables are set
         let defaults = AppConfigOptions {
+            server_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
             server_port: Some(3000),
             git_repo_path: Some(git_path.clone()),
             log_level: None,
@@ -247,6 +256,7 @@ mod tests {
         let expected_git_backend = git_backend_from_env();
         let temp_dir = tempfile::tempdir().unwrap();
         let defaults = AppConfigOptions {
+            server_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
             server_port: Some(3000),
             git_repo_path: Some(temp_dir.path().to_path_buf()),
             log_level: Some("info".to_string()),
@@ -263,6 +273,7 @@ mod tests {
     fn test_build_config_from_defaults_accepts_sha256_with_valid_git() {
         let temp_dir = tempfile::tempdir().unwrap();
         let defaults = AppConfigOptions {
+            server_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
             server_port: Some(3000),
             git_repo_path: Some(temp_dir.path().to_path_buf()),
             log_level: Some("info".to_string()),

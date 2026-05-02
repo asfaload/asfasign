@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fs,
+    net::{IpAddr, Ipv4Addr},
     path::{Path, PathBuf},
     process::Command,
     time::Duration,
@@ -121,6 +122,7 @@ pub fn build_test_config(git_repo_path: &Path, server_port: u16) -> rest_api::co
     rest_api::config::AppConfig {
         git_repo_path: git_repo_path.to_path_buf(),
         server_port,
+        server_address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
         log_level: "info".to_string(),
         git_backend,
         github_api_key: None,
