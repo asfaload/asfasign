@@ -508,7 +508,9 @@ fn map_signers_file_error(e: SignersFileError) -> ApiError {
 
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
-    use rest_api_types::git_backend::GitBackendKind;
+    use rest_api_types::git_backend::{
+        GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend,
+    };
 
     use super::*;
     use common::fs::names::{metadata_path_for, pending_signatures_path_for};
@@ -517,11 +519,23 @@ mod tests {
     use kameo::actor::Spawn;
     use rest_api_test_helpers::init_git_repo;
     use signers_file_types::SignersConfig;
+    use std::sync::Arc;
     use std::{
         path::{Path, PathBuf},
         str::FromStr,
     };
     use tempfile::TempDir;
+
+    fn spawn_test_git_actor(
+        repo_path: &std::path::Path,
+        kind: GitBackendKind,
+    ) -> kameo::actor::ActorRef<crate::file_auth::actors::git_actor::GitActor> {
+        let backend: Arc<dyn GitBackend> = match kind {
+            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path)),
+            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path)),
+        };
+        crate::file_auth::actors::git_actor::GitActor::spawn(backend)
+    }
 
     /// Set up a pending signers file with all required companion files:
     /// - The signers JSON content
@@ -624,10 +638,7 @@ mod tests {
             make_normalised_paths(&temp_dir, &pending_signers_path.strip_prefix(&temp_dir)?).await;
 
         // Spawn git actor and signature collector
-        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
-            temp_dir.path().to_path_buf(),
-            backend_kind_from_env(),
-        ));
+        let git_actor = spawn_test_git_actor(temp_dir.path(), backend_kind_from_env());
 
         let actor_ref = SignatureCollector::spawn(git_actor);
 
@@ -708,10 +719,7 @@ mod tests {
         let file_path = make_normalised_paths(&temp_dir, &artifact_path).await;
 
         // Spawn git actor and signature collector
-        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
-            temp_dir.path().to_path_buf(),
-            backend_kind_from_env(),
-        ));
+        let git_actor = spawn_test_git_actor(temp_dir.path(), backend_kind_from_env());
 
         let actor_ref = SignatureCollector::spawn(git_actor);
 
@@ -765,10 +773,7 @@ mod tests {
         let file_path =
             make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
 
-        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
-            temp_dir.path().to_path_buf(),
-            backend_kind_from_env(),
-        ));
+        let git_actor = spawn_test_git_actor(temp_dir.path(), backend_kind_from_env());
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         // Add the signature first time - should succeed and complete
@@ -870,10 +875,7 @@ mod tests {
         let file_path =
             make_normalised_paths(&temp_dir, pending_signers_path.strip_prefix(&temp_dir)?).await;
 
-        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
-            temp_dir.path().to_path_buf(),
-            backend_kind_from_env(),
-        ));
+        let git_actor = spawn_test_git_actor(temp_dir.path(), backend_kind_from_env());
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         // Add first signature - should return is_complete: false
@@ -952,10 +954,7 @@ mod tests {
 
         let file_path = make_normalised_paths(&temp_dir, Path::new("release.txt")).await;
 
-        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
-            temp_dir.path().to_path_buf(),
-            backend_kind_from_env(),
-        ));
+        let git_actor = spawn_test_git_actor(temp_dir.path(), backend_kind_from_env());
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         let mut signatures = HashMap::new();
@@ -1014,10 +1013,7 @@ mod tests {
         let digest = sha512_for_file(&artifact_full_path)?;
         let signature = test_keys.sec_key(2).unwrap().sign(&digest)?;
 
-        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
-            artifact_full_path.clone(),
-            backend_kind_from_env(),
-        ));
+        let git_actor = spawn_test_git_actor(&artifact_full_path, backend_kind_from_env());
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         let mut signatures = HashMap::new();
@@ -1097,10 +1093,7 @@ mod tests {
         let digest = sha512_for_file(pending_dir.join(SIGNERS_FILE))?;
         let signature = test_keys.sec_key(2).unwrap().sign(&digest)?;
 
-        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
-            temp_dir.path().to_path_buf(),
-            backend_kind_from_env(),
-        ));
+        let git_actor = spawn_test_git_actor(temp_dir.path(), backend_kind_from_env());
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         let mut signatures = HashMap::new();
@@ -1160,10 +1153,7 @@ mod tests {
         let digest = sha512_for_file(pending_dir.join(SIGNERS_FILE))?;
         let signature = test_keys.sec_key(2).unwrap().sign(&digest)?;
 
-        let git_actor = crate::file_auth::actors::git_actor::GitActor::spawn((
-            temp_dir.path().to_path_buf(),
-            backend_kind_from_env(),
-        ));
+        let git_actor = spawn_test_git_actor(temp_dir.path(), backend_kind_from_env());
         let actor_ref = SignatureCollector::spawn(git_actor);
 
         let mut signatures = HashMap::new();
