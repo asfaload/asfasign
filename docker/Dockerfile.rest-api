@@ -13,7 +13,7 @@ FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates libssl3 git\
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd -r appgroup && useradd -r -g appgroup appuser
+    && groupadd -g 1000 -r appgroup && useradd -u 1000 -r -g appgroup appuser
 
 WORKDIR /app
 COPY --from=build --chown=appuser:appgroup /src/target/release/rest-api /app/rest-api
