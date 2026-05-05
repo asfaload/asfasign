@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use std::sync::Arc;
+use std::{fs::create_dir_all, path::PathBuf};
 
 use kameo::actor::{ActorRef, Spawn};
 
@@ -45,6 +45,14 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
 
     // Initialize nonce cache with database path
     // FIXME: support taking the dir for the nonce db from env var
+    let nonce_db_dir = git_repo_path.join(".app_cache");
+    create_dir_all(&nonce_db_dir).unwrap_or_else(|e| {
+        panic!(
+            "Cannot create nonce db dir at {}:{}",
+            nonce_db_dir.display(),
+            e
+        )
+    });
     let nonce_db_path = git_repo_path.join(".app_cache").join(NONCE_CACHE_DB);
     let db = sled::open(nonce_db_path)
         .map_err(|e| {
