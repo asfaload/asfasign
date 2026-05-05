@@ -139,6 +139,17 @@ mod tests {
         }
     }
 
+    /// Build a `GitActor` from a path + backend kind, synchronously.
+    /// For tests that call `git_actor.commit_files(...)` directly without
+    /// going through kameo's spawn machinery.
+    fn build_test_git_actor(repo_path: &Path, kind: GitBackendKind) -> GitActor {
+        let backend: Arc<dyn GitBackend> = match kind {
+            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path)),
+            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path)),
+        };
+        GitActor::new(backend)
+    }
+
     fn run_git(repo_path: &Path, args: &[&str]) -> Result<String> {
         let output = Command::new("git")
             .args(["-C", &repo_path.to_string_lossy()])
@@ -167,8 +178,7 @@ mod tests {
         let temp_dir2 = TempDir::new().expect("Failed to create second temp directory");
 
         // Create GitActor with first directory
-        let git_actor =
-            GitActor::with_backend(temp_dir1.path().to_path_buf(), backend_kind_from_env());
+        let git_actor = build_test_git_actor(temp_dir1.path(), backend_kind_from_env());
 
         // Create a test file in second directory
         let test_file_path = PathBuf::from("test_file.txt");
@@ -208,7 +218,7 @@ mod tests {
 
         initialise_git_actor_repo(repo_path)?;
         // Create GitActor
-        let git_actor = GitActor::with_backend(repo_path.to_path_buf(), backend_kind_from_env());
+        let git_actor = build_test_git_actor(repo_path, backend_kind_from_env());
 
         // Create a test file
         let test_file_path = PathBuf::from("test_file.txt");
@@ -243,7 +253,7 @@ mod tests {
         let repo_path = temp_dir.path();
 
         initialise_git_actor_repo(repo_path)?;
-        let git_actor = GitActor::with_backend(repo_path.to_path_buf(), backend_kind_from_env());
+        let git_actor = build_test_git_actor(repo_path, backend_kind_from_env());
 
         // Create a test file
         let test_file_path = PathBuf::from("test_file.txt");
@@ -294,8 +304,7 @@ mod tests {
 
         // Don't initialize git repo - this should cause the commit to fail
         // Create a GitActor
-        let git_actor =
-            GitActor::with_backend(repo_path_buf.to_path_buf(), backend_kind_from_env());
+        let git_actor = build_test_git_actor(&repo_path_buf, backend_kind_from_env());
 
         // Create a test file
         let test_file_path = PathBuf::from("test_file.txt");
@@ -335,8 +344,7 @@ mod tests {
         let temp_dir1 = TempDir::new().expect("Failed to create first temp directory");
         let temp_dir2 = TempDir::new().expect("Failed to create second temp directory");
 
-        let git_actor =
-            GitActor::with_backend(temp_dir1.path().to_path_buf(), backend_kind_from_env());
+        let git_actor = build_test_git_actor(temp_dir1.path(), backend_kind_from_env());
 
         // Create test files in second directory
         let test_file_path1 = PathBuf::from("test_file1.txt");
@@ -382,7 +390,7 @@ mod tests {
         let repo_path = temp_dir.path();
 
         initialise_git_actor_repo(repo_path)?;
-        let git_actor = GitActor::with_backend(repo_path.to_path_buf(), backend_kind_from_env());
+        let git_actor = build_test_git_actor(repo_path, backend_kind_from_env());
 
         // Create multiple test files
         let test_file_path1 = PathBuf::from("test_file1.txt");
