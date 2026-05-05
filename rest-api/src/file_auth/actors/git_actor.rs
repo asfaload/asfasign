@@ -4,7 +4,7 @@ use rest_api_types::errors::ApiError;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rest_api_types::git_backend::{GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend};
+use rest_api_types::git_backend::GitBackend;
 use rest_api_types::path_validation::NormalisedPaths;
 
 #[derive(Debug, Clone)]
@@ -22,25 +22,18 @@ pub struct GitActor {
 }
 
 impl GitActor {
-    pub fn new(repo_path: PathBuf) -> Self {
-        tracing::info!(repo_path = %repo_path.display(), "GitActor created");
-        Self {
-            backend: Arc::new(Sha1GitBackend::new(&repo_path)),
-        }
+    /// Construct a `GitActor` over a shared backend.
+    ///
+    /// The same `Arc` is typically also stored on `AppState.git_backend`
+    /// so handlers can perform read-only git operations without
+    /// serialising through the actor's mailbox.
+    pub fn new(backend: Arc<dyn GitBackend>) -> Self {
+        tracing::info!(repo_path = %backend.root().display(), "GitActor created");
+        Self { backend }
     }
 
     pub fn repo_path(&self) -> PathBuf {
         self.backend.root().clone()
-    }
-
-    /// Create a GitActor with a specific backend kind.
-    pub fn with_backend(repo_path: PathBuf, backend_kind: GitBackendKind) -> Self {
-        tracing::info!(repo_path = %repo_path.display(), backend = ?backend_kind, "GitActor created");
-        let backend: Arc<dyn GitBackend> = match backend_kind {
-            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(&repo_path)),
-            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(&repo_path)),
-        };
-        Self { backend }
     }
 
     async fn commit_files(
@@ -112,15 +105,15 @@ impl Message<CommitFile> for GitActor {
 
 // Implement Actor trait with required associated types and methods
 impl Actor for GitActor {
-    type Args = (PathBuf, GitBackendKind);
+    type Args = Arc<dyn GitBackend>;
     type Error = String;
 
     async fn on_start(
         args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        tracing::info!(repo_path = %args.0.display(), backend = ?args.1, "GitActor starting");
-        Ok(Self::with_backend(args.0, args.1))
+        tracing::info!(repo_path = %args.root().display(), "GitActor starting");
+        Ok(Self::new(args))
     }
 }
 
@@ -129,6 +122,7 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use rest_api_test_helpers::{file_is_tracked_in_git, get_latest_commit, init_git_repo};
+    use rest_api_types::git_backend::{GitBackendKind, Sha1GitBackend, Sha256GitBackend};
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use tempfile::TempDir;
