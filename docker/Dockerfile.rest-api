@@ -1,12 +1,22 @@
-FROM rust:1.95-bookworm AS build
+FROM rust:1.95-trixie AS build
 
-COPY . /src
-RUN cd src/rest-api && cargo build -r
+WORKDIR /src
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-FROM rust:1.95-bookworm
+COPY . .
+RUN cargo build --package rest-api --release
 
-RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates libssl3 git\
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r appgroup && useradd -r -g appgroup appuser
+
 WORKDIR /app
-COPY --chown=appuser:appgroup --from=build /src/target/release /app
+COPY --from=build --chown=appuser:appgroup /src/target/release/rest-api /app/rest-api
 
+USER appuser
 CMD ["./rest-api"]
