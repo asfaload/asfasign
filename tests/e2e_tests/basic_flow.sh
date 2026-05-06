@@ -5,6 +5,8 @@ set -euo pipefail
 # run with env var debug=1 to print commands and outputs.
 # If you start the backend separately, send the backend env var the the backedn url,
 # eg http://localhost:3000
+# If you run the script with a remote backend, set the env var NO_ASSERT to a non-empty string, eg "1"
+#
 # Signers file generation (asfaload):
 # -----------------------------------
 # cargo run -- new-signers-file --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_0.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_1.pub --artifact-signer-file $PWD/../core/test_helpers/fixtures/keys/key_2.pub -A 2 -o ../../repo_for_e2e_tests/basic_flow/signers_file_1_asfaload.json
@@ -384,64 +386,68 @@ run_step "Download artifact (v0.2) with --full-check (2-entry chain)" \
     cargo run --quiet -- download --full-check -o "$DOWNLOAD_V02_FULL_CHECK" -u "$backend" $(artifact_url 0.2)
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_FULL_CHECK"
 
-################################################################################
-section "Full Check Failure: Tampered Metadata"
-################################################################################
+# Only run these tests if we use a local git repo, which we can directly access.
+if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
+    ################################################################################
+    section "Full Check Failure: Tampered Metadata"
+    ################################################################################
 
-# The first entry in the signers chain is the trust anchor. It cannot be
-# validated cryptographically (no previous entry). The only validation is
-# to fetch the signers file from the forge URL stored in metadata and compare.
-#
-# The chain for v0.2 has 2 entries:
-#   entry[0] = original signers_file_1 (trust anchor, metadata in history file)
-#   entry[1] = updated signers_file_2  (active, metadata in metadata.json)
-#
-# validate_first_entry checks entry[0], whose metadata is embedded in the
-# history file blob. The backend reads this blob via `git show COMMIT:path`,
-# so we use `git replace` to transparently swap the blob without rewriting
-# history. This simulates a compromised trust anchor.
+    # The first entry in the signers chain is the trust anchor. It cannot be
+    # validated cryptographically (no previous entry). The only validation is
+    # to fetch the signers file from the forge URL stored in metadata and compare.
+    #
+    # The chain for v0.2 has 2 entries:
+    #   entry[0] = original signers_file_1 (trust anchor, metadata in history file)
+    #   entry[1] = updated signers_file_2  (active, metadata in metadata.json)
+    #
+    # validate_first_entry checks entry[0], whose metadata is embedded in the
+    # history file blob. The backend reads this blob via `git show COMMIT:path`,
+    # so we use `git replace` to transparently swap the blob without rewriting
+    # history. This simulates a compromised trust anchor.
 
-HISTORY_REL_PATH="$(_project_dir)/$SIGNERS_HISTORY_FILE"
-HISTORY_REL_PATH="${HISTORY_REL_PATH#"$E2E_GIT_REPO_PATH/"}"
-HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" rev-parse "HEAD:$HISTORY_REL_PATH")
+    HISTORY_REL_PATH="$(_project_dir)/$SIGNERS_HISTORY_FILE"
+    HISTORY_REL_PATH="${HISTORY_REL_PATH#"$E2E_GIT_REPO_PATH/"}"
+    HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" rev-parse "HEAD:$HISTORY_REL_PATH")
 
-# Build the raw.githubusercontent.com URL for signers_file_2 (valid but different content)
-# The metadata field in history entries is base64-encoded JSON. To tamper
-# with the retrieval URL we must: decode base64 → modify JSON → re-encode base64.
-TAMPERED_RAW_URL="https://raw.githubusercontent.com/${E2E_REPO}/master/${TEST_NAME}/signers_file_2${_SIGNERS_SUFFIX}.json"
-TAMPERED_HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
-    jq --arg url "$TAMPERED_RAW_URL" '
-      .entries[0].metadata |= (
-        @base64d | fromjson |
-        .data.Forge.verified_content.retrieval_url = $url |
-        tojson | @base64
-      )' | \
-    git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
-git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$TAMPERED_HISTORY_BLOB"
+    # Build the raw.githubusercontent.com URL for signers_file_2 (valid but different content)
+    # The metadata field in history entries is base64-encoded JSON. To tamper
+    # with the retrieval URL we must: decode base64 → modify JSON → re-encode base64.
+    TAMPERED_RAW_URL="https://raw.githubusercontent.com/${E2E_REPO}/master/${TEST_NAME}/signers_file_2${_SIGNERS_SUFFIX}.json"
+    TAMPERED_HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
+        jq --arg url "$TAMPERED_RAW_URL" '
+        .entries[0].metadata |= (
+            @base64d | fromjson |
+            .data.Forge.verified_content.retrieval_url = $url |
+            tojson | @base64
+        )' | \
+        git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
+    git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$TAMPERED_HISTORY_BLOB"
 
-tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
-expect_fail "Download with --full-check (tampered metadata URL, content mismatch)" \
-    cargo run --quiet -- download --full-check -o "$tmp" -u "$backend" $(artifact_url 0.2)
+    tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
+    expect_fail "Download with --full-check (tampered metadata URL, content mismatch)" \
+        cargo run --quiet -- download --full-check -o "$tmp" -u "$backend" $(artifact_url 0.2)
 
-git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
+    git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
 
-# --- Tamper: point metadata URL to non-existent file (404) ---
-NONEXISTENT_RAW_URL="https://raw.githubusercontent.com/${E2E_REPO}/master/${TEST_NAME}/signers_file_nonexistent.json"
-NOTFOUND_HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
-    jq --arg url "$NONEXISTENT_RAW_URL" '
-      .entries[0].metadata |= (
-        @base64d | fromjson |
-        .data.Forge.verified_content.retrieval_url = $url |
-        tojson | @base64
-      )' | \
-    git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
-git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$NOTFOUND_HISTORY_BLOB"
+    # --- Tamper: point metadata URL to non-existent file (404) ---
+    NONEXISTENT_RAW_URL="https://raw.githubusercontent.com/${E2E_REPO}/master/${TEST_NAME}/signers_file_nonexistent.json"
+    NOTFOUND_HISTORY_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
+        jq --arg url "$NONEXISTENT_RAW_URL" '
+        .entries[0].metadata |= (
+            @base64d | fromjson |
+            .data.Forge.verified_content.retrieval_url = $url |
+            tojson | @base64
+        )' | \
+        git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
+    git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$NOTFOUND_HISTORY_BLOB"
 
-tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
-expect_fail "Download with --full-check (tampered metadata URL, 404)" \
-    cargo run --quiet -- download --full-check -o "$tmp" -u "$backend" $(artifact_url 0.2)
+    tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
+    expect_fail "Download with --full-check (tampered metadata URL, 404)" \
+        cargo run --quiet -- download --full-check -o "$tmp" -u "$backend" $(artifact_url 0.2)
 
-git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
+    git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
+
+fi;
 
 ################################################################################
 print_summary
