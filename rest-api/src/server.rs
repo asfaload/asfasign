@@ -52,39 +52,40 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
     let addr = SocketAddr::from((config.server_address, config.server_port));
     tracing::info!(address = %addr, "Server listening");
 
+    // Install signal handlers up front so registration failures abort
+    // startup before the server begins accepting connections.
+    let shutdown = shutdown_signal()?;
+
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
+    .with_graceful_shutdown(shutdown)
     .await?;
     Ok(())
 }
 
 // Helper so the Axum server can be gracefully stopped when it is reunning as PID 1 in a container.
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
+fn shutdown_signal() -> Result<impl std::future::Future<Output = ()>, std::io::Error> {
     #[cfg(unix)]
-    let terminate = async {
-        signal::unix::signal(signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
+    let (mut interrupt_handler, mut terminate_handler) = (
+        signal::unix::signal(signal::unix::SignalKind::interrupt())?,
+        signal::unix::signal(signal::unix::SignalKind::terminate())?,
+    );
 
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
+    Ok(async move {
+        #[cfg(unix)]
+        tokio::select! {
+            _ = interrupt_handler.recv() => {},
+            _ = terminate_handler.recv() => {},
+        }
 
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
-    }
+        #[cfg(not(unix))]
+        if let Err(e) = signal::ctrl_c().await {
+            tracing::error!(error = %e, "failed waiting on Ctrl+C signal");
+        }
 
-    tracing::info!("signal received, starting graceful shutdown");
+        tracing::info!("signal received, starting graceful shutdown");
+    })
 }
