@@ -3,6 +3,7 @@ use std::{fs::create_dir_all, path::PathBuf};
 
 use kameo::actor::{ActorRef, Spawn};
 
+use rest_api_types::errors::ApiError;
 use rest_api_types::git_backend::{GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend};
 
 use crate::{
@@ -39,7 +40,10 @@ fn backend_kind_from_config(config: GitBackendConfig) -> GitBackendKind {
     }
 }
 
-pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppConfig) -> AppState {
+pub fn init_state(
+    git_repo_path: std::path::PathBuf,
+    config: crate::config::AppConfig,
+) -> Result<AppState, ApiError> {
     let git_backend_kind = backend_kind_from_config(config.git_backend);
     let git_backend: Arc<dyn GitBackend> = match git_backend_kind {
         GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(&git_repo_path)),
@@ -47,9 +51,10 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
     };
 
     if !git_repo_path.join(".git").exists() {
-        git_backend
-            .init()
-            .unwrap_or_else(|e| panic!("git init failed for {}: {}", git_repo_path.display(), e));
+        git_backend.init().map_err(|e| {
+            tracing::error!(path = %git_repo_path.display(), error = %e, "git init failed");
+            e
+        })?;
     }
 
     let git_actor = GitActor::spawn(git_backend.clone());
@@ -57,22 +62,22 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
     // Initialize nonce cache with database path
     // FIXME: support taking the dir for the nonce db from env var
     let nonce_db_dir = git_repo_path.join(".app_cache");
-    create_dir_all(&nonce_db_dir).unwrap_or_else(|e| {
-        panic!(
-            "Cannot create nonce db dir at {}:{}",
-            nonce_db_dir.display(),
-            e
-        )
-    });
+    create_dir_all(&nonce_db_dir).map_err(|e| {
+        tracing::error!(
+            path = %nonce_db_dir.display(),
+            error= %e,
+            "Cannot create nonce db dir",
+        );
+        e
+    })?;
     let nonce_db_path = git_repo_path.join(".app_cache").join(NONCE_CACHE_DB);
-    let db = sled::open(nonce_db_path)
-        .map_err(|e| {
-            tracing::error!(
-                error = %e,
-                "Problem opening nonce cache"
-            );
-        })
-        .expect("Cannot open nonce cache database");
+    let db = sled::open(nonce_db_path).map_err(|e| {
+        tracing::error!(
+            error = %e,
+            "Problem opening nonce cache"
+        );
+        ApiError::NonceCacheError(format!("Could not open nonce cache: {}", e))
+    })?;
     let nonce_cache_actor = NonceCacheActor::spawn(db.clone());
     let nonce_cleanup_actor = NonceCleanupActor::spawn(db.clone());
 
@@ -83,7 +88,7 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
     let release_actor = ReleaseActor::spawn((git_actor.clone(), config.clone()));
     let checksums_actor = ChecksumsActor::spawn((git_actor.clone(), config));
 
-    AppState {
+    Ok(AppState {
         git_repo_path,
         git_backend,
         git_actor,
@@ -94,5 +99,5 @@ pub fn init_state(git_repo_path: std::path::PathBuf, config: crate::config::AppC
         signature_collector,
         release_actor,
         checksums_actor,
-    }
+    })
 }

@@ -147,6 +147,9 @@ pub mod errors {
 
         #[error("Signature already collected: {0}")]
         SignatureAlreadyCollected(String),
+
+        #[error("Nonce cache error: {0}")]
+        NonceCacheError(String),
     }
 
     #[derive(Error, Debug)]
@@ -249,6 +252,7 @@ pub mod errors {
                 ApiError::SignatureAlreadyCollected(_) => StatusCode::CONFLICT,
                 ApiError::GitError(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::SignersConfigError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::NonceCacheError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             }
         }
     }

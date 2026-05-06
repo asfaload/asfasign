@@ -19,7 +19,7 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
     let canonical_repo_path = tokio::fs::canonicalize(&config.git_repo_path)
         .await
         .map_err(|e| ApiError::InvalidFilePath(format!("Invalid git repo path: {}", e)))?;
-    let app_state = init_state(canonical_repo_path, config.clone());
+    let app_state = init_state(canonical_repo_path, config.clone())?;
     let governor_conf = GovernorConfigBuilder::default()
         // Beware, `.per_second(10) is not 10 req/s. From the doc: "Set the interval after which one element of
         // the quota is replenished in seconds."
