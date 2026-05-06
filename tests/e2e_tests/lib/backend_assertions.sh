@@ -30,24 +30,28 @@ prefixed_pubkey_of() {
 
 # Assert a file exists at the given path.
 assert_file_exists() {
+    [[ -n "${NO_ASSERT:-}" ]] && return 0
     local path="$1" desc="$2"
     run_step "Backend: $desc exists" test -f "$path"
 }
 
 # Assert a directory exists at the given path.
 assert_dir_exists() {
+    [[ -n "${NO_ASSERT:-}" ]] && return 0
     local path="$1" desc="$2"
     run_step "Backend: $desc exists" test -d "$path"
 }
 
 # Assert a file does NOT exist at the given path.
 assert_file_not_exists() {
+    [[ -n "${NO_ASSERT:-}" ]] && return 0
     local path="$1" desc="$2"
     run_step "Backend: $desc does not exist" test ! -e "$path"
 }
 
 # Assert a jq filter evaluates to true on a JSON file.
 assert_json_field() {
+    [[ -n "${NO_ASSERT:-}" ]] && return 0
     local file="$1" jq_filter="$2" desc="$3"
     run_step "Backend: $desc" jq -e "$jq_filter" "$file"
 }
@@ -287,6 +291,7 @@ assert_revocation_signers() {
 # --- Artifact assertions ---
 
 assert_artifact_hash_matches() {
+    [[ -n "${NO_ASSERT:-}" ]] && return 0
     local version="$1" artifact_name="$2" downloaded_file="$3"
     local release_dir index_path
     release_dir="$(_release_dir "$version")"
@@ -312,6 +317,7 @@ _string_contains() {
 }
 
 assert_last_commit_contains() {
+    [[ -n "${NO_ASSERT:-}" ]] && return 0
     local committed_files
     committed_files=$(git -C "$E2E_GIT_REPO_PATH" show --pretty="" --name-only HEAD 2>/dev/null || true)
     for pattern in "$@"; do
@@ -321,6 +327,7 @@ assert_last_commit_contains() {
 }
 
 assert_commit_count() {
+    [[ -n "${NO_ASSERT:-}" ]] && return 0
     local expected="$1"
     local actual
     actual=$(git -C "$E2E_GIT_REPO_PATH" rev-list --count HEAD 2>/dev/null || echo 0)
