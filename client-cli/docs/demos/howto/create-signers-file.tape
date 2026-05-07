@@ -1,0 +1,19 @@
+Output out/create-signers-file.gif
+
+Set Shell "bash"
+Set Width 1200
+Set Height 700
+Set TypingSpeed 60ms
+Set PlaybackSpeed 1.0
+
+Type "# Create the signers file (3 artifact signers, threshold 2)"
+Enter
+Type "cd ~"
+Enter
+Type "asfaload-cli new-signers-file --artifact-signer-file ~/.asfaload/key_0.pub --artifact-signer-file ~/.asfaload/key_1.pub --artifact-signer-file ~/.asfaload/key_2.pub --artifact-threshold 2 --output-file signers.json"
+Enter
+Sleep 4s
+
+Type "ls signers.json"
+Enter
+Sleep 3s

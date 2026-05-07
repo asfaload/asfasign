@@ -1,0 +1,21 @@
+Output out/update-signers-file.gif
+
+Set Shell "bash"
+Set Width 1200
+Set Height 700
+Set TypingSpeed 60ms
+Set PlaybackSpeed 1.0
+
+Type "# 1. Build the new signers file (4 artifact signers, 3 revocation keys)"
+Enter
+Type "cd ~"
+Enter
+Type "asfaload-cli new-signers-file --artifact-signer-file ~/.asfaload/key_0.pub --artifact-signer-file ~/.asfaload/key_1.pub --artifact-signer-file ~/.asfaload/key_2.pub --artifact-signer-file ~/.asfaload/key_3.pub --artifact-threshold 3 --revocation-key-file ~/.asfaload/key_4.pub --revocation-key-file ~/.asfaload/key_5.pub --revocation-key-file ~/.asfaload/key_6.pub --revocation-threshold 2 --output-file signers_v2.json"
+Enter
+Sleep 4s
+
+Type "# 2. Propose the update"
+Enter
+Type 'asfaload-cli update-signers --secret-key ~/.asfaload/key_0 --password-file ~/.asfaload/.demo-password -u "$ASFALOAD_DEMO_BACKEND_URL" "$ASFALOAD_DEMO_NEW_SIGNERS_URL"'
+Enter
+Sleep 5s

@@ -1,0 +1,29 @@
+Output out/sign-release.gif
+
+Set Shell "bash"
+Set Width 1200
+Set Height 700
+Set TypingSpeed 60ms
+Set PlaybackSpeed 1.0
+
+Type "# 1. List files awaiting signature"
+Enter
+Type 'asfaload-cli list-pending --secret-key ~/.asfaload/key_0 --password-file ~/.asfaload/.demo-password -u "$ASFALOAD_DEMO_BACKEND_URL"'
+Enter
+Sleep 3s
+
+Type "# 2. Sign the release index (threshold 2)"
+Enter
+Type 'asfaload-cli sign-pending --secret-key ~/.asfaload/key_0 --password-file ~/.asfaload/.demo-password -u "$ASFALOAD_DEMO_BACKEND_URL" "$ASFALOAD_DEMO_RELEASE_INDEX_PATH"'
+Enter
+Sleep 3s
+
+Type 'asfaload-cli sign-pending --secret-key ~/.asfaload/key_1 --password-file ~/.asfaload/.demo-password -u "$ASFALOAD_DEMO_BACKEND_URL" "$ASFALOAD_DEMO_RELEASE_INDEX_PATH"'
+Enter
+Sleep 4s
+
+Type "# 3. Confirm the signature collection is complete"
+Enter
+Type 'asfaload-cli signature-status --secret-key ~/.asfaload/key_0 --password-file ~/.asfaload/.demo-password -u "$ASFALOAD_DEMO_BACKEND_URL" "$ASFALOAD_DEMO_RELEASE_INDEX_PATH"'
+Enter
+Sleep 3s

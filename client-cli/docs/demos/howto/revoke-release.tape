@@ -1,0 +1,23 @@
+Output out/revoke-release.gif
+
+Set Shell "bash"
+Set Width 1200
+Set Height 700
+Set TypingSpeed 60ms
+Set PlaybackSpeed 1.0
+
+Type "# 1. Initiate the revocation with a revocation key"
+Enter
+Type 'asfaload-cli revoke --secret-key ~/.asfaload/key_4 --password-file ~/.asfaload/.demo-password -u "$ASFALOAD_DEMO_BACKEND_URL" "$ASFALOAD_DEMO_RELEASE_INDEX_PATH"'
+Enter
+Sleep 4s
+
+Type "# 2. A second revocation signer co-signs (threshold 2)"
+Enter
+Type 'asfaload-cli list-pending --secret-key ~/.asfaload/key_5 --password-file ~/.asfaload/.demo-password -u "$ASFALOAD_DEMO_BACKEND_URL"'
+Enter
+Sleep 3s
+
+Type 'asfaload-cli sign-pending --secret-key ~/.asfaload/key_5 --password-file ~/.asfaload/.demo-password -u "$ASFALOAD_DEMO_BACKEND_URL" "$ASFALOAD_DEMO_PENDING_REVOCATION_PATH"'
+Enter
+Sleep 4s
