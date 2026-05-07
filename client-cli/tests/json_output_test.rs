@@ -57,9 +57,10 @@ fn test_new_keys_human_output_unchanged() {
         .arg(TEST_PASSWORD)
         .arg("--accept-weak-password");
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Public key saved at"));
+    cmd.assert().success().stdout(
+        predicate::str::contains("The public key is safe to share")
+            .and(predicate::str::contains("asfaload-pub:")),
+    );
 }
 
 // -------------------------------------------------------------------

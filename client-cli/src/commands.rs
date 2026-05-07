@@ -8,6 +8,7 @@ use crate::{
 
 pub mod keys;
 pub mod list_pending;
+pub mod share_key;
 pub mod sign_pending;
 pub mod signature_status;
 pub mod signers_file;
@@ -47,6 +48,38 @@ pub(crate) async fn prepare_signers_submission(
     })
 }
 
+pub(crate) mod keys_helpers {
+
+    use anstyle::Style;
+    const BOLD: Style = Style::new().bold();
+    const UNDERLINE: Style = Style::new().underline();
+    use std::fmt::Write;
+    pub fn share_pub_key_message(public_key: &str, with_ansi: bool) -> anyhow::Result<String> {
+        // Define conditional bolds un case we want non-ansi output, like in json
+        let bold = if with_ansi { BOLD } else { Style::new() };
+        let underline = if with_ansi { UNDERLINE } else { Style::new() };
+
+        let mut buf = String::new();
+        writeln!(
+            buf,
+            "{bold}The public key is safe to share{bold:#} -- that's how others verify your signatures."
+        )?;
+        writeln!(buf,)?;
+        writeln!(
+            buf,
+            "{underline}You can share your public key, for example with an admin, with this message:{underline:#}"
+        )?;
+        writeln!(buf,)?;
+        writeln!(
+            buf,
+            "    I generated a new Asfaload key-pair. You can use my new public"
+        )?;
+        writeln!(buf, "    key in signers files. Here it is:")?;
+        writeln!(buf, "    {public_key}")?;
+        Ok(buf)
+    }
+}
+
 /// Dispatches the command to the appropriate handler
 pub fn handle_command(cli: &Cli) -> Result<()> {
     match &cli.command {
@@ -69,6 +102,13 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 *accept_weak_password,
             )?;
             keys::handle_new_keys_command(name, output_dir, password, json_args.json, &format)?;
+        }
+        Commands::ShareKey {
+            name,
+            dir,
+            json_args,
+        } => {
+            share_key::handle_share_key_command(name, dir, json_args.json)?;
         }
         Commands::NewSignersFile {
             artifact_signer,

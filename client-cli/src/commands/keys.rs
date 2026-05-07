@@ -1,9 +1,18 @@
 use std::path::Path;
 
+use crate::commands::keys_helpers::share_pub_key_message;
 use crate::output::NewKeysOutput;
 use crate::utils::ensure_dir_exists;
+use anstream::println;
+use anstyle::{AnsiColor, Color, Style};
 use anyhow::Result;
-use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs, KeyFormat};
+use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs, AsfaloadPublicKeyTrait, KeyFormat};
+
+const BOLD: Style = Style::new().bold();
+const DIM: Style = Style::new().dimmed();
+const WARN: Style = Style::new()
+    .bold()
+    .fg_color(Some(Color::Ansi(AnsiColor::Red)));
 
 /// Handles the `keys` command.
 ///
@@ -25,28 +34,34 @@ pub fn handle_new_keys_command(
 ) -> Result<()> {
     ensure_dir_exists(output_dir)?;
 
-    if !json {
-        println!(
-            "Generating {:?} keypair with name '{}' in directory {:?}",
-            format, name, output_dir
-        );
-    }
     let kp = AsfaloadKeyPairs::new_with_format(password.as_str(), format)?;
     let location = output_dir.join(name);
     kp.save(&location)?;
+
+    let public_key = kp.public_key().to_base64();
 
     if json {
         let output = NewKeysOutput {
             public_key_path: format!("{}.pub", location.to_string_lossy()),
             secret_key_path: location.to_string_lossy().to_string(),
+            public_key,
         };
         println!("{}", serde_json::to_string(&output)?);
     } else {
+        let message = share_pub_key_message(&public_key, true)?;
+        let sec_path = location.to_string_lossy();
+        let pub_path = format!("{sec_path}.pub");
+
+        println!("{BOLD}Generated {format:?} keypair '{name}'{BOLD:#}");
+        println!();
+        println!("  {BOLD}Public key string:{BOLD:#}  {BOLD}{public_key}{BOLD:#}");
+        println!("  {BOLD}Public key file:{BOLD:#} {DIM}{pub_path}{DIM:#}");
+        println!("  {BOLD}Secret key file:{BOLD:#} {DIM}{sec_path}{DIM:#}");
+        println!();
         println!(
-            "Public key saved at {}.pub and secret key at {}",
-            location.to_string_lossy(),
-            location.to_string_lossy()
+            "{WARN}WARNING:{WARN:#} Keep the secret key private. Treat it like a password -- never share, copy, or commit it."
         );
+        println!("{}", message);
     }
     Ok(())
 }
