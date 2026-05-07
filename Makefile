@@ -116,3 +116,7 @@ docs-setup-rclone:
 ## Deploy generated static site
 docs-deploy: docs-clean docs
 	rclone --config $(RCLONE_CONFIG) sync --verbose ./docs/site/book/ ovh:/home/asfaloc/www/doc/
+
+## Render VHS demos for the client-cli how-tos
+demos:
+	./client-cli/docs/demos/run-demos.sh
