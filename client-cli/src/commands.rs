@@ -86,12 +86,10 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         Commands::NewKeys {
             name,
             output_dir,
-            algorithm,
             password_args,
             accept_weak_password,
             json_args,
         } => {
-            let format: signatures::keys::KeyFormat = algorithm.clone().into();
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
@@ -101,7 +99,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 RequireConfirmation,
                 *accept_weak_password,
             )?;
-            keys::handle_new_keys_command(name, output_dir, password, json_args.json, &format)?;
+            keys::handle_new_keys_command(name, output_dir, password, json_args.json)?;
         }
         Commands::ShareKey {
             name,

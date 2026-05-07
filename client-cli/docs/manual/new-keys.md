@@ -3,7 +3,7 @@
 - **Usage**: `client new-keys [OPTIONS] -n <NAME> -o <OUTPUT_DIR>`
 - **Source**: [`src/commands/keys.rs`](../../src/commands/keys.rs)
 
-Generate a new signing key pair in the asfaload key format. The command creates both a secret key and a public key in the specified directory.
+Generate a new signing key pair. The command creates both a secret key and a public key in the specified directory.
 
 ## Options
 
@@ -40,7 +40,7 @@ Emit output as JSON instead of human-readable text.
 
 Human-readable (default):
 
-    Generating Asfaload keypair with name 'mykey' in directory "/home/user/.asfaload"
+    Generating keypair with name 'mykey' in directory "/home/user/.asfaload"
     Public key saved at /home/user/.asfaload/mykey.pub and secret key at /home/user/.asfaload/mykey
 
 JSON (with `--json`):
