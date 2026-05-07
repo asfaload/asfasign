@@ -8,6 +8,12 @@ pub struct NewKeysOutput {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ShareKeyOutput {
+    pub public_key: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct NewSignersFileOutput {
     pub output_file: String,
     pub artifact_signers_count: usize,

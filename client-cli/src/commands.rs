@@ -8,6 +8,7 @@ use crate::{
 
 pub mod keys;
 pub mod list_pending;
+pub mod share_key;
 pub mod sign_pending;
 pub mod signature_status;
 pub mod signers_file;
@@ -69,6 +70,13 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 *accept_weak_password,
             )?;
             keys::handle_new_keys_command(name, output_dir, password, json_args.json, &format)?;
+        }
+        Commands::ShareKey {
+            name,
+            dir,
+            json_args,
+        } => {
+            share_key::handle_share_key_command(name, dir, json_args.json)?;
         }
         Commands::NewSignersFile {
             artifact_signer,

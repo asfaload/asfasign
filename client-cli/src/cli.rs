@@ -109,6 +109,19 @@ pub enum Commands {
         json_args: JsonArgs,
     },
 
+    /// Get information to share your key
+    ShareKey {
+        /// Name of the key
+        #[arg(long, short)]
+        name: String,
+
+        /// Directory where the key is stored
+        #[arg(long, short)]
+        dir: PathBuf,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
     /// Operations related to signers files
     NewSignersFile {
         /// Artifact signer public key as base64 string (can be repeated)
@@ -336,6 +349,7 @@ impl Commands {
         match self {
             Self::NewSignersFile { .. } => "NEW_SIGNERS_FILE",
             Self::NewKeys { .. } => "NEW_KEYS",
+            Self::ShareKey { .. } => "SHARE_KEY",
             Self::ListPending { .. } => "LIST_PENDING",
             Self::SignPending { .. } => "SIGN_PENDING",
             Self::SignatureStatus { .. } => "SIGNATURE_STATUS",
@@ -365,6 +379,7 @@ impl Commands {
     pub fn json_output(&self) -> bool {
         match self {
             Self::NewKeys { json_args, .. }
+            | Self::ShareKey { json_args, .. }
             | Self::NewSignersFile { json_args, .. }
             | Self::ListPending { json_args, .. }
             | Self::SignPending { json_args, .. }
