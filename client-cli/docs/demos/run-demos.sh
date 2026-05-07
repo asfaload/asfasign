@@ -54,4 +54,32 @@ mkdir -p \
 printf '%s' "$DEMO_PASSWORD" > "$FIXTURE/home/.asfaload/.demo-password"
 
 echo "Fixture: $FIXTURE" >&2
-echo "Driver scaffolding complete. (Servers and tapes land in subsequent tasks.)" >&2
+
+# --- Start test-file-server ---
+FILE_SERVER_LOG="$FIXTURE/logs/fileserver.log"
+"$REPO_ROOT/target/debug/test-file-server" \
+    --dir "$FIXTURE/fileserver" --port 0 \
+    > "$FILE_SERVER_LOG" 2>&1 &
+FILE_SERVER_PID=$!
+
+FILE_SERVER_PORT=""
+for _ in $(seq 1 75); do  # 75 * 0.2s = 15s
+    if [[ -f "$FILE_SERVER_LOG" ]]; then
+        FILE_SERVER_PORT="$(grep -oP 'LISTENING_PORT=\K[0-9]+' "$FILE_SERVER_LOG" 2>/dev/null || true)"
+        [[ -n "$FILE_SERVER_PORT" ]] && break
+    fi
+    if ! kill -0 "$FILE_SERVER_PID" 2>/dev/null; then
+        echo "test-file-server died. Log: $FILE_SERVER_LOG" >&2
+        exit 1
+    fi
+    sleep 0.2
+done
+
+if [[ -z "$FILE_SERVER_PORT" ]]; then
+    echo "test-file-server did not report a port within 15s. Log: $FILE_SERVER_LOG" >&2
+    exit 1
+fi
+
+FILE_SERVER_URL="http://localhost:$FILE_SERVER_PORT"
+SIGNERS_URL="$FILE_SERVER_URL/demo-project/asfaload.signers/index.json"
+echo "test-file-server: $FILE_SERVER_URL" >&2
