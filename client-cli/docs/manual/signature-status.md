@@ -20,11 +20,15 @@ Path to the caller's secret key file. Required.
 
 ### `-p --password <PASSWORD>`
 
-Password for the secret key. Conflicts with `--password-file`. Prompted interactively if neither is set.
+Password for the secret key. Conflicts with `--password-file` and `--password-command`. Prompted interactively if none of these is set.
 
 ### `-P --password-file <PATH>`
 
-File containing the password. Conflicts with `--password`.
+File containing the password. Conflicts with `--password` and `--password-command`.
+
+### `-c --password-command <COMMAND>`
+
+Shell command to run; its standard output is read as the password. Useful for password managers (`pass`, `op`, `bw`, etc.). Conflicts with `--password` and `--password-file`. The command string is parsed with shell-style quoting (no shell is spawned, so pipes and redirections don't apply); trailing newlines are stripped from the output.
 
 ### `-u --backend-url <URL>`
 

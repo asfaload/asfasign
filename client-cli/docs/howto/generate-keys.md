@@ -55,7 +55,16 @@ client new-keys --name ci-key --output-dir ./keys --password-file /run/secrets/k
 
 The file should contain the password on a single line. Trailing newlines are stripped.
 
-Both options are also available as environment variables:
+Or fetch the password from a password manager (or any external command) with `--password-command` (`-c`). The command's standard output is used as the password:
+
+```sh
+client new-keys --name ci-key --output-dir ./keys \
+    --password-command "pass show asfaload/ci-key"
+```
+
+The command string is parsed with shell-style quoting, but no shell is spawned — pipes and redirections don't apply. Trailing newlines are stripped from the command's output.
+
+Both `--password` and `--password-file` are also available as environment variables:
 
 ```sh
 export ASFALOAD_NEW_KEYS_PASSWORD="$KEY_PASSWORD"
