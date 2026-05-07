@@ -93,6 +93,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
+                password_args.password_command.clone(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
@@ -150,6 +151,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
+                password_args.password_command.clone(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
@@ -178,6 +180,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
+                password_args.password_command.clone(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
@@ -207,6 +210,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
+                password_args.password_command.clone(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
@@ -236,6 +240,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
+                password_args.password_command.clone(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
@@ -266,6 +271,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
+                password_args.password_command.clone(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
@@ -298,6 +304,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
+                password_args.password_command.clone(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",
@@ -327,6 +334,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let password = get_password(
                 password_args.password.clone(),
                 password_args.password_file.as_deref(),
+                password_args.password_command.clone(),
                 &cli.command.password_env_var(),
                 &cli.command.password_file_env_var(),
                 "Enter password: ",

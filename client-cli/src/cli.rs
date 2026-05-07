@@ -5,14 +5,19 @@ use std::path::PathBuf;
 pub const DEFAULT_BACKEND: &str = "http://127.0.0.1:3000";
 
 #[derive(clap::Args, Debug)]
+#[group(multiple = false)]
 pub struct PasswordArgs {
-    /// Password for the key (conflicts with password_file)
-    #[arg(long, short, conflicts_with = "password_file")]
+    /// Password for the key
+    #[arg(long, short)]
     pub password: Option<String>,
 
-    /// Path to a file containing the password (conflicts with password)
-    #[arg(long, short = 'P', conflicts_with = "password")]
+    /// Path to a file containing the password
+    #[arg(long, short = 'P')]
     pub password_file: Option<PathBuf>,
+
+    /// Command printing the password to its stdout
+    #[arg(long, short = 'c')]
+    pub password_command: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]

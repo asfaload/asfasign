@@ -1,6 +1,8 @@
 use ClientCliError::PasswordStrengthError;
 use std::io::Read;
+use std::io::{Error, ErrorKind};
 use std::path::Path;
+use std::process::Command;
 use zxcvbn::{Score, zxcvbn};
 
 use crate::error::{ClientCliError, Result};
@@ -49,6 +51,7 @@ pub fn read_password_from_file(file_path: &Path) -> Result<String> {
 fn get_unvalidated_password(
     password_arg: Option<String>,
     password_file_arg: Option<&Path>,
+    password_command_arg: Option<String>,
     env_var_password: &str,
     env_var_password_file: &str,
     password_confirmation: PasswordConfirmation,
@@ -56,6 +59,10 @@ fn get_unvalidated_password(
 ) -> Result<String> {
     if let Some(password) = password_arg {
         return Ok(password);
+    }
+
+    if let Some(command) = password_command_arg {
+        return read_password_from_command(&command);
     }
 
     if let Some(file_path) = password_file_arg {
@@ -126,9 +133,11 @@ pub enum PasswordConfirmation {
     RequireConfirmation,
     WithoutConfirmation,
 }
+#[allow(clippy::too_many_arguments)]
 pub fn get_password(
     password_arg: Option<String>,
     password_file_arg: Option<&Path>,
+    password_command_arg: Option<String>,
     env_var_password: &str,
     env_var_password_file: &str,
     prompt_message: &str,
@@ -138,6 +147,7 @@ pub fn get_password(
     let unvalidated_password = get_unvalidated_password(
         password_arg,
         password_file_arg,
+        password_command_arg,
         env_var_password,
         env_var_password_file,
         password_confirmation,
@@ -149,4 +159,31 @@ pub fn get_password(
         let validated_password = validate_password(unvalidated_password.as_str())?;
         Ok(validated_password)
     }
+}
+
+fn read_password_from_command(command_str: &str) -> Result<String> {
+    // shell_words::split handles quotes and escapes properly
+    let words = shell_words::split(command_str).map_err(|e| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            format!("Invalid shell quoting in command: {}", e),
+        )
+    })?;
+
+    if words.is_empty() {
+        return Err(Error::new(ErrorKind::InvalidInput, "Command string is empty").into());
+    }
+
+    // args[0] is the executable, the rest are arguments
+    let output = Command::new(&words[0]).args(&words[1..]).output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::other(format!("Command failed: {}", stderr.trim())).into());
+    }
+
+    let password =
+        String::from_utf8(output.stdout).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+
+    Ok(password.trim_end_matches(['\r', '\n']).to_string())
 }
