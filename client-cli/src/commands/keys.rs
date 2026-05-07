@@ -39,7 +39,6 @@ pub fn handle_new_keys_command(
     kp.save(&location)?;
 
     let public_key = kp.public_key().to_base64();
-    let message = share_pub_key_message(&public_key)?;
 
     if json {
         let output = NewKeysOutput {
@@ -49,6 +48,7 @@ pub fn handle_new_keys_command(
         };
         println!("{}", serde_json::to_string(&output)?);
     } else {
+        let message = share_pub_key_message(&public_key, true)?;
         let sec_path = location.to_string_lossy();
         let pub_path = format!("{sec_path}.pub");
 

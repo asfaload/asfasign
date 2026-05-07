@@ -12,14 +12,16 @@ pub fn handle_share_key_command(name: &str, dir: &Path, json: bool) -> Result<()
         full_path.display()
     ))?;
     let pk_string = pk.to_base64();
-    let message = share_pub_key_message(&pk_string)?;
     if json {
+        // Message without ansi escape characters for json
+        let message = share_pub_key_message(&pk_string, false)?;
         let output = ShareKeyOutput {
             public_key: pk_string.clone(),
             message,
         };
         println!("{}", serde_json::to_string(&output)?);
     } else {
+        let message = share_pub_key_message(&pk_string, true)?;
         println!("{}", message);
     }
     Ok(())

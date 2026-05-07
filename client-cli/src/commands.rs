@@ -54,16 +54,20 @@ pub(crate) mod keys_helpers {
     const BOLD: Style = Style::new().bold();
     const UNDERLINE: Style = Style::new().underline();
     use std::fmt::Write;
-    pub fn share_pub_key_message(public_key: &str) -> anyhow::Result<String> {
+    pub fn share_pub_key_message(public_key: &str, with_ansi: bool) -> anyhow::Result<String> {
+        // Define conditional bolds un case we want non-ansi output, like in json
+        let bold = if with_ansi { BOLD } else { Style::new() };
+        let underline = if with_ansi { UNDERLINE } else { Style::new() };
+
         let mut buf = String::new();
         writeln!(
             buf,
-            "{BOLD}The public key is safe to share{BOLD:#} -- that's how others verify your signatures."
+            "{bold}The public key is safe to share{bold:#} -- that's how others verify your signatures."
         )?;
         writeln!(buf,)?;
         writeln!(
             buf,
-            "{UNDERLINE}You can share your public key, for example with an admin, with this message:{UNDERLINE:#}"
+            "{underline}You can share your public key, for example with an admin, with this message:{underline:#}"
         )?;
         writeln!(buf,)?;
         writeln!(
