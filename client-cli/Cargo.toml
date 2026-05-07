@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anstream = "0.6"
+anstyle = "1"
 clap = { version = "4.5.53", features = ["derive"] }
 thiserror = "2.0"
 anyhow = "1.0"

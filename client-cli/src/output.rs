@@ -3,6 +3,7 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 pub struct NewKeysOutput {
     pub public_key_path: String,
+    pub public_key: String,
     pub secret_key_path: String,
 }
 

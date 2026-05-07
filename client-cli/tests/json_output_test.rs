@@ -59,7 +59,7 @@ fn test_new_keys_human_output_unchanged() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Public key saved at"));
+        .stdout(predicate::str::contains("Public key:"));
 }
 
 // -------------------------------------------------------------------
