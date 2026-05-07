@@ -16,9 +16,12 @@ pub mod tests {
         TestAuthHeaders, build_test_config, create_auth_headers, create_auth_headers_with_key,
         get_random_port, init_git_repo, url_for, wait_for_server,
     };
-    use rest_api_types::git_backend::GitBackendKind;
+    use rest_api_types::git_backend::{
+        GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend,
+    };
     use serde_json::{Value, json};
     use std::fs;
+    use std::sync::Arc;
     use tempfile::TempDir;
     use tokio::time::Duration;
 
@@ -408,7 +411,11 @@ pub mod tests {
         let git_dir = git_repo_path.join(".git");
         fs::remove_dir_all(&git_dir)?;
 
-        let git_actor = GitActor::spawn((git_repo_path_clone.clone(), backend_kind_from_env()));
+        let backend: Arc<dyn GitBackend> = match backend_kind_from_env() {
+            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(&git_repo_path_clone)),
+            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(&git_repo_path_clone)),
+        };
+        let git_actor = GitActor::spawn(backend);
 
         let write_commit_request = rest_api::file_auth::actors::git_actor::CommitFile {
             file_paths: vec![init_result.project_path.clone()],

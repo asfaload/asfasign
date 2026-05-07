@@ -17,5 +17,5 @@ PENDING_SUFFIX="pending"
 SIGNERS_HISTORY_FILE="asfaload.signers.history.json"
 
 
-backend=http://localhost:3000
+backend=${backend:-http://localhost:3000}
 key_password="password"

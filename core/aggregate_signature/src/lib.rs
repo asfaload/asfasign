@@ -981,8 +981,8 @@ mod tests {
     use std::str::FromStr;
     use tempfile::TempDir;
     use test_helpers::{
-        TestKeys, create_complete_signers_setup, create_group, fixtures_dir, get_asfaload_key_pair,
-        get_key_pair, get_two_asfaload_key_pairs, get_two_key_pairs, write_artifact_file,
+        TestKeys, create_complete_signers_setup, create_group, get_asfaload_key_pair, get_key_pair,
+        get_two_asfaload_key_pairs, get_two_key_pairs, write_artifact_file,
         write_pending_signatures, write_pending_signers_config, write_revocation_file,
         write_signers_config,
     };

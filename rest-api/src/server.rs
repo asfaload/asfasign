@@ -2,6 +2,7 @@ use crate::{state::init_state, v1::routes::v1_router};
 use axum::Router;
 use rest_api_types::{errors::ApiError, rustls::setup_crypto_provider};
 use std::net::SocketAddr;
+use tokio::signal;
 use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
@@ -18,7 +19,7 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
     let canonical_repo_path = tokio::fs::canonicalize(&config.git_repo_path)
         .await
         .map_err(|e| ApiError::InvalidFilePath(format!("Invalid git repo path: {}", e)))?;
-    let app_state = init_state(canonical_repo_path, config.clone());
+    let app_state = init_state(canonical_repo_path, config.clone())?;
     let governor_conf = GovernorConfigBuilder::default()
         // Beware, `.per_second(10) is not 10 req/s. From the doc: "Set the interval after which one element of
         // the quota is replenished in seconds."
@@ -48,14 +49,43 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
         .with_state(app_state);
 
     // Start the server
-    let addr = SocketAddr::from(([127, 0, 0, 1], config.server_port));
+    let addr = SocketAddr::from((config.server_address, config.server_port));
     tracing::info!(address = %addr, "Server listening");
+
+    // Install signal handlers up front so registration failures abort
+    // startup before the server begins accepting connections.
+    let shutdown = shutdown_signal()?;
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown)
     .await?;
     Ok(())
+}
+
+// Helper so the Axum server can be gracefully stopped when it is reunning as PID 1 in a container.
+fn shutdown_signal() -> Result<impl std::future::Future<Output = ()>, std::io::Error> {
+    #[cfg(unix)]
+    let (mut interrupt_handler, mut terminate_handler) = (
+        signal::unix::signal(signal::unix::SignalKind::interrupt())?,
+        signal::unix::signal(signal::unix::SignalKind::terminate())?,
+    );
+
+    Ok(async move {
+        #[cfg(unix)]
+        tokio::select! {
+            _ = interrupt_handler.recv() => {},
+            _ = terminate_handler.recv() => {},
+        }
+
+        #[cfg(not(unix))]
+        if let Err(e) = signal::ctrl_c().await {
+            tracing::error!(error = %e, "failed waiting on Ctrl+C signal");
+        }
+
+        tracing::info!("signal received, starting graceful shutdown");
+    })
 }

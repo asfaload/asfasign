@@ -21,6 +21,10 @@ check-format:
 clippy:
 	cargo clippy
 
+## Build non-optimised Docker image, sufficient only for alpha phase
+docker-build-alpha-image:
+	docker build -f docker/Dockerfile.rest-api -t asfaload_rest_api .
+
 help:
 	@echo "$$(tput bold)Available rules:$$(tput sgr0)"
 	@echo

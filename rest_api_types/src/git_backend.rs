@@ -58,6 +58,8 @@ pub trait GitBackend: Send + Sync + 'static {
         Self: Sized;
     fn root(&self) -> &PathBuf;
 
+    fn init(&self) -> Result<(), ApiError>;
+
     /// Read file content at a specific git commit.
     ///
     /// Uses `git show {commit}:{path}` to retrieve file content from history.
@@ -331,6 +333,11 @@ impl GitBackend for Sha1GitBackend {
             root: root.as_ref().to_path_buf(),
         }
     }
+
+    fn init(&self) -> Result<(), ApiError> {
+        Repository::init(self.root())?;
+        Ok(())
+    }
 }
 
 /// SHA-256 git backend using the git CLI.
@@ -439,6 +446,12 @@ impl GitBackend for Sha256GitBackend {
     fn root(&self) -> &PathBuf {
         &self.root
     }
+
+    fn init(&self) -> Result<(), ApiError> {
+        GitCommand::git(self.root(), &["init", "--object-format=sha256"])?;
+
+        Ok(())
+    }
 }
 
 /// Dispatch enum for GitBackend implementations.
@@ -486,6 +499,16 @@ mod tests {
 
         fn root(&self) -> &PathBuf {
             &self.root
+        }
+
+        fn init(&self) -> Result<(), ApiError> {
+            if self.should_fail {
+                Err(ApiError::GitOperationFailed(git2::Error::from_str(
+                    "mock failure",
+                )))
+            } else {
+                Ok(())
+            }
         }
     }
 
@@ -555,6 +578,22 @@ mod tests {
         let relative_or_requested = file_path.strip_prefix(repo_path).unwrap_or(file_path);
         crate::path_validation::build_normalised_absolute_path(repo_path, relative_or_requested)
             .unwrap()
+    }
+
+    #[test]
+    fn test_sha1_backend_init_creates_sha1_repo() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+
+        let backend = Sha1GitBackend::new(repo_path);
+        backend.init().unwrap();
+
+        assert!(
+            repo_path.join(".git").exists(),
+            ".git directory should exist"
+        );
+        let format = GitCommand::git(repo_path, &["rev-parse", "--show-object-format"]).unwrap();
+        assert_eq!(format, "sha1");
     }
 
     #[test]
@@ -994,6 +1033,22 @@ mod sha256_tests {
         let relative_or_requested = file_path.strip_prefix(repo_path).unwrap_or(file_path);
         crate::path_validation::build_normalised_absolute_path(repo_path, relative_or_requested)
             .unwrap()
+    }
+
+    #[test]
+    fn test_sha256_backend_init_creates_sha256_repo() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+
+        let backend = Sha256GitBackend::new(repo_path);
+        backend.init().unwrap();
+
+        assert!(
+            repo_path.join(".git").exists(),
+            ".git directory should exist"
+        );
+        let format = GitCommand::git(repo_path, &["rev-parse", "--show-object-format"]).unwrap();
+        assert_eq!(format, "sha256");
     }
 
     #[test]

@@ -1,0 +1,22 @@
+FROM rust:1.95-trixie AS build
+
+WORKDIR /src
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+RUN cargo build --package rest-api --release
+
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates libssl3 git\
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 1000 -r appgroup && useradd -u 1000 -r -g appgroup appuser
+
+WORKDIR /app
+COPY --from=build --chown=appuser:appgroup /src/target/release/rest-api /app/rest-api
+
+USER appuser
+CMD ["./rest-api"]
