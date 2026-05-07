@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::commands::keys_helpers::share_pub_key_message;
 use crate::output::NewKeysOutput;
 use crate::utils::ensure_dir_exists;
 use anstream::println;
@@ -38,6 +39,7 @@ pub fn handle_new_keys_command(
     kp.save(&location)?;
 
     let public_key = kp.public_key().to_base64();
+    let message = share_pub_key_message(&public_key)?;
 
     if json {
         let output = NewKeysOutput {
@@ -59,13 +61,7 @@ pub fn handle_new_keys_command(
         println!(
             "{WARN}WARNING:{WARN:#} Keep the secret key private. Treat it like a password -- never share, copy, or commit it."
         );
-        println!("The public key is safe to share -- that's how others verify your signatures.");
-        println!();
-        println!("To register your public key, send this to an admin:");
-        println!();
-        println!("    I generated a new Asfaload key-pair. You can use my new public");
-        println!("    key in signers files. Here it is:");
-        println!("    {public_key}");
+        println!("{}", message);
     }
     Ok(())
 }

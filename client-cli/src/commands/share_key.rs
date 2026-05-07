@@ -1,21 +1,26 @@
-use anyhow::Result;
+use crate::commands::keys_helpers::share_pub_key_message;
+use crate::output::ShareKeyOutput;
+use anstream::println;
+use anyhow::{Context, Result};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use std::path::Path;
 
-use crate::output::ShareKeyOutput;
-
-pub fn handle_share_key_command(name: &String, dir: &Path, json: bool) -> Result<()> {
+pub fn handle_share_key_command(name: &str, dir: &Path, json: bool) -> Result<()> {
     let full_path = dir.join(name).with_added_extension("pub");
-    println!("full path = {}", full_path.display());
-    let pk = AsfaloadPublicKeys::from_file(full_path)?;
+    let pk = AsfaloadPublicKeys::from_file(&full_path).context(format!(
+        "Error loading public key from {}",
+        full_path.display()
+    ))?;
     let pk_string = pk.to_base64();
+    let message = share_pub_key_message(&pk_string)?;
     if json {
         let output = ShareKeyOutput {
             public_key: pk_string.clone(),
-            message: format!("my public_key = {}", pk_string),
+            message,
         };
         println!("{}", serde_json::to_string(&output)?);
+    } else {
+        println!("{}", message);
     }
-    println!("{}", pk.to_base64());
     Ok(())
 }

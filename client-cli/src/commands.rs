@@ -48,6 +48,34 @@ pub(crate) async fn prepare_signers_submission(
     })
 }
 
+pub(crate) mod keys_helpers {
+
+    use anstyle::Style;
+    const BOLD: Style = Style::new().bold();
+    const UNDERLINE: Style = Style::new().underline();
+    use std::fmt::Write;
+    pub fn share_pub_key_message(public_key: &str) -> anyhow::Result<String> {
+        let mut buf = String::new();
+        writeln!(
+            buf,
+            "{BOLD}The public key is safe to share{BOLD:#} -- that's how others verify your signatures."
+        )?;
+        writeln!(buf,)?;
+        writeln!(
+            buf,
+            "{UNDERLINE}You can share your public key, for example with an admin, with this message:{UNDERLINE:#}"
+        )?;
+        writeln!(buf,)?;
+        writeln!(
+            buf,
+            "    I generated a new Asfaload key-pair. You can use my new public"
+        )?;
+        writeln!(buf, "    key in signers files. Here it is:")?;
+        writeln!(buf, "    {public_key}")?;
+        Ok(buf)
+    }
+}
+
 /// Dispatches the command to the appropriate handler
 pub fn handle_command(cli: &Cli) -> Result<()> {
     match &cli.command {
