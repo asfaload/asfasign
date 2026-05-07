@@ -1,6 +1,6 @@
-# `client signature-status`
+# `asfaload-cli signature-status`
 
-- **Usage**: `client signature-status [OPTIONS] <FILE_PATH>`
+- **Usage**: `asfaload-cli signature-status [OPTIONS] <FILE_PATH>`
 - **Source**: [`src/commands/signature_status.rs`](../../src/commands/signature_status.rs)
 - **Related endpoint**: [`GET /v1/signatures/{file_path}`](../../../rest-api/docs/manual/signature-status.md)
 
@@ -60,15 +60,15 @@ JSON (with `--json`):
 ## Examples
 
     # check a pending release index
-    client signature-status -K ~/.asfaload/key \
+    asfaload-cli signature-status -K ~/.asfaload/key \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
     # use a non-default backend
-    client signature-status -K ~/.asfaload/key -u https://asfaload.example.com \
+    asfaload-cli signature-status -K ~/.asfaload/key -u https://asfaload.example.com \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
     # machine-readable output
-    client signature-status --json -K ~/.asfaload/key \
+    asfaload-cli signature-status --json -K ~/.asfaload/key \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
 ## Exit codes

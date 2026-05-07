@@ -13,7 +13,7 @@ If a release needs to be recalled — a vulnerability was found, or the wrong ar
 ### 1. Initiate the revocation
 
 ```sh
-client revoke \
+asfaload-cli revoke \
     --secret-key ~/.asfaload/revoke-key \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 ```
@@ -32,7 +32,7 @@ When the revocation threshold requires multiple signatures, additional revocatio
 
 ```sh
 # Another revocation signer checks for pending work
-client list-pending --secret-key ~/.asfaload/revoke-key-2
+asfaload-cli list-pending --secret-key ~/.asfaload/revoke-key-2
 ```
 
 The pending revocation shows up as a path ending in `.revocation.json.pending`:
@@ -45,7 +45,7 @@ Files requiring your signature:
 Sign it:
 
 ```sh
-client sign-pending --secret-key ~/.asfaload/revoke-key-2 \
+asfaload-cli sign-pending --secret-key ~/.asfaload/revoke-key-2 \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json.revocation.json.pending
 ```
 
@@ -56,7 +56,7 @@ Once the threshold is met, the revocation is finalized.
 Attempting to download a revoked file fails:
 
 ```sh
-client download https://github.com/acme/tool/releases/download/v1.0/artifact.bin
+asfaload-cli download https://github.com/acme/tool/releases/download/v1.0/artifact.bin
 ```
 
 ```
@@ -74,6 +74,6 @@ This file has been revoked.
 
 ## Reference
 
-- [`client revoke`](../manual/revoke.md)
-- [`client list-pending`](../manual/list-pending.md)
-- [`client sign-pending`](../manual/sign-pending.md)
+- [`asfaload-cli revoke`](../manual/revoke.md)
+- [`asfaload-cli list-pending`](../manual/list-pending.md)
+- [`asfaload-cli sign-pending`](../manual/sign-pending.md)

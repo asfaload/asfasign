@@ -1,6 +1,6 @@
-# `client update-signers`
+# `asfaload-cli update-signers`
 
-- **Usage**: `client update-signers [OPTIONS] -K <SECRET_KEY> <SIGNERS_FILE_URL>`
+- **Usage**: `asfaload-cli update-signers [OPTIONS] -K <SECRET_KEY> <SIGNERS_FILE_URL>`
 - **Source**: [`src/commands/update_signers.rs`](../../src/commands/update_signers.rs)
 
 Propose an update to an existing project's signers file. The backend fetches the new file from the forge and starts a signature collection round — signers from the **current** configuration must approve the change before it takes effect.
@@ -60,7 +60,7 @@ JSON (with `--json`):
 ## Examples
 
     # propose a signers update
-    client update-signers -K ~/.asfaload/key \
+    asfaload-cli update-signers -K ~/.asfaload/key \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 
 ## Exit codes

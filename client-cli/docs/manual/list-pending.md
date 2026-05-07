@@ -1,6 +1,6 @@
-# `client list-pending`
+# `asfaload-cli list-pending`
 
-- **Usage**: `client list-pending [OPTIONS] -K <SECRET_KEY>`
+- **Usage**: `asfaload-cli list-pending [OPTIONS] -K <SECRET_KEY>`
 - **Source**: [`src/commands/list_pending.rs`](../../src/commands/list_pending.rs)
 
 List all files on the backend that still need your signature. The command authenticates with your secret key and returns only the files where your public key is among the expected signers.
@@ -55,10 +55,10 @@ JSON (with `--json`):
 ## Examples
 
     # list pending files
-    client list-pending -K ~/.asfaload/key
+    asfaload-cli list-pending -K ~/.asfaload/key
 
     # non-interactive, piped into sign-pending
-    client list-pending --json -K ~/.asfaload/key -p "$PASSWORD" \
+    asfaload-cli list-pending --json -K ~/.asfaload/key -p "$PASSWORD" \
         | jq -r '.file_paths[]'
 
 ## Exit codes

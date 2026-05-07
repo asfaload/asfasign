@@ -1,6 +1,6 @@
-# `client revoke`
+# `asfaload-cli revoke`
 
-- **Usage**: `client revoke [OPTIONS] -K <SECRET_KEY> <FILE_PATH>`
+- **Usage**: `asfaload-cli revoke [OPTIONS] -K <SECRET_KEY> <FILE_PATH>`
 - **Source**: [`src/commands/revoke.rs`](../../src/commands/revoke.rs)
 
 Revoke a previously signed file on the mirror. The command fetches the file from the backend, builds a revocation document (timestamped, with the initiator's public key and the file's SHA-512 digest), signs it, and submits it.
@@ -57,7 +57,7 @@ JSON (with `--json`):
 ## Examples
 
     # revoke a release index
-    client revoke -K ~/.asfaload/key \
+    asfaload-cli revoke -K ~/.asfaload/key \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
 ## Exit codes

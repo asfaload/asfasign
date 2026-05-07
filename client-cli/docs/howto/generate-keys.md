@@ -4,7 +4,7 @@ Every signer needs their own key pair. This guide walks you through creating one
 
 ## Prerequisites
 
-- The `client` binary is installed and in your `PATH`.
+- The `asfaload-cli` binary is installed and in your `PATH`.
 
 ## Steps
 
@@ -19,7 +19,7 @@ mkdir -p ~/.asfaload
 ### 2. Generate the key pair
 
 ```sh
-client new-keys --name mykey --output-dir ~/.asfaload
+asfaload-cli new-keys --name mykey --output-dir ~/.asfaload
 ```
 
 You'll be prompted for a password to protect the secret key. Pick a strong one — this password is required every time you sign.
@@ -44,13 +44,13 @@ You should see both `mykey` and `mykey.pub`.
 For CI or scripting, pass the password directly:
 
 ```sh
-client new-keys --name ci-key --output-dir ./keys --password "$KEY_PASSWORD"
+asfaload-cli new-keys --name ci-key --output-dir ./keys --password "$KEY_PASSWORD"
 ```
 
 Or read the password from a file with `--password-file` (`-P`):
 
 ```sh
-client new-keys --name ci-key --output-dir ./keys --password-file /run/secrets/key-password
+asfaload-cli new-keys --name ci-key --output-dir ./keys --password-file /run/secrets/key-password
 ```
 
 The file should contain the password on a single line. Trailing newlines are stripped.
@@ -58,7 +58,7 @@ The file should contain the password on a single line. Trailing newlines are str
 Or fetch the password from a password manager (or any external command) with `--password-command` (`-c`). The command's standard output is used as the password:
 
 ```sh
-client new-keys --name ci-key --output-dir ./keys \
+asfaload-cli new-keys --name ci-key --output-dir ./keys \
     --password-command "pass show asfaload/ci-key"
 ```
 
@@ -68,12 +68,12 @@ Both `--password` and `--password-file` are also available as environment variab
 
 ```sh
 export ASFALOAD_NEW_KEYS_PASSWORD="$KEY_PASSWORD"
-client new-keys --name ci-key --output-dir ./keys
+asfaload-cli new-keys --name ci-key --output-dir ./keys
 ```
 
 ```sh
 export ASFALOAD_NEW_KEYS_PASSWORD_FILE="/run/secrets/key-password"
-client new-keys --name ci-key --output-dir ./keys
+asfaload-cli new-keys --name ci-key --output-dir ./keys
 ```
 
 ## Next step
@@ -82,4 +82,4 @@ Share your `.pub` file with whoever maintains the signers file, it is not secret
 
 ## Reference
 
-- [`client new-keys`](../manual/new-keys.md)
+- [`asfaload-cli new-keys`](../manual/new-keys.md)

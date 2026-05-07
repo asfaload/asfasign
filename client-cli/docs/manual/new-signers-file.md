@@ -1,6 +1,6 @@
-# `client new-signers-file`
+# `asfaload-cli new-signers-file`
 
-- **Usage**: `client new-signers-file [OPTIONS] -o <OUTPUT_FILE>`
+- **Usage**: `asfaload-cli new-signers-file [OPTIONS] -o <OUTPUT_FILE>`
 - **Source**: [`src/commands/signers_file.rs`](../../src/commands/signers_file.rs)
 
 Create a new signers file that defines who can sign artifacts, administer, and manage the project. At minimum, one artifact signer and its threshold are required.
@@ -92,14 +92,14 @@ JSON (with `--json`):
 ## Examples
 
     # minimal: two artifact signers, threshold of 2
-    client new-signers-file \
+    asfaload-cli new-signers-file \
         --artifact-signer-file alice.pub \
         --artifact-signer-file bob.pub \
         -A 2 \
         -o signers.json
 
     # with admin and revocation groups
-    client new-signers-file \
+    asfaload-cli new-signers-file \
         --artifact-signer-file alice.pub \
         --artifact-signer-file bob.pub \
         -A 2 \
@@ -110,7 +110,7 @@ JSON (with `--json`):
         -o signers.json
 
     # mix base64 strings and files
-    client new-signers-file \
+    asfaload-cli new-signers-file \
         -a "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8" \
         --artifact-signer-file bob.pub \
         -A 1 \

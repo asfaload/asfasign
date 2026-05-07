@@ -22,7 +22,7 @@ carol.pub
 ### 2. Create the signers file
 
 ```sh
-client new-signers-file \
+asfaload-cli new-signers-file \
     --artifact-signer-file alice.pub \
     --artifact-signer-file bob.pub \
     --artifact-signer-file carol.pub \
@@ -81,7 +81,7 @@ Beyond artifact signers, you can define admin, master, and revocation key groups
 Revocation keys can revoke signed releases. Useful to have a separate set of keys for emergency access:
 
 ```sh
-client new-signers-file \
+asfaload-cli new-signers-file \
     --artifact-signer-file alice.pub \
     --artifact-signer-file bob.pub \
     --artifact-signer-file carol.pub \
@@ -98,7 +98,7 @@ client new-signers-file \
 Admin keys can propose signers file updates:
 
 ```sh
-client new-signers-file \
+asfaload-cli new-signers-file \
     --artifact-signer-file alice.pub \
     --artifact-signer-file bob.pub \
     --artifact-threshold 2 \
@@ -112,7 +112,7 @@ client new-signers-file \
 You can pass public keys as base64 strings instead of files. This is handy when keys come from a secrets manager:
 
 ```sh
-client new-signers-file \
+asfaload-cli new-signers-file \
     --artifact-signer "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8" \
     --artifact-signer-file bob.pub \
     --artifact-threshold 1 \
@@ -125,4 +125,4 @@ client new-signers-file \
 
 ## Reference
 
-- [`client new-signers-file`](../manual/new-signers-file.md)
+- [`asfaload-cli new-signers-file`](../manual/new-signers-file.md)

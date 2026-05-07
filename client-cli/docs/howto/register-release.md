@@ -13,7 +13,7 @@ Once your project's signers file is active, you can register releases for signin
 Pass the release page URL:
 
 ```sh
-client register-assets \
+asfaload-cli register-assets \
     --secret-key ~/.asfaload/mykey \
     --github-release-url https://github.com/acme/tool/releases/tag/v1.0
 ```
@@ -33,7 +33,7 @@ Github is currently the only forge publishing digests of the releases' artifacts
 publish a checksums file (using `sha256sum` or `sha512sum`). It is that checksums file that you will register with Asfaload.
 
 ```sh
-client register-assets \
+asfaload-cli register-assets \
     --secret-key ~/.asfaload/mykey \
     --csum-file https://example.com/releases/v1.0/SHA256SUMS \
     --csum-file https://example.com/releases/v1.0/SHA512SUMS
@@ -51,4 +51,4 @@ You registered the release, but you haven't signed it yet. The backend is now wa
 
 ## Reference
 
-- [`client register-assets`](../manual/register-assets.md)
+- [`asfaload-cli register-assets`](../manual/register-assets.md)

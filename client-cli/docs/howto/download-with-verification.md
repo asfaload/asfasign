@@ -14,7 +14,7 @@ The `download` command fetches a file and verifies its signatures before saving 
 Pass the original download URL — the same URL you'd use to download from GitHub or your forge:
 
 ```sh
-client download \
+asfaload-cli download \
     https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
 ```
 
@@ -40,7 +40,7 @@ Progress: 100.0% (12.50 MB / 12.50 MB)
 By default, the file is saved in the current directory using the filename from the URL. Use `-o` to specify a different path:
 
 ```sh
-client download -o /tmp/tool.tar.gz \
+asfaload-cli download -o /tmp/tool.tar.gz \
     https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
 ```
 
@@ -49,7 +49,7 @@ client download -o /tmp/tool.tar.gz \
 By default, only the current signers file is verified. For stronger assurance — especially if the signers file has been updated since the release was signed — use `--full-check`:
 
 ```sh
-client download --full-check \
+asfaload-cli download --full-check \
     https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
 ```
 
@@ -64,7 +64,7 @@ This walks the full signers chain history and verifies each entry against the fo
 The CLI auto-detects the forge type from the URL. If detection fails or you're using a generic file server:
 
 ```sh
-client download --type fileserver \
+asfaload-cli download --type fileserver \
     https://files.example.com/tool/v1.0/tool.tar.gz
 ```
 
@@ -73,7 +73,7 @@ Available types: `github`, `gitlab`, `fileserver`.
 ## Pointing to a non-default backend
 
 ```sh
-client download -u https://asfaload.example.com \
+asfaload-cli download -u https://asfaload.example.com \
     https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
 ```
 
@@ -89,4 +89,4 @@ This file has been revoked.
 
 ## Reference
 
-- [`client download`](../manual/download.md)
+- [`asfaload-cli download`](../manual/download.md)

@@ -1,6 +1,6 @@
-# client-cli manual
+# asfaload-cli manual
 
-Reference for all `client` commands.
+Reference for all `asfaload-cli` commands.
 
 ## Keys
 

@@ -1,6 +1,6 @@
-# `client download`
+# `asfaload-cli download`
 
-- **Usage**: `client download [OPTIONS] <FILE_URL>`
+- **Usage**: `asfaload-cli download [OPTIONS] <FILE_URL>`
 - **Source**: [`src/commands/download.rs`](../../src/commands/download.rs)
 
 Download a file and verify its signatures before saving. The command fetches the signers file, index, and signatures from the backend, checks everything is valid, then downloads the actual file and verifies its hash.
@@ -66,19 +66,19 @@ If the file has been revoked:
 ## Examples
 
     # download and verify a release artifact
-    client download \
+    asfaload-cli download \
         https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
 
     # save to a specific path
-    client download -o /tmp/tool.tar.gz \
+    asfaload-cli download -o /tmp/tool.tar.gz \
         https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
 
     # verify the full signers chain history
-    client download --full-check \
+    asfaload-cli download --full-check \
         https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
 
     # override forge detection
-    client download --type gitlab \
+    asfaload-cli download --type gitlab \
         https://gitlab.com/acme/tool/-/releases/v1.0/downloads/tool.tar.gz
 
 ## Exit codes

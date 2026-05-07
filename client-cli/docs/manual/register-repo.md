@@ -1,6 +1,6 @@
-# `client register-repo`
+# `asfaload-cli register-repo`
 
-- **Usage**: `client register-repo [OPTIONS] -K <SECRET_KEY> <SIGNERS_FILE_URL>`
+- **Usage**: `asfaload-cli register-repo [OPTIONS] -K <SECRET_KEY> <SIGNERS_FILE_URL>`
 - **Source**: [`src/commands/register_repo.rs`](../../src/commands/register_repo.rs)
 
 Register a new repository with the backend. Points the backend at your signers file so it knows which keys are authorized to sign artifacts for this project.
@@ -62,11 +62,11 @@ JSON (with `--json`):
 ## Examples
 
     # register a GitHub-hosted signers file
-    client register-repo -K ~/.asfaload/key \
+    asfaload-cli register-repo -K ~/.asfaload/key \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 
     # with explicit backend
-    client register-repo -K ~/.asfaload/key \
+    asfaload-cli register-repo -K ~/.asfaload/key \
         -u https://asfaload.example.com \
         https://raw.githubusercontent.com/acme/tool/main/asfaload.signers/index.json
 
