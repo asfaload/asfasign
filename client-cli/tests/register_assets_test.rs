@@ -3,7 +3,7 @@ use predicates::prelude::*;
 
 #[test]
 fn test_register_assets_cli_help() {
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("register-assets").arg("--help");
     cmd.assert()
         .success()
@@ -15,7 +15,7 @@ fn test_register_assets_cli_help() {
 
 #[test]
 fn test_register_assets_requires_mode() {
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("register-assets");
     cmd.assert()
         .failure()
@@ -24,7 +24,7 @@ fn test_register_assets_requires_mode() {
 
 #[test]
 fn test_register_assets_requires_secret_key_for_github_release() {
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("register-assets")
         .arg("--github-release-url")
         .arg("https://github.com/testowner/testrepo/releases/tag/v1.0.0");
@@ -35,7 +35,7 @@ fn test_register_assets_requires_secret_key_for_github_release() {
 
 #[test]
 fn test_register_assets_requires_secret_key_for_csum_file() {
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("register-assets")
         .arg("--csum-file")
         .arg("https://files.example.com/releases/v1.0/SHA256SUMS");
@@ -52,7 +52,7 @@ fn test_register_assets_github_release_network_error_without_server() {
     let secret_key = AsfaloadKeyPairs::new("test_password_123").unwrap();
     secret_key.save(&key_path).unwrap();
 
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("register-assets")
         .arg("--github-release-url")
         .arg("https://github.com/testowner/testrepo/releases/tag/v1.0.0")
@@ -75,7 +75,7 @@ fn test_register_assets_csum_file_network_error_without_server() {
     let secret_key = AsfaloadKeyPairs::new("test_password_123").unwrap();
     secret_key.save(&key_path).unwrap();
 
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("register-assets")
         .arg("--csum-file")
         .arg("https://files.example.com/releases/v1.0/SHA256SUMS")

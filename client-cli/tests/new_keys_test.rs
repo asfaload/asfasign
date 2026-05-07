@@ -14,7 +14,7 @@ fn test_new_keys_password_command_produces_loadable_key() {
     // `printf %s` outputs the password with no trailing newline.
     let cmd_str = format!("sh -c 'printf %s {TEST_PASSWORD}'");
 
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("new-keys")
         .arg("-n")
         .arg("mykey")
@@ -39,7 +39,7 @@ fn test_new_keys_password_command_trims_trailing_newline() {
 
     let cmd_str = format!("sh -c 'echo {TEST_PASSWORD}'");
 
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("new-keys")
         .arg("-n")
         .arg("mykey")
