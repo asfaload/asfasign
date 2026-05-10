@@ -10,7 +10,7 @@ From the repo root:
 make demos
 ```
 
-This builds `asfaload-cli`, `rest-api`, and `test-file-server`, sets up an isolated fixture (a fake `$HOME`, a fake fileserver doc-root, a fresh git repo), starts a local rest-api and file-server in the background, plays each `.tape` in order, and writes GIFs to `howto/out/` (gitignored).
+This builds `asfaload-cli`, `rest-api`, and `test-file-server`, sets up an isolated fixture (a fake `$HOME`, a fake fileserver doc-root, a fresh git repo), starts a local rest-api and file-server in the background, renders each `.tape.tmpl` for the active profile, plays the rendered tape, and writes GIFs to `howto/out/` (gitignored).
 
 Set `KEEP_FIXTURE=1` to preserve the fixture directory for debugging — the script prints its path on stderr.
 
@@ -47,7 +47,7 @@ $SLEEP 4s                       # → Sleep 4s, or "# 4s" (a comment)
 
 The recordings show only what a reader following the how-to would type. Server lifecycle, fixture setup, the equivalent of "commit and push", and signing rounds the howto delegates to other guides all happen in the driver and are not visible on screen.
 
-Each tape stands on its own: comments don't refer to earlier demos, and only `generate-keys.tape` actually generates a key. Every other tape works against the project's fixture keys, which the driver pre-stages into `$HOME/.asfaload/` before recording starts. That means the order tapes are recorded in does not matter for any single tape's correctness — only the backend state flows from one to the next.
+Each tape stands on its own: comments don't refer to earlier demos, and only `generate-keys.tape.tmpl` actually generates a key. Every other tape works against the project's fixture keys, which the driver pre-stages into `$HOME/.asfaload/` before recording starts. That means the order tapes are recorded in does not matter for any single tape's correctness — only the backend state flows from one to the next.
 
 ### Keys used in the demos
 
@@ -63,7 +63,7 @@ The driver copies `core/test_helpers/fixtures/keys/key_0..key_6` (and matching `
 | `key_5` | Revocation key — co-signs revocation (threshold 2) |
 | `key_6` | Third revocation key |
 
-`generate-keys.tape` produces a key called `mykey` purely to demonstrate the `new-keys` command; nothing else consumes it.
+`generate-keys.tape.tmpl` produces a key called `mykey` purely to demonstrate the `new-keys` command; nothing else consumes it.
 
 ### Run order
 
@@ -113,11 +113,12 @@ These run silently in the driver to bridge demos:
 
 ## Adding a new demo
 
-1. Drop `<howto-name>.tape` into `howto/` (filename mirrors the source how-to's basename, no numeric prefix).
-2. Append the filename to the `TAPES` array in `run-demos.sh`.
-3. Use one of the staged fixture keys (`~/.asfaload/key_N`) rather than calling `new-keys` for setup. Only `generate-keys.tape` should ever invoke `new-keys`.
-4. If the new demo depends on state from a previous demo, add a `case` arm in `hidden_step_after()` (or `hidden_step_before()` for prerequisites the howto assumes are already in place) to bridge it.
-5. If the new demo introduces a new env var, add it to the table above and export it from `run-demos.sh` before the `vhs` invocation.
+1. Drop `<howto-name>.tape.tmpl` into `howto/` (filename mirrors the source how-to's basename, no numeric prefix).
+2. Use `Set TypingSpeed $TYPING_SPEED` and `$SLEEP Ns` for delays — never literal values, otherwise the profile won't apply.
+3. Append the basename (without `.tmpl`) to the `TAPES` array in `run-demos.sh`. The driver appends `.tmpl` when reading.
+4. Use one of the staged fixture keys (`~/.asfaload/key_N`) rather than calling `new-keys` for setup. Only `generate-keys.tape.tmpl` should ever invoke `new-keys`.
+5. If the new demo depends on state from a previous demo, add a `case` arm in `hidden_step_after()` (or `hidden_step_before()` for prerequisites the howto assumes are already in place) to bridge it.
+6. If the new demo introduces a new env var, add it to the env-var table and export it from `run-demos.sh` before the `vhs` invocation.
 
 ## Reference
 
