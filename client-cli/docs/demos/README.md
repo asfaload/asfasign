@@ -14,6 +14,29 @@ This builds `asfaload-cli`, `rest-api`, and `test-file-server`, sets up an isola
 
 Set `KEEP_FIXTURE=1` to preserve the fixture directory for debugging — the script prints its path on stderr.
 
+## Profiles
+
+`make demos` renders every tape under one of two profiles, selected via the `DEMO_PROFILE` env var:
+
+| Profile | `Set TypingSpeed` | `Sleep` lines |
+|---------|-------------------|---------------|
+| `production` (default) | `60ms` | played as written |
+| `fast` | `1ms` | stripped (rendered as comments) |
+
+```sh
+make demos                          # production
+DEMO_PROFILE=fast make demos   # fast: instant typing, no sleeps
+```
+
+`fast` exists for fast iteration on a tape — the GIFs still render but flash by quickly. Use `production` for shareable output.
+
+The pace settings are not hard-coded into the tape sources. Each tape is a `.tape.tmpl` template that uses `$TYPING_SPEED` for the typing speed value and a `$SLEEP` line prefix for delays. The driver substitutes both based on the active profile and writes the rendered `.tape` into a temp directory before invoking `vhs`.
+
+```
+Set TypingSpeed $TYPING_SPEED   # → 60ms or 1ms
+$SLEEP 4s                       # → Sleep 4s, or "# 4s" (a comment)
+```
+
 ## Requirements
 
 - [`vhs`](https://github.com/charmbracelet/vhs) on `PATH`. Tested with v0.11.0.

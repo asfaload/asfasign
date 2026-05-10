@@ -12,6 +12,24 @@ DEMO_PROJECT="demo-project"
 KEEP_FIXTURE="${KEEP_FIXTURE:-}"
 FIXTURE_KEYS_DIR="$REPO_ROOT/core/test_helpers/fixtures/keys"
 
+# --- Profile resolution ---
+DEMO_PROFILE="${DEMO_PROFILE:-production}"
+case "$DEMO_PROFILE" in
+    production)
+        TYPING_SPEED="60ms"
+        SLEEP="Sleep"
+        ;;
+    fast)
+        TYPING_SPEED="1ms"
+        SLEEP="#"
+        ;;
+    *)
+        echo "unknown DEMO_PROFILE: $DEMO_PROFILE (expected: production, fast)" >&2
+        exit 1
+        ;;
+esac
+echo "Profile: $DEMO_PROFILE (typing=$TYPING_SPEED, sleep=$SLEEP)" >&2
+
 # Explicit run order (do not rely on alphabetic order).
 TAPES=(
     "generate-keys.tape"
@@ -188,6 +206,16 @@ asfa_sign_pending() {
         -u "$BACKEND_URL" "$2" >/dev/null
 }
 
+render_tape() {
+    # Substitutes $TYPING_SPEED and $SLEEP into a .tape.tmpl, writing the
+    # rendered .tape into the throwaway fixture so cleanup removes it.
+    local src="$1" dst="$2"
+    sed \
+        -e "s|\$TYPING_SPEED|$TYPING_SPEED|g" \
+        -e "s|\$SLEEP|$SLEEP|g" \
+        "$src" > "$dst"
+}
+
 hidden_step_before() {
     local tape="$1"
     case "$tape" in
@@ -231,10 +259,15 @@ hidden_step_after() {
 }
 
 for tape in "${TAPES[@]}"; do
-    if [[ ! -f "$TAPES_DIR/$tape" ]]; then
-        echo "Skipping missing tape: $tape" >&2
+    template="$TAPES_DIR/${tape}.tmpl"
+    if [[ ! -f "$template" ]]; then
+        echo "Skipping missing template: $template" >&2
         continue
     fi
+
+    rendered="$FIXTURE/$tape"
+    render_tape "$template" "$rendered"
+
     hidden_step_before "$tape"
     echo "Recording $tape ..." >&2
     (
@@ -250,7 +283,7 @@ for tape in "${TAPES[@]}"; do
         ASFALOAD_DEMO_PENDING_REVOCATION_PATH="$PENDING_REVOCATION_PATH" \
         ASFALOAD_DEMO_CSUM_URL="$CSUM_URL" \
         ASFALOAD_DEMO_ARTIFACT_URL="$ARTIFACT_URL" \
-            vhs "$tape"
+            vhs "$rendered"
     )
     output_name="${tape%.tape}.gif"
     if [[ ! -f "$TAPES_DIR/out/$output_name" ]]; then
