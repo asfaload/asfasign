@@ -42,7 +42,8 @@ TAPES=(
     "sign-release.tape"
     "download-with-verification.tape"
     "update-signers-file.tape"
-    "revoke-release.tape"
+    "revoke-release-initiate.tape"
+    "revoke-release-cosign.tape"
 )
 
 # Release version used by register/sign/download/revoke demos.
