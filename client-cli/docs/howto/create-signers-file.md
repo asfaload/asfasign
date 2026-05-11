@@ -39,6 +39,8 @@ Admin keys: 0 (threshold: none)
 Master keys: 0 (threshold: none)
 ```
 
+![Demo: create the signers file](demos/create-signers-file.gif)
+
 ### 3. Commit and push
 
 Place the signers file in your repository and push it.

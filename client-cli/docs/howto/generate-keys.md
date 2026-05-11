@@ -31,6 +31,8 @@ This creates two files:
 | `~/.asfaload/mykey` | Secret key (keep this safe) |
 | `~/.asfaload/mykey.pub` | Public key (share with your team) |
 
+![Demo: generate a key pair](demos/generate-keys.gif)
+
 ### 3. Verify the output
 
 ```sh

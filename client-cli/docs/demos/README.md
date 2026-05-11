@@ -18,10 +18,10 @@ Set `KEEP_FIXTURE=1` to preserve the fixture directory for debugging — the scr
 
 `make demos` renders every tape under one of two profiles, selected via the `DEMO_PROFILE` env var:
 
-| Profile | `Set TypingSpeed` | `Sleep` lines |
-|---------|-------------------|---------------|
-| `production` (default) | `60ms` | played as written |
-| `fast` | `1ms` | stripped (rendered as comments) |
+| Profile | `Set TypingSpeed` | `Sleep` lines | `$END_PAUSE` |
+|---------|-------------------|---------------|--------------|
+| `production` (default) | `20ms` | played as written | `6s` |
+| `fast` | `1ms` | stripped (rendered as comments) | `0s` |
 
 ```sh
 make demos                          # production
@@ -33,9 +33,16 @@ DEMO_PROFILE=fast make demos   # fast: instant typing, no sleeps
 The pace settings are not hard-coded into the tape sources. Each tape is a `.tape.tmpl` template that uses `$TYPING_SPEED` for the typing speed value and a `$SLEEP` line prefix for delays. The driver substitutes both based on the active profile and writes the rendered `.tape` into a temp directory before invoking `vhs`.
 
 ```
-Set TypingSpeed $TYPING_SPEED   # → 60ms or 1ms
+Set TypingSpeed $TYPING_SPEED   # → 20ms or 1ms
 $SLEEP 4s                       # → Sleep 4s, or "# 4s" (a comment)
+Sleep $END_PAUSE                # → Sleep 6s or Sleep 0s (always a real Sleep)
 ```
+
+## Embedding in howtos
+
+Each how-to embeds its matching demo at the end of the section that shows the CLI invocation. Run `make demos` to render the GIFs into `howto/out/`, then `make docs` to copy them into `../howto/demos/` (gitignored) and rebuild the mdbook site. The howto markdown references the copied path as `demos/<tape-name>.gif`.
+
+`make demos` must run before `make docs` for the embedded GIFs to appear. If GIFs are missing, `make docs` emits a single warning and continues; the site renders broken-image placeholders for the missing entries.
 
 ## Requirements
 
@@ -77,7 +84,8 @@ The driver renders tapes in this order, mirroring the howto index:
 6. `sign-release` — `key_0` and `key_1` sign the release index (threshold 2).
 7. `download-with-verification` — fetches the signed `v1.0` artifact with full verification.
 8. `update-signers-file` — proposes a new signers file (4 artifact + 3 revocation keys).
-9. `revoke-release` — revokes `v1.0` (threshold 2: `key_4` initiates, `key_5` co-signs).
+9. `revoke-release-initiate` — `key_4` initiates the revocation of `v1.0` (leaves a pending revocation on the backend).
+10. `revoke-release-cosign` — `key_5` co-signs the pending revocation; threshold 2 is met and `v1.0` becomes revoked.
 
 `download-with-verification` is recorded before `update-signers-file`/`revoke-release` so the verification path stays the happy one. By the end of the run, `v1.0` is revoked.
 
@@ -114,11 +122,12 @@ These run silently in the driver to bridge demos:
 ## Adding a new demo
 
 1. Drop `<howto-name>.tape.tmpl` into `howto/` (filename mirrors the source how-to's basename, no numeric prefix).
-2. Use `Set TypingSpeed $TYPING_SPEED` and `$SLEEP Ns` for delays — never literal values, otherwise the profile won't apply.
-3. Append the basename (without `.tmpl`) to the `TAPES` array in `run-demos.sh`. The driver appends `.tmpl` when reading.
-4. Use one of the staged fixture keys (`~/.asfaload/key_N`) rather than calling `new-keys` for setup. Only `generate-keys.tape.tmpl` should ever invoke `new-keys`.
-5. If the new demo depends on state from a previous demo, add a `case` arm in `hidden_step_after()` (or `hidden_step_before()` for prerequisites the howto assumes are already in place) to bridge it.
-6. If the new demo introduces a new env var, add it to the env-var table and export it from `run-demos.sh` before the `vhs` invocation.
+2. Use `Set TypingSpeed $TYPING_SPEED` and `$SLEEP Ns` for in-tape delays — never literal values, otherwise the profile won't apply.
+3. End every tape with a single `Sleep $END_PAUSE` line (not `$SLEEP …`) so the last frame stays readable in both profiles.
+4. Append the basename (without `.tmpl`) to the `TAPES` array in `run-demos.sh`. The driver appends `.tmpl` when reading.
+5. Use one of the staged fixture keys (`~/.asfaload/key_N`) rather than calling `new-keys` for setup. Only `generate-keys.tape.tmpl` should ever invoke `new-keys`.
+6. If the new demo depends on state from a previous demo, add a `case` arm in `hidden_step_after()` (or `hidden_step_before()` for prerequisites the howto assumes are already in place) to bridge it.
+7. If the new demo introduces a new env var, add it to the env-var table and export it from `run-demos.sh` before the `vhs` invocation.
 
 ## Reference
 

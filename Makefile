@@ -82,10 +82,22 @@ test-mutants:
 client-server-tests:
 	cargo test --package client-server-integration-tests
 
-.PHONY: docs docs-serve docs-clean
+.PHONY: docs docs-serve docs-clean docs-copy-demos
+
+GIF_SRC := client-cli/docs/demos/howto/out
+GIF_DST := client-cli/docs/howto/demos
+
+## Copy rendered demo GIFs into the howto tree for mdbook to embed
+docs-copy-demos:
+	@mkdir -p $(GIF_DST)
+	@if ls $(GIF_SRC)/*.gif >/dev/null 2>&1; then \
+	    cp -f $(GIF_SRC)/*.gif $(GIF_DST)/; \
+	else \
+	    echo "warn: no rendered demos in $(GIF_SRC) — run 'make demos' first" >&2; \
+	fi
 
 ## Build documentation site
-docs:
+docs: docs-copy-demos
 	@mkdir -p docs/site/src/client-cli docs/site/src/rest-api
 	@ln -sfn ../../../../client-cli/docs/howto docs/site/src/client-cli/howto
 	@ln -sfn ../../../../client-cli/docs/manual docs/site/src/client-cli/manual
@@ -93,7 +105,7 @@ docs:
 	mdbook build docs/site
 
 ## Serve documentation site locally for preview
-docs-serve:
+docs-serve: docs-copy-demos
 	@mkdir -p docs/site/src/client-cli docs/site/src/rest-api
 	@ln -sfn ../../../../client-cli/docs/howto docs/site/src/client-cli/howto
 	@ln -sfn ../../../../client-cli/docs/manual docs/site/src/client-cli/manual
@@ -103,6 +115,7 @@ docs-serve:
 ## Remove generated documentation files
 docs-clean:
 	rm -rf docs/site/src/client-cli docs/site/src/rest-api docs/site/book
+	rm -rf $(GIF_DST)
 
 
 RCLONE_CONFIG := private/rclone.conf
@@ -117,6 +130,6 @@ docs-setup-rclone:
 docs-deploy: docs-clean docs
 	rclone --config $(RCLONE_CONFIG) sync --verbose ./docs/site/book/ ovh:/home/asfaloc/www/doc/
 
-## Render VHS demos for the client-cli how-tos
+## Render VHS demos for the client-cli how-tos. DEMO_PROFILE is production by default, set to fast for dev
 demos:
 	./client-cli/docs/demos/run-demos.sh

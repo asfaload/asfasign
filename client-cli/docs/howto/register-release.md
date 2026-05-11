@@ -27,6 +27,8 @@ Index file path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index
 
 The backend fetches the release, creates an index of the assets, and waits for signatures.
 
+![Demo: register a release](demos/register-release.gif)
+
 ## Register a release from other hoster [EXPERIMENTAL]
 
 Github is currently the only forge publishing digests of the releases' artifacts. If you publish releases on other forges or an http file server, your release needs to

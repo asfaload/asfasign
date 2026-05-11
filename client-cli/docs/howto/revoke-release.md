@@ -26,6 +26,8 @@ Success! File revoked: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload
 
 If the revocation threshold is 1, the file is revoked immediately. If the threshold is higher, the revocation enters a **pending** state and more revocation signers must co-sign.
 
+![Demo: initiate a revocation](demos/revoke-release-initiate.gif)
+
 ### 2. Co-sign the revocation (if threshold > 1)
 
 When the revocation threshold requires multiple signatures, additional revocation signers use `list-pending` and `sign-pending` to add their signatures:
@@ -50,6 +52,8 @@ asfaload-cli sign-pending --secret-key ~/.asfaload/revoke-key-2 \
 ```
 
 Once the threshold is met, the revocation is finalized.
+
+![Demo: co-sign a revocation](demos/revoke-release-cosign.gif)
 
 ### 3. Verify the revocation
 

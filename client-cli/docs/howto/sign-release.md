@@ -41,6 +41,8 @@ When the threshold is met:
 Success! Signature submitted (complete)
 ```
 
+![Demo: sign a release](demos/sign-release.gif)
+
 ### 3. Check progress
 
 At any point, you can check whether the threshold has been reached:

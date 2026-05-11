@@ -47,6 +47,8 @@ When your signature completes the required count (every signer must sign for an 
 Success! Signature submitted (complete)
 ```
 
+![Demo: sign the pending signers file](demos/activate-signers-file.gif)
+
 ### 3. Verify activation
 
 Once every signer has signed, the signers file moves from pending to active. There is no separate activation step — the last signature triggers it automatically.

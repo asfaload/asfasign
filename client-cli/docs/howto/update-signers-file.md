@@ -48,6 +48,8 @@ Required signers (4): alice, bob, carol, dave
 Next step: signers must submit signatures to activate the update.
 ```
 
+![Demo: propose a signers update](demos/update-signers-file.gif)
+
 ### 3. All signers must sign
 
 Just like initial activation, **every** signer listed in the **new** signers file must sign before the update takes effect. This includes both existing and newly added signers.

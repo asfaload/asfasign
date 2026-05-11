@@ -35,6 +35,8 @@ Progress: 100.0% (12.50 MB / 12.50 MB)
 ✓ All done! Verified 2 signature(s)
 ```
 
+![Demo: download with verification](demos/download-with-verification.gif)
+
 ### 2. Choose where to save
 
 By default, the file is saved in the current directory using the filename from the URL. Use `-o` to specify a different path:
