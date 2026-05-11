@@ -18,7 +18,7 @@ case "$DEMO_PROFILE" in
     production)
         TYPING_SPEED="20ms"
         SLEEP="Sleep"
-        END_PAUSE="6s"
+        END_PAUSE="20s"
         ;;
     fast)
         TYPING_SPEED="1ms"
