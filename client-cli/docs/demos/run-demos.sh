@@ -16,19 +16,21 @@ FIXTURE_KEYS_DIR="$REPO_ROOT/core/test_helpers/fixtures/keys"
 DEMO_PROFILE="${DEMO_PROFILE:-production}"
 case "$DEMO_PROFILE" in
     production)
-        TYPING_SPEED="60ms"
+        TYPING_SPEED="20ms"
         SLEEP="Sleep"
+        END_PAUSE="6s"
         ;;
     fast)
         TYPING_SPEED="1ms"
         SLEEP="#"
+        END_PAUSE="0s"
         ;;
     *)
         echo "unknown DEMO_PROFILE: $DEMO_PROFILE (expected: production, fast)" >&2
         exit 1
         ;;
 esac
-echo "Profile: $DEMO_PROFILE (typing=$TYPING_SPEED, sleep=$SLEEP)" >&2
+echo "Profile: $DEMO_PROFILE (typing=$TYPING_SPEED, sleep=$SLEEP, end_pause=$END_PAUSE)" >&2
 
 # Explicit run order (do not rely on alphabetic order).
 TAPES=(
@@ -207,12 +209,13 @@ asfa_sign_pending() {
 }
 
 render_tape() {
-    # Substitutes $TYPING_SPEED and $SLEEP into a .tape.tmpl, writing the
-    # rendered .tape into the throwaway fixture so cleanup removes it.
+    # Substitutes $TYPING_SPEED, $SLEEP and $END_PAUSE into a .tape.tmpl,
+    # writing the rendered .tape into the throwaway fixture so cleanup removes it.
     local src="$1" dst="$2"
     sed \
         -e "s|\$TYPING_SPEED|$TYPING_SPEED|g" \
         -e "s|\$SLEEP|$SLEEP|g" \
+        -e "s|\$END_PAUSE|$END_PAUSE|g" \
         "$src" > "$dst"
 }
 
