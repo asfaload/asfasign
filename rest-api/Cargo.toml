@@ -37,7 +37,7 @@ rest_api_types = { path = "../rest_api_types/" }
 rest_api_auth = { path = "../rest_api_auth/" }
 hyper = "1.0"
 reqwest = { version = "0.13", features = ["json", "stream"] }
-git2 = "0.20.4"
+git2 = "0.21.0"
 sled = "0.34"
 chrono = "0.4"
 signers_file = { path = "../core/signers_file/" }
