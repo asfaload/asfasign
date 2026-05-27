@@ -324,4 +324,96 @@ mod tests {
             Err(ClientLibError::SignersChainForgeFetchError(_))
         ));
     }
+
+    // -- Trust anchor must lie within the download's realm --
+
+    // Scenario: a user downloads an artifact published on github.com/acme/tool.
+    // A compromised asfaload backend answers the signers-chain request with a
+    // chain that is internally flawless — self-signed, passes `validate_chain`,
+    // and its genesis trust anchor matches the content served by the anchor
+    // host. The single defect is that the genesis trust anchor is hosted on a
+    // server with nothing to do with github.com/acme/tool, i.e. it lies OUTSIDE
+    // the realm of the URL being downloaded. A correct client must reject it.
+    //
+    // Three distinct actors:
+    //   - github_artifact_path : where the user downloads from (defines the realm)
+    //   - asfaload_backend     : serves the (malicious) signers chain (so supposed breached)
+    //   - attacker_anchor_host : serves the genesis trust anchor, at an origin
+    //                            unrelated to github_artifact_path
+    #[tokio::test]
+    async fn verify_signers_chain_rejects_trust_anchor_outside_download_origin() {
+        // The artifact the user asked for lives on github.com/acme/tool; this is
+        // the realm the trust anchor is required to fall within.
+        let github_artifact_path =
+            "https/github.com/443/acme/tool/releases/tag/v1.0.0/asfaload.index.json";
+
+        let mut asfaload_backend = mockito::Server::new_async().await;
+        let mut attacker_anchor_host = mockito::Server::new_async().await;
+
+        // Build a genesis entry whose recorded trust-anchor URL is the
+        // attacker_anchor_host — deliberately NOT the github origin above.
+        let signer_keys = TestKeys::new(1);
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![signer_keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
+        let timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+        let genesis_entry = make_history_entry(
+            &signers_config,
+            &signer_keys,
+            &[0],
+            &attacker_anchor_host.url(),
+            timestamp,
+        )
+        .unwrap();
+
+        // Wrap the genesis entry into a single-entry chain (it is the current info).
+        let current_info = features_lib::CurrentSignersInfo {
+            signers_file: genesis_entry.signers_file.clone(),
+            signatures: genesis_entry.signatures.clone(),
+            metadata: genesis_entry.metadata.clone(),
+            metadata_signatures: genesis_entry.metadata_signatures.clone(),
+        };
+        let mut signers_chain = features_lib::SignersChain::default();
+        signers_chain.set_current_info(current_info);
+
+        // The attacker's anchor host serves content matching the chain's signers file, so
+        // the content comparison inside validate_trust_anchor passes — meaning
+        // the rejection must come from the realm check, not a content mismatch.
+        // The mock implements Drop and is torn down at end of test.
+        let _attacker_anchor_mock = attacker_anchor_host
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body(genesis_entry.signers_file.clone())
+            .create_async()
+            .await;
+
+        // The compromised backend returns the malicious chain for the github path.
+        let chain_response = GetSignersChainResponse {
+            chain: signers_chain,
+        };
+        let _backend_chain_mock = asfaload_backend
+            .mock(
+                "GET",
+                format!("/v1/get_signers_chain/{}", github_artifact_path).as_str(),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&chain_response).unwrap())
+            .create_async()
+            .await;
+
+        // If we look only at the data served by the (breached) asfaload backend, everything looks
+        // fine: signers file activated, index file signed according to signers file, trust anchor
+        // available and correct. BUT: the trust anchor is outside of the download url's realm. So
+        // it must be rejected.
+        let result = verify_signers_chain(&asfaload_backend.url(), github_artifact_path).await;
+
+        assert!(
+            result.is_err(),
+            "trust anchor outside the download origin must be rejected, but verification succeeded: {:?}",
+            result
+        );
+    }
 }
