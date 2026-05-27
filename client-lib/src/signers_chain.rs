@@ -73,6 +73,20 @@ pub async fn verify_signers_chain(
     let first = chain
         .first_entry()
         .ok_or(ClientLibError::SignersChainFirstEntryMismatch)?;
+
+    // Realm binding: the anchor must be served from within the download's
+    // origin. Checked before the content fetch so we never contact an
+    // out-of-realm host.
+    let retrieval_url = {
+        let metadata = first
+            .metadata()
+            .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
+        match metadata.origin() {
+            features_lib::SignersConfigOrigin::Forge(forge) => forge.retrieval_url().to_string(),
+        }
+    };
+    assert_anchor_within_realm(artifact_path, &retrieval_url)?;
+
     validate_trust_anchor(&http_client, &first).await?;
 
     Ok(SignersChainResult {
@@ -488,6 +502,74 @@ mod tests {
         assert!(
             result.is_err(),
             "trust anchor outside the download origin must be rejected, but verification succeeded: {:?}",
+            result
+        );
+    }
+
+    // Mirror of the rejection test, but the trust anchor is served from a URL
+    // INSIDE the download's realm (same origin + acme/tool project). A correct
+    // client must accept it: realm check passes and content matches.
+    #[tokio::test]
+    async fn verify_signers_chain_accepts_trust_anchor_inside_download_origin() {
+        let mut backend = mockito::Server::new_async().await;
+
+        let signer_keys = TestKeys::new(1);
+        let signers_config = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![signer_keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
+        let timestamp = "2024-01-01T00:00:00Z".parse().unwrap();
+
+        // Anchor lives under acme/tool on the SAME origin as the download.
+        let anchor_url = format!("{}/acme/tool/asfaload.signers/signers.json", backend.url());
+        let genesis_entry =
+            make_history_entry(&signers_config, &signer_keys, &[0], &anchor_url, timestamp)
+                .unwrap();
+
+        let current_info = features_lib::CurrentSignersInfo {
+            signers_file: genesis_entry.signers_file.clone(),
+            signatures: genesis_entry.signatures.clone(),
+            metadata: genesis_entry.metadata.clone(),
+            metadata_signatures: genesis_entry.metadata_signatures.clone(),
+        };
+        let mut signers_chain = features_lib::SignersChain::default();
+        signers_chain.set_current_info(current_info);
+
+        // The anchor host serves content matching the signers file.
+        let _anchor_mock = backend
+            .mock("GET", "/acme/tool/asfaload.signers/signers.json")
+            .with_status(200)
+            .with_body(genesis_entry.signers_file.clone())
+            .create_async()
+            .await;
+
+        // Build an artifact path inside the same origin/realm (acme/tool).
+        let parsed = url::Url::parse(&backend.url()).unwrap();
+        let artifact_path = format!(
+            "http/{}/{}/acme/tool/releases/v1.0.0/asfaload.index.json",
+            parsed.host_str().unwrap(),
+            parsed.port().unwrap(),
+        );
+
+        let chain_response = GetSignersChainResponse {
+            chain: signers_chain,
+        };
+        let _chain_mock = backend
+            .mock(
+                "GET",
+                format!("/v1/get_signers_chain/{}", artifact_path).as_str(),
+            )
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&chain_response).unwrap())
+            .create_async()
+            .await;
+
+        let result = verify_signers_chain(&backend.url(), &artifact_path).await;
+        assert!(
+            result.is_ok(),
+            "in-realm trust anchor must be accepted: {:?}",
             result
         );
     }
