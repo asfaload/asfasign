@@ -1,6 +1,6 @@
 # How-to guides
 
-Step-by-step recipes for common operations with the `client` CLI. Follow them in order for a first-time setup, or jump to the one you need.
+Step-by-step recipes for common operations with the `asfaload-cli` CLI. Follow them in order for a first-time setup, or jump to the one you need.
 
 ## Setup
 

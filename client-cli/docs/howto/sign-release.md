@@ -12,7 +12,7 @@ After a release is [registered](register-release.md), artifact signers must prov
 ### 1. List pending files
 
 ```sh
-client list-pending --secret-key ~/.asfaload/mykey
+asfaload-cli list-pending --secret-key ~/.asfaload/mykey
 ```
 
 ```
@@ -23,7 +23,7 @@ Files requiring your signature:
 ### 2. Sign the release index
 
 ```sh
-client sign-pending --secret-key ~/.asfaload/mykey \
+asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 ```
 
@@ -41,12 +41,14 @@ When the threshold is met:
 Success! Signature submitted (complete)
 ```
 
+![Demo: sign a release](demos/sign-release.gif)
+
 ### 3. Check progress
 
 At any point, you can check whether the threshold has been reached:
 
 ```sh
-client signature-status --secret-key ~/.asfaload/mykey \
+asfaload-cli signature-status --secret-key ~/.asfaload/mykey \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 ```
 
@@ -65,8 +67,8 @@ https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json: complete
 With three artifact signers and a threshold of 2, only two need to sign:
 
 ```
-alice: client sign-pending --secret-key alice.key ...  → "submitted"
-bob:   client sign-pending --secret-key bob.key ...    → "submitted (complete)"
+alice: asfaload-cli sign-pending --secret-key alice.key ...  → "submitted"
+bob:   asfaload-cli sign-pending --secret-key bob.key ...    → "submitted (complete)"
 # carol doesn't need to sign — threshold already met
 ```
 
@@ -76,6 +78,6 @@ Once the release is fully signed, users can [download it with verification](down
 
 ## Reference
 
-- [`client list-pending`](../manual/list-pending.md)
-- [`client sign-pending`](../manual/sign-pending.md)
-- [`client signature-status`](../manual/signature-status.md)
+- [`asfaload-cli list-pending`](../manual/list-pending.md)
+- [`asfaload-cli sign-pending`](../manual/sign-pending.md)
+- [`asfaload-cli signature-status`](../manual/signature-status.md)

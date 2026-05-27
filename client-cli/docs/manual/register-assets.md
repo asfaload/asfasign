@@ -1,6 +1,6 @@
-# `client register-assets`
+# `asfaload-cli register-assets`
 
-- **Usage**: `client register-assets [OPTIONS] -K <SECRET_KEY>`
+- **Usage**: `asfaload-cli register-assets [OPTIONS] -K <SECRET_KEY>`
 - **Source**: [`src/commands/register_assets.rs`](../../src/commands/register_assets.rs)
 
 Register assets for signing. Tell the backend about a new set of files — either a GitHub release or one or more checksum files — so that the signature collection process can begin.
@@ -60,11 +60,11 @@ JSON (with `--json`):
 ## Examples
 
     # register a GitHub release
-    client register-assets -K ~/.asfaload/key \
+    asfaload-cli register-assets -K ~/.asfaload/key \
         --github-release-url https://github.com/acme/tool/releases/tag/v1.0
 
     # register checksum files
-    client register-assets -K ~/.asfaload/key \
+    asfaload-cli register-assets -K ~/.asfaload/key \
         --csum-file https://example.com/releases/v1.0/SHA256SUMS \
         --csum-file https://example.com/releases/v1.0/SHA512SUMS
 

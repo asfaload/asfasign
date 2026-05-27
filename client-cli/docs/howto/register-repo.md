@@ -22,7 +22,7 @@ https://github.com/acme/tool/blob/main/asfaload.signers/index.json
 ### 2. Register the repository
 
 ```sh
-client register-repo \
+asfaload-cli register-repo \
     --secret-key ~/.asfaload/mykey \
     https://github.com/acme/tool/blob/main/asfaload.signers/index.json
 ```
@@ -38,12 +38,14 @@ Next step: signers must submit signatures to activate the project.
 
 The backend fetches the signers file, creates a pending signers entry, and waits for **all** listed signers to sign before the project becomes active.
 
+![Demo: register a repository](demos/register-repo.gif)
+
 ### 3. Point to a non-default backend
 
 If your backend is not Asfaload's:
 
 ```sh
-client register-repo \
+asfaload-cli register-repo \
     --secret-key ~/.asfaload/mykey \
     -u https://my-asfaload-deployment.example.com \
     https://github.com/acme/tool/blob/main/asfaload.signers/index.json
@@ -55,4 +57,4 @@ After registration, the signers file is in a **pending** state. Every signer lis
 
 ## Reference
 
-- [`client register-repo`](../manual/register-repo.md)
+- [`asfaload-cli register-repo`](../manual/register-repo.md)

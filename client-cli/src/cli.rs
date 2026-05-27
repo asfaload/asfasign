@@ -66,7 +66,7 @@ pub struct ForgeTypeArgs {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "client-cli")]
+#[command(name = "asfaload-cli")]
 #[command(about = "A CLI client for Asfaload operations")]
 pub struct Cli {
     #[command(subcommand)]

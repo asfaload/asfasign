@@ -15,7 +15,7 @@ Need to add a signer, remove one, or change the threshold? This guide covers pro
 Generate a new signers file with the updated set of keys and thresholds:
 
 ```sh
-client new-signers-file \
+asfaload-cli new-signers-file \
     --artifact-signer-file alice.pub \
     --artifact-signer-file bob.pub \
     --artifact-signer-file carol.pub \
@@ -34,7 +34,7 @@ We advise to commit the file either in your main branch, or in a dedicated branc
 ### 2. Propose the update
 
 ```sh
-client update-signers \
+asfaload-cli update-signers \
     --secret-key ~/.asfaload/mykey \
     https://github.com/acme/tool/blob/main/asfaload.signers/index.json
 ```
@@ -48,6 +48,8 @@ Required signers (4): alice, bob, carol, dave
 Next step: signers must submit signatures to activate the update.
 ```
 
+![Demo: propose a signers update](demos/update-signers-file.gif)
+
 ### 3. All signers must sign
 
 Just like initial activation, **every** signer listed in the **new** signers file must sign before the update takes effect. This includes both existing and newly added signers.
@@ -55,8 +57,8 @@ Just like initial activation, **every** signer listed in the **new** signers fil
 Each signer runs:
 
 ```sh
-client list-pending --secret-key ~/.asfaload/mykey
-client sign-pending --secret-key ~/.asfaload/mykey \
+asfaload-cli list-pending --secret-key ~/.asfaload/mykey
+asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
     https/github.com/443/acme/tool/asfaload.signers.pending/index.json
 ```
 
@@ -68,5 +70,5 @@ Releases signed under the **previous** signers file remain valid. The backend ke
 
 ## Reference
 
-- [`client new-signers-file`](../manual/new-signers-file.md)
-- [`client update-signers`](../manual/update-signers.md)
+- [`asfaload-cli new-signers-file`](../manual/new-signers-file.md)
+- [`asfaload-cli update-signers`](../manual/update-signers.md)

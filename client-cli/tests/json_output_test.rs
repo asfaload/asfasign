@@ -22,7 +22,7 @@ fn generate_test_keypair() -> (TempDir, std::path::PathBuf) {
 fn test_new_keys_json_output() {
     let temp_dir = TempDir::new().unwrap();
 
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("new-keys")
         .arg("--json")
         .arg("-n")
@@ -47,7 +47,7 @@ fn test_new_keys_json_output() {
 fn test_new_keys_human_output_unchanged() {
     let temp_dir = TempDir::new().unwrap();
 
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("new-keys")
         .arg("-n")
         .arg("mykey")
@@ -75,7 +75,7 @@ fn test_new_signers_file_json_output() {
 
     let pub_key_path = format!("{}.pub", key_path.to_string_lossy());
 
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("new-signers-file")
         .arg("--json")
         .arg("--artifact-signer-file")
@@ -112,7 +112,7 @@ fn test_new_signers_file_human_output_includes_revocation_keys() {
 
     let pub_key_path = format!("{}.pub", key_path.to_string_lossy());
 
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("new-signers-file")
         .arg("--artifact-signer-file")
         .arg(&pub_key_path)
@@ -141,7 +141,7 @@ fn test_new_signers_file_human_output_includes_revocation_keys() {
 
 #[test]
 fn test_error_output_as_json() {
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("new-keys")
         .arg("--json")
         .arg("-n")
@@ -165,7 +165,7 @@ fn test_error_output_as_json() {
 
 #[test]
 fn test_error_without_json_is_plain_text() {
-    let mut cmd = assert_cmd::cargo_bin_cmd!("client-cli");
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("new-keys")
         .arg("-n")
         .arg("test")

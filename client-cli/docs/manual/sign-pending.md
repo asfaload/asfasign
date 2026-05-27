@@ -1,6 +1,6 @@
-# `client sign-pending`
+# `asfaload-cli sign-pending`
 
-- **Usage**: `client sign-pending [OPTIONS] -K <SECRET_KEY> <FILE_PATH>`
+- **Usage**: `asfaload-cli sign-pending [OPTIONS] -K <SECRET_KEY> <FILE_PATH>`
 - **Source**: [`src/commands/sign_pending.rs`](../../src/commands/sign_pending.rs)
 
 Sign a pending file. The command fetches all files associated with the given path from the backend, computes a SHA-512 hash of each, signs them with your secret key, and submits the signatures in a single request.
@@ -61,11 +61,11 @@ JSON (with `--json`):
 ## Examples
 
     # sign a pending release index
-    client sign-pending -K ~/.asfaload/key \
+    asfaload-cli sign-pending -K ~/.asfaload/key \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
     # sign with explicit password (CI usage)
-    client sign-pending -K ~/.asfaload/key -p "$PASSWORD" \
+    asfaload-cli sign-pending -K ~/.asfaload/key -p "$PASSWORD" \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
 ## Exit codes

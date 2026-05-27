@@ -1,6 +1,6 @@
-# `client new-keys`
+# `asfaload-cli new-keys`
 
-- **Usage**: `client new-keys [OPTIONS] -n <NAME> -o <OUTPUT_DIR>`
+- **Usage**: `asfaload-cli new-keys [OPTIONS] -n <NAME> -o <OUTPUT_DIR>`
 - **Source**: [`src/commands/keys.rs`](../../src/commands/keys.rs)
 
 Generate a new signing key pair. The command creates both a secret key and a public key in the specified directory.
@@ -54,10 +54,10 @@ JSON (with `--json`):
 ## Examples
 
     # generate a key pair
-    client new-keys -n mykey -o ~/.asfaload
+    asfaload-cli new-keys -n mykey -o ~/.asfaload
 
     # non-interactive usage in CI
-    client new-keys -n ci-key -o ./keys -p "$KEY_PASSWORD"
+    asfaload-cli new-keys -n ci-key -o ./keys -p "$KEY_PASSWORD"
 
 ## Exit codes
 

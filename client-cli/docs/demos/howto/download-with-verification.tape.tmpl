@@ -1,0 +1,13 @@
+Output out/download-with-verification.gif
+
+Set Shell "bash"
+Set Width 1200
+Set Height 950
+Set TypingSpeed $TYPING_SPEED
+Set PlaybackSpeed 1.0
+
+Type "cd ~"
+Enter
+Type 'asfaload-cli download --type fileserver -u "$ASFALOAD_DEMO_BACKEND_URL" "$ASFALOAD_DEMO_ARTIFACT_URL"'
+Enter
+Sleep $END_PAUSE
