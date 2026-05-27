@@ -7,7 +7,6 @@ pub async fn handle_download_command(
     output: Option<&PathBuf>,
     backend_url: &str,
     forge_type: Option<&str>,
-    full_check: bool,
 ) -> Result<()> {
     let callbacks = DownloadCallbacks::default()
         .with_starting(|args| {
@@ -91,15 +90,7 @@ pub async fn handle_download_command(
             );
         });
 
-    download_file_with_verification(
-        file_url,
-        output,
-        backend_url,
-        forge_type,
-        full_check,
-        &callbacks,
-    )
-    .await?;
+    download_file_with_verification(file_url, output, backend_url, forge_type, &callbacks).await?;
 
     Ok(())
 }

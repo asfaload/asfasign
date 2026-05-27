@@ -72,7 +72,6 @@ pub async fn download_file_with_verification(
     output: Option<&PathBuf>,
     backend_url: &str,
     forge_type: Option<&str>,
-    full_check: bool,
     callbacks: &DownloadCallbacks,
 ) -> AsfaloadLibResult<DownloadResult> {
     callbacks.emit_starting(file_url);
@@ -143,7 +142,7 @@ pub async fn download_file_with_verification(
 
     callbacks.emit_file_download_started(filename, None);
 
-    let download_result = if full_check {
+    let download_result = {
         // The signed entity is the index file (not the individual artifact binary).
         // The index_file_path is already computed above and is the correct path for
         // the signers chain endpoint (it has a .signers.json copy in the git repo).
@@ -167,8 +166,6 @@ pub async fn download_file_with_verification(
         chain_result?;
 
         download_result
-    } else {
-        download_file_to_temp(&client, file_url, &expected_hash.algorithm(), callbacks).await
     };
 
     let (temp_file, bytes_downloaded, computed_hash) = download_result?;

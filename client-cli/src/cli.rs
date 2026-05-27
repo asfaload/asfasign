@@ -308,10 +308,6 @@ pub enum Commands {
 
         #[command(flatten)]
         forge_type_args: ForgeTypeArgs,
-
-        /// Verify the full signers chain history during download
-        #[arg(long)]
-        full_check: bool,
     },
 }
 

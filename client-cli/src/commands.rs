@@ -359,7 +359,6 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             output,
             backend_url_args,
             forge_type_args,
-            full_check,
         } => {
             let url = backend_url_args
                 .backend_url
@@ -372,7 +371,6 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 output.as_ref(),
                 &url,
                 forge_type_str,
-                *full_check,
             ))?;
         }
     }

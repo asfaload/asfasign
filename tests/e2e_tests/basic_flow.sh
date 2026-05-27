@@ -382,8 +382,8 @@ section "Download with Full Signers Chain Verification"
 
 DOWNLOAD_V02_FULL_CHECK="$(mktemp)"
 to_delete_on_filesystem+=("$DOWNLOAD_V02_FULL_CHECK")
-run_step "Download artifact (v0.2) with --full-check (2-entry chain)" \
-    cargo run --quiet -- download --full-check -o "$DOWNLOAD_V02_FULL_CHECK" -u "$backend" $(artifact_url 0.2)
+run_step "Download artifact (v0.2) with (2-entry chain)" \
+    cargo run --quiet -- download -o "$DOWNLOAD_V02_FULL_CHECK" -u "$backend" $(artifact_url 0.2)
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_FULL_CHECK"
 
 # Only run these tests if we use a local git repo, which we can directly access.
@@ -424,8 +424,8 @@ if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
     git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$TAMPERED_HISTORY_BLOB"
 
     tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
-    expect_fail "Download with --full-check (tampered metadata URL, content mismatch)" \
-        cargo run --quiet -- download --full-check -o "$tmp" -u "$backend" $(artifact_url 0.2)
+    expect_fail "Download with (tampered metadata URL, content mismatch)" \
+        cargo run --quiet -- download -o "$tmp" -u "$backend" $(artifact_url 0.2)
 
     git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
 
@@ -442,8 +442,8 @@ if [[ -n ${E2E_GIT_REPO_PATH} ]]; then
     git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$NOTFOUND_HISTORY_BLOB"
 
     tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
-    expect_fail "Download with --full-check (tampered metadata URL, 404)" \
-        cargo run --quiet -- download --full-check -o "$tmp" -u "$backend" $(artifact_url 0.2)
+    expect_fail "Download with (tampered metadata URL, 404)" \
+        cargo run --quiet -- download -o "$tmp" -u "$backend" $(artifact_url 0.2)
 
     git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
 
