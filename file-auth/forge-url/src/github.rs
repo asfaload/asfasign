@@ -113,7 +113,14 @@ impl ForgeTrait for GitHubRepoInfo {
             return Err(ForgeUrlError::MissingFilePath);
         }
 
-        let path_prefix = path_prefix_from_url(url)?;
+        // raw.githubusercontent.com is GitHub's content host, but the project's
+        // identity is the github.com repo. Canonicalise the prefix so blob and
+        // raw URLs for the same repo share one project_id.
+        let path_prefix = if url.host_str() == Some("raw.githubusercontent.com") {
+            "https/github.com/443".to_string()
+        } else {
+            path_prefix_from_url(url)?
+        };
 
         Ok(GitHubRepoInfo {
             owner,

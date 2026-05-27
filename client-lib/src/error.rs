@@ -94,6 +94,12 @@ pub enum ClientLibError {
     #[error("First entry validation failed: {0}")]
     SignersChainFirstEntryInvalid(String),
 
+    #[error("Trust anchor realm '{anchor_realm}' does not contain download path '{artifact_path}'")]
+    SignersChainTrustAnchorOutsideRealm {
+        artifact_path: String,
+        anchor_realm: String,
+    },
+
     #[error("Signers chain transition is invalid")]
     SignersChainTransitionInvalid,
 }

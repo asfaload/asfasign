@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# E2E test: verify that --full-check rejects artifacts when the trust anchor's
+# E2E test: verify that rejects artifacts when the trust anchor's
 # metadata signatures have been tampered with.
 #
 # Uses a local file server (same pattern as basic_flow_local.sh).
@@ -10,7 +10,7 @@ set -euo pipefail
 #   entry[1] = updated signers_file_2 (active)
 #
 # We tamper entry[0]'s metadata_signatures via git replace and verify
-# that download --full-check fails.
+# that download fails.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/helpers.sh"
@@ -287,8 +287,8 @@ section "Full Check Baseline (should succeed)"
 ################################################################################
 
 DOWNLOAD_V02_FULL_CHECK="$(mktemp)"
-run_step "Download v0.2 with --full-check (baseline)" \
-    cargo run --quiet -- download --full-check -o "$DOWNLOAD_V02_FULL_CHECK" -u "$backend" --type fileserver $(artifact_url 0.2)
+run_step "Download v0.2 with (baseline)" \
+    cargo run --quiet -- download -o "$DOWNLOAD_V02_FULL_CHECK" -u "$backend" --type fileserver $(artifact_url 0.2)
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_FULL_CHECK"
 
 ################################################################################
@@ -316,8 +316,8 @@ TAMPERED_BLOB=$(git -C "$E2E_GIT_REPO_PATH" show "$HISTORY_BLOB" | \
     git -C "$E2E_GIT_REPO_PATH" hash-object -w --stdin)
 git -C "$E2E_GIT_REPO_PATH" replace "$HISTORY_BLOB" "$TAMPERED_BLOB"
 
-expect_fail "Download with --full-check (tampered metadata signatures)" \
-    cargo run --quiet -- download --full-check -o "$(mktemp)" -u "$backend" --type fileserver $(artifact_url 0.2)
+expect_fail "Download with (tampered metadata signatures)" \
+    cargo run --quiet -- download -o "$(mktemp)" -u "$backend" --type fileserver $(artifact_url 0.2)
 
 git -C "$E2E_GIT_REPO_PATH" replace -d "$HISTORY_BLOB"
 

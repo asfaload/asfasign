@@ -468,8 +468,8 @@ section "Download with Full Signers Chain Verification"
 
 DOWNLOAD_V02_FULL_CHECK="$(mktemp)"
 to_delete_on_filesystem+=("$DOWNLOAD_V02_FULL_CHECK")
-run_step "Download artifact (v0.2) with --full-check (2-entry chain)" \
-    cargo run --quiet -- download --full-check -o "$DOWNLOAD_V02_FULL_CHECK" -u "$backend" --type fileserver $(artifact_url 0.2)
+run_step "Download artifact (v0.2) with (2-entry chain)" \
+    cargo run --quiet -- download -o "$DOWNLOAD_V02_FULL_CHECK" -u "$backend" --type fileserver $(artifact_url 0.2)
 assert_artifact_hash_matches "0.2" "artifact.bin" "$DOWNLOAD_V02_FULL_CHECK"
 
 ################################################################################
@@ -488,15 +488,15 @@ INITIAL_SIGNERS_FILE="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_1${_SIGNE
 cp "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json" "$INITIAL_SIGNERS_FILE"
 
 tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
-expect_fail "Download with --full-check (tampered initial signers file)" \
-    cargo run --quiet -- download --full-check -o "$tmp" -u "$backend" --type fileserver $(artifact_url 0.2)
+expect_fail "Download with (tampered initial signers file)" \
+    cargo run --quiet -- download -o "$tmp" -u "$backend" --type fileserver $(artifact_url 0.2)
 
 # --- Delete: remove initial signers file entirely ---
 rm "$INITIAL_SIGNERS_FILE"
 
 tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
-expect_fail "Download with --full-check (missing initial signers file, 404)" \
-    cargo run --quiet -- download --full-check -o "$tmp" -u "$backend" --type fileserver $(artifact_url 0.2)
+expect_fail "Download with (missing initial signers file, 404)" \
+    cargo run --quiet -- download -o "$tmp" -u "$backend" --type fileserver $(artifact_url 0.2)
 
 ################################################################################
 print_summary
