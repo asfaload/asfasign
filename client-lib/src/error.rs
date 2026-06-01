@@ -61,6 +61,9 @@ pub enum ClientLibError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("Forge URL error: {0}")]
+    ForgeUrl(#[from] forge_url::ForgeUrlError),
+
     #[error("UTF-8 error: {0}")]
     Utf8(#[from] Utf8Error),
 
