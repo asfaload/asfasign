@@ -1181,71 +1181,30 @@ async fn register_checksums(
     }))
 }
 
-/// Handler to fetch the signers chain for a signed artifact.
-///
-/// Traces the artifact's local signers copy back to its source,
-/// retrieves the history file, and returns entries up to and including
-/// the active config at the time the artifact's signature was completed.
-pub async fn get_signers_chain_handler(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    axum::extract::Path(artifact_path_in): axum::extract::Path<String>,
-) -> Result<Json<GetSignersChainResponse>, ApiError> {
+/// Trace a "local signers copy" file (an artifact's `.signers.json` copy OR
+/// a revocation's `.signers.json` copy) back to the original signers file
+/// that introduced it, and build the `SignersChain` as of that source
+/// commit. Returns the chain plus the commit metadata so callers that need
+/// extra files from the same commit (e.g. the index JSON) can fetch them
+/// without re-tracing.
+async fn build_chain_from_local_signers_copy(
+    state: &AppState,
+    request_id: &str,
+    local_signers: NormalisedPaths,
+) -> Result<
+    (
+        signers_file_types::SignersChain,
+        String,                        /* commit */
+        chrono::DateTime<chrono::Utc>, /* commit_time */
+    ),
+    ApiError,
+> {
     use common::fs::names::{
-        history_file_path_for, local_signers_path_for, metadata_path_for,
-        metadata_signatures_path_for, signatures_path_for,
+        history_file_path_for, metadata_path_for, metadata_signatures_path_for, signatures_path_for,
     };
-
-    let request_id = headers
-        .get("x-request-id")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("unknown");
-
-    tracing::info!(
-        request_id = %request_id,
-        artifact_path = %artifact_path_in,
-        "Received get_signers_chain request"
-    );
-
-    let artifact_path = NormalisedPaths::new(&state.git_repo_path, &artifact_path_in)
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                request_id = %request_id,
-                artifact_path = %artifact_path_in,
-                error = %e,
-                "Invalid artifact path"
-            );
-            ApiError::InvalidFilePath(format!("Invalid artifact path: {}", e))
-        })?;
-
-    // Derive the local signers copy path from the artifact path
-    let local_signers_relative =
-        local_signers_path_for(artifact_path.relative_path()).map_err(|e| {
-            tracing::error!(
-                request_id = %request_id,
-                artifact_path = %artifact_path,
-                error = %e,
-                "Cannot derive signers path for artifact"
-            );
-            ApiError::InvalidFilePath(format!("Cannot derive signers path for artifact: {}", e))
-        })?;
-
-    let local_signers = NormalisedPaths::new(state.git_repo_path.clone(), local_signers_relative)
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                request_id = %request_id,
-                artifact_path = %artifact_path,
-                error = %e,
-                "Invalid signers path"
-            );
-            ApiError::InvalidFilePath(format!("Invalid signers path: {}", e))
-        })?;
 
     // Trace back to the original signers file source
     let backend = state.git_backend.clone();
-
     let source = tokio::task::spawn_blocking({
         let local_signers = local_signers.clone();
         move || backend.artifact_signers_source(local_signers)
@@ -1255,11 +1214,11 @@ pub async fn get_signers_chain_handler(
     .map_err(|e| {
         tracing::error!(
             request_id = %request_id,
-            artifact_path = %artifact_path,
+            local_signers = %local_signers,
             error = %e,
-            "Could not identify artifact signers source"
+            "Could not identify signers source"
         );
-        ApiError::InvalidFilePath(format!("Could not identify artifact signers source: {}", e))
+        ApiError::InvalidFilePath(format!("Could not identify signers source: {}", e))
     })?;
 
     let commit = source.commit().to_string();
@@ -1365,6 +1324,8 @@ pub async fn get_signers_chain_handler(
     )
     .map_err(|e| ApiError::InternalServerError(format!("Failed to build signers chain: {}", e)))?;
 
+    Ok((chain, commit, commit_time))
+}
     tracing::info!(
         request_id = %request_id,
         artifact_path = %artifact_path,
