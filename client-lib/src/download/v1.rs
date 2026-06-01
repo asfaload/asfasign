@@ -1,13 +1,12 @@
-use crate::backend::{download_file, download_file_to_temp};
-use crate::signers_chain::verify_signers_chain;
+use crate::artifact_info::get_artifact_info;
+use crate::backend::download_file_to_temp;
+use crate::signers_chain::validate_fetched_chain;
 use crate::types::DownloadCallbacks;
 use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
 use crate::{AsfaloadLibResult, ClientLibError, DownloadResult};
-use features_lib::{
-    AsfaloadIndex, constants::INDEX_FILE, local_signers_path_for, parse_signers_config,
-    sha512_for_content, signatures_path_for,
-};
+use features_lib::{AsfaloadIndex, sha512_for_content};
 use reqwest::{Client, Url};
+use rest_api_types::models::GetArtifactInfoRequest;
 use std::path::PathBuf;
 
 use super::{Forges, ForgesPathMethods, get_forge};
@@ -80,6 +79,12 @@ pub async fn download_file_with_verification(
 
     let url = Url::parse(file_url).map_err(|e| ClientLibError::InvalidUrl(e.to_string()))?;
 
+    let get_artifact_info_request = GetArtifactInfoRequest {
+        artifact_url: url.clone(),
+        forge_kind: forge_type.map(String::from),
+    };
+    let response = get_artifact_info(&client, backend_url, get_artifact_info_request).await?;
+
     let filename = url
         .path_segments()
         .and_then(|mut segments| segments.next_back())
@@ -93,80 +98,47 @@ pub async fn download_file_with_verification(
     };
     let index_file_path = forge.construct_index_file_path(&url)?;
 
-    let signers_filename = local_signers_path_for(INDEX_FILE)?;
-    let signers_file_path =
-        forge.construct_file_repo_path(&url, &signers_filename.to_string_lossy())?;
-    let signers_url = format!("{}/v1/files/{}", backend_url, signers_file_path);
-    let signers_content =
-        download_file(&client, &signers_url, &DownloadCallbacks::default()).await?;
-    callbacks.emit_signers_downloaded(signers_content.len());
-    let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)
-        .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
-
-    let index_url = format!("{}/v1/files/{}", backend_url, index_file_path);
-    let index_content = download_file(&client, &index_url, &DownloadCallbacks::default()).await?;
+    let index: AsfaloadIndex = serde_json::from_str(&response.index_json)?;
+    let index_content = response.index_json.into_bytes();
     callbacks.emit_index_downloaded(index_content.len());
-    let index: AsfaloadIndex = serde_json::from_slice(&index_content)?;
 
-    let signatures_filename = signatures_path_for(INDEX_FILE)?;
-    let signatures_file_path =
-        forge.construct_file_repo_path(&url, &signatures_filename.to_string_lossy())?;
-    let signatures_url = format!("{}/v1/files/{}", backend_url, signatures_file_path);
-    let signatures_content =
-        match download_file(&client, &signatures_url, &DownloadCallbacks::default()).await {
-            Ok(content) => content,
-            Err(e @ ClientLibError::HttpError { status: 404, .. }) => {
-                return Err(super::revocation::check_revocation(
-                    &client,
-                    &url,
-                    &forge,
-                    backend_url,
-                    callbacks,
-                    e,
-                )
-                .await);
-            }
-            Err(e) => return Err(e),
-        };
+    let signatures_content = serde_json::to_vec(&response.index_signatures)?;
     callbacks.emit_signatures_downloaded(signatures_content.len());
 
+    // FIXME: revocation used to be detected via a 404 on the
+    // signatures file request. The bundled get_artifact_info endpoint removed
+    // that trigger, so revocation is NOT detected in this flow yet. It must be
+    // re-added (e.g. an explicit revocation check) before relying on it.
+
     let file_hash = sha512_for_content(index_content)?;
-
-    let (valid_count, invalid_count) =
-        verify_signatures(signatures_content, &signers_config, &file_hash)?;
-
-    callbacks.emit_signatures_verified(valid_count, invalid_count);
 
     // Get expected hash from index (validates algorithm is supported)
     let expected_hash = get_file_hash_info(&index, filename)?;
 
     callbacks.emit_file_download_started(filename, None);
 
-    let download_result = {
-        // The signed entity is the index file (not the individual artifact binary).
-        // The index_file_path is already computed above and is the correct path for
-        // the signers chain endpoint (it has a .signers.json copy in the git repo).
+    // Validate the signers chain from the response and download the artifact
+    // binary in parallel. Signatures are verified against the chain-head config
+    let algorithm = expected_hash.algorithm();
+    let download_future = download_file_to_temp(&client, file_url, &algorithm, callbacks);
+    let chain_future = validate_fetched_chain(response.signers_chain, &index_file_path);
 
-        // Run file download and chain validation in parallel
-        let algorithm = expected_hash.algorithm();
-        let download_future = download_file_to_temp(&client, file_url, &algorithm, callbacks);
-        let chain_future = verify_signers_chain(backend_url, &index_file_path);
+    let (download_result, chain_result) = tokio::join!(download_future, chain_future);
 
-        let (download_result, chain_result) = tokio::join!(download_future, chain_future);
-
-        // Check chain validation result and emit callbacks
-        match &chain_result {
-            Ok(chain) => {
-                callbacks.emit_signers_chain_verified(chain.entries_count);
-            }
-            Err(e) => {
-                callbacks.emit_signers_chain_failed(&e.to_string());
-            }
+    let signers_config = match chain_result {
+        Ok(chain) => {
+            callbacks.emit_signers_chain_verified(chain.entries_count);
+            chain.current_signers_config
         }
-        chain_result?;
-
-        download_result
+        Err(e) => {
+            callbacks.emit_signers_chain_failed(&e.to_string());
+            return Err(e);
+        }
     };
+
+    let (valid_count, invalid_count) =
+        verify_signatures(signatures_content, &signers_config, &file_hash)?;
+    callbacks.emit_signatures_verified(valid_count, invalid_count);
 
     let (temp_file, bytes_downloaded, computed_hash) = download_result?;
 
