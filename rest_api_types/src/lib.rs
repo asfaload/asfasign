@@ -409,6 +409,26 @@ pub mod models {
     pub struct GetSignersChainResponse {
         pub chain: signers_file_types::SignersChain,
     }
+
+    /// Response for the get_artifact_info endpoint.
+    ///
+    /// Bundles everything a client needs to verify a signed artifact: the raw
+    /// index JSON, its signatures envelope, and the signers chain as of the
+    /// artifact-signature commit. Clients validate the chain (realm + trust
+    /// anchor) and verify the index signatures against the chain head.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct GetArtifactInfoResponse {
+        /// Raw JSON bytes of the artifact's `asfaload.index.json`. Base64-encoded
+        /// in transit so the bytes that were signed survive JSON round-trip
+        /// untouched.
+        #[serde(with = "signers_file_types::base64_serde")]
+        pub index_json: String,
+        /// Parsed signatures envelope from `<index>.signatures.json`.
+        pub index_signatures: signatures::signatures_file::SignaturesFile,
+        /// Signers chain as of the artifact-signature commit. Carries everything
+        /// needed for client-side realm and trust-anchor validation.
+        pub signers_chain: signers_file_types::SignersChain,
+    }
 }
 
 pub mod github_helpers {

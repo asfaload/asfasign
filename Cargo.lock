@@ -3197,6 +3197,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "signatures",
  "signers_file_types",
  "sled",
  "tempfile",
