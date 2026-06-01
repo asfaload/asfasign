@@ -410,6 +410,12 @@ pub mod models {
         pub chain: signers_file_types::SignersChain,
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct GetArtifactInfoRequest {
+        pub artifact_url: url::Url,
+        pub forge_kind: Option<String>,
+    }
+
     /// Response for the get_artifact_info endpoint.
     ///
     /// Bundles everything a client needs to verify a signed artifact: the raw

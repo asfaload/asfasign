@@ -9,7 +9,6 @@ use rest_api_types::{
     RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
     SubmitSignatureRequest, SubmitSignatureResponse,
 };
-
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::file_auth::forges::ForgeInfo;
@@ -18,6 +17,8 @@ use crate::file_auth::github::get_project_normalised_paths;
 use crate::state::AppState;
 use axum::{Json, extract::State, http::HeaderMap};
 use constants::PENDING_SIGNERS_DIR;
+use forge_url::ForgesPathMethods;
+use forge_url::forges::{Forges, get_forge};
 use forge_url::github::GITHUB_HOSTS;
 use rest_api_auth::HEADER_PUBLIC_KEY;
 use rest_api_types::errors::ApiError;
@@ -1406,7 +1407,7 @@ pub async fn get_signers_chain_handler(
 pub async fn get_artifact_info_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
-    axum::extract::Path(artifact_path_in): axum::extract::Path<String>,
+    Json(request): Json<rest_api_types::models::GetArtifactInfoRequest>,
 ) -> Result<Json<GetArtifactInfoResponse>, ApiError> {
     use common::fs::names::{local_signers_path_for, signatures_path_for};
 
@@ -1417,16 +1418,34 @@ pub async fn get_artifact_info_handler(
 
     tracing::info!(
         request_id = %request_id,
-        artifact_path = %artifact_path_in,
+        url = %request.artifact_url,
         "Received get_artifact_info request"
     );
 
-    let artifact_path = NormalisedPaths::new(&state.git_repo_path, &artifact_path_in)
+    let url = request.artifact_url;
+
+    // Map the artifact download URL to the index file's repository path using
+    // the shared forge-url layer (GitHub /releases/download/ -> /releases/tag/,
+    // other forges use the path as-is), then validate it as a repo-relative path.
+    let forge = match request.forge_kind {
+        Some(ft) => Forges::from_type_str(&ft)
+            .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid forge type: {}", e)))?,
+        None => get_forge(&url).map_err(|e| {
+            ApiError::InvalidRequestBody(format!(
+                "Forge type could not be extracted from URL: {}",
+                e
+            ))
+        })?,
+    };
+    let index_file_path = forge
+        .construct_index_file_path(&url)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid artifact URL: {}", e)))?;
+    let artifact_path = NormalisedPaths::new(&state.git_repo_path, &index_file_path)
         .await
         .map_err(|e| {
             tracing::error!(
                 request_id = %request_id,
-                artifact_path = %artifact_path_in,
+                index_path = %index_file_path,
                 error = %e,
                 "Invalid artifact path"
             );
