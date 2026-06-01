@@ -1,7 +1,9 @@
 use common::fs::names::{find_global_signers_for, subject_path_from_pending_signatures};
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
-use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
+use rest_api_types::models::{
+    GetArtifactInfoResponse, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
+};
 use rest_api_types::{
     FilesToSignResponse, GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
     RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
@@ -1326,6 +1328,64 @@ async fn build_chain_from_local_signers_copy(
 
     Ok((chain, commit, commit_time))
 }
+
+pub async fn get_signers_chain_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(artifact_path_in): axum::extract::Path<String>,
+) -> Result<Json<GetSignersChainResponse>, ApiError> {
+    use common::fs::names::local_signers_path_for;
+
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        artifact_path = %artifact_path_in,
+        "Received get_signers_chain request"
+    );
+
+    let artifact_path = NormalisedPaths::new(&state.git_repo_path, &artifact_path_in)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                artifact_path = %artifact_path_in,
+                error = %e,
+                "Invalid artifact path"
+            );
+            ApiError::InvalidFilePath(format!("Invalid artifact path: {}", e))
+        })?;
+
+    // Derive the local signers copy path from the artifact path
+    let local_signers_relative =
+        local_signers_path_for(artifact_path.relative_path()).map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                artifact_path = %artifact_path,
+                error = %e,
+                "Cannot derive signers path for artifact"
+            );
+            ApiError::InvalidFilePath(format!("Cannot derive signers path for artifact: {}", e))
+        })?;
+
+    let local_signers = NormalisedPaths::new(state.git_repo_path.clone(), local_signers_relative)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                artifact_path = %artifact_path,
+                error = %e,
+                "Invalid signers path"
+            );
+            ApiError::InvalidFilePath(format!("Invalid signers path: {}", e))
+        })?;
+
+    let (chain, _commit, _commit_time) =
+        build_chain_from_local_signers_copy(&state, request_id, local_signers).await?;
+
     tracing::info!(
         request_id = %request_id,
         artifact_path = %artifact_path,
@@ -1334,4 +1394,113 @@ async fn build_chain_from_local_signers_copy(
     );
 
     Ok(Json(GetSignersChainResponse { chain }))
+}
+
+/// Handler to fetch everything a client needs to verify a signed artifact.
+///
+/// Bundles the artifact's index JSON, its signatures envelope, and the
+/// signers chain anchored at the artifact-signature commit. The client
+/// validates the chain (realm + trust anchor), then verifies the index
+/// signatures against the chain head — never trusting the backend-served
+/// local `.signers.json` copy.
+pub async fn get_artifact_info_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::extract::Path(artifact_path_in): axum::extract::Path<String>,
+) -> Result<Json<GetArtifactInfoResponse>, ApiError> {
+    use common::fs::names::{local_signers_path_for, signatures_path_for};
+
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        artifact_path = %artifact_path_in,
+        "Received get_artifact_info request"
+    );
+
+    let artifact_path = NormalisedPaths::new(&state.git_repo_path, &artifact_path_in)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                artifact_path = %artifact_path_in,
+                error = %e,
+                "Invalid artifact path"
+            );
+            ApiError::InvalidFilePath(format!("Invalid artifact path: {}", e))
+        })?;
+
+    // The chain is built from the artifact's local `.signers.json` copy, taken
+    // when the artifact's signature completed. The commit that introduced that
+    // copy is the same commit the index and its signatures were committed at,
+    // so all three are read consistently from it.
+    let local_signers_relative =
+        local_signers_path_for(artifact_path.relative_path()).map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                artifact_path = %artifact_path,
+                error = %e,
+                "Cannot derive signers path for artifact"
+            );
+            ApiError::InvalidFilePath(format!("Cannot derive signers path for artifact: {}", e))
+        })?;
+
+    let local_signers = NormalisedPaths::new(state.git_repo_path.clone(), local_signers_relative)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                artifact_path = %artifact_path,
+                error = %e,
+                "Invalid signers path"
+            );
+            ApiError::InvalidFilePath(format!("Invalid signers path: {}", e))
+        })?;
+
+    let (chain, commit, _commit_time) =
+        build_chain_from_local_signers_copy(&state, request_id, local_signers).await?;
+
+    // Read the index and its signatures at the same commit the chain is
+    // anchored to.
+    let index_relative = artifact_path.relative_path();
+    let index_signatures_relative = signatures_path_for(&index_relative).map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            artifact_path = %artifact_path,
+            error = %e,
+            "Cannot derive index signatures path"
+        );
+        ApiError::InternalServerError(format!("Cannot derive index signatures path: {}", e))
+    })?;
+
+    let backend = state.git_backend.clone();
+    let (index_json, index_signatures_json) =
+        tokio::task::spawn_blocking(move || -> Result<(String, String), ApiError> {
+            let index = backend.file_content_at_commit(&commit, &index_relative)?;
+            let signatures = backend.file_content_at_commit(&commit, &index_signatures_relative)?;
+            Ok((index, signatures))
+        })
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
+
+    let index_signatures: signatures::signatures_file::SignaturesFile =
+        serde_json::from_str(&index_signatures_json).map_err(|e| {
+            ApiError::InternalServerError(format!("Failed to parse index signatures: {}", e))
+        })?;
+
+    tracing::info!(
+        request_id = %request_id,
+        artifact_path = %artifact_path,
+        chain_length = chain.entries().len(),
+        "Successfully built artifact info response"
+    );
+
+    Ok(Json(GetArtifactInfoResponse {
+        index_json,
+        index_signatures,
+        signers_chain: chain,
+    }))
 }
