@@ -1,8 +1,8 @@
-use super::ForgeTrait;
+use super::ForgesPathMethods;
 
 pub(super) struct GitlabForge;
 
-impl ForgeTrait for GitlabForge {
+impl ForgesPathMethods for GitlabForge {
     fn translate_download_to_release_path(&self, path: &str) -> String {
         // GitLab URLs already use the release path directly.
         // Unlike GitHub (/releases/download/ -> /releases/tag/),

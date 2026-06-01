@@ -11,7 +11,7 @@ use reqwest::Url;
 // Re-export v1's download function as the current API surface
 pub use v1::download_file_with_verification;
 
-trait ForgeTrait {
+trait ForgesPathMethods {
     fn construct_index_file_path(&self, file_url: &Url) -> AsfaloadLibResult<String> {
         self.construct_file_repo_path(file_url, INDEX_FILE)
     }
@@ -66,7 +66,7 @@ impl Forges {
     }
 }
 
-impl ForgeTrait for Forges {
+impl ForgesPathMethods for Forges {
     fn translate_download_to_release_path(&self, path: &str) -> String {
         match self {
             Self::Github(f) => f.translate_download_to_release_path(path),

@@ -10,7 +10,7 @@ use features_lib::{
 use reqwest::{Client, Url};
 use std::path::PathBuf;
 
-use super::{ForgeTrait, Forges, get_forge};
+use super::{Forges, ForgesPathMethods, get_forge};
 
 struct DownloadedData {
     temp_file: tempfile::NamedTempFile,
