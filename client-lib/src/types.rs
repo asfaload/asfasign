@@ -294,13 +294,6 @@ impl DownloadCallbacks {
         }
     }
 
-    pub(crate) fn emit_signers_downloaded(&self, bytes: usize) {
-        if let Some(ref f) = self.on_signers_downloaded {
-            let args = SignersDownloadedArgs { bytes };
-            f(&args);
-        }
-    }
-
     pub(crate) fn emit_index_downloaded(&self, bytes: usize) {
         if let Some(ref f) = self.on_index_downloaded {
             let args = IndexDownloadedArgs { bytes };

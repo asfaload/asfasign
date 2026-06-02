@@ -61,6 +61,9 @@ pub enum ClientLibError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("Forge URL error: {0}")]
+    ForgeUrl(#[from] forge_url::ForgeUrlError),
+
     #[error("UTF-8 error: {0}")]
     Utf8(#[from] Utf8Error),
 
@@ -81,6 +84,9 @@ pub enum ClientLibError {
 
     #[error("Failed to fetch signers chain: {0}")]
     SignersChainFetchError(String),
+
+    #[error("Failed to fetch artifact info: {0}")]
+    ArtifactInfoFetchError(String),
 
     #[error("Failed to fetch signers file from forge: {0}")]
     SignersChainForgeFetchError(String),

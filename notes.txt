@@ -1,0 +1,9 @@
+Two non-blocking reviewer notes for your decision:
+
+  1. Dead generic wrappers in keys.rs. After the minisign module was deleted, AsfaloadPublicKey<K>, AsfaloadSecretKey<K>, AsfaloadSignature<S> have no concrete instantiations; they were
+  kept with #[allow(dead_code)] rather than deleted. Code reviewer recommended deletion; I chose not to widen scope without asking.
+  2. pubkey_of / prefixed_pubkey_of redundancy. Post-simplification these two bash functions in tests/e2e_tests/lib/backend_assertions.sh are functionally identical. Reviewer recommended
+  consolidating to one name; I kept both per the spec's "semantic clarity" guidance. Worth consolidating if you prefer.
+
+  Also worth a look: your gitignored tests/e2e_tests/private/signers_file_update.json still contains "format": "minisign" strings from prior local e2e runs — regenerate it when convenient
+  (not in the PR).
