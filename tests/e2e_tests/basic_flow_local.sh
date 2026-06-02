@@ -251,6 +251,16 @@ assert_release_index_exists "0.1"
 assert_release_index_pending "0.1"
 assert_last_commit_contains "$INDEX_FILE"
 
+# A never-registered release has no index file at all.
+tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
+expect_fail "Download never-registered artifact (v9.9)" \
+    cargo run --quiet -- download -o "$tmp" -u "$backend" --type fileserver $(artifact_url 9.9)
+
+# v0.1 is registered but has zero signatures yet (still pending).
+tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
+expect_fail "Download unsigned artifact (v0.1, 0 signatures)" \
+    cargo run --quiet -- download -o "$tmp" -u "$backend" --type fileserver $(artifact_url 0.1)
+
 run_step_json "List pending for key2" \
     '.file_paths | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
@@ -260,6 +270,11 @@ run_step_json "Sign release index with key0" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
 
 assert_release_index_signature_count "0.1" 1
+
+# v0.1 now has 1 of 2 required signatures: still below threshold, not active.
+tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
+expect_fail "Download partially-signed artifact (v0.1, 1 of 2 signatures)" \
+    cargo run --quiet -- download -o "$tmp" -u "$backend" --type fileserver $(artifact_url 0.1)
 
 run_step_json "Check signature status for v0.1 index (pending)" \
     '.is_complete == false' \
