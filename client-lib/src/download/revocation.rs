@@ -24,17 +24,16 @@ pub(crate) async fn check_revocation(
     forge: &impl ForgesPathMethods,
     backend_url: &str,
     callbacks: &DownloadCallbacks,
-    original_error: ClientLibError,
-) -> ClientLibError {
+) -> Result<(), ClientLibError> {
     match try_verify_revocation(client, url, forge, backend_url).await {
         Ok((timestamp, initiator)) => {
             callbacks.emit_revocation_detected(&timestamp, &initiator);
-            ClientLibError::FileRevoked {
+            Err(ClientLibError::FileRevoked {
                 timestamp,
                 initiator,
-            }
+            })
         }
-        Err(_) => original_error,
+        Err(_) => Ok(()),
     }
 }
 
