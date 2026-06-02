@@ -15,7 +15,7 @@ pub async fn get_artifact_info(
         .json(&req)
         .send()
         .await
-        .map_err(|e| ClientLibError::SignersChainFetchError(e.to_string()))?;
+        .map_err(|e| ClientLibError::ArtifactInfoFetchError(e.to_string()))?;
 
     if !response.status().is_success() {
         let status = response.status();
@@ -23,7 +23,7 @@ pub async fn get_artifact_info(
             .text()
             .await
             .unwrap_or_else(|_| "(failed to read response body)".to_string());
-        return Err(ClientLibError::SignersChainFetchError(format!(
+        return Err(ClientLibError::ArtifactInfoFetchError(format!(
             "{}: {}",
             status, body
         )));
@@ -32,5 +32,5 @@ pub async fn get_artifact_info(
     response
         .json::<GetArtifactInfoResponse>()
         .await
-        .map_err(|e| ClientLibError::SignersChainFetchError(e.to_string()))
+        .map_err(|e| ClientLibError::ArtifactInfoFetchError(e.to_string()))
 }

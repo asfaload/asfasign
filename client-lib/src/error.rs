@@ -85,6 +85,9 @@ pub enum ClientLibError {
     #[error("Failed to fetch signers chain: {0}")]
     SignersChainFetchError(String),
 
+    #[error("Failed to fetch artifact info: {0}")]
+    ArtifactInfoFetchError(String),
+
     #[error("Failed to fetch signers file from forge: {0}")]
     SignersChainForgeFetchError(String),
 
