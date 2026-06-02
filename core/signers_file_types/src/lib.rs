@@ -596,6 +596,9 @@ pub fn parse_signers_config_proposal(
 /// base64-decode back to a `String` on deserialization. This makes the
 /// stored bytes completely opaque to any JSON formatter, preventing
 /// accidental modification of the signed content.
+/// Use it with an annotation on the field:
+///      #[serde(with = "signers_file_types::base64_serde")]
+///      my_field: String
 pub mod base64_serde {
     use base64::{Engine, prelude::BASE64_STANDARD};
     use serde::{self, Deserialize, Deserializer, Serializer};
