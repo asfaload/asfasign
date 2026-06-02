@@ -103,7 +103,7 @@ pub async fn download_file_with_verification(
     let index_content = response.index_json.into_bytes();
     callbacks.emit_index_downloaded(index_content.len());
 
-    let signatures_content = serde_json::to_vec(&response.index_signatures)?;
+    let signatures_content = response.index_signatures_raw.into_bytes();
     callbacks.emit_signatures_downloaded(signatures_content.len());
 
     // Revocation is probed explicitly below via `check_revocation`, run

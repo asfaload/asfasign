@@ -1505,11 +1505,6 @@ pub async fn get_artifact_info_handler(
         .await
         .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
 
-    let index_signatures: signatures::signatures_file::SignaturesFile =
-        serde_json::from_str(&index_signatures_json).map_err(|e| {
-            ApiError::InternalServerError(format!("Failed to parse index signatures: {}", e))
-        })?;
-
     tracing::info!(
         request_id = %request_id,
         artifact_path = %artifact_path,
@@ -1519,7 +1514,7 @@ pub async fn get_artifact_info_handler(
 
     Ok(Json(GetArtifactInfoResponse {
         index_json,
-        index_signatures,
+        index_signatures_raw: index_signatures_json,
         signers_chain: chain,
     }))
 }

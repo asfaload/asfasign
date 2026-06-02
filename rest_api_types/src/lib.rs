@@ -429,8 +429,11 @@ pub mod models {
         /// untouched.
         #[serde(with = "signers_file_types::base64_serde")]
         pub index_json: String,
-        /// Parsed signatures envelope from `<index>.signatures.json`.
-        pub index_signatures: signatures::signatures_file::SignaturesFile,
+        /// Raw signatures file content. Making it opaque here is not absolutely required as
+        /// it is not a signed content. It allows the server to send the content untouched to the
+        /// client.
+        #[serde(with = "signers_file_types::base64_serde")]
+        pub index_signatures_raw: String,
         /// Signers chain as of the artifact-signature commit. Carries everything
         /// needed for client-side realm and trust-anchor validation.
         pub signers_chain: signers_file_types::SignersChain,
