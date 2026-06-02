@@ -1,4 +1,7 @@
-use common::fs::names::{find_global_signers_for, subject_path_from_pending_signatures};
+use common::fs::names::{
+    find_global_signers_for, revocation_path_for, revocation_signatures_path_for,
+    revocation_signers_path_for, subject_path_from_pending_signatures,
+};
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
 use rest_api_types::models::{
@@ -1457,10 +1460,10 @@ pub async fn get_artifact_info_handler(
     // copy is the same commit the index and its signatures were committed at,
     // so all three are read consistently from it.
     let local_signers_relative =
-        local_signers_path_for(artifact_path.relative_path()).map_err(|e| {
+        local_signers_path_for(index_file_paths.relative_path()).map_err(|e| {
             tracing::error!(
                 request_id = %request_id,
-                artifact_path = %artifact_path,
+                artifact_path = %index_file_paths,
                 error = %e,
                 "Cannot derive signers path for artifact"
             );
@@ -1472,7 +1475,7 @@ pub async fn get_artifact_info_handler(
         .map_err(|e| {
             tracing::error!(
                 request_id = %request_id,
-                artifact_path = %artifact_path,
+                artifact_path = %index_file_paths,
                 error = %e,
                 "Invalid signers path"
             );
@@ -1484,11 +1487,11 @@ pub async fn get_artifact_info_handler(
 
     // Read the index and its signatures at the same commit the chain is
     // anchored to.
-    let index_relative = artifact_path.relative_path();
+    let index_relative = index_file_paths.relative_path();
     let index_signatures_relative = signatures_path_for(&index_relative).map_err(|e| {
         tracing::error!(
             request_id = %request_id,
-            artifact_path = %artifact_path,
+            artifact_path = %index_file_paths,
             error = %e,
             "Cannot derive index signatures path"
         );
@@ -1507,7 +1510,7 @@ pub async fn get_artifact_info_handler(
 
     tracing::info!(
         request_id = %request_id,
-        artifact_path = %artifact_path,
+        artifact_path = %index_file_paths,
         chain_length = chain.entries().len(),
         "Successfully built artifact info response"
     );
@@ -1515,6 +1518,143 @@ pub async fn get_artifact_info_handler(
     Ok(Json(GetArtifactInfoResponse {
         index_json,
         index_signatures_raw: index_signatures_json,
+        signers_chain: chain,
+    }))
+}
+
+/// Handler to fetch the revocation status of a signed artifact.
+///
+/// Returns 404 if no revocation exists. Otherwise returns the revocation
+/// payload (raw JSON + signatures) bundled with the signers chain anchored
+/// at the revocation commit, so the client can validate the chain (realm +
+/// trust anchor) before trusting the revocation's authorization.
+pub async fn get_revocation_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<rest_api_types::models::GetRevocationRequest>,
+) -> Result<Json<rest_api_types::models::GetRevocationResponse>, ApiError> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        url = %request.artifact_url,
+        "Received get_revocation request"
+    );
+
+    let url = request.artifact_url;
+
+    // Map the artifact download URL to the index file's repository path using
+    // the shared forge-url layer (GitHub /releases/download/ -> /releases/tag/,
+    // other forges use the path as-is), then validate it as a repo-relative path.
+    let forge = match request.forge_kind {
+        Some(ft) => Forges::from_type_str(&ft)
+            .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid forge type: {}", e)))?,
+        None => get_forge(&url).map_err(|e| {
+            ApiError::InvalidRequestBody(format!(
+                "Forge type could not be extracted from URL: {}",
+                e
+            ))
+        })?,
+    };
+
+    let index_file_path = forge
+        .construct_index_file_path(&url)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid artifact URL: {}", e)))?;
+    let index_file_paths = NormalisedPaths::new(&state.git_repo_path, &index_file_path).await?;
+
+    let revocation_path = revocation_path_for(index_file_paths.relative_path()).map_err(|e| {
+        tracing::error!(
+            request_id = %request_id,
+            index_path = %index_file_paths,
+            error = %e,
+            "Cannot derive revocation path"
+        );
+        ApiError::InvalidFilePath(format!("Cannot derive revocation path: {}", e))
+    })?;
+    let revocation_paths = NormalisedPaths::new(&state.git_repo_path, revocation_path)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                index_path = %index_file_paths,
+                error = %e,
+                "Invalid revocation path"
+            );
+            ApiError::InvalidFilePath(format!("Invalid revocation path: {}", e))
+        })?;
+    if !revocation_paths.absolute_path().exists() {
+        tracing::info!(
+            request_id = %request_id,
+            index_path = %index_file_paths,
+            "No revocation file present"
+        );
+        return Err(ApiError::FileNotFound(format!(
+            "No revocation for: {}",
+            index_file_paths.relative_path().display()
+        )));
+    }
+
+    let revocation_local_signers_rel =
+        revocation_signers_path_for(index_file_paths.relative_path()).map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                index_path = %index_file_paths,
+                error = %e,
+                "Cannot derive revocation signers path"
+            );
+            ApiError::InvalidFilePath(format!("Cannot derive revocation signers path: {}", e))
+        })?;
+
+    let revocation_local_signers =
+        NormalisedPaths::new(state.git_repo_path.clone(), revocation_local_signers_rel)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    request_id = %request_id,
+                    index_path = %index_file_paths,
+                    error = %e,
+                    "Invalid revocation signers path"
+                );
+                ApiError::InvalidFilePath(format!("Invalid revocation signers path: {}", e))
+            })?;
+
+    let (chain, commit, _commit_time) =
+        build_chain_from_local_signers_copy(&state, request_id, revocation_local_signers).await?;
+
+    let revocation_signatures_relative =
+        revocation_signatures_path_for(index_file_paths.relative_path()).map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                revocation_path = %revocation_paths,
+                error = %e,
+                "Cannot derive revocation signatures path"
+            );
+            ApiError::InvalidFilePath(format!("Cannot derive revocation signatures path: {}", e))
+        })?;
+
+    let backend = state.git_backend.clone();
+    let (revocation_json, revocation_signatures_json) =
+        tokio::task::spawn_blocking(move || -> Result<(String, String), ApiError> {
+            let rev = backend.file_content_at_commit(&commit, &revocation_paths.relative_path())?;
+            let sigs = backend.file_content_at_commit(&commit, &revocation_signatures_relative)?;
+            Ok((rev, sigs))
+        })
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Task join error: {}", e)))??;
+
+    tracing::info!(
+        request_id = %request_id,
+        index_path = %index_file_paths,
+        chain_length = chain.entries().len(),
+        "Successfully built revocation response"
+    );
+
+    Ok(Json(rest_api_types::models::GetRevocationResponse {
+        revocation_json,
+        revocation_signatures: revocation_signatures_json,
         signers_chain: chain,
     }))
 }
