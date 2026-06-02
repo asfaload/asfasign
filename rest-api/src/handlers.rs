@@ -1400,6 +1400,34 @@ pub async fn get_signers_chain_handler(
     Ok(Json(GetSignersChainResponse { chain }))
 }
 
+// Helper to build index path from artifact url and forge type.
+
+async fn index_paths_for(
+    state: &AppState,
+    url: url::Url,
+    forge_kind: Option<String>,
+) -> Result<NormalisedPaths, ApiError> {
+    // Map the artifact download URL to the index file's repository path using
+    // the shared forge-url layer (GitHub /releases/download/ -> /releases/tag/,
+    // other forges use the path as-is), then validate it as a repo-relative path.
+    let forge = match forge_kind {
+        Some(ft) => Forges::from_type_str(&ft)
+            .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid forge type: {}", e)))?,
+        None => get_forge(&url).map_err(|e| {
+            ApiError::InvalidRequestBody(format!(
+                "Forge type could not be extracted from URL: {}",
+                e
+            ))
+        })?,
+    };
+
+    let index_file_path = forge
+        .construct_index_file_path(&url)
+        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid artifact URL: {}", e)))?;
+    let index_file_paths = NormalisedPaths::new(&state.git_repo_path, &index_file_path).await?;
+    Ok(index_file_paths)
+}
+
 /// Handler to fetch everything a client needs to verify a signed artifact.
 ///
 /// Bundles the artifact's index JSON, its signatures envelope, and the
@@ -1427,32 +1455,17 @@ pub async fn get_artifact_info_handler(
 
     let url = request.artifact_url;
 
-    // Map the artifact download URL to the index file's repository path using
-    // the shared forge-url layer (GitHub /releases/download/ -> /releases/tag/,
-    // other forges use the path as-is), then validate it as a repo-relative path.
-    let forge = match request.forge_kind {
-        Some(ft) => Forges::from_type_str(&ft)
-            .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid forge type: {}", e)))?,
-        None => get_forge(&url).map_err(|e| {
-            ApiError::InvalidRequestBody(format!(
-                "Forge type could not be extracted from URL: {}",
-                e
-            ))
-        })?,
-    };
-    let index_file_path = forge
-        .construct_index_file_path(&url)
-        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid artifact URL: {}", e)))?;
-    let artifact_path = NormalisedPaths::new(&state.git_repo_path, &index_file_path)
+    let logged_url = url.clone();
+    let index_file_paths = index_paths_for(&state, url, request.forge_kind)
         .await
         .map_err(|e| {
             tracing::error!(
                 request_id = %request_id,
-                index_path = %index_file_path,
+                url = %logged_url,
                 error = %e,
-                "Invalid artifact path"
+                "Cannot derive signers path for artifact"
             );
-            ApiError::InvalidFilePath(format!("Invalid artifact path: {}", e))
+            ApiError::InvalidFilePath(format!("Cannot derive signers path for artifact: {}", e))
         })?;
 
     // The chain is built from the artifact's local `.signers.json` copy, taken
@@ -1546,24 +1559,18 @@ pub async fn get_revocation_handler(
 
     let url = request.artifact_url;
 
-    // Map the artifact download URL to the index file's repository path using
-    // the shared forge-url layer (GitHub /releases/download/ -> /releases/tag/,
-    // other forges use the path as-is), then validate it as a repo-relative path.
-    let forge = match request.forge_kind {
-        Some(ft) => Forges::from_type_str(&ft)
-            .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid forge type: {}", e)))?,
-        None => get_forge(&url).map_err(|e| {
-            ApiError::InvalidRequestBody(format!(
-                "Forge type could not be extracted from URL: {}",
-                e
-            ))
-        })?,
-    };
-
-    let index_file_path = forge
-        .construct_index_file_path(&url)
-        .map_err(|e| ApiError::InvalidRequestBody(format!("Invalid artifact URL: {}", e)))?;
-    let index_file_paths = NormalisedPaths::new(&state.git_repo_path, &index_file_path).await?;
+    let logged_url = url.clone();
+    let index_file_paths = index_paths_for(&state, url, request.forge_kind)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                request_id = %request_id,
+                url = %logged_url,
+                error = %e,
+                "Cannot derive signers path for artifact"
+            );
+            ApiError::InvalidFilePath(format!("Cannot derive signers path for artifact: {}", e))
+        })?;
 
     let revocation_path = revocation_path_for(index_file_paths.relative_path()).map_err(|e| {
         tracing::error!(
