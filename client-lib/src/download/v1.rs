@@ -1,5 +1,6 @@
 use crate::artifact_info::get_artifact_info;
 use crate::backend::download_file_to_temp;
+use crate::download::revocation::check_revocation;
 use crate::signers_chain::validate_fetched_chain;
 use crate::types::DownloadCallbacks;
 use crate::verification::{get_file_hash_info, verify_file_hash, verify_signatures};
@@ -105,10 +106,11 @@ pub async fn download_file_with_verification(
     let signatures_content = serde_json::to_vec(&response.index_signatures)?;
     callbacks.emit_signatures_downloaded(signatures_content.len());
 
-    // FIXME: revocation used to be detected via a 404 on the
-    // signatures file request. The bundled get_artifact_info endpoint removed
-    // that trigger, so revocation is NOT detected in this flow yet. It must be
-    // re-added (e.g. an explicit revocation check) before relying on it.
+    // Revocation is probed explicitly below via `check_revocation`, run
+    // alongside the chain validation and binary download. Two known
+    // limitations remain: the revocation signers file it fetches is not
+    // trust-rooted against the validated chain-head config, and revocation is
+    // not yet bundled into the get_artifact_info response.
 
     let file_hash = sha512_for_content(index_content)?;
 
@@ -117,13 +119,32 @@ pub async fn download_file_with_verification(
 
     callbacks.emit_file_download_started(filename, None);
 
-    // Validate the signers chain from the response and download the artifact
-    // binary in parallel. Signatures are verified against the chain-head config
+    // Validate the signers chain from the response, probe for revocation, and
+    // download the artifact binary in parallel. Signatures are verified against
+    // the chain-head config.
     let algorithm = expected_hash.algorithm();
     let download_future = download_file_to_temp(&client, file_url, &algorithm, callbacks);
     let chain_future = validate_fetched_chain(response.signers_chain, &index_file_path);
+    // `check_revocation` is shaped as an error-path fallback: it returns the
+    // error passed to it when nothing is revoked, and `FileRevoked` when it is.
+    // We hand it a placeholder error and act only on `FileRevoked` below.
+    let revocation_future = check_revocation(
+        &client,
+        &url,
+        &forge,
+        backend_url,
+        callbacks,
+        ClientLibError::GenericError("not revoked".into()),
+    );
 
-    let (download_result, chain_result) = tokio::join!(download_future, chain_future);
+    let (download_result, chain_result, revocation_outcome) =
+        tokio::join!(download_future, chain_future, revocation_future);
+
+    // A revoked artifact must fail the download regardless of chain or
+    // signature state.
+    if let ClientLibError::FileRevoked { .. } = revocation_outcome {
+        return Err(revocation_outcome);
+    }
 
     let signers_config = match chain_result {
         Ok(chain) => {
