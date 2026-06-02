@@ -11,7 +11,7 @@ use reqwest::{Client, Url};
 use serde::Deserialize;
 use tokio::try_join;
 
-use super::ForgeTrait;
+use super::ForgesPathMethods;
 
 /// Probe for revocation files and verify the revocation.
 ///
@@ -21,20 +21,19 @@ use super::ForgeTrait;
 pub(crate) async fn check_revocation(
     client: &Client,
     url: &Url,
-    forge: &impl ForgeTrait,
+    forge: &impl ForgesPathMethods,
     backend_url: &str,
     callbacks: &DownloadCallbacks,
-    original_error: ClientLibError,
-) -> ClientLibError {
+) -> Result<(), ClientLibError> {
     match try_verify_revocation(client, url, forge, backend_url).await {
         Ok((timestamp, initiator)) => {
             callbacks.emit_revocation_detected(&timestamp, &initiator);
-            ClientLibError::FileRevoked {
+            Err(ClientLibError::FileRevoked {
                 timestamp,
                 initiator,
-            }
+            })
         }
-        Err(_) => original_error,
+        Err(_) => Ok(()),
     }
 }
 
@@ -45,7 +44,7 @@ pub(crate) async fn check_revocation(
 async fn try_verify_revocation(
     client: &Client,
     url: &Url,
-    forge: &impl ForgeTrait,
+    forge: &impl ForgesPathMethods,
     backend_url: &str,
 ) -> Result<(String, String), ClientLibError> {
     // Construct revocation file names from INDEX_FILE + constants

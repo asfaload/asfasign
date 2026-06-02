@@ -8,4 +8,6 @@ pub enum ForgeUrlError {
     MissingBranch,
     #[error("Missing file path in URL")]
     MissingFilePath,
+    #[error("Unsupported forge: {0}")]
+    UnsupportedForge(String),
 }

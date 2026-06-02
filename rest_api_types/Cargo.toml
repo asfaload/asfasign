@@ -23,6 +23,7 @@ rustls = "0.23.36"
 normalize-path = "0.2.1"
 forge-url = { path = "../file-auth/forge-url" }
 signers_file_types = { path = "../core/signers_file_types/" }
+signatures = { path = "../core/signatures/" }
 tracing = "0.1.44"
 
 [lints]

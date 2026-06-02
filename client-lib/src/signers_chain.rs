@@ -1,4 +1,5 @@
 use crate::{AsfaloadLibResult, ClientLibError};
+use features_lib::{SignersChain, SignersConfig, SignersInfoTrait};
 use forge_url::{ForgeInfo, ForgeTrait};
 use rest_api_types::GetSignersChainResponse;
 
@@ -7,6 +8,9 @@ use rest_api_types::GetSignersChainResponse;
 pub struct SignersChainResult {
     /// Number of entries in the validated chain.
     pub entries_count: usize,
+    /// Current signers config extracted from the validated chain so it can be used immediately by
+    /// downloading code.
+    pub current_signers_config: SignersConfig,
 }
 
 /// Fetch the signers chain for a signed artifact from the backend.
@@ -42,21 +46,15 @@ async fn get_signers_chain(
         .map_err(|e| ClientLibError::SignersChainFetchError(e.to_string()))
 }
 
-/// Validate the signers chain for a signed artifact.
-///
-/// Fetches the chain from the backend API, runs cryptographic validation
-/// across the entire history (including the first-entry all-signers rule)
-/// via `validate_chain`, and finally checks the first entry's
-/// trust-anchor (forge content match).
-pub async fn verify_signers_chain(
-    backend_url: &str,
+/// Cryptographic + realm + trust-anchor validation of an already-fetched
+/// chain. Both `verify_signers_chain` (which fetches first) and the download
+/// flow (which gets the chain bundled in the artifact-info response) feed
+/// their chain through this function. Returns the chain-head signers config.
+pub(crate) async fn validate_fetched_chain(
+    chain: SignersChain,
     artifact_path: &str,
 ) -> AsfaloadLibResult<SignersChainResult> {
     let http_client = reqwest::Client::new();
-
-    let chain_response = get_signers_chain(&http_client, backend_url, artifact_path).await?;
-
-    let chain = chain_response.chain;
 
     if chain.entries().is_empty() {
         return Err(ClientLibError::SignersChainEmpty);
@@ -89,9 +87,30 @@ pub async fn verify_signers_chain(
 
     validate_trust_anchor(&http_client, &first).await?;
 
+    // The chain-head config is the trust-rooted active signers set.
+    let current_signers_config = chain
+        .current_signers_info()
+        .ok_or(ClientLibError::SignersChainEmpty)?
+        .signers_config()
+        .map_err(|e| ClientLibError::SignersConfigParse(e.to_string()))?;
+
     Ok(SignersChainResult {
         entries_count: chain.entries().len(),
+        current_signers_config,
     })
+}
+
+/// Validate the signers chain for a signed artifact.
+///
+/// Fetches the chain from the backend API, then runs the cryptographic,
+/// realm, and trust-anchor validation via `validate_fetched_chain`.
+pub async fn verify_signers_chain(
+    backend_url: &str,
+    artifact_path: &str,
+) -> AsfaloadLibResult<SignersChainResult> {
+    let http_client = reqwest::Client::new();
+    let chain_response = get_signers_chain(&http_client, backend_url, artifact_path).await?;
+    validate_fetched_chain(chain_response.chain, artifact_path).await
 }
 
 /// Assert that the trust anchor's fetched URL falls within the download's realm.

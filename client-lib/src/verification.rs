@@ -8,7 +8,7 @@ use features_lib::{
 use std::collections::HashMap;
 
 pub fn verify_signatures(
-    signatures_content: Vec<u8>,
+    signatures_content: &[u8],
     signers_config: &SignersConfig,
     data: &AsfaloadHashes,
 ) -> AsfaloadLibResult<(usize, usize)> {

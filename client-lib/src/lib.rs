@@ -1,3 +1,4 @@
+pub mod artifact_info;
 mod backend;
 pub mod constants;
 mod download;
