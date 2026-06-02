@@ -6,10 +6,10 @@ use axum::{
 use crate::{
     auth_middleware::auth_middleware,
     handlers::{
-        get_file_handler, get_files_to_sign_handler, get_pending_signatures_handler,
-        get_signature_status_handler, get_signers_chain_handler, get_signers_handler,
-        register_assets_handler, register_repo_handler, revoke_handler, submit_signature_handler,
-        update_signers_handler,
+        get_artifact_info_handler, get_file_handler, get_files_to_sign_handler,
+        get_pending_signatures_handler, get_signature_status_handler, get_signers_chain_handler,
+        get_signers_handler, register_assets_handler, register_repo_handler, revoke_handler,
+        submit_signature_handler, update_signers_handler,
     },
     state::AppState,
 };
@@ -59,6 +59,8 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
         "/get_signers_chain/{*artifact_path}",
         get(get_signers_chain_handler),
     );
+    let artifact_info_router =
+        Router::new().route("/get_artifact_info", post(get_artifact_info_handler));
     let revoke_router = Router::new().route("/revoke", post(revoke_handler)).layer(
         axum::middleware::from_fn_with_state(app_state.clone(), auth_middleware),
     );
@@ -77,6 +79,7 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
         .merge(files_to_sign_router)
         .merge(signers_router)
         .merge(signers_chain_router)
+        .merge(artifact_info_router)
         .merge(revoke_router)
         .merge(assets_router)
 }
