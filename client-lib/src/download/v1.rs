@@ -120,48 +120,33 @@ pub async fn download_file_with_verification(
     callbacks.emit_file_download_started(filename, None);
 
     // Validate the signers chain from the response, probe for revocation, and
-    // download the artifact binary in parallel. Signatures are verified against
-    // the chain-head config.
+    // download the artifact binary in parallel. `try_join!` aborts the
+    // in-flight download as soon as chain validation fails or a revocation is
+    // detected, instead of waiting for the whole binary to download.
+    // Signatures are verified against the chain-head config.
     let algorithm = expected_hash.algorithm();
     let download_future = download_file_to_temp(&client, file_url, &algorithm, callbacks);
-    let chain_future = validate_fetched_chain(response.signers_chain, &index_file_path);
-    // `check_revocation` is shaped as an error-path fallback: it returns the
-    // error passed to it when nothing is revoked, and `FileRevoked` when it is.
-    // We hand it a placeholder error and act only on `FileRevoked` below.
-    let revocation_future = check_revocation(
-        &client,
-        &url,
-        &forge,
-        backend_url,
-        callbacks,
-        ClientLibError::GenericError("not revoked".into()),
-    );
 
-    let (download_result, chain_result, revocation_outcome) =
-        tokio::join!(download_future, chain_future, revocation_future);
-
-    // A revoked artifact must fail the download regardless of chain or
-    // signature state.
-    if let ClientLibError::FileRevoked { .. } = revocation_outcome {
-        return Err(revocation_outcome);
-    }
-
-    let signers_config = match chain_result {
-        Ok(chain) => {
-            callbacks.emit_signers_chain_verified(chain.entries_count);
-            chain.current_signers_config
-        }
-        Err(e) => {
-            callbacks.emit_signers_chain_failed(&e.to_string());
-            return Err(e);
-        }
+    // Explicit assignment of a variable moved below.
+    let signers_chain = response.signers_chain;
+    let chain_future = async move {
+        validate_fetched_chain(signers_chain, &index_file_path)
+            .await
+            .inspect(|chain| callbacks.emit_signers_chain_verified(chain.entries_count))
+            .inspect_err(|e| callbacks.emit_signers_chain_failed(&e.to_string()))
     };
+    // `check_revocation` returns `Err(FileRevoked)` for a revoked artifact,
+    // which aborts the download via `try_join!`.
+    let revocation_future = check_revocation(&client, &url, &forge, backend_url, callbacks);
+
+    let ((temp_file, bytes_downloaded, computed_hash), chain, ()) =
+        tokio::try_join!(download_future, chain_future, revocation_future)?;
+
+    let signers_config = chain.current_signers_config;
 
     let (valid_count, invalid_count) =
-        verify_signatures(signatures_content, &signers_config, &file_hash)?;
+        verify_signatures(&signatures_content, &signers_config, &file_hash)?;
     callbacks.emit_signatures_verified(valid_count, invalid_count);
-
-    let (temp_file, bytes_downloaded, computed_hash) = download_result?;
 
     let context = FinalizeContext {
         expected_hash: &expected_hash,
