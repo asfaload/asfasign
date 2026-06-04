@@ -91,6 +91,14 @@ pub enum ClientLibError {
     #[error("Revocation signature threshold not met: found {found} valid signatures")]
     RevocationThresholdNotMet { found: usize },
 
+    #[error(
+        "Revocation subject digest '{subject_digest}' does not match index digest '{index_digest}'"
+    )]
+    RevocationSubjectMismatch {
+        subject_digest: String,
+        index_digest: String,
+    },
+
     #[error("An error occured: {0}")]
     GenericError(String),
 

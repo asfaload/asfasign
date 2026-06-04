@@ -136,7 +136,13 @@ pub async fn download_file_with_verification(
         artifact_url: url,
         forge_kind: forge_type.map(String::from),
     };
-    let revocation_future = check_revocation(&client, backend_url, revocation_request, callbacks);
+    let revocation_future = check_revocation(
+        &client,
+        backend_url,
+        revocation_request,
+        &file_hash,
+        callbacks,
+    );
 
     let ((temp_file, bytes_downloaded, computed_hash), chain, ()) =
         tokio::try_join!(download_future, chain_future, revocation_future)?;

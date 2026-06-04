@@ -3,8 +3,8 @@ use crate::signers_chain::validate_fetched_chain;
 use crate::types::DownloadCallbacks;
 use crate::verification::collect_valid_signatures;
 use features_lib::{
-    AsfaloadPublicKeyTrait, RevocationInfo, aggregate_signature_helpers::check_groups, can_revoke,
-    sha512_for_content,
+    AsfaloadHashes, AsfaloadPublicKeyTrait, RevocationInfo,
+    aggregate_signature_helpers::check_groups, can_revoke, sha512_for_content,
 };
 use reqwest::Client;
 use rest_api_types::models::{GetRevocationRequest, GetRevocationResponse};
@@ -14,17 +14,20 @@ use super::{Forges, ForgesPathMethods, get_forge};
 /// Explicit, trust-anchored revocation check.
 ///
 /// Returns `Ok(())` when the backend reports no revocation (404). On 200,
-/// validates the embedded chain (realm + trust anchor), checks `can_revoke`
-/// against the chain head, and verifies the revocation signature against the
-/// chain-head signers config. The revocation must be fully signed: every
-/// `revocation_keys()` group of the chain-head config must meet its threshold.
-/// A verified revocation emits the callback and returns a `FileRevoked` error.
-/// Any failure of those checks is an error — we never silently treat a bad
-/// revocation payload as "not revoked".
+/// validates the embedded chain (realm + trust anchor), checks that the
+/// revocation's subject digest matches `index_hash` (the sha512 of the index
+/// file the client was served — the revocation subject is the index file),
+/// checks `can_revoke` against the chain head, and verifies the revocation
+/// signature against the chain-head signers config. The revocation must be
+/// fully signed: every `revocation_keys()` group of the chain-head config
+/// must meet its threshold. A verified revocation emits the callback and
+/// returns a `FileRevoked` error. Any failure of those checks is an error —
+/// we never silently treat a bad revocation payload as "not revoked".
 pub(crate) async fn check_revocation(
     client: &Client,
     backend_url: &str,
     req: GetRevocationRequest,
+    index_hash: &AsfaloadHashes,
     callbacks: &DownloadCallbacks,
 ) -> Result<(), ClientLibError> {
     let url = format!("{}/v1/get_revocation", backend_url);
@@ -70,6 +73,17 @@ pub(crate) async fn check_revocation(
 
     let revocation = RevocationInfo::from_json(&resp.revocation_json)
         .map_err(|e| ClientLibError::RevocationParse(e.to_string()))?;
+
+    // The backend guarantees at revocation creation time that the subject
+    // digest matches the revoked index file. A mismatch here means the
+    // revocation we received is not about the index we were served, so we
+    // fail closed instead of reporting the file as revoked.
+    if revocation.subject_digest != *index_hash {
+        return Err(ClientLibError::RevocationSubjectMismatch {
+            subject_digest: revocation.subject_digest.to_string(),
+            index_digest: index_hash.to_string(),
+        });
+    }
 
     // Authorize the initiator against the chain-head signers config.
     if !can_revoke(&revocation.initiator, &signers_config) {
@@ -121,6 +135,16 @@ mod tests {
     use test_helpers::TestKeys;
     use test_helpers::history_helpers::make_history_entry;
 
+    /// Content of the index file the revocations built in these tests are
+    /// about: their `subject_digest` is its sha512.
+    const REVOKED_INDEX_CONTENT: &[u8] = b"revoked index content";
+
+    /// The `index_hash` a client passes when the index it was served is the
+    /// one the revocation is about.
+    fn matching_index_hash() -> AsfaloadHashes {
+        sha512_for_content(REVOKED_INDEX_CONTENT.to_vec()).unwrap()
+    }
+
     /// Request for an artifact hosted on `backend_url`, in the realm of the
     /// `acme/tool` project. The realm path used for chain validation is
     /// derived from this URL.
@@ -169,7 +193,7 @@ mod tests {
         let initiator = keys.pub_key(initiator_index).unwrap().clone();
         let revocation_info = RevocationInfo {
             timestamp,
-            subject_digest: sha512_for_content(b"revoked artifact content".to_vec()).unwrap(),
+            subject_digest: matching_index_hash(),
             initiator: initiator.clone(),
         };
         let revocation_json = serde_json::to_string(&revocation_info).unwrap();
@@ -230,6 +254,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
@@ -251,6 +276,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
@@ -294,6 +320,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
@@ -336,6 +363,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
@@ -348,6 +376,59 @@ mod tests {
                 assert_eq!(i, initiator);
             }
             other => panic!("expected FileRevoked, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn check_revocation_rejects_when_subject_digest_mismatches() {
+        // The revocation payload is fully valid, but it is about a different
+        // index than the one the client was served: it must be rejected as
+        // an error, not reported as FileRevoked.
+        let mut backend = mockito::Server::new_async().await;
+        let keys = TestKeys::new(1);
+        let anchor_url = format!("{}/acme/tool/asfaload.signers/signers.json", backend.url());
+        let (payload, _, _) = build_revocation_response(&keys, 0, &anchor_url);
+
+        let _revocation_mock = backend
+            .mock("POST", "/v1/get_revocation")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&payload).unwrap())
+            .create_async()
+            .await;
+        let _anchor_mock = backend
+            .mock("GET", "/acme/tool/asfaload.signers/signers.json")
+            .with_status(200)
+            .with_body(
+                payload
+                    .signers_chain
+                    .current_signers_info()
+                    .unwrap()
+                    .signers_file
+                    .clone(),
+            )
+            .create_async()
+            .await;
+
+        let other_index_hash = sha512_for_content(b"another index content".to_vec()).unwrap();
+        let client = reqwest::Client::new();
+        let result = check_revocation(
+            &client,
+            &backend.url(),
+            test_request(&backend.url()),
+            &other_index_hash,
+            &DownloadCallbacks::default(),
+        )
+        .await;
+        match result {
+            Err(ClientLibError::RevocationSubjectMismatch {
+                subject_digest,
+                index_digest,
+            }) => {
+                assert_eq!(subject_digest, matching_index_hash().to_string());
+                assert_eq!(index_digest, other_index_hash.to_string());
+            }
+            other => panic!("expected RevocationSubjectMismatch, got: {:?}", other),
         }
     }
 
@@ -376,6 +457,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
@@ -412,6 +494,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
@@ -435,7 +518,7 @@ mod tests {
         let key1 = keys.pub_key(1).unwrap().clone();
         let revocation_info = RevocationInfo {
             timestamp: chrono::Utc::now(),
-            subject_digest: sha512_for_content(b"revoked artifact content".to_vec()).unwrap(),
+            subject_digest: matching_index_hash(),
             initiator: key1.clone(),
         };
         payload.revocation_json = serde_json::to_string(&revocation_info).unwrap();
@@ -477,6 +560,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
@@ -522,6 +606,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
@@ -567,6 +652,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
@@ -620,6 +706,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
@@ -668,6 +755,7 @@ mod tests {
             &client,
             &backend.url(),
             test_request(&backend.url()),
+            &matching_index_hash(),
             &DownloadCallbacks::default(),
         )
         .await;
