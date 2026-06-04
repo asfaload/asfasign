@@ -438,6 +438,35 @@ pub mod models {
         /// needed for client-side realm and trust-anchor validation.
         pub signers_chain: signers_file_types::SignersChain,
     }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct GetRevocationRequest {
+        pub artifact_url: url::Url,
+        pub forge_kind: Option<String>,
+    }
+
+    /// Response for the get_revocation endpoint.
+    ///
+    /// Contains the raw revocation JSON and signatures bytes, plus the
+    /// signers chain as of the revocation commit. Clients validate the
+    /// chain (realm + trust anchor) and use its head as the trusted
+    /// signers config for the `can_revoke` and signature checks.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct GetRevocationResponse {
+        /// Raw JSON bytes of `<artifact>.revocation.json`. Base64-encoded
+        /// in transit so the bytes that were signed survive JSON round-trip
+        /// untouched.
+        #[serde(with = "signers_file_types::base64_serde")]
+        pub revocation_json: String,
+        /// Parsed signatures envelope from
+        /// `<artifact>.revocation.json.signatures.json`.
+        #[serde(with = "signers_file_types::base64_serde")]
+        pub revocation_signatures: String,
+        /// Signers chain as of the revocation commit (not the artifact-signature
+        /// commit). Carries everything needed for client-side realm and
+        /// trust-anchor validation.
+        pub signers_chain: signers_file_types::SignersChain,
+    }
 }
 
 pub mod github_helpers {

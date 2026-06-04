@@ -7,7 +7,7 @@ use crate::verification::{get_file_hash_info, verify_file_hash, verify_signature
 use crate::{AsfaloadLibResult, ClientLibError, DownloadResult};
 use features_lib::{AsfaloadIndex, sha512_for_content};
 use reqwest::{Client, Url};
-use rest_api_types::models::GetArtifactInfoRequest;
+use rest_api_types::models::{GetArtifactInfoRequest, GetRevocationRequest};
 use std::path::PathBuf;
 
 use super::{Forges, ForgesPathMethods, get_forge};
@@ -86,7 +86,8 @@ pub async fn download_file_with_verification(
     };
     let response = get_artifact_info(&client, backend_url, get_artifact_info_request).await?;
 
-    let filename = url
+    let cloned_url = url.clone();
+    let filename = cloned_url
         .path_segments()
         .and_then(|mut segments| segments.next_back())
         .ok_or_else(|| {
@@ -105,12 +106,6 @@ pub async fn download_file_with_verification(
 
     let signatures_content = response.index_signatures_raw.into_bytes();
     callbacks.emit_signatures_downloaded(signatures_content.len());
-
-    // Revocation is probed explicitly below via `check_revocation`, run
-    // alongside the chain validation and binary download. Two known
-    // limitations remain: the revocation signers file it fetches is not
-    // trust-rooted against the validated chain-head config, and revocation is
-    // not yet bundled into the get_artifact_info response.
 
     let file_hash = sha512_for_content(index_content)?;
 
@@ -137,7 +132,17 @@ pub async fn download_file_with_verification(
     };
     // `check_revocation` returns `Err(FileRevoked)` for a revoked artifact,
     // which aborts the download via `try_join!`.
-    let revocation_future = check_revocation(&client, &url, &forge, backend_url, callbacks);
+    let revocation_request = GetRevocationRequest {
+        artifact_url: url,
+        forge_kind: forge_type.map(String::from),
+    };
+    let revocation_future = check_revocation(
+        &client,
+        backend_url,
+        revocation_request,
+        &file_hash,
+        callbacks,
+    );
 
     let ((temp_file, bytes_downloaded, computed_hash), chain, ()) =
         tokio::try_join!(download_future, chain_future, revocation_future)?;

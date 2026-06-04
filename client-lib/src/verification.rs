@@ -17,6 +17,28 @@ pub fn verify_signatures(
         return Err(ClientLibError::MissingArtifactSigners);
     }
 
+    let (typed_signatures, invalid_count) = collect_valid_signatures(signatures_content, data)?;
+
+    let is_complete = check_groups(artifact_groups, &typed_signatures, data);
+
+    if !is_complete {
+        return Err(ClientLibError::SignatureThresholdNotMet {
+            required: artifact_groups.len(),
+            found: typed_signatures.len(),
+        });
+    }
+
+    let valid_count = typed_signatures.len();
+    Ok((valid_count, invalid_count))
+}
+
+/// Parse a signatures envelope and verify each signature over `data`.
+/// Returns the valid signatures keyed by public key, plus the count of
+/// signatures that failed verification.
+pub(crate) fn collect_valid_signatures(
+    signatures_content: &[u8],
+    data: &AsfaloadHashes,
+) -> AsfaloadLibResult<(HashMap<AsfaloadPublicKeys, AsfaloadSignatures>, usize)> {
     let mut typed_signatures: HashMap<AsfaloadPublicKeys, AsfaloadSignatures> = HashMap::new();
     let mut invalid_count = 0;
 
@@ -32,17 +54,7 @@ pub fn verify_signatures(
         typed_signatures.insert(pubkey, signature);
     }
 
-    let is_complete = check_groups(artifact_groups, &typed_signatures, data);
-
-    if !is_complete {
-        return Err(ClientLibError::SignatureThresholdNotMet {
-            required: artifact_groups.len(),
-            found: typed_signatures.len(),
-        });
-    }
-
-    let valid_count = typed_signatures.len();
-    Ok((valid_count, invalid_count))
+    Ok((typed_signatures, invalid_count))
 }
 
 /// Get expected hash for a file from the index as a `ComputedHash`.
