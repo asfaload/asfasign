@@ -628,4 +628,52 @@ mod tests {
             other => panic!("expected RevocationInvalid, got: {:?}", other),
         }
     }
+
+    // The initiator's signature is provided at revocation initialisation time, so if the
+    // initiator's signature is not present, it is a incoherency.
+    #[tokio::test]
+    async fn check_revocation_rejects_when_initiator_signature_missing_but_threshold_met() {
+        // Config group {key0, key1} with threshold 1. The revocation claims
+        // key0 as initiator but only key1 signed: the threshold is met, yet
+        // the initiator's own signature is missing, so it must be rejected.
+        let mut backend = mockito::Server::new_async().await;
+        let keys = TestKeys::new(2);
+        let anchor_url = format!("{}/acme/tool/asfaload.signers/signers.json", backend.url());
+        let (payload, _, _) =
+            build_revocation_response_with(&keys, &[0, 1], 1, 0, &[1], &anchor_url);
+
+        let _revocation_mock = backend
+            .mock("POST", "/v1/get_revocation")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::to_string(&payload).unwrap())
+            .create_async()
+            .await;
+        let _anchor_mock = backend
+            .mock("GET", "/acme/tool/asfaload.signers/signers.json")
+            .with_status(200)
+            .with_body(
+                payload
+                    .signers_chain
+                    .current_signers_info()
+                    .unwrap()
+                    .signers_file
+                    .clone(),
+            )
+            .create_async()
+            .await;
+
+        let client = reqwest::Client::new();
+        let result = check_revocation(
+            &client,
+            &backend.url(),
+            test_request(&backend.url()),
+            &DownloadCallbacks::default(),
+        )
+        .await;
+        match result {
+            Err(ClientLibError::RevocationInvalid(_)) => {}
+            other => panic!("expected RevocationInvalid, got: {:?}", other),
+        }
+    }
 }
