@@ -29,16 +29,6 @@ impl IncrementalHasher {
     }
 }
 
-pub async fn download_file(
-    client: &Client,
-    url: &str,
-    callbacks: &DownloadCallbacks,
-) -> AsfaloadLibResult<Vec<u8>> {
-    let mut buffer = Vec::new();
-    download_file_to_writer(client, url, &mut buffer, None, callbacks).await?;
-    Ok(buffer)
-}
-
 pub async fn download_file_to_temp(
     client: &Client,
     url: &str,

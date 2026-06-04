@@ -16,6 +16,9 @@ pub enum ClientLibError {
     #[error("Revocation parse error: {0}")]
     RevocationParse(String),
 
+    #[error("Failed to fetch revocation: {0}")]
+    RevocationFetchError(String),
+
     #[error("Unsupported forge: {0}")]
     UnsupportedForge(String),
 

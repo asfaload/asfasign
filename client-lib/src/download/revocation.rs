@@ -1,32 +1,26 @@
 use crate::ClientLibError;
-use crate::backend::download_file;
 use crate::types::DownloadCallbacks;
-use features_lib::constants::{INDEX_FILE, REVOCATION_SUFFIX, SIGNATURES_SUFFIX, SIGNERS_SUFFIX};
-use features_lib::{
-    AsfaloadPublicKeyTrait, AsfaloadPublicKeys,
-    aggregate_signature_helpers::get_individual_signatures_from_bytes, can_revoke,
-    parse_signers_config, sha512_for_content,
-};
-use reqwest::{Client, Url};
-use serde::Deserialize;
-use tokio::try_join;
+use features_lib::{AsfaloadPublicKeyTrait, RevocationInfo};
+use reqwest::Client;
+use rest_api_types::models::{GetRevocationRequest, GetRevocationResponse};
 
-use super::ForgesPathMethods;
-
-/// Probe for revocation files and verify the revocation.
+/// Probe the backend for a revocation of the artifact.
 ///
-/// If revocation is verified, returns a `FileRevoked` error with details.
-/// If revocation cannot be verified (missing files, bad signature, etc.),
-/// returns the original error unchanged.
+/// If a revocation is found, returns a `FileRevoked` error with details.
+/// If the revocation cannot be fetched (e.g. no revocation exists),
+/// returns `Ok(())`.
 pub(crate) async fn check_revocation(
     client: &Client,
-    url: &Url,
-    forge: &impl ForgesPathMethods,
     backend_url: &str,
+    req: GetRevocationRequest,
     callbacks: &DownloadCallbacks,
 ) -> Result<(), ClientLibError> {
-    match try_verify_revocation(client, url, forge, backend_url).await {
-        Ok((timestamp, initiator)) => {
+    match try_verify_revocation(client, backend_url, req).await {
+        Ok(resp) => {
+            let revocation = RevocationInfo::from_json(&resp.revocation_json)
+                .map_err(|e| ClientLibError::RevocationParse(e.to_string()))?;
+            let timestamp = revocation.timestamp.to_rfc3339();
+            let initiator = revocation.initiator.to_base64();
             callbacks.emit_revocation_detected(&timestamp, &initiator);
             Err(ClientLibError::FileRevoked {
                 timestamp,
@@ -37,81 +31,33 @@ pub(crate) async fn check_revocation(
     }
 }
 
-/// Attempt to download and verify revocation files.
-///
-/// Returns `(timestamp, initiator)` on success, or any error on failure
-/// (which will cause fallback to the original error).
+/// Fetch the revocation payload from the backend's get_revocation endpoint.
 async fn try_verify_revocation(
     client: &Client,
-    url: &Url,
-    forge: &impl ForgesPathMethods,
     backend_url: &str,
-) -> Result<(String, String), ClientLibError> {
-    // Construct revocation file names from INDEX_FILE + constants
-    let revocation_filename = format!("{}.{}", INDEX_FILE, REVOCATION_SUFFIX);
-    let revocation_sig_filename =
-        format!("{}.{}.{}", INDEX_FILE, REVOCATION_SUFFIX, SIGNATURES_SUFFIX);
-    let revocation_signers_filename =
-        format!("{}.{}.{}", INDEX_FILE, REVOCATION_SUFFIX, SIGNERS_SUFFIX);
+    req: GetRevocationRequest,
+) -> Result<GetRevocationResponse, ClientLibError> {
+    let url = format!("{}/v1/get_revocation", backend_url);
+    let response = client
+        .post(&url)
+        .json(&req)
+        .send()
+        .await
+        .map_err(|e| ClientLibError::RevocationFetchError(e.to_string()))?;
 
-    // Construct URLs via forge
-    let no_callbacks = DownloadCallbacks::default();
-
-    let revocation_path = forge.construct_file_repo_path(url, &revocation_filename)?;
-    let revocation_sig_path = forge.construct_file_repo_path(url, &revocation_sig_filename)?;
-    let revocation_signers_path =
-        forge.construct_file_repo_path(url, &revocation_signers_filename)?;
-
-    let revocation_url = format!("{}/v1/files/{}", backend_url, revocation_path);
-    let revocation_sig_url = format!("{}/v1/files/{}", backend_url, revocation_sig_path);
-    let revocation_signers_url = format!("{}/v1/files/{}", backend_url, revocation_signers_path);
-
-    // Download all three files
-    let (revocation_content, revocation_sig_content, signers_content) = try_join!(
-        download_file(client, &revocation_url, &no_callbacks),
-        download_file(client, &revocation_sig_url, &no_callbacks),
-        download_file(client, &revocation_signers_url, &no_callbacks)
-    )?;
-    // Parse signers config
-    let signers_config = parse_signers_config(std::str::from_utf8(&signers_content)?)?;
-
-    // Parse revocation JSON to extract timestamp and initiator
-    #[derive(Deserialize)]
-    struct RevocationInfo {
-        timestamp: String,
-        initiator: String,
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "(failed to read response body)".to_string());
+        return Err(ClientLibError::RevocationFetchError(format!(
+            "{}: {}",
+            status, body
+        )));
     }
-    let info: RevocationInfo = serde_json::from_slice(&revocation_content)
-        .map_err(|e| ClientLibError::RevocationParse(e.to_string()))?;
-    let timestamp = info.timestamp;
-    let initiator_str = info.initiator;
-
-    // Parse initiator public key
-    let initiator_pubkey = AsfaloadPublicKeys::from_base64(&initiator_str)
-        .map_err(|e| ClientLibError::GenericError(e.to_string()))?;
-
-    // Check authorization
-    if !can_revoke(&initiator_pubkey, &signers_config) {
-        return Err(ClientLibError::Unauthorized(
-            "Initiator is not authorized to revoke".into(),
-        ));
-    }
-
-    // Parse revocation signatures
-    let signatures = get_individual_signatures_from_bytes(revocation_sig_content)?;
-
-    // Look up initiator's signature
-    let signature = signatures
-        .get(&initiator_pubkey)
-        .ok_or(ClientLibError::RevocationInvalid(
-            "Initiator's signature not found in revocation signatures".to_string(),
-        ))?;
-
-    // Compute SHA512 hash of revocation content and verify
-    let hash = sha512_for_content(revocation_content)?;
-    initiator_pubkey
-        .verify(signature, &hash)
-        .map_err(|e| ClientLibError::RevocationInvalid(e.to_string()))?;
-
-    Ok((timestamp, initiator_str))
+    response
+        .json::<GetRevocationResponse>()
+        .await
+        .map_err(|e| ClientLibError::RevocationParse(e.to_string()))
 }
