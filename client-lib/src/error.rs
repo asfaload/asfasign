@@ -82,6 +82,15 @@ pub enum ClientLibError {
     #[error("Revocation invalid: {0}")]
     RevocationInvalid(String),
 
+    #[error("Revocation signers chain invalid: {0}")]
+    RevocationChainInvalid(String),
+
+    #[error("Revocation initiator is not authorized to revoke")]
+    RevocationUnauthorized,
+
+    #[error("Revocation signature threshold not met: found {found} valid signatures")]
+    RevocationThresholdNotMet { found: usize },
+
     #[error("An error occured: {0}")]
     GenericError(String),
 

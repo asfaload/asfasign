@@ -107,12 +107,6 @@ pub async fn download_file_with_verification(
     let signatures_content = response.index_signatures_raw.into_bytes();
     callbacks.emit_signatures_downloaded(signatures_content.len());
 
-    // Revocation is probed explicitly below via `check_revocation`, run
-    // alongside the chain validation and binary download. Two known
-    // limitations remain: the revocation signers file it fetches is not
-    // trust-rooted against the validated chain-head config, and revocation is
-    // not yet bundled into the get_artifact_info response.
-
     let file_hash = sha512_for_content(index_content)?;
 
     // Get expected hash from index (validates algorithm is supported)
