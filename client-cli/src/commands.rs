@@ -15,6 +15,7 @@ pub mod signers_file;
 use anyhow::Result;
 
 pub mod download;
+pub mod ping;
 pub mod register_assets;
 pub mod register_repo;
 pub mod revoke;
@@ -351,6 +352,38 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 file_path,
                 &secret_key_args.secret_key,
                 password.as_str(),
+                json_args.json,
+            ))?;
+        }
+        Commands::Ping {
+            secret_key,
+            password_args,
+            backend_url_args,
+            json_args,
+        } => {
+            // The password is only needed when a secret key is used
+            let password = match secret_key {
+                Some(_) => Some(get_password(
+                    password_args.password.clone(),
+                    password_args.password_file.as_deref(),
+                    password_args.password_command.clone(),
+                    &cli.command.password_env_var(),
+                    &cli.command.password_file_env_var(),
+                    "Enter password: ",
+                    WithoutConfirmation,
+                    true,
+                )?),
+                None => None,
+            };
+            let url = backend_url_args
+                .backend_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(ping::handle_ping_command(
+                &url,
+                secret_key.as_ref(),
+                password.as_deref(),
                 json_args.json,
             ))?;
         }

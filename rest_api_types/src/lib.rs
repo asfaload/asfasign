@@ -358,6 +358,34 @@ pub mod models {
         pub file_paths: Vec<String>,
     }
 
+    /// Authentication outcome reported by the ping endpoint.
+    ///
+    /// The enum makes invalid combinations unrepresentable: a success always
+    /// carries the authenticated public key, a failure always carries a reason.
+    /// `Failed.public_key` is `Some` when the public key header was present and
+    /// was a parseable key (e.g. signature mismatch, stale timestamp, replayed
+    /// nonce) and `None` when the key itself was missing or invalid.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[serde(tag = "status", rename_all = "snake_case")]
+    pub enum PingAuthStatus {
+        Unauthenticated,
+        Success {
+            public_key: String,
+        },
+        Failed {
+            public_key: Option<String>,
+            reason: String,
+        },
+    }
+
+    /// Response of the ping endpoint: connectivity plus auth diagnostics.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    pub struct PingResponse {
+        /// Always "pong"
+        pub message: String,
+        pub auth: PingAuthStatus,
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct FilesToSignResponse {
         pub files: HashMap<String, String>,
@@ -530,8 +558,9 @@ pub mod rustls {
 // Re-export commonly used types at the module level
 pub use models::{
     FilesToSignResponse, GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
-    RegisterAssetsRequest, RegisterAssetsResponse, RegisterRepoRequest, RegisterRepoResponse,
-    RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
+    PingAuthStatus, PingResponse, RegisterAssetsRequest, RegisterAssetsResponse,
+    RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
+    SubmitSignatureRequest, SubmitSignatureResponse,
 };
 
 // ********************
@@ -733,6 +762,101 @@ mod tests {
             Err(e) => panic!("Expected InvalidOrigin error, got: {e}"),
             Ok(_) => panic!("Expected InvalidOrigin error, got Ok"),
         }
+        Ok(())
+    }
+
+    // PingResponse serialization tests
+    // --------------------------------
+
+    #[test]
+    fn test_ping_response_json_shape_unauthenticated() -> anyhow::Result<()> {
+        let response = models::PingResponse {
+            message: "pong".to_string(),
+            auth: models::PingAuthStatus::Unauthenticated,
+        };
+        let value = serde_json::to_value(&response)?;
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "message": "pong",
+                "auth": {"status": "unauthenticated"}
+            })
+        );
+        let parsed: models::PingResponse = serde_json::from_value(value)?;
+        assert_eq!(parsed, response);
+        Ok(())
+    }
+
+    #[test]
+    fn test_ping_response_json_shape_success() -> anyhow::Result<()> {
+        let response = models::PingResponse {
+            message: "pong".to_string(),
+            auth: models::PingAuthStatus::Success {
+                public_key: "base64pk".to_string(),
+            },
+        };
+        let value = serde_json::to_value(&response)?;
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "message": "pong",
+                "auth": {"status": "success", "public_key": "base64pk"}
+            })
+        );
+        let parsed: models::PingResponse = serde_json::from_value(value)?;
+        assert_eq!(parsed, response);
+        Ok(())
+    }
+
+    #[test]
+    fn test_ping_response_json_shape_failed() -> anyhow::Result<()> {
+        let response = models::PingResponse {
+            message: "pong".to_string(),
+            auth: models::PingAuthStatus::Failed {
+                public_key: Some("base64pk".to_string()),
+                reason: "Replay attack detected: nonce already used".to_string(),
+            },
+        };
+        let value = serde_json::to_value(&response)?;
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "message": "pong",
+                "auth": {
+                    "status": "failed",
+                    "public_key": "base64pk",
+                    "reason": "Replay attack detected: nonce already used"
+                }
+            })
+        );
+        let parsed: models::PingResponse = serde_json::from_value(value)?;
+        assert_eq!(parsed, response);
+        Ok(())
+    }
+
+    #[test]
+    fn test_ping_response_json_shape_failed_without_public_key() -> anyhow::Result<()> {
+        let response = models::PingResponse {
+            message: "pong".to_string(),
+            auth: models::PingAuthStatus::Failed {
+                public_key: None,
+                reason: "Missing authentication headers".to_string(),
+            },
+        };
+        let value = serde_json::to_value(&response)?;
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "message": "pong",
+                "auth": {
+                    "status": "failed",
+                    "public_key": null,
+                    "reason": "Missing authentication headers"
+                }
+            })
+        );
+        let parsed: models::PingResponse = serde_json::from_value(value)?;
+        assert_eq!(parsed, response);
         Ok(())
     }
 }

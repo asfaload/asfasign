@@ -294,6 +294,23 @@ pub enum Commands {
         json_args: JsonArgs,
     },
 
+    /// Ping the backend, optionally testing your credentials
+    Ping {
+        /// Path to your secret key file; when given, the ping request is
+        /// authenticated (asfaload or OpenSSH ed25519)
+        #[arg(short = 'K', long)]
+        secret_key: Option<PathBuf>,
+
+        #[command(flatten)]
+        password_args: PasswordArgs,
+
+        #[command(flatten)]
+        backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
+
     /// Download a file with signature verification
     Download {
         /// URL of the file to download (e.g., https://github.com/user/repo/releases/download/v1.0.0/file.tar.gz)
@@ -340,6 +357,7 @@ impl Commands {
             Self::RegisterAssets { .. } => "REGISTER_ASSETS",
             Self::UpdateSigners { .. } => "UPDATE_SIGNERS",
             Self::Revoke { .. } => "REVOKE",
+            Self::Ping { .. } => "PING",
             Self::Download { .. } => "DOWNLOAD",
         }
     }
@@ -370,7 +388,8 @@ impl Commands {
             | Self::RegisterRepo { json_args, .. }
             | Self::RegisterAssets { json_args, .. }
             | Self::UpdateSigners { json_args, .. }
-            | Self::Revoke { json_args, .. } => json_args.json,
+            | Self::Revoke { json_args, .. }
+            | Self::Ping { json_args, .. } => json_args.json,
             Self::Download { .. } => false,
         }
     }

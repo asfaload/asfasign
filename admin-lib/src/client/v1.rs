@@ -9,9 +9,9 @@ use features_lib::{
 use reqwest::header::CONTENT_TYPE;
 use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
 use rest_api_types::{
-    FilesToSignResponse, GetSignatureStatusResponse, ListPendingResponse, RegisterRepoRequest,
-    RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse, SubmitSignatureRequest,
-    SubmitSignatureResponse,
+    FilesToSignResponse, GetSignatureStatusResponse, ListPendingResponse, PingResponse,
+    RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
+    SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use serde::de::DeserializeOwned;
 
@@ -91,6 +91,30 @@ impl Client {
         let headers = create_auth_headers("", secret_key)?;
 
         let response = self.client.get(&url).headers(headers).send().await?;
+
+        let response = Self::check_response_status(response).await?;
+        Self::parse_json_response(response).await
+    }
+
+    /// Ping the backend, optionally authenticating the request.
+    ///
+    /// Makes a GET request to `/v1/ping`. When a secret key is given, the
+    /// request carries authentication headers; the server reports in the
+    /// response whether their validation succeeded (it answers 200 even on
+    /// failed authentication).
+    pub async fn ping(
+        &self,
+        secret_key: Option<&AsfaloadSecretKeys>,
+    ) -> AdminLibResult<PingResponse> {
+        let url = format!("{}/v1/ping", self.base_url);
+
+        let mut request = self.client.get(&url);
+        if let Some(key) = secret_key {
+            let headers = create_auth_headers("", key)?;
+            request = request.headers(headers);
+        }
+
+        let response = request.send().await?;
 
         let response = Self::check_response_status(response).await?;
         Self::parse_json_response(response).await
@@ -505,5 +529,62 @@ mod tests {
             AdminLibError::JsonError(_) => {}
             other => panic!("Expected JsonError, got: {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn ping_unauthenticated_sends_no_auth_headers() {
+        use rest_api_types::PingAuthStatus;
+
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/v1/ping")
+            .match_header(rest_api_auth::HEADER_PUBLIC_KEY, mockito::Matcher::Missing)
+            .match_header(rest_api_auth::HEADER_TIMESTAMP, mockito::Matcher::Missing)
+            .match_header(rest_api_auth::HEADER_NONCE, mockito::Matcher::Missing)
+            .match_header(rest_api_auth::HEADER_SIGNATURE, mockito::Matcher::Missing)
+            .with_status(200)
+            .with_body(r#"{"message":"pong","auth":{"status":"unauthenticated"}}"#)
+            .create_async()
+            .await;
+
+        let client = Client::new(server.url());
+        let response = client.ping(None).await.unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(response.message, "pong");
+        assert_eq!(response.auth, PingAuthStatus::Unauthenticated);
+    }
+
+    #[tokio::test]
+    async fn ping_authenticated_sends_auth_headers() {
+        use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
+        use rest_api_types::PingAuthStatus;
+
+        let key_pair = AsfaloadKeyPairs::new("test_password").unwrap();
+        let secret_key = key_pair.secret_key("test_password").unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/v1/ping")
+            .match_header(rest_api_auth::HEADER_TIMESTAMP, mockito::Matcher::Any)
+            .match_header(rest_api_auth::HEADER_NONCE, mockito::Matcher::Any)
+            .match_header(rest_api_auth::HEADER_SIGNATURE, mockito::Matcher::Any)
+            .match_header(rest_api_auth::HEADER_PUBLIC_KEY, mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(r#"{"message":"pong","auth":{"status":"success","public_key":"base64pk"}}"#)
+            .create_async()
+            .await;
+
+        let client = Client::new(server.url());
+        let response = client.ping(Some(&secret_key)).await.unwrap();
+
+        mock.assert_async().await;
+        assert_eq!(response.message, "pong");
+        assert_eq!(
+            response.auth,
+            PingAuthStatus::Success {
+                public_key: "base64pk".to_string()
+            }
+        );
     }
 }
