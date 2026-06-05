@@ -102,7 +102,7 @@ pub async fn validate_auth(
     let (timestamp, nonce, signature, public_key) = match extracted {
         Ok(values) => values,
         Err(error) => {
-            tracing::error!(
+            tracing::warn!(
                 request_id = %request_id,
                 error = %error,
                 "Failed to extract auth headers"
