@@ -43,6 +43,9 @@ pub enum ClientCliError {
     #[error("Admin library error: {0}")]
     AdminLib(#[from] admin_lib::AdminLibError),
 
+    #[error("Ping authentication failed: {0}")]
+    PingAuthenticationFailed(String),
+
     #[error("JSON serialization error: {0}")]
     JsonSerializationError(#[from] serde_json::Error),
 }
