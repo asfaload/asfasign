@@ -9,11 +9,12 @@ use rest_api_types::models::{
 };
 use rest_api_types::{
     FilesToSignResponse, GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
-    RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
-    SubmitSignatureRequest, SubmitSignatureResponse,
+    PingAuthStatus, PingResponse, RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest,
+    RevokeFileResponse, SubmitSignatureRequest, SubmitSignatureResponse,
 };
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
+use crate::auth_middleware::{AuthOutcome, validate_auth};
 use crate::file_auth::forges::ForgeInfo;
 use crate::file_auth::forges::ForgeTrait;
 use crate::file_auth::github::get_project_normalised_paths;
@@ -1664,4 +1665,47 @@ pub async fn get_revocation_handler(
         revocation_signatures: revocation_signatures_json,
         signers_chain: chain,
     }))
+}
+
+/// Handler answering ping requests with authentication diagnostics.
+///
+/// Always returns 200. Reports whether the request carried authentication
+/// headers, whether the full validation (headers, nonce, timestamp,
+/// signature) passed, and which public key was authenticated. Failed
+/// validation is reported in the body instead of rejecting the request,
+/// making this endpoint a connectivity and credentials diagnostic tool.
+///
+/// A successful validation consumes the nonce, like any authenticated
+/// request.
+pub async fn ping_handler(State(state): State<AppState>, headers: HeaderMap) -> Json<PingResponse> {
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown");
+
+    tracing::info!(
+        request_id = %request_id,
+        "Received ping request"
+    );
+
+    // Ping is a GET request: the signed payload is the empty string.
+    let auth = match validate_auth(state, &headers, "", request_id).await {
+        AuthOutcome::NotAttempted => PingAuthStatus::Unauthenticated,
+        AuthOutcome::Success { public_key } => PingAuthStatus::Success { public_key },
+        AuthOutcome::Failed { public_key, error } => {
+            // Auth-failure reasons are deliberate diagnostics, but internal
+            // server errors must not leak details to unauthenticated callers.
+            let reason = if error.to_http_status().is_server_error() {
+                "Internal error during authentication validation".to_string()
+            } else {
+                error.to_string()
+            };
+            PingAuthStatus::Failed { public_key, reason }
+        }
+    };
+
+    Json(PingResponse {
+        message: "pong".to_string(),
+        auth,
+    })
 }

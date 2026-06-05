@@ -8,7 +8,7 @@ use crate::{
     handlers::{
         get_artifact_info_handler, get_file_handler, get_files_to_sign_handler,
         get_pending_signatures_handler, get_revocation_handler, get_signature_status_handler,
-        get_signers_chain_handler, get_signers_handler, register_assets_handler,
+        get_signers_chain_handler, get_signers_handler, ping_handler, register_assets_handler,
         register_repo_handler, revoke_handler, submit_signature_handler, update_signers_handler,
     },
     state::AppState,
@@ -71,6 +71,7 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
             app_state.clone(),
             auth_middleware,
         ));
+    let ping_router = Router::new().route("/ping", get(ping_handler));
 
     register_router
         .merge(update_signers_router)
@@ -84,4 +85,5 @@ pub fn v1_router(app_state: AppState) -> Router<AppState> {
         .merge(revocation_router)
         .merge(revoke_router)
         .merge(assets_router)
+        .merge(ping_router)
 }
