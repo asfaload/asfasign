@@ -1,3 +1,5 @@
+use core::fmt;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
@@ -25,4 +27,16 @@ pub enum HashAlgorithm {
     Sha512,
     Sha1,
     Md5,
+}
+
+impl fmt::Display for HashAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            HashAlgorithm::Sha256 => "SHA-256",
+            HashAlgorithm::Sha512 => "SHA-512",
+            HashAlgorithm::Sha1 => "SHA-1",
+            HashAlgorithm::Md5 => "MD5",
+        };
+        write!(f, "{}", s)
+    }
 }

@@ -70,8 +70,13 @@ pub async fn handle_download_command(
                     args.bytes_downloaded as f64 / ONE_MEGABYTE as f64,
                     total as f64 / ONE_MEGABYTE as f64
                 );
-                let _ = std::io::stdout().flush();
+            } else {
+                print!(
+                    "\rProgress: {:.2} MB",
+                    args.bytes_downloaded as f64 / ONE_MEGABYTE as f64
+                );
             }
+            let _ = std::io::stdout().flush();
         })
         .with_file_download_completed(|args| {
             println!(); // New line after progress
