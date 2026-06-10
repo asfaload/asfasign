@@ -13,7 +13,6 @@ fn default_log_level() -> String {
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum GitBackendConfig {
-    Sha1,
     #[default]
     Sha256,
 }
@@ -166,7 +165,6 @@ mod tests {
             .unwrap_or("sha256".to_string())
             .as_str()
         {
-            "sha1" => GitBackendConfig::Sha1,
             "sha256" => GitBackendConfig::Sha256,
             other => panic!("Unkown value for ASFALOAD_GIT_BACKEND: {}", other),
         }
@@ -327,7 +325,7 @@ mod tests {
             server_port: Some(3000),
             git_repo_path: Some(temp_dir.path().to_path_buf()),
             log_level: Some("info".to_string()),
-            git_backend: Some(GitBackendConfig::Sha1),
+            git_backend: Some(GitBackendConfig::Sha256),
             git_signing_pub_key_path: Some(PathBuf::from("")),
             github_api_key: None,
             gitlab_api_key: None,

@@ -122,8 +122,7 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use rest_api_test_helpers::{file_is_tracked_in_git, get_latest_commit, init_git_repo};
-    #[allow(deprecated)]
-    use rest_api_types::git_backend::{GitBackendKind, Sha1GitBackend, Sha256GitBackend};
+    use rest_api_types::git_backend::{GitBackendKind, Sha256GitBackend};
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use tempfile::TempDir;
@@ -133,10 +132,12 @@ mod tests {
     /// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
     /// Duplicated in tests module that need it. Moving it to a test helpers crate implies
     /// too much code to move due to its return type GitBackendType
+    /// Only recognises sha156 since sha1 git backend was removed
     pub fn backend_kind_from_env() -> GitBackendKind {
         match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
             Ok("sha256") => GitBackendKind::Sha256,
-            _ => GitBackendKind::Sha1,
+            Ok(other) => panic!("Unrecognised value for ASFALOAD_GIT_BACKEND {other}"),
+            Err(_e) => GitBackendKind::Sha256,
         }
     }
 
@@ -146,8 +147,6 @@ mod tests {
     fn build_test_git_actor(repo_path: &Path, kind: GitBackendKind) -> GitActor {
         let key = test_helpers::git_signing_pub_key_path();
         let backend: Arc<dyn GitBackend> = match kind {
-            #[allow(deprecated)]
-            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path, &key)),
             GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path, &key)),
         };
         GitActor::new(backend)

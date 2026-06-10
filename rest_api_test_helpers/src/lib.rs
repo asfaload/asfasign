@@ -37,11 +37,12 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, Registry, fmt, layer::SubscriberExt};
 
 /// Read the git backend from the ASFALOAD_GIT_BACKEND environment variable.
-/// Defaults to Sha1 if unset or unrecognised.
+/// Only recognises sha256 and rejects other values since sha1 backend was removed.
 fn configured_backend() -> rest_api::config::GitBackendConfig {
     match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
         Ok("sha256") => rest_api::config::GitBackendConfig::Sha256,
-        _ => rest_api::config::GitBackendConfig::Sha1,
+        Ok(other) => panic!("unrecognised git ASFALOAD_GIT_BACKEND {other}"),
+        Err(_e) => rest_api::config::GitBackendConfig::Sha256,
     }
 }
 
@@ -816,14 +817,10 @@ mod tests {
     }
 
     #[test]
-    fn test_build_test_config_defaults_to_sha1() {
-        if is_sha256_backend() {
-            eprintln!("skipping: requires ASFALOAD_GIT_BACKEND unset or sha1");
-            return;
-        }
+    fn test_build_test_config_defaults_to_sha256() {
         let temp_dir = tempfile::tempdir().unwrap();
         let cfg = build_test_config(temp_dir.path(), 3000);
-        assert_eq!(cfg.git_backend, rest_api::config::GitBackendConfig::Sha1);
+        assert_eq!(cfg.git_backend, rest_api::config::GitBackendConfig::Sha256);
     }
 
     #[test]

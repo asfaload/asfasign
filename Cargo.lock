@@ -3120,7 +3120,6 @@ dependencies = [
  "forge-url",
  "futures",
  "futures-util",
- "git2",
  "httpmock",
  "hyper",
  "kameo",
