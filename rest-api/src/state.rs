@@ -4,6 +4,7 @@ use std::{fs::create_dir_all, path::PathBuf};
 use kameo::actor::{ActorRef, Spawn};
 
 use rest_api_types::errors::ApiError;
+#[allow(deprecated)]
 use rest_api_types::git_backend::{GitBackend, Sha1GitBackend, Sha256GitBackend};
 
 use crate::{
@@ -36,8 +37,18 @@ pub struct AppState {
 pub fn init_state(config: crate::config::AppConfig) -> Result<AppState, ApiError> {
     let git_repo_path = config.clone().git_repo_path;
     let git_backend: Arc<dyn GitBackend> = match config.git_backend {
-        GitBackendConfig::Sha1 => Arc::new(Sha1GitBackend::new(&git_repo_path)),
-        GitBackendConfig::Sha256 => Arc::new(Sha256GitBackend::new(&git_repo_path)),
+        #[allow(deprecated)]
+        GitBackendConfig::Sha1 => {
+            tracing::warn!("sha1 backend selected: commits will NOT be signed (legacy backend)");
+            Arc::new(Sha1GitBackend::new(
+                &git_repo_path,
+                &config.git_signing_pub_key_path,
+            ))
+        }
+        GitBackendConfig::Sha256 => Arc::new(Sha256GitBackend::new(
+            &git_repo_path,
+            &config.git_signing_pub_key_path,
+        )),
     };
 
     if !git_repo_path.join(".git").exists() {
@@ -47,7 +58,7 @@ pub fn init_state(config: crate::config::AppConfig) -> Result<AppState, ApiError
         })?;
     }
 
-    let git_actor = GitActor::spawn((git_backend.clone(), config.git_signing_pub_key_path.clone()));
+    let git_actor = GitActor::spawn(git_backend.clone());
 
     // Initialize nonce cache with database path
     // FIXME: support taking the dir for the nonce db from env var

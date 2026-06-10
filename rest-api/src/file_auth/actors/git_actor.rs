@@ -7,8 +7,6 @@ use std::sync::Arc;
 use rest_api_types::git_backend::GitBackend;
 use rest_api_types::path_validation::NormalisedPaths;
 
-use crate::config::AppConfig;
-
 #[derive(Debug, Clone)]
 pub struct CommitFile {
     // File path is relative to the git root
@@ -21,7 +19,6 @@ const ACTOR_NAME: &str = "git-actor";
 
 pub struct GitActor {
     backend: Arc<dyn GitBackend>,
-    signing_key_path: PathBuf,
 }
 
 impl GitActor {
@@ -30,12 +27,9 @@ impl GitActor {
     /// The same `Arc` is typically also stored on `AppState.git_backend`
     /// so handlers can perform read-only git operations without
     /// serialising through the actor's mailbox.
-    pub fn new(backend: Arc<dyn GitBackend>, signing_key_path: PathBuf) -> Self {
+    pub fn new(backend: Arc<dyn GitBackend>) -> Self {
         tracing::info!(repo_path = %backend.root().display(), "GitActor created");
-        Self {
-            backend,
-            signing_key_path,
-        }
+        Self { backend }
     }
 
     pub fn repo_path(&self) -> PathBuf {
@@ -111,15 +105,15 @@ impl Message<CommitFile> for GitActor {
 
 // Implement Actor trait with required associated types and methods
 impl Actor for GitActor {
-    type Args = (Arc<dyn GitBackend>, PathBuf);
+    type Args = Arc<dyn GitBackend>;
     type Error = String;
 
     async fn on_start(
         args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        tracing::info!(repo_path = %args.0.root().display(), "GitActor starting");
-        Ok(Self::new(args.0, args.1))
+        tracing::info!(repo_path = %args.root().display(), "GitActor starting");
+        Ok(Self::new(args))
     }
 }
 
@@ -128,6 +122,7 @@ mod tests {
     use super::*;
     use anyhow::Result;
     use rest_api_test_helpers::{file_is_tracked_in_git, get_latest_commit, init_git_repo};
+    #[allow(deprecated)]
     use rest_api_types::git_backend::{GitBackendKind, Sha1GitBackend, Sha256GitBackend};
     use std::path::{Path, PathBuf};
     use std::process::Command;
@@ -149,11 +144,13 @@ mod tests {
     /// For tests that call `git_actor.commit_files(...)` directly without
     /// going through kameo's spawn machinery.
     fn build_test_git_actor(repo_path: &Path, kind: GitBackendKind) -> GitActor {
+        let key = test_helpers::git_signing_pub_key_path();
         let backend: Arc<dyn GitBackend> = match kind {
-            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path)),
-            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path)),
+            #[allow(deprecated)]
+            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path, &key)),
+            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path, &key)),
         };
-        GitActor::new(backend, test_helpers::git_signing_pub_key_path())
+        GitActor::new(backend)
     }
 
     fn run_git(repo_path: &Path, args: &[&str]) -> Result<String> {

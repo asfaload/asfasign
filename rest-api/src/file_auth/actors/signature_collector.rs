@@ -508,6 +508,7 @@ fn map_signers_file_error(e: SignersFileError) -> ApiError {
 
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
+    #[allow(deprecated)]
     use rest_api_types::git_backend::{
         GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend,
     };
@@ -530,14 +531,13 @@ mod tests {
         repo_path: &std::path::Path,
         kind: GitBackendKind,
     ) -> kameo::actor::ActorRef<crate::file_auth::actors::git_actor::GitActor> {
+        let key = test_helpers::git_signing_pub_key_path();
         let backend: Arc<dyn GitBackend> = match kind {
-            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path)),
-            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path)),
+            #[allow(deprecated)]
+            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path, &key)),
+            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path, &key)),
         };
-        crate::file_auth::actors::git_actor::GitActor::spawn((
-            backend,
-            test_helpers::git_signing_pub_key_path(),
-        ))
+        crate::file_auth::actors::git_actor::GitActor::spawn(backend)
     }
 
     /// Set up a pending signers file with all required companion files:
