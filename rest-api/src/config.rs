@@ -100,6 +100,64 @@ fn validate_git_for_sha256() -> Result<(), ServerConfigError> {
     Ok(())
 }
 
+/// Validate that the configured signing public key can actually sign commits.
+///
+/// SSH commit signing (`git commit -S` with `gpg.format=ssh`) needs the
+/// *private* key, which ssh finds by stripping `.pub` from `user.signingkey`
+/// or via ssh-agent. Canonicalising the public key path only proves the public
+/// half exists; it says nothing about a usable private key. Reproduce the exact
+/// path git uses (`ssh-keygen -Y sign -n git`) so a missing, unreadable, or
+/// agent-less key fails fast at startup instead of on the first commit.
+fn validate_signing_key(pub_key_path: &std::path::Path) -> Result<(), ServerConfigError> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new("ssh-keygen")
+        .args(["-Y", "sign", "-n", "git", "-f"])
+        .arg(pub_key_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            ServerConfigError::InvalidConfig(format!(
+                "could not run ssh-keygen to validate the git signing key: {}",
+                e
+            ))
+        })?;
+
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| {
+            ServerConfigError::InvalidConfig("could not get at ssh-keygen stdin. Was piped?".into())
+        })?
+        .write_all(b"asfaload signing smoke-test")
+        .map_err(|e| {
+            ServerConfigError::InvalidConfig(format!(
+                "could not feed ssh-keygen while validating the git signing key: {}",
+                e
+            ))
+        })?;
+
+    let output = child.wait_with_output().map_err(|e| {
+        ServerConfigError::InvalidConfig(format!(
+            "could not wait for ssh-keygen while validating the git signing key: {}",
+            e
+        ))
+    })?;
+
+    if !output.status.success() {
+        return Err(ServerConfigError::InvalidConfig(format!(
+            "git signing key at {} is unusable (no reachable private key?): {}",
+            pub_key_path.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    Ok(())
+}
+
 pub fn get_config() -> Result<AppConfig, ServerConfigError> {
     build_config_from_defaults(AppConfigOptions::default())
 }
@@ -148,6 +206,8 @@ pub fn build_config_from_defaults(
         git_signing_pub_key_path: canonical_git_signing_pub_key_path,
         ..app_config
     };
+
+    validate_signing_key(&app_config.git_signing_pub_key_path)?;
 
     if app_config.git_backend == GitBackendConfig::Sha256 {
         validate_git_for_sha256()?;
@@ -342,6 +402,43 @@ mod tests {
             }
             other => panic!(
                 "expected InvalidConfig for empty signing key, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn test_build_config_from_defaults_rejects_unusable_signing_key() {
+        // A public key whose private half is not reachable: ssh cannot sign with
+        // it, so the server would boot fine and then fail on the first commit.
+        // Config building must reject it up front.
+        let repo_dir = tempfile::tempdir().unwrap();
+        let key_dir = tempfile::tempdir().unwrap();
+        let pub_path = key_dir.path().join("orphan_key.pub");
+        std::fs::write(
+            &pub_path,
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHa7olu6Pv5zn0uWGTfFpZgsMb9N2B31epUFANCdS3VS orphan\n",
+        )
+        .unwrap();
+
+        let defaults = AppConfigOptions {
+            server_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            server_port: Some(3000),
+            git_repo_path: Some(repo_dir.path().to_path_buf()),
+            log_level: Some("info".to_string()),
+            git_backend: Some(GitBackendConfig::Sha256),
+            git_signing_pub_key_path: Some(pub_path),
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let result = build_config_from_defaults(defaults);
+        match result {
+            Err(ServerConfigError::InvalidConfig(msg)) => {
+                assert!(msg.contains("signing key"), "unexpected message: {}", msg);
+            }
+            other => panic!(
+                "expected InvalidConfig for unusable signing key, got {:?}",
                 other
             ),
         }
