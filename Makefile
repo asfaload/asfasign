@@ -66,7 +66,6 @@ help:
 
 ## Run all tests with asfaload keys
 test-asfaload:
-	chmod 600 core/test_helpers/fixtures/git_signing_key
 	$(MAKE) check-format
 	$(MAKE) clippy
 	KEY_TYPE=asfaload cargo nextest run

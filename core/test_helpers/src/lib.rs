@@ -42,11 +42,30 @@ pub fn fixtures_asfaload_pub_key(n: usize) -> PathBuf {
     fixtures_keys_dir().join(format!("key_{}.pub", n))
 }
 
-/// Path to the committed passwordless ed25519 SSH key used by tests that
-/// exercise the git commit-signing wiring. Anchored to this crate's manifest
-/// dir so it resolves from any caller's working directory.
+/// Returns the `.pub` path of a 0600 copy of the committed passwordless
+/// ed25519 signing keypair, staged once per process into a temp dir. ssh
+/// refuses a private key that is group/world readable, and the committed
+/// fixture is checked out with the umask's mode, so copying (rather than using
+/// the fixture in place) guarantees the private key is 0600 regardless of the
+/// checkout. Every test entry point relies on this — no Makefile `chmod`
+/// side-channel needed.
 pub fn git_signing_pub_key_path() -> PathBuf {
-    fixtures_dir().join("git_signing_key.pub")
+    use std::sync::OnceLock;
+    static KEY: OnceLock<PathBuf> = OnceLock::new();
+    KEY.get_or_init(|| {
+        let dir = tempfile::TempDir::new().unwrap().keep();
+        let dst_priv = dir.join("git_signing_key");
+        let dst_pub = dir.join("git_signing_key.pub");
+        std::fs::copy(fixtures_dir().join("git_signing_key"), &dst_priv).unwrap();
+        std::fs::copy(fixtures_dir().join("git_signing_key.pub"), &dst_pub).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dst_priv, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        dst_pub
+    })
+    .clone()
 }
 
 /// Load a key pair from fixture files.
@@ -347,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_git_signing_pub_key_fixture_exists() {
-        let pub_path = git_signing_pub_key_path();
+        let pub_path = fixtures_dir().join("git_signing_key.pub");
         assert!(
             pub_path.exists(),
             "missing fixture: {} (regenerate with `cargo test -p test_helpers -- gen_git_signing_key --ignored`)",
@@ -360,6 +379,19 @@ mod tests {
             "missing private key: {}",
             priv_path.display()
         );
+    }
+
+    /// ssh refuses to use a private key that is group/world readable. The
+    /// committed fixture is checked out with the umask's mode, so the helper
+    /// must hand back a key that is 0600 regardless of the checkout — every
+    /// test entry point relies on this, not just the Makefile.
+    #[test]
+    #[cfg(unix)]
+    fn test_git_signing_private_key_is_0600() {
+        use std::os::unix::fs::PermissionsExt;
+        let priv_path = git_signing_pub_key_path().with_extension("");
+        let mode = std::fs::metadata(&priv_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "private key must be 0600, got {:o}", mode);
     }
 
     #[test]
