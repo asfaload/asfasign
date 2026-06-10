@@ -13,8 +13,8 @@ fn default_log_level() -> String {
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum GitBackendConfig {
-    #[default]
     Sha1,
+    #[default]
     Sha256,
 }
 
@@ -53,7 +53,7 @@ impl Default for AppConfigOptions {
             server_port: Some(3000),
             git_repo_path: None,
             log_level: Some("info".to_string()),
-            git_backend: Some(GitBackendConfig::Sha1),
+            git_backend: Some(GitBackendConfig::Sha256),
             git_signing_pub_key_path: None,
             github_api_key: None,
             gitlab_api_key: None,
@@ -163,7 +163,7 @@ mod tests {
 
     fn git_backend_from_env() -> GitBackendConfig {
         match std::env::var("ASFALOAD_GIT_BACKEND")
-            .unwrap_or("sha1".to_string())
+            .unwrap_or("sha256".to_string())
             .as_str()
         {
             "sha1" => GitBackendConfig::Sha1,
@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn test_build_config_from_defaults_with_git_path() {
         // We run the tests with and without ASFALOAD_GIT_BACKEND set, so this will return once the
-        // value from the env, and once the default value sha1
+        // value from the env, and once the default value sha256
         let expected_git_backend = git_backend_from_env();
         // Test that build_config_from_defaults succeeds when required values are provided
         let temp_dir = tempfile::tempdir().unwrap();
@@ -221,7 +221,7 @@ mod tests {
             server_port: Some(8080),
             git_repo_path: Some(git_path.clone()),
             log_level: Some("info".to_string()),
-            git_backend: Some(GitBackendConfig::Sha1),
+            git_backend: Some(expected_git_backend),
             git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
@@ -276,9 +276,9 @@ mod tests {
     }
 
     #[test]
-    fn test_build_config_from_defaults_git_backend_defaults_to_sha1() {
+    fn test_build_config_from_defaults_git_backend_defaults_to_sha256() {
         // We run the tests with and without ASFALOAD_GIT_BACKEND set, so this will return once the
-        // value from the env, and once the default value sha1
+        // value from the env, and once the default value sha256
         let expected_git_backend = git_backend_from_env();
         let temp_dir = tempfile::tempdir().unwrap();
         let defaults = AppConfigOptions {
@@ -317,5 +317,35 @@ mod tests {
             "sha256 config should be accepted: {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_build_config_from_defaults_rejects_empty_signing_key() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let defaults = AppConfigOptions {
+            server_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            server_port: Some(3000),
+            git_repo_path: Some(temp_dir.path().to_path_buf()),
+            log_level: Some("info".to_string()),
+            git_backend: Some(GitBackendConfig::Sha1),
+            git_signing_pub_key_path: Some(PathBuf::from("")),
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let result = build_config_from_defaults(defaults);
+        match result {
+            Err(ServerConfigError::InvalidConfig(msg)) => {
+                assert!(
+                    msg.contains("git_signing_pub_key_path cannot be empty"),
+                    "unexpected message: {}",
+                    msg
+                );
+            }
+            other => panic!(
+                "expected InvalidConfig for empty signing key, got {:?}",
+                other
+            ),
+        }
     }
 }
