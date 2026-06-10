@@ -42,6 +42,13 @@ pub fn fixtures_asfaload_pub_key(n: usize) -> PathBuf {
     fixtures_keys_dir().join(format!("key_{}.pub", n))
 }
 
+/// Path to the committed passwordless ed25519 SSH key used by tests that
+/// exercise the git commit-signing wiring. Anchored to this crate's manifest
+/// dir so it resolves from any caller's working directory.
+pub fn git_signing_pub_key_path() -> PathBuf {
+    fixtures_dir().join("git_signing_key.pub")
+}
+
 /// Load a key pair from fixture files.
 pub fn get_key_pair() -> anyhow::Result<(AsfaloadPublicKeys, AsfaloadSecretKeys)> {
     let dir = fixtures_keys_dir();
@@ -307,6 +314,51 @@ mod tests {
         println!(
             "Done: generated {FIXTURE_KEY_COUNT} asfaload keypairs in {}",
             fixtures_dir.display()
+        );
+    }
+
+    /// Generate the passwordless ed25519 SSH signing key fixture.
+    /// Run with: cargo test --package test_helpers -- gen_git_signing_key --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn gen_git_signing_key() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("git_signing_key");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("pub"));
+
+        let status = std::process::Command::new("ssh-keygen")
+            .args([
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-C",
+                "git-actor@asfaload.com",
+                "-f",
+            ])
+            .arg(&path)
+            .status()
+            .expect("ssh-keygen should run");
+        assert!(status.success(), "ssh-keygen failed");
+        println!("Generated {}", path.display());
+    }
+
+    #[test]
+    fn test_git_signing_pub_key_fixture_exists() {
+        let pub_path = git_signing_pub_key_path();
+        assert!(
+            pub_path.exists(),
+            "missing fixture: {} (regenerate with `cargo test -p test_helpers -- gen_git_signing_key --ignored`)",
+            pub_path.display()
+        );
+        // The private key must sit next to the public key for ssh signing.
+        let priv_path = pub_path.with_extension("");
+        assert!(
+            priv_path.exists(),
+            "missing private key: {}",
+            priv_path.display()
         );
     }
 
