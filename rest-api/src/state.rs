@@ -34,7 +34,7 @@ pub struct AppState {
 }
 
 pub fn init_state(config: crate::config::AppConfig) -> Result<AppState, ApiError> {
-    let git_repo_path = config.clone().git_repo_path;
+    let git_repo_path = config.git_repo_path.clone();
     let git_backend: Arc<dyn GitBackend> = match config.git_backend {
         GitBackendConfig::Sha256 => Arc::new(Sha256GitBackend::new(
             &git_repo_path,
