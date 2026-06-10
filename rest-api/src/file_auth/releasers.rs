@@ -178,6 +178,7 @@ mod test_utils_tests {
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
             git_backend,
+            git_signing_pub_key_path: test_helpers::git_signing_pub_key_path(),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -233,6 +234,7 @@ mod test_utils_tests {
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
             git_backend,
+            git_signing_pub_key_path: test_helpers::git_signing_pub_key_path(),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -270,6 +272,7 @@ mod test_utils_tests {
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
             git_backend,
+            git_signing_pub_key_path: test_helpers::git_signing_pub_key_path(),
             github_api_key: None,
             gitlab_api_key: None,
         };

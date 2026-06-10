@@ -153,7 +153,7 @@ mod tests {
             GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path)),
             GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path)),
         };
-        GitActor::new(backend, PathBuf::new())
+        GitActor::new(backend, test_helpers::git_signing_pub_key_path())
     }
 
     fn run_git(repo_path: &Path, args: &[&str]) -> Result<String> {

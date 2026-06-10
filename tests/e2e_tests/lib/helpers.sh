@@ -4,6 +4,8 @@ _HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # --- Key type selection (must be before sourcing urls.sh which uses KEY_TYPE) ---
 KEY_TYPE="${KEY_TYPE:-asfaload}"
 KEYS_DIR="$(cd "$_HELPERS_DIR/../../.." && pwd)/core/test_helpers/fixtures/keys"
+# The key the test backend will sign commits with.
+export ASFALOAD_GIT_SIGNING_PUB_KEY_PATH="$(cd "$_HELPERS_DIR/../../.." && pwd)/core/test_helpers/fixtures/git_signing_key.pub"
 case "$KEY_TYPE" in
     asfaload) _KEY_PREFIX="" ;;
     *)

@@ -40,6 +40,7 @@ pub struct AppConfigOptions {
     pub log_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git_backend: Option<GitBackendConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub git_signing_pub_key_path: Option<PathBuf>,
     pub github_api_key: Option<String>,
     pub gitlab_api_key: Option<String>,
@@ -180,7 +181,7 @@ mod tests {
             git_repo_path: None,
             log_level: None,
             git_backend: None,
-            git_signing_pub_key_path: None,
+            git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -221,7 +222,7 @@ mod tests {
             git_repo_path: Some(git_path.clone()),
             log_level: Some("info".to_string()),
             git_backend: Some(GitBackendConfig::Sha1),
-            git_signing_pub_key_path: None,
+            git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -251,7 +252,7 @@ mod tests {
             git_repo_path: Some(git_path.clone()),
             log_level: None,
             git_backend: None,
-            git_signing_pub_key_path: None,
+            git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -286,7 +287,7 @@ mod tests {
             git_repo_path: Some(temp_dir.path().to_path_buf()),
             log_level: Some("info".to_string()),
             git_backend: None,
-            git_signing_pub_key_path: None,
+            git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -304,7 +305,7 @@ mod tests {
             git_repo_path: Some(temp_dir.path().to_path_buf()),
             log_level: Some("info".to_string()),
             git_backend: Some(GitBackendConfig::Sha256),
-            git_signing_pub_key_path: None,
+            git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
         };

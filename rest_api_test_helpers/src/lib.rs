@@ -125,6 +125,7 @@ pub fn build_test_config(git_repo_path: &Path, server_port: u16) -> rest_api::co
         server_address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
         log_level: "info".to_string(),
         git_backend,
+        git_signing_pub_key_path: test_helpers::git_signing_pub_key_path(),
         github_api_key: None,
         gitlab_api_key: None,
     }
