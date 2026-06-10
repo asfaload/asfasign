@@ -7,6 +7,8 @@ use std::sync::Arc;
 use rest_api_types::git_backend::GitBackend;
 use rest_api_types::path_validation::NormalisedPaths;
 
+use crate::config::AppConfig;
+
 #[derive(Debug, Clone)]
 pub struct CommitFile {
     // File path is relative to the git root
@@ -19,6 +21,7 @@ const ACTOR_NAME: &str = "git-actor";
 
 pub struct GitActor {
     backend: Arc<dyn GitBackend>,
+    signing_key_path: PathBuf,
 }
 
 impl GitActor {
@@ -27,9 +30,12 @@ impl GitActor {
     /// The same `Arc` is typically also stored on `AppState.git_backend`
     /// so handlers can perform read-only git operations without
     /// serialising through the actor's mailbox.
-    pub fn new(backend: Arc<dyn GitBackend>) -> Self {
+    pub fn new(backend: Arc<dyn GitBackend>, signing_key_path: PathBuf) -> Self {
         tracing::info!(repo_path = %backend.root().display(), "GitActor created");
-        Self { backend }
+        Self {
+            backend,
+            signing_key_path,
+        }
     }
 
     pub fn repo_path(&self) -> PathBuf {
@@ -105,15 +111,15 @@ impl Message<CommitFile> for GitActor {
 
 // Implement Actor trait with required associated types and methods
 impl Actor for GitActor {
-    type Args = Arc<dyn GitBackend>;
+    type Args = (Arc<dyn GitBackend>, PathBuf);
     type Error = String;
 
     async fn on_start(
         args: Self::Args,
         _actor_ref: kameo::prelude::ActorRef<Self>,
     ) -> Result<Self, Self::Error> {
-        tracing::info!(repo_path = %args.root().display(), "GitActor starting");
-        Ok(Self::new(args))
+        tracing::info!(repo_path = %args.0.root().display(), "GitActor starting");
+        Ok(Self::new(args.0, args.1))
     }
 }
 
@@ -147,7 +153,7 @@ mod tests {
             GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path)),
             GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path)),
         };
-        GitActor::new(backend)
+        GitActor::new(backend, PathBuf::new())
     }
 
     fn run_git(repo_path: &Path, args: &[&str]) -> Result<String> {

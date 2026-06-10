@@ -47,7 +47,7 @@ pub fn init_state(config: crate::config::AppConfig) -> Result<AppState, ApiError
         })?;
     }
 
-    let git_actor = GitActor::spawn(git_backend.clone());
+    let git_actor = GitActor::spawn((git_backend.clone(), PathBuf::new()));
 
     // Initialize nonce cache with database path
     // FIXME: support taking the dir for the nonce db from env var

@@ -415,7 +415,7 @@ pub mod tests {
             GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(&git_repo_path_clone)),
             GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(&git_repo_path_clone)),
         };
-        let git_actor = GitActor::spawn(backend);
+        let git_actor = GitActor::spawn((backend, std::path::PathBuf::new()));
 
         let write_commit_request = rest_api::file_auth::actors::git_actor::CommitFile {
             file_paths: vec![init_result.project_path.clone()],

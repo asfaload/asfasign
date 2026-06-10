@@ -534,7 +534,7 @@ mod tests {
             GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path)),
             GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path)),
         };
-        crate::file_auth::actors::git_actor::GitActor::spawn(backend)
+        crate::file_auth::actors::git_actor::GitActor::spawn((backend, std::path::PathBuf::new()))
     }
 
     /// Set up a pending signers file with all required companion files:
