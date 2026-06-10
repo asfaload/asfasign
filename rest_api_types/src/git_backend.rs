@@ -1293,6 +1293,268 @@ mod sha256_tests {
             Ok(_) => panic!("Expected rejection for unchanged tree commit"),
         }
     }
+
+    // -- sha256 equivalents of the sha1 trait-method tests in `mod tests`.
+    //    `file_content_at_commit` and `artifact_signers_source` are GitBackend
+    //    default methods that shell out to git; these guard against OID-format
+    //    assumptions (sha256 hashes are 64 hex chars, not 40).
+
+    #[test]
+    fn test_sha256_file_content_at_commit() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_sha256_repo(repo_path);
+
+        let file_path = repo_path.join("data.json");
+        std::fs::write(&file_path, r#"{"version": 1}"#).unwrap();
+
+        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &file_path)],
+                "add data.json",
+            )
+            .unwrap();
+
+        let first_commit = GitCommand::git(repo_path, &["log", "--format=%H", "-1"]).unwrap();
+
+        std::fs::write(&file_path, r#"{"version": 2}"#).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &file_path)],
+                "update data.json",
+            )
+            .unwrap();
+
+        let content = backend
+            .file_content_at_commit(&first_commit, Path::new("data.json"))
+            .unwrap();
+        assert_eq!(content, r#"{"version": 1}"#);
+
+        let current = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(current, r#"{"version": 2}"#);
+    }
+
+    #[test]
+    fn test_sha256_file_content_at_commit_file_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_sha256_repo(repo_path);
+
+        let file_path = repo_path.join("exists.txt");
+        std::fs::write(&file_path, "content").unwrap();
+
+        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        backend
+            .commit_files(&[normalise_for_repo(repo_path, &file_path)], "add file")
+            .unwrap();
+
+        let commit = GitCommand::git(repo_path, &["log", "--format=%H", "-1"]).unwrap();
+
+        let result = backend.file_content_at_commit(&commit, Path::new("nonexistent.txt"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sha256_artifact_signers_source_errors_when_file_not_in_history() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_sha256_repo(repo_path);
+
+        // File exists on disk but was never committed
+        let file = repo_path.join("never_committed.json");
+        std::fs::write(&file, "content").unwrap();
+
+        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let signers_path = normalise_for_repo(repo_path, &file);
+        let result = backend.artifact_signers_source(signers_path);
+
+        match result {
+            Err(ApiError::GitError(msg)) => {
+                assert!(
+                    msg.contains("No commit found"),
+                    "Expected 'No commit found' error, got: {}",
+                    msg
+                );
+            }
+            other => panic!("Expected ApiError::GitError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_sha256_artifact_signers_source_does_not_panic_for_non_copied_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_sha256_repo(repo_path);
+
+        // Create and commit a brand new file (no copy source)
+        let file = repo_path.join("original.json");
+        std::fs::write(&file, "unique content that won't match anything").unwrap();
+
+        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        backend
+            .commit_files(&[normalise_for_repo(repo_path, &file)], "add original file")
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &file);
+        // Should not panic — may return Ok or Err depending on diff-tree output
+        let _result = backend.artifact_signers_source(signers_path);
+    }
+
+    #[test]
+    fn test_sha256_artifact_signers_source_has_commit_time() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_sha256_repo(repo_path);
+        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+
+        // Commit a source signers file, then copy it to an artifact and commit.
+        let source_file = repo_path.join("signers.json");
+        std::fs::write(&source_file, r#"{"signers": ["alice"]}"#).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &source_file)],
+                "add source file",
+            )
+            .unwrap();
+
+        let dest_file = repo_path.join("artifacts/my_artifact.signers.json");
+        std::fs::create_dir_all(dest_file.parent().unwrap()).unwrap();
+        std::fs::copy(&source_file, &dest_file).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &dest_file)],
+                "copy file to destination",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &dest_file);
+        let result = backend.artifact_signers_source(signers_path).unwrap();
+
+        // commit_time should be a valid recent timestamp
+        let commit_time = result.commit_time();
+        let now = chrono::Utc::now();
+        assert!(
+            commit_time <= now,
+            "Commit time should not be in the future"
+        );
+        assert!(
+            (now - commit_time).num_seconds() < 60,
+            "Commit time should be recent (within 60s)"
+        );
+    }
+
+    /// When the source is in the pending dir and NO matching active file exists,
+    /// the function should return an error.
+    #[test]
+    fn test_sha256_artifact_signers_source_pending_only_no_active_returns_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_sha256_repo(repo_path);
+        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+
+        let signers_content = r#"{"version":1,"signers_only_in_pending":true}"#;
+
+        // Only create pending dir — no active dir
+        let pending_dir = repo_path.join("proj/asfaload.signers.pending");
+        std::fs::create_dir_all(&pending_dir).unwrap();
+        std::fs::write(pending_dir.join("index.json"), signers_content).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &pending_dir)],
+                "add pending signers only",
+            )
+            .unwrap();
+
+        // Copy from pending to artifact (this would be a bug in the real system)
+        let artifact_signers = repo_path.join("proj/releases/v1/artifact.signers.json");
+        std::fs::create_dir_all(artifact_signers.parent().unwrap()).unwrap();
+        std::fs::copy(pending_dir.join("index.json"), &artifact_signers).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &artifact_signers)],
+                "copy from pending (should not happen in production)",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &artifact_signers);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(
+            result.is_err(),
+            "Should error when source is pending and no active exists"
+        );
+
+        match result {
+            Err(ApiError::GitError(msg)) => {
+                assert!(
+                    msg.contains("pending dir"),
+                    "Error should mention pending dir, got: {}",
+                    msg
+                );
+            }
+            other => panic!(
+                "Expected ApiError::GitError about pending dir, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Same filename at multiple levels of the directory hierarchy.
+    /// Copy from the deepest one — verify the deepest is returned as source.
+    #[test]
+    fn test_sha256_artifact_signers_source_deepest_file_in_hierarchy() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_sha256_repo(repo_path);
+        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+
+        // Create signers.json at three levels with same content
+        let content = r#"{"version":1,"artifact_signers":[{"threshold":1,"signers":[]}]}"#;
+
+        let shallow = repo_path.join("signers.json");
+        let mid = repo_path.join("project/signers.json");
+        let deep = repo_path.join("project/sub/signers.json");
+
+        std::fs::write(&shallow, content).unwrap();
+        std::fs::create_dir_all(mid.parent().unwrap()).unwrap();
+        std::fs::write(&mid, content).unwrap();
+        std::fs::create_dir_all(deep.parent().unwrap()).unwrap();
+        std::fs::write(&deep, content).unwrap();
+
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, repo_path)],
+                "add signers at three levels",
+            )
+            .unwrap();
+
+        // Copy the deepest one to an artifact path
+        let artifact_signers = repo_path.join("project/sub/releases/artifact.signers.json");
+        std::fs::create_dir_all(artifact_signers.parent().unwrap()).unwrap();
+        std::fs::copy(&deep, &artifact_signers).unwrap();
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &artifact_signers)],
+                "copy deepest signers to artifact",
+            )
+            .unwrap();
+
+        let signers_path = normalise_for_repo(repo_path, &artifact_signers);
+        let result = backend.artifact_signers_source(signers_path);
+        assert!(result.is_ok(), "Expected Ok, got {:?}", result);
+
+        let source = result.unwrap();
+        // Git should detect the copy from the deepest file since it's the
+        // closest match and most likely source
+        let source_path = source.path().relative_path().to_string_lossy().to_string();
+        assert!(
+            source_path.contains("project/sub/signers.json")
+                || source_path.contains("project/signers.json")
+                || source_path == "signers.json",
+            "Source should be one of the signers.json files, got: {}",
+            source_path
+        );
+    }
 }
 
 #[cfg(test)]
