@@ -27,6 +27,7 @@ pub struct AppConfig {
     pub log_level: String,
     #[serde(default)]
     pub git_backend: GitBackendConfig,
+    pub git_signing_pub_key_path: PathBuf,
     pub github_api_key: Option<String>,
     pub gitlab_api_key: Option<String>,
 }
@@ -127,12 +128,22 @@ pub fn build_config_from_defaults(
             "git_repo_path cannot be empty".to_string(),
         ));
     }
+    if app_config.git_signing_pub_key_path.as_os_str().is_empty() {
+        return Err(ServerConfigError::InvalidConfig(
+            "git_signing_pub_key_path cannot be empty".to_string(),
+        ));
+    }
 
     // Canonicalise git repo path in config used in backend
     let canonical_git_repo_path = std::fs::canonicalize(app_config.git_repo_path)
         .map_err(|e| ServerConfigError::InvalidConfig(format!("Invalid git repo path: {}", e)))?;
+    let canonical_git_signing_pub_key_path =
+        std::fs::canonicalize(app_config.git_signing_pub_key_path).map_err(|e| {
+            ServerConfigError::InvalidConfig(format!("Invalid git signing key path: {}", e))
+        })?;
     let app_config = AppConfig {
         git_repo_path: canonical_git_repo_path,
+        git_signing_pub_key_path: canonical_git_signing_pub_key_path,
         ..app_config
     };
 
