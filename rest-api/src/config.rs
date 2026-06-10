@@ -127,6 +127,15 @@ pub fn build_config_from_defaults(
             "git_repo_path cannot be empty".to_string(),
         ));
     }
+
+    // Canonicalise git repo path in config used in backend
+    let canonical_git_repo_path = std::fs::canonicalize(app_config.git_repo_path)
+        .map_err(|e| ServerConfigError::InvalidConfig(format!("Invalid git repo path: {}", e)))?;
+    let app_config = AppConfig {
+        git_repo_path: canonical_git_repo_path,
+        ..app_config
+    };
+
     if app_config.git_backend == GitBackendConfig::Sha256 {
         validate_git_for_sha256()?;
     }

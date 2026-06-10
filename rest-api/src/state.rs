@@ -40,10 +40,8 @@ fn backend_kind_from_config(config: GitBackendConfig) -> GitBackendKind {
     }
 }
 
-pub fn init_state(
-    git_repo_path: std::path::PathBuf,
-    config: crate::config::AppConfig,
-) -> Result<AppState, ApiError> {
+pub fn init_state(config: crate::config::AppConfig) -> Result<AppState, ApiError> {
+    let git_repo_path = config.clone().git_repo_path;
     let git_backend_kind = backend_kind_from_config(config.git_backend);
     let git_backend: Arc<dyn GitBackend> = match git_backend_kind {
         GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(&git_repo_path)),
