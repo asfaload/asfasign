@@ -194,7 +194,7 @@ pub trait GitBackend: Send + Sync + 'static {
 }
 
 const GIT_ACTOR_NAME: &str = "git-actor";
-const GIT_USER_EMAIL: &str = "git-actor@rest-api.asfaload.com";
+const GIT_USER_EMAIL: &str = "git@backend.asfaload.com";
 
 /// Collect relative file paths from a list of absolute targets, skipping
 /// `.git` and `.app_cache` directories. Rejects symlinks.
