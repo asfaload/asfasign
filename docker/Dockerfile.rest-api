@@ -10,8 +10,9 @@ RUN cargo build --package rest-api --release
 
 FROM debian:trixie-slim
 
+# install openssh-client for git signing key validation
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates libssl3 git\
+        ca-certificates libssl3 git openssh-client\
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 1000 -r appgroup && useradd -u 1000 -r -g appgroup appuser
 
