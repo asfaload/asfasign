@@ -26,8 +26,7 @@ if [ ! -d "$GIT_REPO_PATH/.git" ]; then
 fi
 
 echo "Building the project..."
-# Build the project in release mode
-cargo build --release
+build_rest_api
 
 # Check if build was successful
 if [ $? -ne 0 ]; then
@@ -53,5 +52,5 @@ export ASFALOAD_GIT_SIGNING_PUB_KEY_PATH="$SIGNING_KEY_DIR/git_signing_key.pub"
 echo "Starting REST API server on port $ASFALOAD_SERVER_PORT with git repository at: $GIT_REPO_PATH"
 
 set -x
-# Start the server using the release binary
-"${base_dir}/target/release/rest-api" | tee $GIT_REPO_PATH/server.log
+# Start the server. The helper build_rest_api builds the debug version.
+"${base_dir}/target/debug/rest-api" | tee $GIT_REPO_PATH/server.log
