@@ -5,10 +5,22 @@ set -euxo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/../lib/helpers.sh"
 
+# Array of files to delete after running
+to_delete_on_filesystem=()
+cleanup() {
+    for path in "${to_delete_on_filesystem[@]}"; do
+        if [[ -e "$path" ]]; then
+            rm -rf "$path"
+        fi
+    done
+}
+trap cleanup EXIT
 
 # Setup new git repo at each run
 GIT_REPO_PATH=$(mktemp -d)
+to_delete_on_filesystem+=("$GIT_REPO_PATH")
 init_backend_repo "$GIT_REPO_PATH"
+
 
 echo "using git repo path: ${GIT_REPO_PATH}"
 
