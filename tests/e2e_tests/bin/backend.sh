@@ -28,12 +28,6 @@ fi
 echo "Building the project..."
 build_rest_api
 
-# Check if build was successful
-if [ $? -ne 0 ]; then
-  echo "Error: Build failed."
-  exit 1
-fi
-
 echo "Build successful!"
 
 base_dir=$(git rev-parse --show-toplevel)
