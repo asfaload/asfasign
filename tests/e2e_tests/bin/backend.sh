@@ -2,9 +2,13 @@
 
 set -euxo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/../lib/helpers.sh"
+
+
 # Setup new git repo at each run
 GIT_REPO_PATH=$(mktemp -d)
-( cd "$GIT_REPO_PATH"; git init;  )
+init_backend_repo "$GIT_REPO_PATH"
 
 echo "using git repo path: ${GIT_REPO_PATH}"
 
