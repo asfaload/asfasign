@@ -328,8 +328,7 @@ mod tests {
         // Verify that the commit failed
         assert!(result.is_err());
         match result {
-            Err(ApiError::GitOperationFailed(e)) => {
-                let message = e.to_string();
+            Err(ApiError::GitError(message)) => {
                 assert!(
                     message.starts_with("could not find repository at")
                         || message.contains("not a git repository")

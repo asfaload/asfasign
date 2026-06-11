@@ -30,10 +30,6 @@ pub mod errors {
         #[error("Git repository path not set in environment")]
         GitRepoPathNotSet,
 
-        // Errors raised specifically by the use of git2-rs
-        #[error("Git2 error: {0}")]
-        GitOperationFailed(#[from] git2::Error),
-
         #[error("Git error: {0}")]
         GitError(String),
 
@@ -219,7 +215,6 @@ pub mod errors {
                 ApiError::PortInvalid(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::ActorOperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::TokioJoinError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-                ApiError::GitOperationFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 ApiError::MissingAuthenticationHeaders => StatusCode::UNAUTHORIZED,
                 ApiError::InvalidAuthenticationHeaders => StatusCode::UNAUTHORIZED,
                 ApiError::InvalidRequestBody(_) => StatusCode::BAD_REQUEST,

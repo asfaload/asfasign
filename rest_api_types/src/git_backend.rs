@@ -203,7 +203,7 @@ const GIT_USER_EMAIL: &str = "git@backend.asfaload.com";
 fn collect_relative_paths(
     repo_workdir: &Path,
     target_paths: &[PathBuf],
-) -> Result<Vec<PathBuf>, git2::Error> {
+) -> Result<Vec<PathBuf>, ApiError> {
     let mut result = Vec::new();
     let mut paths_to_visit: Vec<PathBuf> = target_paths.to_vec();
 
@@ -211,7 +211,7 @@ fn collect_relative_paths(
         let metadata = match fs::symlink_metadata(&current_path) {
             Ok(meta) => {
                 if meta.file_type().is_symlink() {
-                    return Err(git2::Error::from_str(&format!(
+                    return Err(ApiError::GitError(format!(
                         "Encountered a symlink!{}",
                         current_path.display()
                     )));
@@ -222,7 +222,7 @@ fn collect_relative_paths(
                 continue;
             }
             Err(e) => {
-                return Err(git2::Error::from_str(&format!(
+                return Err(ApiError::GitError(format!(
                     "Failed to read path {:?}: {}",
                     current_path, e
                 )));
@@ -232,7 +232,7 @@ fn collect_relative_paths(
         if metadata.is_file() {
             let rel_path = current_path
                 .strip_prefix(repo_workdir)
-                .map_err(|_| git2::Error::from_str("Target path is outside repository"))?;
+                .map_err(|_| ApiError::GitError("Target path is outside repository".into()))?;
             result.push(rel_path.to_path_buf());
         } else if metadata.is_dir() {
             if let Some(name) = current_path.file_name()
@@ -242,13 +242,13 @@ fn collect_relative_paths(
                 continue;
             }
             for entry in fs::read_dir(&current_path).map_err(|e| {
-                git2::Error::from_str(&format!(
+                ApiError::GitError(format!(
                     "Failed to read directory {:?}: {}",
                     current_path, e
                 ))
             })? {
                 let entry =
-                    entry.map_err(|e| git2::Error::from_str(&format!("Dir entry error: {}", e)))?;
+                    entry.map_err(|e| ApiError::GitError(format!("Dir entry error: {}", e)))?;
                 paths_to_visit.push(entry.path());
             }
         }
@@ -271,16 +271,16 @@ struct GitCommand;
 impl GitCommand {
     /// Run a git command in the given repo directory. Returns stdout on
     /// success, or a `git2::Error` with combined stderr/stdout on failure.
-    fn git(repo_path: &Path, args: &[&str]) -> Result<String, git2::Error> {
+    fn git(repo_path: &Path, args: &[&str]) -> Result<String, ApiError> {
         let output = std::process::Command::new("git")
             .args(["-C", &repo_path.to_string_lossy()])
             .args(args)
             .output()
-            .map_err(|e| git2::Error::from_str(&format!("Failed to run git: {}", e)))?;
+            .map_err(|e| ApiError::GitError(format!("Failed to run git: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(git2::Error::from_str(&format!(
+            return Err(ApiError::GitError(format!(
                 "git {:?} failed: {}",
                 args,
                 stderr.trim()
@@ -292,10 +292,10 @@ impl GitCommand {
 }
 impl Sha256GitBackend {
     /// Validate that the repository uses the SHA-256 object format.
-    fn validate_sha256(repo_path: &Path) -> Result<(), git2::Error> {
+    fn validate_sha256(repo_path: &Path) -> Result<(), ApiError> {
         let format = GitCommand::git(repo_path, &["rev-parse", "--show-object-format"])?;
         if format != "sha256" {
-            return Err(git2::Error::from_str(&format!(
+            return Err(ApiError::GitError(format!(
                 "Sha256GitBackend requires a SHA-256 repository, got '{}'",
                 format
             )));
@@ -317,9 +317,7 @@ impl GitBackend for Sha256GitBackend {
         let rel_paths = collect_relative_paths(repo_path.as_path(), &absolute_paths)?;
 
         if rel_paths.is_empty() {
-            return Err(ApiError::GitOperationFailed(git2::Error::from_str(
-                "No files to commit",
-            )));
+            return Err(ApiError::GitError("No files to commit".into()));
         }
 
         // Stage files one at a time via git add
@@ -422,9 +420,7 @@ mod tests {
             _commit_message: &str,
         ) -> Result<(), ApiError> {
             if self.should_fail {
-                Err(ApiError::GitOperationFailed(git2::Error::from_str(
-                    "mock failure",
-                )))
+                Err(ApiError::GitError("mock failure".into()))
             } else {
                 Ok(())
             }
@@ -446,9 +442,7 @@ mod tests {
 
         fn init(&self) -> Result<(), ApiError> {
             if self.should_fail {
-                Err(ApiError::GitOperationFailed(git2::Error::from_str(
-                    "mock failure",
-                )))
+                Err(ApiError::GitError("mock failure".into()))
             } else {
                 Ok(())
             }
@@ -588,7 +582,12 @@ mod sha256_tests {
     fn test_sha256_backend_rejects_sha1_repo() {
         let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
-        git2::Repository::init(repo_path).unwrap(); // SHA-1 repo
+        let status = Command::new("git")
+            .args(["init", "--object-format=sha1"])
+            .arg(repo_path)
+            .status()
+            .expect("git CLI must be available");
+        assert!(status.success(), "git init --object-format=sha1 failed");
 
         let file_path = repo_path.join("test.txt");
         std::fs::write(&file_path, "content").unwrap();
@@ -597,8 +596,8 @@ mod sha256_tests {
         let result =
             backend.commit_files(&[normalise_for_repo(repo_path, &file_path)], "should fail");
         match result {
-            Err(ApiError::GitOperationFailed(e)) => {
-                assert!(e.message().contains("SHA-256"));
+            Err(ApiError::GitError(e)) => {
+                assert!(e.contains("SHA-256"));
             }
             Err(e) => panic!("Expected ApiError::GitOperationFailed but got {}", e),
             Ok(_) => panic!("Expected SHA-256 format rejection but commit succeeded"),

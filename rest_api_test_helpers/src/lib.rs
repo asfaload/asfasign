@@ -150,8 +150,10 @@ fn run_git(repo_path: &Path, args: &[&str]) -> Result<String, ApiError> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ApiError::GitOperationFailed(git2::Error::from_str(
-            &format!("git {:?} failed: {}", args, stderr.trim()),
+        return Err(ApiError::GitError(format!(
+            "git {:?} failed: {}",
+            args,
+            stderr.trim()
         )));
     }
 
