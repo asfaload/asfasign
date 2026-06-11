@@ -32,3 +32,4 @@ workspace = true
 anyhow = "1.0.102"
 tempfile = "3.26.0"
 tracing = "0.1.44"
+test_helpers = { path = "../core/test_helpers/" }

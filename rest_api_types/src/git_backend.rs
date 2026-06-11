@@ -381,28 +381,6 @@ pub enum GitBackendKind {
     Sha256,
 }
 
-/// Returns the path to a passwordless ed25519 SSH public key for tests that
-/// sign (sha256). Generated once per test binary into a temp dir kept for the
-/// process, OUTSIDE any repo so `commit_files` can't stage it. `ssh-keygen`
-/// produces a 0600 private key, so no permission fix-up is needed here.
-#[cfg(test)]
-fn test_signing_key() -> PathBuf {
-    use std::sync::OnceLock;
-    static KEY: OnceLock<PathBuf> = OnceLock::new();
-    KEY.get_or_init(|| {
-        let dir = tempfile::TempDir::new().unwrap().keep();
-        let key = dir.join("git_signing_key");
-        let status = std::process::Command::new("ssh-keygen")
-            .args(["-t", "ed25519", "-N", "", "-C", "git-backend-test", "-f"])
-            .arg(&key)
-            .status()
-            .expect("ssh-keygen should run");
-        assert!(status.success(), "ssh-keygen failed");
-        key.with_extension("pub")
-    })
-    .clone()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,7 +441,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
         let target_path = repo_path.join("test").join("file.txt");
-        let backend = MockBackend::new_failing(repo_path, test_signing_key());
+        let backend = MockBackend::new_failing(repo_path, test_helpers::git_signing_pub_key_path());
         let p = normalise_for_repo(repo_path, &target_path);
         let result = backend.commit_files(&[p], "test commit");
         assert!(result.is_err());
@@ -518,7 +496,7 @@ mod sha256_tests {
         let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         backend.init().unwrap();
 
         assert!(
@@ -538,7 +516,7 @@ mod sha256_tests {
         let file_path = repo_path.join("test.txt");
         std::fs::write(&file_path, "sha256 content").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         let result = backend.commit_files(
             &[normalise_for_repo(repo_path, &file_path)],
             "sha256 commit",
@@ -559,7 +537,7 @@ mod sha256_tests {
         let file_path = repo_path.join("test.txt");
         std::fs::write(&file_path, "content").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         backend
             .commit_files(
                 &[normalise_for_repo(repo_path, &file_path)],
@@ -592,7 +570,7 @@ mod sha256_tests {
         let file_path = repo_path.join("test.txt");
         std::fs::write(&file_path, "content").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         let result =
             backend.commit_files(&[normalise_for_repo(repo_path, &file_path)], "should fail");
         match result {
@@ -615,7 +593,7 @@ mod sha256_tests {
         std::fs::write(&f1, "a").unwrap();
         std::fs::write(&f2, "b").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         let result = backend.commit_files(
             &[
                 normalise_for_repo(repo_path, &f1),
@@ -641,7 +619,7 @@ mod sha256_tests {
         std::fs::create_dir_all(&subdir).unwrap();
         std::fs::write(subdir.join("file.txt"), "deep content").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         let result = backend.commit_files(
             &[normalise_for_repo(repo_path, &subdir.join("file.txt"))],
             "nested sha256",
@@ -666,7 +644,7 @@ mod sha256_tests {
 
         std::fs::write(repo_path.join("first.txt"), "first").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         let result = backend.commit_files(
             &[normalise_for_repo(repo_path, &repo_path.join("first.txt"))],
             "initial",
@@ -685,7 +663,7 @@ mod sha256_tests {
 
         std::fs::write(repo_path.join("real.txt"), "content").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         let result = backend.commit_files(&[normalise_for_repo(repo_path, repo_path)], "commit");
         assert!(result.is_ok());
 
@@ -702,7 +680,7 @@ mod sha256_tests {
 
         std::fs::write(repo_path.join("dispatch.txt"), "via enum").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         let result = backend.commit_files(
             &[normalise_for_repo(
                 repo_path,
@@ -725,7 +703,7 @@ mod sha256_tests {
         let file = repo_path.join("same.txt");
         std::fs::write(&file, "same content").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         let first = backend.commit_files(&[normalise_for_repo(repo_path, &file)], "first");
         assert!(first.is_ok(), "First commit should succeed: {:?}", first);
 
@@ -755,7 +733,7 @@ mod sha256_tests {
         let file_path = repo_path.join("data.json");
         std::fs::write(&file_path, r#"{"version": 1}"#).unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         backend
             .commit_files(
                 &[normalise_for_repo(repo_path, &file_path)],
@@ -791,7 +769,7 @@ mod sha256_tests {
         let file_path = repo_path.join("exists.txt");
         std::fs::write(&file_path, "content").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         backend
             .commit_files(&[normalise_for_repo(repo_path, &file_path)], "add file")
             .unwrap();
@@ -812,7 +790,7 @@ mod sha256_tests {
         let file = repo_path.join("never_committed.json");
         std::fs::write(&file, "content").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         let signers_path = normalise_for_repo(repo_path, &file);
         let result = backend.artifact_signers_source(signers_path);
 
@@ -838,7 +816,7 @@ mod sha256_tests {
         let file = repo_path.join("original.json");
         std::fs::write(&file, "unique content that won't match anything").unwrap();
 
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
         backend
             .commit_files(&[normalise_for_repo(repo_path, &file)], "add original file")
             .unwrap();
@@ -853,7 +831,7 @@ mod sha256_tests {
         let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
         init_sha256_repo(repo_path);
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
 
         // Commit a source signers file, then copy it to an artifact and commit.
         let source_file = repo_path.join("signers.json");
@@ -898,7 +876,7 @@ mod sha256_tests {
         let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
         init_sha256_repo(repo_path);
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
 
         let signers_content = r#"{"version":1,"signers_only_in_pending":true}"#;
 
@@ -953,7 +931,7 @@ mod sha256_tests {
         let temp_dir = TempDir::new().unwrap();
         let repo_path = temp_dir.path();
         init_sha256_repo(repo_path);
-        let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
 
         // Create signers.json at three levels with same content
         let content = r#"{"version":1,"artifact_signers":[{"threshold":1,"signers":[]}]}"#;
@@ -1357,7 +1335,8 @@ mod artifact_signers_source_scenarios {
             let temp_dir = TempDir::new().unwrap();
             let repo_path = temp_dir.path();
             init_sha256_repo(repo_path);
-            let backend = Sha256GitBackend::new(repo_path, test_signing_key());
+            let backend =
+                Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
             run_scenario(name, &scenario, &backend);
         }
     }
