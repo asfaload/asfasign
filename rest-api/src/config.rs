@@ -226,7 +226,7 @@ mod tests {
             .as_str()
         {
             "sha256" => GitBackendConfig::Sha256,
-            other => panic!("Unkown value for ASFALOAD_GIT_BACKEND: {}", other),
+            other => panic!("Unknown value for ASFALOAD_GIT_BACKEND: {}", other),
         }
     }
     #[test]
