@@ -38,15 +38,11 @@ KEY_9="$KEYS_DIR/${_KEY_PREFIX}key_9"
 
 # --- Git OID-aware helpers ---
 
-# Initialize a git repo, respecting ASFALOAD_GIT_BACKEND for object format.
+# Initialize a git repo
 # Usage: init_backend_repo "$path"
 init_backend_repo() {
     local repo_path="$1"
-    if [[ "${ASFALOAD_GIT_BACKEND:-}" == "sha256" ]]; then
-        git init --object-format=sha256 "$repo_path" --quiet
-    else
-        git init "$repo_path" --quiet
-    fi
+    git init --object-format=sha256 "$repo_path" --quiet
 }
 
 # Build the rest-api binary.

@@ -2,9 +2,25 @@
 
 set -euxo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/../lib/helpers.sh"
+
+# Array of files to delete after running
+to_delete_on_filesystem=()
+cleanup() {
+    for path in "${to_delete_on_filesystem[@]}"; do
+        if [[ -e "$path" ]]; then
+            rm -rf "$path"
+        fi
+    done
+}
+trap cleanup EXIT
+
 # Setup new git repo at each run
 GIT_REPO_PATH=$(mktemp -d)
-( cd "$GIT_REPO_PATH"; git init;  )
+to_delete_on_filesystem+=("$GIT_REPO_PATH")
+init_backend_repo "$GIT_REPO_PATH"
+
 
 echo "using git repo path: ${GIT_REPO_PATH}"
 
@@ -22,16 +38,12 @@ if [ ! -d "$GIT_REPO_PATH/.git" ]; then
 fi
 
 echo "Building the project..."
-# Build the project in release mode
-cargo build --release
-
-# Check if build was successful
-if [ $? -ne 0 ]; then
-  echo "Error: Build failed."
-  exit 1
-fi
+build_rest_api
 
 echo "Build successful!"
+
+base_dir=$(git rev-parse --show-toplevel)
+
 
 # Set the environment variables and start the server
 export ASFALOAD_GIT_REPO_PATH="$GIT_REPO_PATH"
@@ -39,6 +51,5 @@ export ASFALOAD_SERVER_PORT="${ASFALOAD_SERVER_PORT:-3000}"
 echo "Starting REST API server on port $ASFALOAD_SERVER_PORT with git repository at: $GIT_REPO_PATH"
 
 set -x
-base_dir=$(git rev-parse --show-toplevel)
-# Start the server using the release binary
-"${base_dir}/target/release/rest-api" | tee $GIT_REPO_PATH/server.log
+# Start the server. The helper build_rest_api builds the debug version.
+"${base_dir}/target/debug/rest-api" | tee $GIT_REPO_PATH/server.log
