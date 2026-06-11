@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SERVER_PID=""
 FILE_SERVER_PID=""
-E2E_GIT_REPO_PATH=""
+E2E_GIT_REPO_PATH="${E2E_GIT_REPO_PATH:-}"
 background_pids=()
 to_delete_on_filesystem=()
 
