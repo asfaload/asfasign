@@ -508,9 +508,7 @@ fn map_signers_file_error(e: SignersFileError) -> ApiError {
 
 #[cfg(all(test, not(feature = "test-utils")))]
 mod tests {
-    use rest_api_types::git_backend::{
-        GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend,
-    };
+    use rest_api_types::git_backend::{GitBackend, GitBackendKind, Sha256GitBackend};
 
     use super::*;
     use common::fs::names::{metadata_path_for, pending_signatures_path_for};
@@ -530,9 +528,9 @@ mod tests {
         repo_path: &std::path::Path,
         kind: GitBackendKind,
     ) -> kameo::actor::ActorRef<crate::file_auth::actors::git_actor::GitActor> {
+        let key = test_helpers::git_signing_pub_key_path();
         let backend: Arc<dyn GitBackend> = match kind {
-            GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(repo_path)),
-            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path)),
+            GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(repo_path, &key)),
         };
         crate::file_auth::actors::git_actor::GitActor::spawn(backend)
     }
@@ -590,10 +588,12 @@ mod tests {
     /// Read the git backend from the `ASFALOAD_GIT_BACKEND` environment variable.
     /// Duplicated in tests module that need it. Moving it to a test helpers crate implies
     /// too much code to move due to its return type GitBackendType
+    /// Only accepts sha256 since sha1 backend was removed
     pub fn backend_kind_from_env() -> GitBackendKind {
         match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
             Ok("sha256") => GitBackendKind::Sha256,
-            _ => GitBackendKind::Sha1,
+            Ok(other) => panic!("Unrecognised value for ASFALOAD_GIT_BACKEND {other}"),
+            Err(_e) => GitBackendKind::Sha256,
         }
     }
 

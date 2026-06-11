@@ -14,7 +14,6 @@ fn default_log_level() -> String {
 #[serde(rename_all = "lowercase")]
 pub enum GitBackendConfig {
     #[default]
-    Sha1,
     Sha256,
 }
 
@@ -27,6 +26,7 @@ pub struct AppConfig {
     pub log_level: String,
     #[serde(default)]
     pub git_backend: GitBackendConfig,
+    pub git_signing_pub_key_path: PathBuf,
     pub github_api_key: Option<String>,
     pub gitlab_api_key: Option<String>,
 }
@@ -39,6 +39,8 @@ pub struct AppConfigOptions {
     pub log_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git_backend: Option<GitBackendConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_signing_pub_key_path: Option<PathBuf>,
     pub github_api_key: Option<String>,
     pub gitlab_api_key: Option<String>,
 }
@@ -50,7 +52,8 @@ impl Default for AppConfigOptions {
             server_port: Some(3000),
             git_repo_path: None,
             log_level: Some("info".to_string()),
-            git_backend: Some(GitBackendConfig::Sha1),
+            git_backend: Some(GitBackendConfig::Sha256),
+            git_signing_pub_key_path: None,
             github_api_key: None,
             gitlab_api_key: None,
         }
@@ -97,6 +100,64 @@ fn validate_git_for_sha256() -> Result<(), ServerConfigError> {
     Ok(())
 }
 
+/// Validate that the configured signing public key can actually sign commits.
+///
+/// SSH commit signing (`git commit -S` with `gpg.format=ssh`) needs the
+/// *private* key, which ssh finds by stripping `.pub` from `user.signingkey`
+/// or via ssh-agent. Canonicalising the public key path only proves the public
+/// half exists; it says nothing about a usable private key. Reproduce the exact
+/// path git uses (`ssh-keygen -Y sign -n git`) so a missing, unreadable, or
+/// agent-less key fails fast at startup instead of on the first commit.
+fn validate_signing_key(pub_key_path: &std::path::Path) -> Result<(), ServerConfigError> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new("ssh-keygen")
+        .args(["-Y", "sign", "-n", "git", "-f"])
+        .arg(pub_key_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            ServerConfigError::InvalidConfig(format!(
+                "could not run ssh-keygen to validate the git signing key: {}",
+                e
+            ))
+        })?;
+
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| {
+            ServerConfigError::InvalidConfig("could not get at ssh-keygen stdin. Was piped?".into())
+        })?
+        .write_all(b"asfaload signing smoke-test")
+        .map_err(|e| {
+            ServerConfigError::InvalidConfig(format!(
+                "could not feed ssh-keygen while validating the git signing key: {}",
+                e
+            ))
+        })?;
+
+    let output = child.wait_with_output().map_err(|e| {
+        ServerConfigError::InvalidConfig(format!(
+            "could not wait for ssh-keygen while validating the git signing key: {}",
+            e
+        ))
+    })?;
+
+    if !output.status.success() {
+        return Err(ServerConfigError::InvalidConfig(format!(
+            "git signing key at {} is unusable (no reachable private key?): {}",
+            pub_key_path.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    Ok(())
+}
+
 pub fn get_config() -> Result<AppConfig, ServerConfigError> {
     build_config_from_defaults(AppConfigOptions::default())
 }
@@ -127,6 +188,27 @@ pub fn build_config_from_defaults(
             "git_repo_path cannot be empty".to_string(),
         ));
     }
+    if app_config.git_signing_pub_key_path.as_os_str().is_empty() {
+        return Err(ServerConfigError::InvalidConfig(
+            "git_signing_pub_key_path cannot be empty".to_string(),
+        ));
+    }
+
+    // Canonicalise git repo path in config used in backend
+    let canonical_git_repo_path = std::fs::canonicalize(app_config.git_repo_path)
+        .map_err(|e| ServerConfigError::InvalidConfig(format!("Invalid git repo path: {}", e)))?;
+    let canonical_git_signing_pub_key_path =
+        std::fs::canonicalize(app_config.git_signing_pub_key_path).map_err(|e| {
+            ServerConfigError::InvalidConfig(format!("Invalid git signing key path: {}", e))
+        })?;
+    let app_config = AppConfig {
+        git_repo_path: canonical_git_repo_path,
+        git_signing_pub_key_path: canonical_git_signing_pub_key_path,
+        ..app_config
+    };
+
+    validate_signing_key(&app_config.git_signing_pub_key_path)?;
+
     if app_config.git_backend == GitBackendConfig::Sha256 {
         validate_git_for_sha256()?;
     }
@@ -140,12 +222,11 @@ mod tests {
 
     fn git_backend_from_env() -> GitBackendConfig {
         match std::env::var("ASFALOAD_GIT_BACKEND")
-            .unwrap_or("sha1".to_string())
+            .unwrap_or("sha256".to_string())
             .as_str()
         {
-            "sha1" => GitBackendConfig::Sha1,
             "sha256" => GitBackendConfig::Sha256,
-            other => panic!("Unkown value for ASFALOAD_GIT_BACKEND: {}", other),
+            other => panic!("Unknown value for ASFALOAD_GIT_BACKEND: {}", other),
         }
     }
     #[test]
@@ -158,6 +239,7 @@ mod tests {
             git_repo_path: None,
             log_level: None,
             git_backend: None,
+            git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -186,7 +268,7 @@ mod tests {
     #[test]
     fn test_build_config_from_defaults_with_git_path() {
         // We run the tests with and without ASFALOAD_GIT_BACKEND set, so this will return once the
-        // value from the env, and once the default value sha1
+        // value from the env, and once the default value sha256
         let expected_git_backend = git_backend_from_env();
         // Test that build_config_from_defaults succeeds when required values are provided
         let temp_dir = tempfile::tempdir().unwrap();
@@ -197,7 +279,8 @@ mod tests {
             server_port: Some(8080),
             git_repo_path: Some(git_path.clone()),
             log_level: Some("info".to_string()),
-            git_backend: Some(GitBackendConfig::Sha1),
+            git_backend: Some(expected_git_backend),
+            git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -227,6 +310,7 @@ mod tests {
             git_repo_path: Some(git_path.clone()),
             log_level: None,
             git_backend: None,
+            git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -250,9 +334,9 @@ mod tests {
     }
 
     #[test]
-    fn test_build_config_from_defaults_git_backend_defaults_to_sha1() {
+    fn test_build_config_from_defaults_git_backend_defaults_to_sha256() {
         // We run the tests with and without ASFALOAD_GIT_BACKEND set, so this will return once the
-        // value from the env, and once the default value sha1
+        // value from the env, and once the default value sha256
         let expected_git_backend = git_backend_from_env();
         let temp_dir = tempfile::tempdir().unwrap();
         let defaults = AppConfigOptions {
@@ -261,6 +345,7 @@ mod tests {
             git_repo_path: Some(temp_dir.path().to_path_buf()),
             log_level: Some("info".to_string()),
             git_backend: None,
+            git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -278,6 +363,7 @@ mod tests {
             git_repo_path: Some(temp_dir.path().to_path_buf()),
             log_level: Some("info".to_string()),
             git_backend: Some(GitBackendConfig::Sha256),
+            git_signing_pub_key_path: Some(test_helpers::git_signing_pub_key_path()),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -289,5 +375,72 @@ mod tests {
             "sha256 config should be accepted: {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_build_config_from_defaults_rejects_empty_signing_key() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let defaults = AppConfigOptions {
+            server_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            server_port: Some(3000),
+            git_repo_path: Some(temp_dir.path().to_path_buf()),
+            log_level: Some("info".to_string()),
+            git_backend: Some(GitBackendConfig::Sha256),
+            git_signing_pub_key_path: Some(PathBuf::from("")),
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let result = build_config_from_defaults(defaults);
+        match result {
+            Err(ServerConfigError::InvalidConfig(msg)) => {
+                assert!(
+                    msg.contains("git_signing_pub_key_path cannot be empty"),
+                    "unexpected message: {}",
+                    msg
+                );
+            }
+            other => panic!(
+                "expected InvalidConfig for empty signing key, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn test_build_config_from_defaults_rejects_unusable_signing_key() {
+        // A public key whose private half is not reachable: ssh cannot sign with
+        // it, so the server would boot fine and then fail on the first commit.
+        // Config building must reject it up front.
+        let repo_dir = tempfile::tempdir().unwrap();
+        let key_dir = tempfile::tempdir().unwrap();
+        let pub_path = key_dir.path().join("orphan_key.pub");
+        std::fs::write(
+            &pub_path,
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHa7olu6Pv5zn0uWGTfFpZgsMb9N2B31epUFANCdS3VS orphan\n",
+        )
+        .unwrap();
+
+        let defaults = AppConfigOptions {
+            server_address: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            server_port: Some(3000),
+            git_repo_path: Some(repo_dir.path().to_path_buf()),
+            log_level: Some("info".to_string()),
+            git_backend: Some(GitBackendConfig::Sha256),
+            git_signing_pub_key_path: Some(pub_path),
+            github_api_key: None,
+            gitlab_api_key: None,
+        };
+
+        let result = build_config_from_defaults(defaults);
+        match result {
+            Err(ServerConfigError::InvalidConfig(msg)) => {
+                assert!(msg.contains("signing key"), "unexpected message: {}", msg);
+            }
+            other => panic!(
+                "expected InvalidConfig for unusable signing key, got {:?}",
+                other
+            ),
+        }
     }
 }

@@ -170,7 +170,8 @@ mod test_utils_tests {
         let port = get_random_port().await.unwrap();
         let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
             Ok("sha256") => crate::config::GitBackendConfig::Sha256,
-            _ => crate::config::GitBackendConfig::Sha1,
+            Ok(other) => panic!("Unrecognised value for ASFALOAD_GIT_BACKEND: {other}"),
+            Err(_e) => crate::config::GitBackendConfig::Sha256,
         };
         let mock_config = crate::config::AppConfig {
             server_port: port,
@@ -178,6 +179,7 @@ mod test_utils_tests {
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
             git_backend,
+            git_signing_pub_key_path: test_helpers::git_signing_pub_key_path(),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -225,7 +227,8 @@ mod test_utils_tests {
         let port = get_random_port().await.unwrap();
         let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
             Ok("sha256") => crate::config::GitBackendConfig::Sha256,
-            _ => crate::config::GitBackendConfig::Sha1,
+            Ok(other) => panic!("Unrecognised value for ASFALOAD_GIT_BACKEND: {other}"),
+            Err(_e) => crate::config::GitBackendConfig::Sha256,
         };
         let mock_config = crate::config::AppConfig {
             server_port: port,
@@ -233,6 +236,7 @@ mod test_utils_tests {
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
             git_backend,
+            git_signing_pub_key_path: test_helpers::git_signing_pub_key_path(),
             github_api_key: None,
             gitlab_api_key: None,
         };
@@ -262,7 +266,8 @@ mod test_utils_tests {
         let port = get_random_port().await.unwrap();
         let git_backend = match std::env::var("ASFALOAD_GIT_BACKEND").as_deref() {
             Ok("sha256") => crate::config::GitBackendConfig::Sha256,
-            _ => crate::config::GitBackendConfig::Sha1,
+            Ok(other) => panic!("Unrecognised value for ASFALOAD_GIT_BACKEND: {other}"),
+            Err(_e) => crate::config::GitBackendConfig::Sha256,
         };
         let mock_config = crate::config::AppConfig {
             server_port: port,
@@ -270,6 +275,7 @@ mod test_utils_tests {
             git_repo_path: temp_dir.path().to_path_buf(),
             log_level: "info".to_string(),
             git_backend,
+            git_signing_pub_key_path: test_helpers::git_signing_pub_key_path(),
             github_api_key: None,
             gitlab_api_key: None,
         };

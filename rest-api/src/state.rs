@@ -4,7 +4,7 @@ use std::{fs::create_dir_all, path::PathBuf};
 use kameo::actor::{ActorRef, Spawn};
 
 use rest_api_types::errors::ApiError;
-use rest_api_types::git_backend::{GitBackend, GitBackendKind, Sha1GitBackend, Sha256GitBackend};
+use rest_api_types::git_backend::{GitBackend, Sha256GitBackend};
 
 use crate::{
     actors::{
@@ -33,21 +33,13 @@ pub struct AppState {
     pub checksums_actor: ActorRef<ChecksumsActor>,
 }
 
-fn backend_kind_from_config(config: GitBackendConfig) -> GitBackendKind {
-    match config {
-        GitBackendConfig::Sha1 => GitBackendKind::Sha1,
-        GitBackendConfig::Sha256 => GitBackendKind::Sha256,
-    }
-}
-
-pub fn init_state(
-    git_repo_path: std::path::PathBuf,
-    config: crate::config::AppConfig,
-) -> Result<AppState, ApiError> {
-    let git_backend_kind = backend_kind_from_config(config.git_backend);
-    let git_backend: Arc<dyn GitBackend> = match git_backend_kind {
-        GitBackendKind::Sha1 => Arc::new(Sha1GitBackend::new(&git_repo_path)),
-        GitBackendKind::Sha256 => Arc::new(Sha256GitBackend::new(&git_repo_path)),
+pub fn init_state(config: crate::config::AppConfig) -> Result<AppState, ApiError> {
+    let git_repo_path = config.git_repo_path.clone();
+    let git_backend: Arc<dyn GitBackend> = match config.git_backend {
+        GitBackendConfig::Sha256 => Arc::new(Sha256GitBackend::new(
+            &git_repo_path,
+            &config.git_signing_pub_key_path,
+        )),
     };
 
     if !git_repo_path.join(".git").exists() {

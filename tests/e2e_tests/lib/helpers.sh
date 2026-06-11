@@ -4,6 +4,15 @@ _HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # --- Key type selection (must be before sourcing urls.sh which uses KEY_TYPE) ---
 KEY_TYPE="${KEY_TYPE:-asfaload}"
 KEYS_DIR="$(cd "$_HELPERS_DIR/../../.." && pwd)/core/test_helpers/fixtures/keys"
+# The key the test backend will sign commits with. ssh refuses a private key
+# that is group/world readable, and the committed fixture is checked out with
+# the umask's mode, so stage a 0600 copy in a temp dir rather than using the
+# fixture in place.
+_SIGNING_KEY_SRC="$(cd "$_HELPERS_DIR/../../.." && pwd)/core/test_helpers/fixtures/git_signing_key"
+_SIGNING_KEY_DIR="$(mktemp -d)"
+cp "$_SIGNING_KEY_SRC" "$_SIGNING_KEY_SRC.pub" "$_SIGNING_KEY_DIR/"
+chmod 600 "$_SIGNING_KEY_DIR/git_signing_key"
+export ASFALOAD_GIT_SIGNING_PUB_KEY_PATH="$_SIGNING_KEY_DIR/git_signing_key.pub"
 case "$KEY_TYPE" in
     asfaload) _KEY_PREFIX="" ;;
     *)
