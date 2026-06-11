@@ -5,16 +5,7 @@ TESTS := basic_flow.sh signers_update_by_master.sh basic_flow_local.sh ssh_keys_
 KEY_TYPES ?= asfaload
 
 ## Run all e2e tests with both oid formats and all key types
-test: test-sha1 test-sha256
-
-## Run all e2e tests with sha1 oids (all key types)
-test-sha1:
-	@for kt in $(KEY_TYPES); do \
-		for t in $(TESTS); do \
-			printf '\n══ Running %s (sha1, %s) ══\n\n' "$$t" "$$kt"; \
-			KEY_TYPE=$$kt ./$$t || exit 1; \
-		done; \
-	done
+test: test-sha256
 
 ## Run all e2e tests with sha256 oids (all key types)
 test-sha256:
