@@ -5,11 +5,10 @@ use anyhow::{Context, Result};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use std::path::Path;
 
-pub fn handle_share_key_command(name: &str, dir: &Path, json: bool) -> Result<()> {
-    let full_path = dir.join(name).with_added_extension("pub");
-    let pk = AsfaloadPublicKeys::from_file(&full_path).context(format!(
+pub fn handle_share_key_command(public_key: &Path, json: bool) -> Result<()> {
+    let pk = AsfaloadPublicKeys::from_file(public_key).context(format!(
         "Error loading public key from {}",
-        full_path.display()
+        public_key.display()
     ))?;
     let pk_string = pk.to_base64();
     if json {

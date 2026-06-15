@@ -86,7 +86,7 @@ pub struct Cli {
 pub enum Commands {
     /// Create a new key pair in the directory of your choice
     NewKeys {
-        /// Name of the key
+        /// Name of the key (from which filenames for secret and public keys are derived)
         #[arg(long, short)]
         name: String,
 
@@ -107,13 +107,9 @@ pub enum Commands {
 
     /// Get information to share your key
     ShareKey {
-        /// Name of the key
-        #[arg(long, short)]
-        name: String,
-
-        /// Directory where the key is stored
-        #[arg(long, short)]
-        dir: PathBuf,
+        /// Path to the public key (asfaload or ssh ed25519).
+        #[arg(long, short = 'k')]
+        public_key: PathBuf,
 
         #[command(flatten)]
         json_args: JsonArgs,

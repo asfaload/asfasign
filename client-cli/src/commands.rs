@@ -73,7 +73,7 @@ pub(crate) mod keys_helpers {
         writeln!(buf,)?;
         writeln!(
             buf,
-            "    I generated a new Asfaload key-pair. You can use my new public"
+            "    I have a key-pair to use with Asfaload. You can use my public"
         )?;
         writeln!(buf, "    key in signers files. Here it is:")?;
         writeln!(buf, "    {public_key}")?;
@@ -104,11 +104,10 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             keys::handle_new_keys_command(name, output_dir, password, json_args.json)?;
         }
         Commands::ShareKey {
-            name,
-            dir,
+            public_key,
             json_args,
         } => {
-            share_key::handle_share_key_command(name, dir, json_args.json)?;
+            share_key::handle_share_key_command(public_key, json_args.json)?;
         }
         Commands::NewSignersFile {
             artifact_signer,
