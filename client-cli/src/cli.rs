@@ -82,7 +82,7 @@ pub enum Commands {
         name: String,
 
         /// Directory to store the key
-        #[arg(long, short)]
+        #[arg(long, short = 'd')]
         output_dir: PathBuf,
 
         #[command(flatten)]
