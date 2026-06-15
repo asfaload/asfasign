@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 /// Default backend API URL
-pub const DEFAULT_BACKEND: &str = "http://127.0.0.1:3000";
+pub const DEFAULT_BACKEND: &str = "https://backend.asfaload.com";
 
 #[derive(clap::Args, Debug)]
 #[group(multiple = false)]

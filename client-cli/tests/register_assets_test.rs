@@ -58,6 +58,8 @@ fn test_register_assets_github_release_network_error_without_server() {
         .arg("https://github.com/testowner/testrepo/releases/tag/v1.0.0")
         .arg("-K")
         .arg(&key_path)
+        .arg("-u")
+        .arg("http://127.0.0.1:9")
         .env("ASFALOAD_REGISTER_ASSETS_PASSWORD", "test_password_123");
 
     cmd.assert().failure().stderr(
@@ -81,6 +83,8 @@ fn test_register_assets_csum_file_network_error_without_server() {
         .arg("https://files.example.com/releases/v1.0/SHA256SUMS")
         .arg("-K")
         .arg(&key_path)
+        .arg("-u")
+        .arg("http://127.0.0.1:9")
         .env("ASFALOAD_REGISTER_ASSETS_PASSWORD", "test_password_123");
 
     cmd.assert().failure().stderr(
