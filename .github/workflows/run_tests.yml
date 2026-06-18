@@ -8,7 +8,7 @@ jobs:
     name: Run Cargo test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Install nextest
@@ -75,7 +75,7 @@ jobs:
     name: Run core tests with asfaload keys
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install nextest
         uses: taiki-e/install-action@nextest
       - name: Run core tests with KEY_TYPE=asfaload
