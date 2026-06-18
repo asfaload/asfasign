@@ -1,17 +1,10 @@
 use clap::{Parser, Subcommand};
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 /// Default backend API URL
 pub const DEFAULT_BACKEND: &str = "https://backend.asfaload.com";
 
 // helpers for clap
-
-fn get_cwd() -> PathBuf {
-    match env::current_dir() {
-        Ok(p) => p,
-        Err(e) => panic!("Error getting current directory:{e}"),
-    }
-}
 
 #[derive(clap::Args, Debug)]
 #[group(multiple = false)]
@@ -91,7 +84,7 @@ pub enum Commands {
         name: String,
 
         /// Directory to store the key
-        #[arg(long, short = 'd', default_value_os_t = get_cwd())]
+        #[arg(long, short = 'd', default_value = ".")]
         output_dir: PathBuf,
 
         #[command(flatten)]
