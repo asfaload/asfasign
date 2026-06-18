@@ -37,6 +37,12 @@ fn test_backend_url_taken_from_env() {
     mock.assert();
 }
 
+// NOTE: `ping` is also wired to ASFALOAD_SECRET_KEY (keeping its own optional
+// key field). Proving it *authenticates* with that key is done end-to-end in
+// tests/e2e_tests/basic_flow_local.sh against a real backend that validates the
+// request signature — a mock here could only check that headers were sent, not
+// that the signature is accepted.
+
 // -------------------------------------------------------------------
 // ASFALOAD_SECRET_KEY -> SecretKeyArgs::secret_key
 // -------------------------------------------------------------------
