@@ -21,25 +21,25 @@ pub struct PasswordArgs {
     pub password: Option<String>,
 
     /// Path to a file containing the password
-    #[arg(long, short = 'P')]
+    #[arg(long, short = 'P', env = "ASFALOAD_PASSWORD_FILE")]
     pub password_file: Option<PathBuf>,
 
     /// Command printing the password to its stdout
-    #[arg(long, short = 'c')]
+    #[arg(long, short = 'c', env = "ASFALOAD_PASSWORD_COMMAND")]
     pub password_command: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]
 pub struct SecretKeyArgs {
     /// Path to your secret key file (asfaload or OpenSSH ed25519)
-    #[arg(short = 'K', long)]
+    #[arg(short = 'K', long, env = "ASFALOAD_SECRET_KEY")]
     pub secret_key: PathBuf,
 }
 
 #[derive(clap::Args, Debug)]
 pub struct BackendUrlArgs {
     /// Backend API URL (optional, defaults to DEFAULT_BACKEND)
-    #[arg(short = 'u', long)]
+    #[arg(short = 'u', long, env = "ASFALOAD_BACKEND_URL")]
     pub backend_url: Option<String>,
 }
 
