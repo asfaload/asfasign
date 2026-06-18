@@ -180,6 +180,25 @@ fi
 cd "$base_dir/client-cli/"
 
 ################################################################################
+section "Authenticated ping with secret key from ASFALOAD_SECRET_KEY env var"
+################################################################################
+
+# Regression guard for the ASFALOAD_SECRET_KEY env binding on `ping`. The key is
+# supplied through the environment (no -K flag); the real backend validates the
+# request signature, so an authenticated status proves the env-provided key
+# produced a request the server accepts -- not merely that auth headers were sent.
+run_step_json "Ping authenticates using ASFALOAD_SECRET_KEY env var (no -K)" \
+    '.auth.status == "success"' \
+    env ASFALOAD_SECRET_KEY="$KEY_0" cargo run --quiet -- ping -u "$backend" --password $key_password
+
+# Counterpart: the very same call without ASFALOAD_SECRET_KEY (and no -K) must
+# stay unauthenticated. `env -u` clears the variable so the result does not
+# depend on whatever the developer happens to have exported.
+run_step_json "Ping is unauthenticated without ASFALOAD_SECRET_KEY (no -K)" \
+    '.auth.status == "unauthenticated"' \
+    env -u ASFALOAD_SECRET_KEY cargo run --quiet -- ping -u "$backend"
+
+################################################################################
 section "Initial Setup and Repo Registration"
 ################################################################################
 

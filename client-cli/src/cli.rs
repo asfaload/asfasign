@@ -2,7 +2,9 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 /// Default backend API URL
-pub const DEFAULT_BACKEND: &str = "http://127.0.0.1:3000";
+pub const DEFAULT_BACKEND: &str = "https://backend.asfaload.com";
+
+// helpers for clap
 
 #[derive(clap::Args, Debug)]
 #[group(multiple = false)]
@@ -12,25 +14,25 @@ pub struct PasswordArgs {
     pub password: Option<String>,
 
     /// Path to a file containing the password
-    #[arg(long, short = 'P')]
+    #[arg(long, short = 'P', env = "ASFALOAD_PASSWORD_FILE")]
     pub password_file: Option<PathBuf>,
 
     /// Command printing the password to its stdout
-    #[arg(long, short = 'c')]
+    #[arg(long, short = 'c', env = "ASFALOAD_PASSWORD_COMMAND")]
     pub password_command: Option<String>,
 }
 
 #[derive(clap::Args, Debug)]
 pub struct SecretKeyArgs {
     /// Path to your secret key file (asfaload or OpenSSH ed25519)
-    #[arg(short = 'K', long)]
+    #[arg(short = 'K', long, env = "ASFALOAD_SECRET_KEY")]
     pub secret_key: PathBuf,
 }
 
 #[derive(clap::Args, Debug)]
 pub struct BackendUrlArgs {
     /// Backend API URL (optional, defaults to DEFAULT_BACKEND)
-    #[arg(short = 'u', long)]
+    #[arg(short = 'u', long, env = "ASFALOAD_BACKEND_URL")]
     pub backend_url: Option<String>,
 }
 
@@ -77,12 +79,12 @@ pub struct Cli {
 pub enum Commands {
     /// Create a new key pair in the directory of your choice
     NewKeys {
-        /// Name of the key
+        /// Name of the key (from which filenames for secret and public keys are derived)
         #[arg(long, short)]
         name: String,
 
         /// Directory to store the key
-        #[arg(long, short)]
+        #[arg(long, short = 'd', default_value = ".")]
         output_dir: PathBuf,
 
         #[command(flatten)]
@@ -98,13 +100,9 @@ pub enum Commands {
 
     /// Get information to share your key
     ShareKey {
-        /// Name of the key
-        #[arg(long, short)]
-        name: String,
-
-        /// Directory where the key is stored
-        #[arg(long, short)]
-        dir: PathBuf,
+        /// Path to the public key (asfaload or ssh ed25519).
+        #[arg(long, short = 'k')]
+        public_key: PathBuf,
 
         #[command(flatten)]
         json_args: JsonArgs,
@@ -296,9 +294,10 @@ pub enum Commands {
 
     /// Ping the backend, optionally testing your credentials
     Ping {
+        // NOTE: this does not use SecretKeyArgs to not make it a mandatory flag.
         /// Path to your secret key file; when given, the ping request is
         /// authenticated (asfaload or OpenSSH ed25519)
-        #[arg(short = 'K', long)]
+        #[arg(short = 'K', long, env = "ASFALOAD_SECRET_KEY")]
         secret_key: Option<PathBuf>,
 
         #[command(flatten)]

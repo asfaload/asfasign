@@ -1,6 +1,6 @@
 # `asfaload-cli new-keys`
 
-- **Usage**: `asfaload-cli new-keys [OPTIONS] -n <NAME> -o <OUTPUT_DIR>`
+- **Usage**: `asfaload-cli new-keys [OPTIONS] -n <NAME> -d <OUTPUT_DIR>`
 - **Source**: [`src/commands/keys.rs`](../../src/commands/keys.rs)
 
 Generate a new signing key pair. The command creates both a secret key and a public key in the specified directory.
@@ -11,7 +11,7 @@ Generate a new signing key pair. The command creates both a secret key and a pub
 
 Base name for the key files. Produces `<NAME>` (secret key) and `<NAME>.pub` (public key) in the output directory.
 
-### `-o --output-dir <DIR>`
+### `-d --output-dir <DIR>`
 
 Directory to write the key files into. Created automatically if it doesn't exist.
 
@@ -54,10 +54,10 @@ JSON (with `--json`):
 ## Examples
 
     # generate a key pair
-    asfaload-cli new-keys -n mykey -o ~/.asfaload
+    asfaload-cli new-keys -n mykey -d ~/.asfaload
 
     # non-interactive usage in CI
-    asfaload-cli new-keys -n ci-key -o ./keys -p "$KEY_PASSWORD"
+    asfaload-cli new-keys -n ci-key -d ./keys -p "$KEY_PASSWORD"
 
 ## Exit codes
 
