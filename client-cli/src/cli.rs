@@ -301,9 +301,10 @@ pub enum Commands {
 
     /// Ping the backend, optionally testing your credentials
     Ping {
+        // NOTE: this does not use SecretKeyArgs to not make it a mandatory flag.
         /// Path to your secret key file; when given, the ping request is
         /// authenticated (asfaload or OpenSSH ed25519)
-        #[arg(short = 'K', long)]
+        #[arg(short = 'K', long, env = "ASFALOAD_SECRET_KEY")]
         secret_key: Option<PathBuf>,
 
         #[command(flatten)]
