@@ -16,6 +16,7 @@
   - [Download with verification](client-cli/howto/download-with-verification.md)
 - [Manual](client-cli/manual/index.md)
   - [new-keys](client-cli/manual/new-keys.md)
+  - [share-key](client-cli/manual/share-key.md)
   - [new-signers-file](client-cli/manual/new-signers-file.md)
   - [update-signers](client-cli/manual/update-signers.md)
   - [register-repo](client-cli/manual/register-repo.md)
@@ -25,6 +26,7 @@
   - [signature-status](client-cli/manual/signature-status.md)
   - [revoke](client-cli/manual/revoke.md)
   - [download](client-cli/manual/download.md)
+  - [ping](client-cli/manual/ping.md)
 
 # REST API
 
