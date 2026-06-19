@@ -58,7 +58,7 @@ Each tape stands on its own: comments don't refer to earlier demos, and only `ge
 
 ### Keys used in the demos
 
-The driver copies `core/test_helpers/fixtures/keys/key_0..key_6` (and matching `.pub` files) into `$HOME/.asfaload/` before any tape runs. Tapes reference them as `~/.asfaload/key_N`. The fixture keys are encrypted with the password `password`, so the demo's `.demo-password` file holds that exact string and a single `--password-file ~/.asfaload/.demo-password` works for every command in every tape.
+The driver copies `core/test_helpers/fixtures/keys/key_0..key_6` (and matching `.pub` files) into `$HOME/.asfaload/` before any tape runs. Tapes reference them as `~/.asfaload/key_N`. The fixture keys are encrypted with the password `password`, so the demo's `.demo-password` file holds that exact string; the driver points `ASFALOAD_PASSWORD_FILE` at it, so every command decrypts its key without an on-screen `--password-file` flag.
 
 | Key | Role in the demos |
 |-----|------------------|
@@ -94,7 +94,6 @@ The driver renders tapes in this order, mirroring the howto index:
 - **Localhost URL.** Anywhere a forge URL appears (`register-repo`, `update-signers-file`, list-pending output, etc.) the demo shows a `http://localhost:<port>/...` URL instead of a `https://github.com/...` URL because the demo runs against a local file server. The forge-url module accepts localhost in this position via the FileServer fallback.
 - **`key_0` is the submitter and an artifact signer.** The how-to lists `alice`/`bob`/`carol` as the three artifact signers and then has `register-repo` use `mykey` as the secret key. That only works if the secret key is itself a signer — registration authenticates against the signers file's admin group, which falls back to artifact signers. The demos therefore use `key_0` for both roles.
 - **Env-var paths in the recording.** Pending file paths and forge URLs contain a random localhost port that changes every run, so the tapes pass them through env vars (e.g. `"$ASFALOAD_DEMO_PENDING_SIGNERS_PATH"`) rather than hard-coding them. In a real session the user would copy the path from the previous command's output.
-- **`--password-file` everywhere.** Every command takes `--password-file ~/.asfaload/.demo-password` so the recordings stay non-interactive. The how-tos generally show interactive prompts.
 
 ## Hidden steps
 
@@ -104,12 +103,12 @@ These run silently in the driver to bridge demos:
 - **Before `update-signers-file.tape`**: pre-publish the v2 signers file at `$ASFALOAD_DEMO_NEW_SIGNERS_URL`. The tape re-runs `new-signers-file` for the camera, but it's the pre-published version the backend fetches. Local content matches except for an embedded timestamp.
 - **After `create-signers-file.tape`**: copy `$HOME/signers.json` into the fileserver doc-root at `demo-project/asfaload.signers/index.json`. Equivalent of the how-to's "commit and push".
 - **After `update-signers-file.tape`**: run `sign-pending` for `key_0` through `key_6` so the v2 signers file becomes active. The signing-round how-to (`activate-signers-file`) already showed the user-facing flow, so we don't re-record it here. This is what makes `revoke-release` work — the active signers file now has a revocation group.
+- **Backend URL and password file via env vars**: the driver exports `ASFALOAD_BACKEND_URL` (the local rest-api) and `ASFALOAD_PASSWORD_FILE` (the fixture `.demo-password`) to the `vhs` process. The CLI reads both through clap's env support, so on-screen commands omit `-u` and `--password-file`. In a real session the user only passes `-u` to override the default backend (`https://backend.asfaload.com`) and supplies the password interactively or via `--password-file`.
 
 ## Env vars exposed to tapes
 
 | Env var | Meaning |
 |---------|---------|
-| `ASFALOAD_DEMO_BACKEND_URL` | Local rest-api URL, e.g. `http://localhost:3450`. |
 | `ASFALOAD_DEMO_FILESERVER_URL` | Local file-server origin, e.g. `http://localhost:42977`. |
 | `ASFALOAD_DEMO_SIGNERS_URL` | URL of the initial signers file. |
 | `ASFALOAD_DEMO_NEW_SIGNERS_URL` | URL of the v2 signers file (pre-staged before `update-signers-file.tape`). |
