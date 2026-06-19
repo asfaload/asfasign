@@ -32,7 +32,7 @@ Shell command to run; its standard output is read as the password. Useful for pa
 
 ### `-u --backend-url <URL>`
 
-Backend API URL. Defaults to `http://127.0.0.1:3000`.
+Backend API URL. Defaults to `https://backend.asfaload.com`.
 
 ### `--json`
 
@@ -40,8 +40,14 @@ Emit the backend response as JSON instead of human-readable text.
 
 ## Environment
 
-- `ASFALOAD_SIGNATURE_STATUS_PASSWORD` — alternative to `--password`.
-- `ASFALOAD_SIGNATURE_STATUS_PASSWORD_FILE` — alternative to `--password-file`.
+These variables provide fallbacks for the matching options; an explicit flag always wins.
+
+- `ASFALOAD_SECRET_KEY` — alternative to `--secret-key`.
+- `ASFALOAD_BACKEND_URL` — alternative to `--backend-url`.
+- `ASFALOAD_PASSWORD_FILE` — alternative to `--password-file`.
+- `ASFALOAD_PASSWORD_COMMAND` — alternative to `--password-command`.
+- `ASFALOAD_SIGNATURE_STATUS_PASSWORD` — alternative to `--password` (still supported, lower precedence).
+- `ASFALOAD_SIGNATURE_STATUS_PASSWORD_FILE` — alternative to `--password-file` (still supported, lower precedence).
 
 ## Output
 

@@ -1,6 +1,6 @@
 # `asfaload-cli new-keys`
 
-- **Usage**: `asfaload-cli new-keys [OPTIONS] -n <NAME> -d <OUTPUT_DIR>`
+- **Usage**: `asfaload-cli new-keys [OPTIONS] -n <NAME>`
 - **Source**: [`src/commands/keys.rs`](../../src/commands/keys.rs)
 
 Generate a new signing key pair. The command creates both a secret key and a public key in the specified directory.
@@ -13,7 +13,7 @@ Base name for the key files. Produces `<NAME>` (secret key) and `<NAME>.pub` (pu
 
 ### `-d --output-dir <DIR>`
 
-Directory to write the key files into. Created automatically if it doesn't exist.
+Directory to write the key files into. Defaults to the current directory; `~/.asfaload` is a common place to keep keys. Created automatically if it doesn't exist.
 
 ### `-p --password <PASSWORD>`
 
@@ -37,8 +37,12 @@ Emit output as JSON instead of human-readable text.
 
 ## Environment
 
-- `ASFALOAD_NEW_KEYS_PASSWORD` — alternative to `--password`.
-- `ASFALOAD_NEW_KEYS_PASSWORD_FILE` — alternative to `--password-file`.
+These variables provide fallbacks for the matching options; an explicit flag always wins.
+
+- `ASFALOAD_PASSWORD_FILE` — alternative to `--password-file`.
+- `ASFALOAD_PASSWORD_COMMAND` — alternative to `--password-command`.
+- `ASFALOAD_NEW_KEYS_PASSWORD` — alternative to `--password` (still supported, lower precedence).
+- `ASFALOAD_NEW_KEYS_PASSWORD_FILE` — alternative to `--password-file` (still supported, lower precedence).
 
 ## Output
 
@@ -53,7 +57,10 @@ JSON (with `--json`):
 
 ## Examples
 
-    # generate a key pair
+    # generate a key pair in the current directory
+    asfaload-cli new-keys -n mykey
+
+    # store keys in the usual location
     asfaload-cli new-keys -n mykey -d ~/.asfaload
 
     # non-interactive usage in CI

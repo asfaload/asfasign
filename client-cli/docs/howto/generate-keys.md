@@ -10,7 +10,7 @@ Every signer needs their own key pair. This guide walks you through creating one
 
 ### 1. Choose a directory
 
-Pick a directory to store your keys. A common convention is `~/.asfaload/`:
+By default the keys are generated in the **current directory**. A common convention, used throughout this guide, is to keep them together in `~/.asfaload/`:
 
 ```sh
 mkdir -p ~/.asfaload
@@ -21,6 +21,8 @@ mkdir -p ~/.asfaload
 ```sh
 asfaload-cli new-keys --name mykey --output-dir ~/.asfaload
 ```
+
+Omit `--output-dir` to create the keys in the current directory instead.
 
 You'll be prompted for a password to protect the secret key. Pick a strong one — this password is required every time you sign.
 
@@ -66,15 +68,17 @@ asfaload-cli new-keys --name ci-key --output-dir ./keys \
 
 The command string is parsed with shell-style quoting, but no shell is spawned — pipes and redirections don't apply. Trailing newlines are stripped from the command's output.
 
-Both `--password` and `--password-file` are also available as environment variables:
+The password file and password command can also come from environment variables — `ASFALOAD_PASSWORD_FILE` and `ASFALOAD_PASSWORD_COMMAND`:
 
 ```sh
-export ASFALOAD_NEW_KEYS_PASSWORD="$KEY_PASSWORD"
+export ASFALOAD_PASSWORD_FILE="/run/secrets/key-password"
 asfaload-cli new-keys --name ci-key --output-dir ./keys
 ```
 
+The command-specific `ASFALOAD_NEW_KEYS_PASSWORD` and `ASFALOAD_NEW_KEYS_PASSWORD_FILE` are also still honoured (at lower precedence):
+
 ```sh
-export ASFALOAD_NEW_KEYS_PASSWORD_FILE="/run/secrets/key-password"
+export ASFALOAD_NEW_KEYS_PASSWORD="$KEY_PASSWORD"
 asfaload-cli new-keys --name ci-key --output-dir ./keys
 ```
 

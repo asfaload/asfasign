@@ -23,7 +23,7 @@ Output file path. Defaults to the filename extracted from the URL.
 
 ### `-u --backend-url <URL>`
 
-Backend API URL. Defaults to `http://127.0.0.1:3000`.
+Backend API URL. Defaults to `https://backend.asfaload.com`.
 
 ### `--type <FORGE_TYPE>`
 
@@ -38,6 +38,10 @@ Override automatic forge type detection.
 ### `--full-check`
 
 Verify the full signers chain history during download. Without this flag only the current signers file is checked.
+
+## Environment
+
+- `ASFALOAD_BACKEND_URL` — alternative to `--backend-url` (an explicit `--backend-url` wins).
 
 ## Output
 
