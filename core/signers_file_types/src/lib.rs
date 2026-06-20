@@ -774,7 +774,7 @@ impl HistoryFile {
 
     /// Convert the history file to a JSON string
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(self)
+        common::to_posix_json(self)
     }
 
     /// Load a history file from the given path
@@ -1298,6 +1298,13 @@ mod tests {
         .unwrap();
         let json = cfg.to_json().unwrap();
         assert!(json.ends_with("}\n"));
+        assert!(!json.ends_with("\n\n"));
+    }
+
+    #[test]
+    fn history_file_to_json_ends_with_single_newline() {
+        let json = HistoryFile::new().to_json().unwrap();
+        assert!(json.ends_with("\n"));
         assert!(!json.ends_with("\n\n"));
     }
 }
