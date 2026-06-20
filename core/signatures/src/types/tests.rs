@@ -164,7 +164,7 @@ fn test_keys_methods() -> Result<()> {
 
             // Test AsfaloadPublicKey::from_base64
             let b64 = public_key_from_string.to_base64();
-            assert_eq!(b64, public_key_string);
+            assert_eq!(b64, public_key_string.trim());
 
             Ok(())
         })

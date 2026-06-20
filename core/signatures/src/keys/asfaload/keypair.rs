@@ -32,12 +32,12 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<AsfaloadKeysBlob> {
         let (sk_path, pk_path) = resolve_save_paths(&p)?;
 
         let body = STANDARD_NO_PAD.encode(self.key_pair.0);
-        let sk_line = format!("{}{}", ASFALOAD_PRIV_PREFIX, body);
+        let sk_line = format!("{}{}\n", ASFALOAD_PRIV_PREFIX, body);
         fs::write(&sk_path, sk_line)?;
 
         let pk = self.public_key();
         use crate::keys::AsfaloadPublicKeyTrait;
-        fs::write(&pk_path, pk.to_base64())?;
+        fs::write(&pk_path, format!("{}\n", pk.to_base64()))?;
 
         Ok(self)
     }
@@ -158,6 +158,26 @@ impl AsfaloadKeyPair<SshEncryptedKey> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_key_files_end_with_newline_and_reload() {
+        let tmp = tempfile::tempdir().unwrap();
+        let key_path = tmp.path().join("key");
+        let kp =
+            AsfaloadKeyPair::<AsfaloadKeysBlob>::new_with_argon2_params("pw", Argon2Params::TEST)
+                .unwrap();
+        kp.save(&key_path).unwrap();
+
+        let sk = std::fs::read_to_string(&key_path).unwrap();
+        let pk = std::fs::read_to_string(format!("{}.pub", key_path.display())).unwrap();
+        assert!(sk.ends_with('\n') && !sk.ends_with("\n\n"));
+        assert!(pk.ends_with('\n') && !pk.ends_with("\n\n"));
+
+        // Still loads with the trailing newline present.
+        use crate::keys::AsfaloadPublicKeyTrait;
+        use crate::types::AsfaloadPublicKeys;
+        assert!(AsfaloadPublicKeys::from_file(format!("{}.pub", key_path.display())).is_ok());
+    }
 
     #[test]
     fn generic_asfaload_keypair_roundtrip() {
