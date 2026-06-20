@@ -276,7 +276,7 @@ impl SignersConfig {
         self.timestamp
     }
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(self)
+        common::to_posix_json(self)
     }
     // Get all signers keys present in the SignersConfig.
     pub fn all_signer_keys(&self) -> HashSet<AsfaloadPublicKeys> {
@@ -1286,6 +1286,19 @@ mod tests {
         let json = serde_json::to_string(&original).unwrap();
         let round_tripped = parse_signers_config(&json).unwrap();
         assert_eq!(original, round_tripped);
+    }
+
+    #[test]
+    fn signers_config_to_json_ends_with_single_newline() {
+        let keys = TestKeys::new(1);
+        let cfg = SignersConfig::with_artifact_signers_only(
+            1,
+            (vec![keys.pub_key(0).unwrap().clone()], 1),
+        )
+        .unwrap();
+        let json = cfg.to_json().unwrap();
+        assert!(json.ends_with("}\n"));
+        assert!(!json.ends_with("\n\n"));
     }
 }
 
