@@ -5,6 +5,7 @@ Reference for all `asfaload-cli` commands.
 ## Keys
 
 - [`new-keys`](new-keys.md) — generate a new signing key pair
+- [`share-key`](share-key.md) — print your public key and a message for sharing it
 
 ## Signers
 
@@ -29,3 +30,7 @@ Reference for all `asfaload-cli` commands.
 ## Verification
 
 - [`download`](download.md) — download a file with signature verification
+
+## Diagnostics
+
+- [`ping`](ping.md) — check backend connectivity and, optionally, your credentials

@@ -5,8 +5,10 @@ Set Width 1200
 Set Height 700
 Set TypingSpeed $TYPING_SPEED
 Set PlaybackSpeed 1.0
+Type "cd ~"
+Enter
 Type "# Accepting weak password for this demo, don't do it in prod!"
 Enter
-Type "asfaload-cli new-keys --name mykey --output-dir ~/.asfaload --password-file ~/.asfaload/.demo-password --accept-weak-password"
+Type "asfaload-cli new-keys --name mykey --accept-weak-password"
 Enter
 Sleep $END_PAUSE

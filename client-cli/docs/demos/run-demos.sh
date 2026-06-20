@@ -11,6 +11,8 @@ DEMO_PASSWORD="password"
 DEMO_PROJECT="demo-project"
 KEEP_FIXTURE="${KEEP_FIXTURE:-}"
 FIXTURE_KEYS_DIR="$REPO_ROOT/core/test_helpers/fixtures/keys"
+# Key the backend signs its sha256 commits with (validated at rest-api startup).
+GIT_SIGNING_KEY_SRC="$REPO_ROOT/core/test_helpers/fixtures/git_signing_key"
 
 # --- Profile resolution ---
 DEMO_PROFILE="${DEMO_PROFILE:-production}"
@@ -86,6 +88,7 @@ mkdir -p \
     "$FIXTURE/fileserver/$DEMO_PROJECT/asfaload.signers" \
     "$RELEASE_DIR" \
     "$FIXTURE/git-repo" \
+    "$FIXTURE/git-signing" \
     "$FIXTURE/logs"
 printf '%s' "$DEMO_PASSWORD" > "$FIXTURE/home/.asfaload/.demo-password"
 
@@ -101,6 +104,13 @@ done
 # have something real to point at. Deterministic content keeps GIFs reproducible.
 printf 'asfaload demo artifact (%s)\n' "$DEMO_RELEASE" > "$RELEASE_DIR/artifact.bin"
 ( cd "$RELEASE_DIR" && sha256sum artifact.bin > SHA256SUMS )
+
+# Stage a 0600 copy of the git signing key. ssh refuses a group/world-readable
+# private key, and the committed fixture carries the umask's mode, so copy it
+# into the fixture and tighten perms rather than using it in place.
+cp "$GIT_SIGNING_KEY_SRC" "$GIT_SIGNING_KEY_SRC.pub" "$FIXTURE/git-signing/"
+chmod 600 "$FIXTURE/git-signing/git_signing_key"
+SIGNING_KEY_PUB="$FIXTURE/git-signing/git_signing_key.pub"
 
 echo "Fixture: $FIXTURE" >&2
 
@@ -144,7 +154,7 @@ PENDING_REVOCATION_PATH="$RELEASE_INDEX_PATH.revocation.json.pending"
 echo "test-file-server: $FILE_SERVER_URL" >&2
 
 # --- Initialise the git repo rest-api will commit into ---
-git init --quiet "$FIXTURE/git-repo"
+git init --object-format=sha256 --quiet "$FIXTURE/git-repo"
 git -C "$FIXTURE/git-repo" config user.name "Demo Driver"
 git -C "$FIXTURE/git-repo" config user.email "demo@asfaload.local"
 
@@ -157,7 +167,8 @@ for attempt in 1 2 3; do
 
     ASFALOAD_SERVER_PORT="$REST_API_PORT" \
     ASFALOAD_GIT_REPO_PATH="$FIXTURE/git-repo" \
-    ASFALOAD_GIT_BACKEND="sha1" \
+    ASFALOAD_GIT_BACKEND="sha256" \
+    ASFALOAD_GIT_SIGNING_PUB_KEY_PATH="$SIGNING_KEY_PUB" \
         "$REPO_ROOT/target/debug/rest-api" \
         > "$REST_API_LOG" 2>&1 &
     REST_API_PID=$!
@@ -278,7 +289,8 @@ for tape in "${TAPES[@]}"; do
         cd "$TAPES_DIR"
         HOME="$FIXTURE/home" \
         PATH="$REPO_ROOT/target/debug:$PATH" \
-        ASFALOAD_DEMO_BACKEND_URL="$BACKEND_URL" \
+        ASFALOAD_BACKEND_URL="$BACKEND_URL" \
+        ASFALOAD_PASSWORD_FILE="$PASSWORD_FILE" \
         ASFALOAD_DEMO_FILESERVER_URL="$FILE_SERVER_URL" \
         ASFALOAD_DEMO_SIGNERS_URL="$SIGNERS_URL" \
         ASFALOAD_DEMO_NEW_SIGNERS_URL="$NEW_SIGNERS_URL" \
