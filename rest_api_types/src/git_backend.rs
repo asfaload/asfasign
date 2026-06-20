@@ -68,7 +68,9 @@ pub trait GitBackend: Send + Sync + 'static {
         relative_path: &Path,
     ) -> Result<String, ApiError> {
         let spec = format!("{}:{}", commit, relative_path.to_string_lossy());
-        let content = GitCommand::git(self.root(), &["show", &spec]).map_err(|e| {
+        // Verbatim: the returned bytes are hashed to validate signatures, so a
+        // trailing newline must not be stripped (see git_verbatim).
+        let content = GitCommand::git_verbatim(self.root(), &["show", &spec]).map_err(|e| {
             ApiError::GitError(format!(
                 "Failed to read {} at commit {}: {}",
                 relative_path.display(),
@@ -269,9 +271,19 @@ pub struct Sha256GitBackend {
 
 struct GitCommand;
 impl GitCommand {
-    /// Run a git command in the given repo directory. Returns stdout on
-    /// success, or a `git2::Error` with combined stderr/stdout on failure.
+    /// Run a git command in the given repo directory. Returns stdout
+    /// (trimmed of surrounding whitespace) on success, or an `ApiError` with
+    /// stderr on failure. Use for scalar output such as commit hashes,
+    /// timestamps or porcelain status where trailing newlines are noise.
     fn git(repo_path: &Path, args: &[&str]) -> Result<String, ApiError> {
+        Ok(Self::git_verbatim(repo_path, args)?.trim().to_string())
+    }
+
+    /// Run a git command and return stdout verbatim (no trimming). Use when
+    /// the output is file content whose exact bytes matter -- e.g.
+    /// `git show {commit}:{path}`, whose bytes are hashed to validate
+    /// signatures. Trimming here would alter the hash and break validation.
+    fn git_verbatim(repo_path: &Path, args: &[&str]) -> Result<String, ApiError> {
         let output = std::process::Command::new("git")
             .args(["-C", &repo_path.to_string_lossy()])
             .args(args)
@@ -287,7 +299,7 @@ impl GitCommand {
             )));
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 }
 impl Sha256GitBackend {
@@ -758,6 +770,36 @@ mod sha256_tests {
 
         let current = std::fs::read_to_string(&file_path).unwrap();
         assert_eq!(current, r#"{"version": 2}"#);
+    }
+
+    #[test]
+    fn test_sha256_file_content_at_commit_preserves_trailing_newline() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo_path = temp_dir.path();
+        init_sha256_repo(repo_path);
+
+        // A signers file edited by a tool that appends a final newline. The
+        // exact bytes are part of what gets signed, so retrieval must return
+        // them verbatim -- trimming would change the hash and break chain
+        // validation.
+        let file_path = repo_path.join("data.json");
+        let content_with_newline = "{\"version\": 1}\n";
+        std::fs::write(&file_path, content_with_newline).unwrap();
+
+        let backend = Sha256GitBackend::new(repo_path, test_helpers::git_signing_pub_key_path());
+        backend
+            .commit_files(
+                &[normalise_for_repo(repo_path, &file_path)],
+                "add data.json",
+            )
+            .unwrap();
+
+        let first_commit = GitCommand::git(repo_path, &["log", "--format=%H", "-1"]).unwrap();
+
+        let content = backend
+            .file_content_at_commit(&first_commit, Path::new("data.json"))
+            .unwrap();
+        assert_eq!(content, content_with_newline);
     }
 
     #[test]
