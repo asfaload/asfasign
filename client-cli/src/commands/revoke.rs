@@ -43,7 +43,7 @@ pub async fn handle_revoke_command(
         subject_digest,
         initiator: public_key.clone(),
     };
-    let revocation_json = serde_json::to_string_pretty(&revocation)?;
+    let revocation_json = features_lib::to_posix_json(&revocation)?;
 
     // Sign the sha512 of the revocation JSON
     let revocation_hash = sha512_for_content(revocation_json.as_bytes().to_vec())?;
@@ -70,4 +70,31 @@ pub async fn handle_revoke_command(
     }
 
     Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use features_lib::{sha512_for_content, to_posix_json};
+    use signers_file_types::revocation::RevocationInfo;
+    use test_helpers::TestKeys;
+
+    #[test]
+    fn revocation_json_ends_with_exactly_one_newline() {
+        let test_keys = TestKeys::new(1);
+        let public_key = test_keys.pub_key(0).unwrap().clone();
+
+        let subject_digest = sha512_for_content(b"something".to_vec()).unwrap();
+        let revocation = RevocationInfo {
+            timestamp: chrono::Utc::now(),
+            subject_digest,
+            initiator: public_key,
+        };
+
+        let json = to_posix_json(&revocation).unwrap();
+        assert!(json.ends_with("}\n"), "revocation JSON must end with }}\\n");
+        assert!(
+            !json.ends_with("\n\n"),
+            "revocation JSON must not end with double newline"
+        );
+    }
 }
