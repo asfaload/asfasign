@@ -4845,7 +4845,7 @@ mod validate_history_tests {
             current_signers_info: current_from_he(entry2),
         };
 
-        assert!(validate_chain(&chain));
+        assert!(validate_chain(&chain).is_ok());
         Ok(())
     }
 
@@ -4904,7 +4904,7 @@ mod validate_history_tests {
             current_signers_info: current_from_he(entry2),
         };
 
-        assert!(!validate_chain(&chain));
+        assert!(validate_chain(&chain).is_err());
         Ok(())
     }
 
@@ -4934,14 +4934,14 @@ mod validate_history_tests {
             current_signers_info: current_from_he(entry),
         };
 
-        assert!(validate_chain(&chain));
+        assert!(validate_chain(&chain).is_ok());
         Ok(())
     }
 
     #[test]
     fn validate_chain_rejects_empty_chain() {
         let chain = SignersChain::default();
-        assert!(!validate_chain(&chain));
+        assert!(validate_chain(&chain).is_err());
     }
 
     #[test]
@@ -4977,7 +4977,7 @@ mod validate_history_tests {
         };
 
         assert!(
-            !validate_chain(&chain),
+            validate_chain(&chain).is_err(),
             "first entry missing a signersfile signer must fail"
         );
 
@@ -4999,7 +4999,7 @@ mod validate_history_tests {
         };
 
         assert!(
-            !validate_chain(&chain),
+            validate_chain(&chain).is_err(),
             "first entry missing a metadata signer must fail"
         );
         Ok(())
@@ -5071,7 +5071,7 @@ mod validate_history_tests {
             current_signers_info: Some(current),
         };
 
-        assert!(!validate_chain(&chain));
+        assert!(validate_chain(&chain).is_err());
         Ok(())
     }
 
@@ -5161,7 +5161,7 @@ mod validate_history_tests {
         };
 
         assert!(
-            validate_chain(&chain),
+            validate_chain(&chain).is_ok(),
             "validate_chain should accept valid signatures regardless of JSON formatting"
         );
         Ok(())
@@ -5632,9 +5632,12 @@ mod validate_history_tests {
         for sc in first_entry_scenarios() {
             let result = validate_chain(&sc.chain);
             assert_eq!(
-                result, sc.expected_valid,
-                "Scenario '{}': expected valid={}, got valid={}",
-                sc.name, sc.expected_valid, result
+                result.is_ok(),
+                sc.expected_valid,
+                "Scenario '{}': expected valid={}, got valid={} (result: {result:?})",
+                sc.name,
+                sc.expected_valid,
+                result.is_ok(),
             );
         }
     }

@@ -568,9 +568,12 @@ fn validate_history_rotation_scenarios() {
     for sc in rotation_scenarios() {
         let result = validate_chain(&sc.chain);
         assert_eq!(
-            result, sc.expected_valid,
-            "Scenario '{}': expected valid={}, got valid={}",
-            sc.name, sc.expected_valid, result
+            result.is_ok(),
+            sc.expected_valid,
+            "Scenario '{}': expected valid={}, got valid={} (result: {result:?})",
+            sc.name,
+            sc.expected_valid,
+            result.is_ok(),
         );
     }
 }
