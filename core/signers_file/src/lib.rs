@@ -204,9 +204,10 @@ pub fn write_valid_signers_file<P: AsRef<Path>>(
     std::fs::create_dir_all(&dir_path)?;
 
     let result = (|| -> Result<(), SignersFileError> {
-        // Write the metadata file
-        let metadata_file = open_new_file(&metadata_file_path)?;
-        serde_json::to_writer_pretty(&metadata_file, &metadata)?;
+        // Write the metadata file (self-authored: canonical trailing newline)
+        let mut metadata_file = open_new_file(&metadata_file_path)?;
+        let metadata_json = common::to_posix_json(&metadata)?;
+        metadata_file.write_all(metadata_json.as_bytes())?;
         // Write the JSON content to the pending signers file
         let mut signers_file = open_new_file(&signers_file_path)?;
         signers_file.write_all(json_content.as_bytes())?;
@@ -4396,6 +4397,30 @@ mod tests {
         let expected: SignersConfigMetadata = serde_json::from_str(&expected_json)?;
         // Verify round-trip: re-serialize and compare
         assert_eq!(actual, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn metadata_file_written_with_trailing_newline() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let dir_path = temp_dir.path();
+        let test_keys = TestKeys::new(1);
+
+        let pubkey = test_keys.pub_key(0).unwrap();
+        let json_content =
+            SignersConfig::with_artifact_signers_only(1, (vec![pubkey.clone()], 1))?.to_json()?;
+
+        initialize_signers_file(dir_path, &json_content, test_metadata(), pubkey)?;
+
+        let meta_path =
+            metadata_path_for(dir_path.join(PENDING_SIGNERS_DIR).join(SIGNERS_FILE)).unwrap();
+        let bytes = std::fs::read_to_string(&meta_path)?;
+        assert!(bytes.ends_with("}\n"), "metadata file must end with }}\\n");
+        assert!(
+            !bytes.ends_with("\n\n"),
+            "metadata file must not end with two newlines"
+        );
 
         Ok(())
     }
