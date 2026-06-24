@@ -61,10 +61,10 @@ pub(crate) async fn validate_fetched_chain(
     }
 
     // Cryptographic validation of the entire chain (incl. first-entry all-signers).
-    if !features_lib::validate_chain(&chain) {
-        return Err(ClientLibError::SignersChainFirstEntryInvalid(
-            "signers chain validation failed".into(),
-        ));
+    if let Err(e) = features_lib::validate_chain(&chain) {
+        return Err(ClientLibError::SignersChainFirstEntryInvalid(format!(
+            "signers chain validation failed: {e}"
+        )));
     }
 
     // Trust-anchor check: first entry's forge content must match.

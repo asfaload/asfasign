@@ -109,6 +109,18 @@ pub enum SignersFileError {
     SignersConfigError(#[from] SignersConfigError),
 }
 
+#[derive(Debug, Error)]
+pub enum SignersChainError {
+    #[error("Current Signers not found")]
+    CurrentNotFound,
+    #[error("Initial signers file validation failed: {0}")]
+    GenesisEntryError(String),
+    #[error("Chain ordering error: {0}")]
+    ChainOrderingError(String),
+    #[error("Signers Chain error: {0}")]
+    GenericError(String),
+}
+
 impl From<SignatureError> for SignersFileError {
     fn from(e: SignatureError) -> Self {
         match e {

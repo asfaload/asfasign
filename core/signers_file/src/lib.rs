@@ -4,7 +4,7 @@ mod validate_history_rotation_tests;
 use aggregate_signature::{AggregateSignature, CompleteSignature, SignatureWithState};
 use common::{
     SignedFileLoader,
-    errors::{AggregateSignatureError, SignersFileError},
+    errors::{AggregateSignatureError, SignersChainError, SignersFileError},
     fs::{
         names::{
             find_global_signers_for, history_file_path_for, metadata_path_for,
@@ -399,21 +399,6 @@ where
     Ok(())
 }
 
-/// Validate the genesis (root) entry of a signers history.
-///
-/// The genesis entry establishes the trust anchor for the chain: every signer
-/// listed in its config must have signed both the `signers_file` bytes and
-/// the `metadata` bytes. This is the cryptographic counterpart to the
-/// trust-anchor forge-content check performed by callers separately.
-pub fn validate_genesis_entry(entry: &CurrentSignersInfo) -> bool {
-    validate_full_signatures(
-        &entry.signers_file,
-        &entry.signatures,
-        &entry.metadata,
-        &entry.metadata_signatures,
-    )
-}
-
 /// Verify that every signer listed in `signers_file`'s parsed config has signed
 /// both the `signers_file` bytes and the `metadata` bytes. This is the
 /// trust-anchor check applied to the genesis entry of a chain — whichever
@@ -444,11 +429,11 @@ fn validate_full_signatures(
 /// For each adjacent pair, verifies that the newer entry's signatures
 /// satisfy `validate_signers_update` against the older entry's config. Also
 /// enforces strict monotonic ordering of `obsoleted_at`. The genesis entry
-/// itself is NOT checked here — see [`validate_genesis_entry`].
+/// itself is NOT checked here, see validate_chain
 ///
 /// An empty or single-entry history is considered valid (vacuously, as there
 /// are no transitions to verify).
-pub fn validate_history_transitions(history: &SignersChain) -> bool {
+pub fn validate_history_transitions(history: &SignersChain) -> Result<(), SignersChainError> {
     // Strict ordering: equal `obsoleted_at` timestamps are rejected. In
     // practice two entries should never share an obsolescence instant, and
     // accepting it would weaken chain auditability. Only history entries
@@ -458,34 +443,40 @@ pub fn validate_history_transitions(history: &SignersChain) -> bool {
         .windows(2)
         .all(|p| p[0].obsoleted_at < p[1].obsoleted_at)
     {
-        return false;
+        return Err(SignersChainError::ChainOrderingError(
+            "entries are not ordered chronologically".into(),
+        ));
     }
 
-    history.entries().windows(2).all(|pair| {
+    history.entries().windows(2).try_for_each(|pair| {
         let parent = &pair[0];
         let updated = &pair[1];
 
-        let parent_signers = match parent.signers_config() {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
-        let updated_signers = match updated.signers_config() {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
+        let parent_signers = parent.signers_config().map_err(|e| {
+            SignersChainError::GenericError(format!(
+                "Problem getting parent signers of transition: {e}"
+            ))
+        })?;
+        let updated_signers = updated.signers_config().map_err(|e| {
+            SignersChainError::GenericError(format!(
+                "Problem getting updated signers of transition: {e}"
+            ))
+        })?;
 
         // Hash the raw JSON bytes (exactly what was originally signed)
-        let file_hash = match common::sha512_for_content(updated.signers_file().as_bytes().to_vec())
-        {
-            Ok(h) => h,
-            Err(_) => return false,
-        };
+        let file_hash = common::sha512_for_content(updated.signers_file().as_bytes().to_vec())
+            .map_err(|e| {
+                SignersChainError::GenericError(format!(
+                    "Problem computing sha512 of signers file content: {e}"
+                ))
+            })?;
 
-        let signatures =
-            match aggregate_signature::parse_tagged_signatures(&updated.signatures().entries) {
-                Ok(s) => s,
-                Err(_) => return false,
-            };
+        let signatures = aggregate_signature::parse_tagged_signatures(
+            &updated.signatures().entries,
+        )
+        .map_err(|e| {
+            SignersChainError::GenericError(format!("Problem parsing tagged signatures: {e}"))
+        })?;
 
         aggregate_signature::validate_signers_update(
             &updated_signers,
@@ -493,6 +484,10 @@ pub fn validate_history_transitions(history: &SignersChain) -> bool {
             &signatures,
             &file_hash,
         )
+        .then_some(())
+        .ok_or(SignersChainError::GenericError(
+            "Signatures criteria for signers update not respected".into(),
+        ))
     })
 }
 
@@ -500,29 +495,38 @@ pub fn validate_history_transitions(history: &SignersChain) -> bool {
 /// transitions. Callers that want "validate the whole chain" should use this.
 ///
 /// An empty chain is considered invalid: a current signers entry is required.
-pub fn validate_chain(chain: &SignersChain) -> bool {
+pub fn validate_chain(chain: &SignersChain) -> Result<(), SignersChainError> {
     let current = match chain.current_signers_info() {
         // No current signers: we need at least a current signers file in the chain
-        None => return false,
+        None => return Err(SignersChainError::CurrentNotFound),
         Some(c) => c,
     };
 
     // Genesis is the oldest entry in the chain — the first history entry if any,
     // otherwise the current entry. The genesis must be fully signed (every key
     // in its config signed both file and metadata).
-    let genesis_ok = match chain.history_entries().first() {
+    match chain.history_entries().first() {
         Some(h) => validate_full_signatures(
             &h.signers_file,
             &h.signatures,
             &h.metadata,
             &h.metadata_signatures,
-        ),
-        None => validate_genesis_entry(current),
-    };
-    if !genesis_ok {
-        return false;
-    }
-
+        )
+        .then_some(())
+        .ok_or(SignersChainError::GenesisEntryError(
+            "Full signatures not validated".into(),
+        )),
+        None => validate_full_signatures(
+            &current.signers_file,
+            &current.signatures,
+            &current.metadata,
+            &current.metadata_signatures,
+        )
+        .then_some(())
+        .ok_or(SignersChainError::GenesisEntryError(
+            "Genesis entry is current entry, but full signatures not validated".into(),
+        )),
+    }?;
     validate_history_transitions(chain)
 }
 
@@ -592,13 +596,9 @@ pub fn validate_signers_chain_on_disk(signers_file_path: &Path) -> Result<(), Si
 
     let entry = CurrentSignersInfo::for_path(signers_file_path)?;
     chain.set_current_info(entry);
-    if validate_chain(&chain) {
-        Ok(())
-    } else {
-        Err(SignersFileError::ChainValidationFailed(
-            "signers chain validation failed".to_string(),
-        ))
-    }
+    validate_chain(&chain).map_err(|e| {
+        SignersFileError::ChainValidationFailed(format!("signers chain validation failed: {e}"))
+    })
 }
 
 #[cfg(test)]
@@ -4836,7 +4836,7 @@ mod validate_history_tests {
             current_signers_info: current_from_he(entry2),
         };
 
-        assert!(validate_chain(&chain));
+        assert!(validate_chain(&chain).is_ok());
         Ok(())
     }
 
@@ -4895,7 +4895,7 @@ mod validate_history_tests {
             current_signers_info: current_from_he(entry2),
         };
 
-        assert!(!validate_chain(&chain));
+        assert!(validate_chain(&chain).is_err());
         Ok(())
     }
 
@@ -4925,14 +4925,14 @@ mod validate_history_tests {
             current_signers_info: current_from_he(entry),
         };
 
-        assert!(validate_chain(&chain));
+        assert!(validate_chain(&chain).is_ok());
         Ok(())
     }
 
     #[test]
     fn validate_chain_rejects_empty_chain() {
         let chain = SignersChain::default();
-        assert!(!validate_chain(&chain));
+        assert!(validate_chain(&chain).is_err());
     }
 
     #[test]
@@ -4968,7 +4968,7 @@ mod validate_history_tests {
         };
 
         assert!(
-            !validate_chain(&chain),
+            validate_chain(&chain).is_err(),
             "first entry missing a signersfile signer must fail"
         );
 
@@ -4990,7 +4990,7 @@ mod validate_history_tests {
         };
 
         assert!(
-            !validate_chain(&chain),
+            validate_chain(&chain).is_err(),
             "first entry missing a metadata signer must fail"
         );
         Ok(())
@@ -5062,7 +5062,7 @@ mod validate_history_tests {
             current_signers_info: Some(current),
         };
 
-        assert!(!validate_chain(&chain));
+        assert!(validate_chain(&chain).is_err());
         Ok(())
     }
 
@@ -5152,7 +5152,7 @@ mod validate_history_tests {
         };
 
         assert!(
-            validate_chain(&chain),
+            validate_chain(&chain).is_ok(),
             "validate_chain should accept valid signatures regardless of JSON formatting"
         );
         Ok(())
@@ -5623,9 +5623,12 @@ mod validate_history_tests {
         for sc in first_entry_scenarios() {
             let result = validate_chain(&sc.chain);
             assert_eq!(
-                result, sc.expected_valid,
-                "Scenario '{}': expected valid={}, got valid={}",
-                sc.name, sc.expected_valid, result
+                result.is_ok(),
+                sc.expected_valid,
+                "Scenario '{}': expected valid={}, got valid={} (result: {result:?})",
+                sc.name,
+                sc.expected_valid,
+                result.is_ok(),
             );
         }
     }

@@ -75,6 +75,12 @@ cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signe
     -R 2 \
     -o "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json"
 
+# Append a trailing newline, as a text editor commonly would on save. The exact
+# bytes of the signers file are what gets signed, so chain validation must read
+# them back verbatim -- regression guard against content being trimmed on
+# retrieval from git.
+printf '\n' >> "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json"
+
 # Generate artifact binaries
 dd if=/dev/urandom of="$FS_PROJECT_DIR/releases/v0.1/artifact.bin" bs=1024 count=4 2>/dev/null
 dd if=/dev/urandom of="$FS_PROJECT_DIR/releases/v0.2/artifact.bin" bs=1024 count=4 2>/dev/null
