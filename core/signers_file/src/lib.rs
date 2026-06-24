@@ -506,36 +506,27 @@ pub fn validate_chain(chain: &SignersChain) -> Result<(), SignersChainError> {
     // otherwise the current entry. The genesis must be fully signed (every key
     // in its config signed both file and metadata).
     match chain.history_entries().first() {
-        Some(h) => {
-            if !validate_full_signatures(
-                &h.signers_file,
-                &h.signatures,
-                &h.metadata,
-                &h.metadata_signatures,
-            ) {
-                Err(SignersChainError::GenesisEntryError(
-                    "Full signatures not validated".into(),
-                ))
-            } else {
-                Ok(())
-            }
-        }
-        None => {
-            if !validate_full_signatures(
-                &current.signers_file,
-                &current.signatures,
-                &current.metadata,
-                &current.metadata_signatures,
-            ) {
-                Err(SignersChainError::GenesisEntryError(
-                    "Genesis entry is current entry, but full signatures not validated".into(),
-                ))
-            } else {
-                Ok(())
-            }
-        }
+        Some(h) => validate_full_signatures(
+            &h.signers_file,
+            &h.signatures,
+            &h.metadata,
+            &h.metadata_signatures,
+        )
+        .then_some(())
+        .ok_or(SignersChainError::GenesisEntryError(
+            "Full signatures not validated".into(),
+        )),
+        None => validate_full_signatures(
+            &current.signers_file,
+            &current.signatures,
+            &current.metadata,
+            &current.metadata_signatures,
+        )
+        .then_some(())
+        .ok_or(SignersChainError::GenesisEntryError(
+            "Genesis entry is current entry, but full signatures not validated".into(),
+        )),
     }?;
-
     validate_history_transitions(chain)
 }
 
