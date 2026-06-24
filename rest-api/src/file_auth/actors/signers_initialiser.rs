@@ -60,7 +60,7 @@ pub struct ProposeSignersResult {
 /// This makes them discoverable by `list-pending`.
 async fn create_empty_pending_signatures(signers_path: &NormalisedPaths) -> Result<(), ApiError> {
     let empty_sigs = signatures::signatures_file::SignaturesFile::new();
-    let empty_sigs_json = serde_json::to_string_pretty(&empty_sigs).map_err(|e| {
+    let empty_sigs_json = common::to_posix_json(&empty_sigs).map_err(|e| {
         ApiError::FileWriteFailed(format!("Failed to serialize empty signatures: {}", e))
     })?;
 

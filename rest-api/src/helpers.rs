@@ -17,7 +17,7 @@ pub async fn create_empty_aggregate_signature(
     let pending_sig_path = pending_signatures_path_for(file_path)?;
 
     let sig_file = SignaturesFile::new();
-    let json = serde_json::to_string_pretty(&sig_file).map_err(|e| {
+    let json = common::to_posix_json(&sig_file).map_err(|e| {
         ApiError::FileWriteFailed(format!("Failed to serialize empty signatures file: {}", e))
     })?;
     tokio::fs::write(&pending_sig_path, json)
@@ -36,4 +36,30 @@ pub async fn create_empty_aggregate_signature(
     })?;
 
     NormalisedPaths::new(&repo_path, relative_path).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn empty_signatures_file_has_trailing_newline() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let artifact = tmp.path().join("artifact.bin");
+        std::fs::write(&artifact, b"content").unwrap();
+        let file_path = NormalisedPaths::new(tmp.path(), "artifact.bin")
+            .await
+            .unwrap();
+        let written = create_empty_aggregate_signature(&file_path).await.unwrap();
+        let bytes = std::fs::read_to_string(written.absolute_path()).unwrap();
+        assert!(
+            bytes.ends_with("}\n"),
+            "file should end with }}\\n, got: {:?}",
+            bytes
+        );
+        assert!(
+            !bytes.ends_with("\n\n"),
+            "file must not end with double newline"
+        );
+    }
 }

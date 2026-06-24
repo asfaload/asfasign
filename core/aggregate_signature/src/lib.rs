@@ -740,8 +740,8 @@ pub fn add_to_aggregate_for_file<P: AsRef<Path>, S: AsfaloadSignatureTrait>(
             },
         );
 
-        let file = File::create(&pending_sig_file_path)?;
-        serde_json::to_writer_pretty(file, &sig_file)?;
+        let json_content = common::to_posix_json(&sig_file)?;
+        std::fs::write(&pending_sig_file_path, json_content)?;
 
         Ok(())
     } else {
@@ -813,7 +813,7 @@ where
             .collect();
 
         let sig_file = SignaturesFile { entries };
-        let json_content = serde_json::to_string_pretty(&sig_file)?;
+        let json_content = common::to_posix_json(&sig_file)?;
         std::fs::write(&sig_file_path, json_content)?;
 
         Ok(())
@@ -3376,6 +3376,96 @@ mod tests {
             parsed_content.entries[&pubkey.to_base64()].signature,
             signature.to_base64()
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_signatures_file_ends_with_single_newline() -> Result<()> {
+        // Verify both add_to_aggregate_for_file and save_to_file write files
+        // ending with exactly one trailing newline (POSIX convention).
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        let test_file = root.join("test_file.txt");
+        let file_content = b"test content for newline check";
+        fs::write(&test_file, file_content)?;
+
+        let test_keys = TestKeys::new(1);
+        let pubkey = test_keys.pub_key(0).unwrap().clone();
+        let seckey = test_keys.sec_key(0).unwrap();
+
+        let hash_for_content = common::sha512_for_content(file_content.to_vec())?;
+        let signature = seckey.sign(&hash_for_content).unwrap();
+
+        // Exercise add_to_aggregate_for_file — writes a pending signatures file
+        add_to_aggregate_for_file(&signature, &test_file, &pubkey)?;
+
+        let pending_sig_path = pending_signatures_path_for(&test_file)?;
+        let pending_bytes = fs::read(&pending_sig_path)?;
+        assert!(
+            pending_bytes.ends_with(b"\n"),
+            "pending signatures file must end with a newline"
+        );
+        assert!(
+            !pending_bytes.ends_with(b"\n\n"),
+            "pending signatures file must not end with two consecutive newlines"
+        );
+
+        // Exercise save_to_file (PendingSignature) — writes another pending signatures file
+        let mut signatures = HashMap::new();
+        signatures.insert(pubkey.clone(), signature.clone());
+        let agg_pending: AggregateSignature<PendingSignature> = AggregateSignature::new(
+            signatures.clone(),
+            test_file.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file)?,
+        );
+        // Use a separate file so save_to_file does not collide with the one above
+        let test_file2 = root.join("test_file2.txt");
+        fs::write(&test_file2, file_content)?;
+        let agg_pending2: AggregateSignature<PendingSignature> = AggregateSignature::new(
+            signatures,
+            test_file2.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file2)?,
+        );
+        agg_pending2.save_to_file()?;
+
+        let pending_sig_path2 = pending_signatures_path_for(&test_file2)?;
+        let pending_bytes2 = fs::read(&pending_sig_path2)?;
+        assert!(
+            pending_bytes2.ends_with(b"\n"),
+            "save_to_file pending signatures file must end with a newline"
+        );
+        assert!(
+            !pending_bytes2.ends_with(b"\n\n"),
+            "save_to_file pending signatures file must not end with two consecutive newlines"
+        );
+
+        // Exercise save_to_file (CompleteSignature) — writes a complete signatures file
+        let mut signatures_complete = HashMap::new();
+        signatures_complete.insert(pubkey.clone(), signature.clone());
+        let test_file3 = root.join("test_file3.txt");
+        fs::write(&test_file3, file_content)?;
+        let agg_complete: AggregateSignature<CompleteSignature> = AggregateSignature::new(
+            signatures_complete,
+            test_file3.to_string_lossy().to_string(),
+            SignedFileLoader::load(&test_file3)?,
+        );
+        agg_complete.save_to_file()?;
+
+        let complete_sig_path = signatures_path_for(&test_file3)?;
+        let complete_bytes = fs::read(&complete_sig_path)?;
+        assert!(
+            complete_bytes.ends_with(b"\n"),
+            "complete signatures file must end with a newline"
+        );
+        assert!(
+            !complete_bytes.ends_with(b"\n\n"),
+            "complete signatures file must not end with two consecutive newlines"
+        );
+
+        // Suppress unused warning: agg_pending is intentional as a compile check
+        let _ = agg_pending;
 
         Ok(())
     }

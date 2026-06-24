@@ -103,7 +103,7 @@ impl ChecksumFileRegistrar {
             published_files,
         };
 
-        let content = serde_json::to_string_pretty(&index).map_err(|e| {
+        let content = common::to_posix_json(&index).map_err(|e| {
             ApiError::InternalServerError(format!("Failed to serialize index: {}", e))
         })?;
 
@@ -193,6 +193,63 @@ async fn download_checksum_file(client: &reqwest::Client, url: &str) -> Result<S
     String::from_utf8(body).map_err(|e| {
         ApiError::InvalidRequestBody(format!("Checksums file is not valid UTF-8: {}", e))
     })
+}
+
+#[cfg(all(test, feature = "test-utils"))]
+mod test_utils_tests {
+    use super::*;
+    use constants::{SIGNERS_DIR, SIGNERS_FILE};
+    use forge_url::path_prefix_from_url;
+
+    #[tokio::test]
+    async fn release_index_written_with_trailing_newline() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let git_repo_path = temp_dir.path().to_path_buf();
+
+        let mock_server = httpmock::MockServer::start();
+        let checksum_content =
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  file.tar.gz\n";
+        mock_server.mock(|when, then| {
+            when.method(httpmock::Method::GET).path("/v1.0/SHA256SUMS");
+            then.status(200).body(checksum_content);
+        });
+
+        let checksum_url =
+            url::Url::parse(&format!("{}/v1.0/SHA256SUMS", mock_server.url(""))).unwrap();
+
+        // Compute the directory path the same way ChecksumFileRegistrar::new does
+        let prefix = path_prefix_from_url(&checksum_url).unwrap();
+        let relative_dir = format!("{}/v1.0", prefix);
+        let signers_dir = git_repo_path.join(&relative_dir).join(SIGNERS_DIR);
+        tokio::fs::create_dir_all(&signers_dir).await.unwrap();
+        tokio::fs::write(signers_dir.join(SIGNERS_FILE), "{}")
+            .await
+            .unwrap();
+
+        let registrar = ChecksumFileRegistrar::new(git_repo_path.clone(), vec![checksum_url])
+            .await
+            .unwrap();
+
+        let index_path_result = registrar.create_index().await;
+        assert!(
+            index_path_result.is_ok(),
+            "create_index should succeed: {:?}",
+            index_path_result
+        );
+
+        let index_abs = index_path_result.unwrap().absolute_path();
+        let content = tokio::fs::read_to_string(&index_abs).await.unwrap();
+
+        assert!(
+            content.ends_with("}\n"),
+            "Index file on disk must end with exactly one trailing newline; got: {:?}",
+            &content[content.len().saturating_sub(10)..]
+        );
+        assert!(
+            !content.ends_with("\n\n"),
+            "Index file on disk must not end with two consecutive newlines"
+        );
+    }
 }
 
 #[cfg(all(test, not(feature = "test-utils")))]
