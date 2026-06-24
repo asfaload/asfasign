@@ -235,7 +235,7 @@ impl<C: GithubClientTrait> GithubReleaseAdder<C> {
             published_files,
         };
 
-        serde_json::to_string_pretty(&index)
+        common::to_posix_json(&index)
             .map_err(|e| ApiError::InternalServerError(format!("Failed to serialize index: {}", e)))
     }
 }
@@ -394,6 +394,44 @@ pub mod test_utils {
             "target_commitish": "main"
         }"#;
         serde_json::from_str(json_str).unwrap()
+    }
+}
+
+#[cfg(all(test, feature = "test-utils"))]
+mod feature_gated_tests {
+    use super::test_utils::*;
+    use super::*;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn generate_index_json_has_trailing_newline() {
+        let release = create_mock_release();
+        let temp_dir = TempDir::new().unwrap();
+        let git_repo = temp_dir.path().to_path_buf();
+        let url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+        let release_info = parse_release_url(&url, &git_repo).await.unwrap();
+
+        let adder = GithubReleaseAdder {
+            release_url: url,
+            git_repo_path: git_repo,
+            client: MockGithubClient::new(),
+            release_info,
+        };
+
+        let assets = adder.extract_assets(&release);
+
+        let json = adder.generate_index_json(&assets, &release).unwrap();
+
+        assert!(
+            json.ends_with("}\n"),
+            "index JSON should end with exactly one trailing newline, got: {:?}",
+            &json[json.len().saturating_sub(20)..]
+        );
+        assert!(
+            !json.ends_with("\n\n"),
+            "index JSON should not end with double newline"
+        );
     }
 }
 
