@@ -105,9 +105,10 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::ShareKey {
             public_key,
+            raw,
             json_args,
         } => {
-            share_key::handle_share_key_command(public_key, json_args.json)?;
+            share_key::handle_share_key_command(public_key, *raw, json_args.json)?;
         }
         Commands::NewSignersFile {
             artifact_signer,
