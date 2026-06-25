@@ -338,7 +338,10 @@ mod tests {
         let key_file = fixtures_pub_key(0);
 
         let result = combine_key_sources::<AsfaloadPublicKeys>(&[], &[key_file]);
-        assert!(result.is_ok());
+        match result {
+            Ok(_) => {}
+            Err(e) => panic!("Got unexpected error: {e}"),
+        }
         let parsed = result.unwrap();
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].to_base64(), VALID_PUBKEY_B64);
