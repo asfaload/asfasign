@@ -1,0 +1,73 @@
+# Share a public key
+
+Once you have a key pair, you need to share the public key with whoever maintains the signers file. The `share-key` command formats it for you.
+
+## Prerequisites
+
+- A public key file (`.pub`) from [Generate a key pair](generate-keys.md).
+
+## Steps
+
+### 1. Print a human-readable sharing message (default)
+
+```sh
+asfaload-cli share-key -k ~/.asfaload/mykey.pub
+```
+
+This prints your public key together with a ready-to-send message you can forward to a team admin:
+
+```
+The public key is safe to share -- that's how others verify your signatures.
+
+You can share your public key, for example with an admin, with this message:
+
+    I have a key-pair to use with Asfaload. You can use my public
+    key in signers files. Here it is:
+    asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+```
+
+### 2. Print only the key with `--raw`
+
+When you only need the base64 string — for example, to paste it into a signers file — use `--raw` (`-r`):
+
+```sh
+asfaload-cli share-key -k ~/.asfaload/mykey.pub --raw
+```
+
+Output:
+
+```
+asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+```
+
+This is the canonical base64 form used in signers files and templates.
+
+`--raw` also works with OpenSSH ed25519 public keys — the key is normalised to its asfaload canonical form:
+
+```sh
+asfaload-cli share-key -k ~/.ssh/id_ed25519.pub --raw
+```
+
+`--raw` and `--json` are mutually exclusive; you cannot use both at the same time.
+
+### 3. Machine-readable JSON output
+
+For scripting, use `--json`:
+
+```sh
+asfaload-cli share-key -k ~/.asfaload/mykey.pub --json
+```
+
+Output:
+
+```json
+{"public_key":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8","message":"The public key is safe to share -- ..."}
+```
+
+## Next step
+
+The admin will include your public key when [creating the signers file](create-signers-file.md).
+
+## Reference
+
+- [`asfaload-cli share-key`](../manual/share-key.md)
