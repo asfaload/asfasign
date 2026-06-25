@@ -217,7 +217,8 @@ fn combine_key_sources<P: AsfaloadPublicKeyTrait>(
         })?;
         lines
             .into_iter()
-            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
             .for_each(|line| {
                 let r = P::from_base64(&line).map_err(|e| {
                     crate::error::ClientCliError::SignersFile(format!(
