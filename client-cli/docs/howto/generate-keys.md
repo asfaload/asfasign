@@ -84,7 +84,7 @@ asfaload-cli new-keys --name ci-key --output-dir ./keys
 
 ## Next step
 
-Share your `.pub` file with whoever maintains the signers file, it is not secret.  They'll include it when [creating the signers file](create-signers-file.md).
+Share your public key with whoever maintains the signers file. Use the `share-key` command to format it — see [Share a public key](share-public-key.md). They'll include it when [creating the signers file](create-signers-file.md).
 
 ## Reference
 

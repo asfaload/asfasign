@@ -13,9 +13,13 @@ This command is offline: it only reads a local public key file and never contact
 
 Path to the public key file to share (asfaload or OpenSSH ed25519). Required.
 
+### `-r --raw`
+
+Print only the public key in its canonical base64 form (`asfaload-pub:...`), without the human-readable message. Conflicts with `--json`.
+
 ### `--json`
 
-Emit output as JSON instead of human-readable text.
+Emit output as JSON instead of human-readable text. Conflicts with `--raw`.
 
 ## Output
 
@@ -29,6 +33,10 @@ Human-readable (default):
         key in signers files. Here it is:
         asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
 
+Raw (with `--raw`):
+
+    asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+
 JSON (with `--json`):
 
     {"public_key":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8","message":"The public key is safe to share -- ..."}
@@ -37,6 +45,9 @@ JSON (with `--json`):
 
     # print your public key and a sharing message
     asfaload-cli share-key -k ~/.asfaload/mykey.pub
+
+    # print only the key
+    asfaload-cli share-key -k ~/.asfaload/mykey.pub --raw
 
     # machine-readable output
     asfaload-cli share-key --json -k ~/.asfaload/mykey.pub

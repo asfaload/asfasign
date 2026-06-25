@@ -6,6 +6,7 @@
 
 - [How-to Guides](client-cli/howto/index.md)
   - [Generate a key pair](client-cli/howto/generate-keys.md)
+  - [Share a public key](client-cli/howto/share-public-key.md)
   - [Create a signers file](client-cli/howto/create-signers-file.md)
   - [Register a repository](client-cli/howto/register-repo.md)
   - [Activate a signers file](client-cli/howto/activate-signers-file.md)

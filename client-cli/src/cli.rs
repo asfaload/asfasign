@@ -104,6 +104,10 @@ pub enum Commands {
         #[arg(long, short = 'k')]
         public_key: PathBuf,
 
+        /// Print only the key
+        #[arg(long, short, conflicts_with = "json")]
+        raw: bool,
+
         #[command(flatten)]
         json_args: JsonArgs,
     },

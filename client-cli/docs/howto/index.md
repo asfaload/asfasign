@@ -5,23 +5,24 @@ Step-by-step recipes for common operations with the `asfaload-cli` CLI. Follow t
 ## Setup
 
 1. [Generate a key pair](generate-keys.md)
-2. [Create a signers file](create-signers-file.md)
+2. [Share a public key](share-public-key.md)
+3. [Create a signers file](create-signers-file.md)
 
 ## Project registration
 
-3. [Register a repository](register-repo.md)
-4. [Activate a signers file](activate-signers-file.md)
+4. [Register a repository](register-repo.md)
+5. [Activate a signers file](activate-signers-file.md)
 
 ## Releases
 
-5. [Register a release](register-release.md)
-6. [Sign a release](sign-release.md)
+6. [Register a release](register-release.md)
+7. [Sign a release](sign-release.md)
 
 ## Maintenance
 
-7. [Update a signers file](update-signers-file.md)
-8. [Revoke a signed release](revoke-release.md)
+8. [Update a signers file](update-signers-file.md)
+9. [Revoke a signed release](revoke-release.md)
 
 ## Verification
 
-9. [Download a file with signature verification](download-with-verification.md)
+10. [Download a file with signature verification](download-with-verification.md)
