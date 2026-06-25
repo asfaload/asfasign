@@ -103,3 +103,106 @@ fn test_share_key_rejects_ssh_private_key() {
         .failure()
         .stderr(predicate::str::contains("Error loading public key"));
 }
+
+// -------------------------------------------------------------------
+// --raw flag
+// -------------------------------------------------------------------
+
+// The canonical asfaload form of the git signing SSH fixture key
+// (core/test_helpers/fixtures/git_signing_key.pub), as produced by
+// AsfaloadPublicKeys::from_file(...).to_base64(). Normalisation happens
+// before the raw match arm, so this is what --raw must print.
+const GIT_SIGNING_KEY_AS_ASFALOAD: &str =
+    "asfaload-pub:druiW7o+/nOfS5YZN8WlmCwxv03YHfV6lQUA0J1LdVI";
+
+/// The asfaload-pub string stored verbatim in `fixtures/keys/key_0.pub`.
+/// Read from disk rather than hardcoded so the test tracks the fixture
+/// instead of duplicating its content.
+fn fixture_pub_key_0() -> String {
+    fs::read_to_string(test_helpers::fixtures_pub_key(0))
+        .unwrap()
+        .trim()
+        .to_owned()
+}
+
+#[test]
+fn test_share_key_raw_asfaload_key() {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key")
+        .arg("-k")
+        .arg(test_helpers::fixtures_pub_key(0))
+        .arg("--raw");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::eq(format!("{}\n", fixture_pub_key_0())));
+}
+
+#[test]
+fn test_share_key_raw_short_flag() {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key")
+        .arg("-k")
+        .arg(test_helpers::fixtures_pub_key(0))
+        .arg("-r");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::eq(format!("{}\n", fixture_pub_key_0())));
+}
+
+#[test]
+fn test_share_key_raw_ssh_key_normalised() {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key")
+        .arg("-k")
+        .arg(test_helpers::git_signing_pub_key_path())
+        .arg("--raw");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::eq(format!("{}\n", GIT_SIGNING_KEY_AS_ASFALOAD)));
+}
+
+#[test]
+fn test_share_key_raw_excludes_human_message() {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key")
+        .arg("-k")
+        .arg(test_helpers::fixtures_pub_key(0))
+        .arg("--raw");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("The public key is safe to share").not())
+        .stdout(predicate::str::contains("\u{1b}").not());
+}
+
+#[test]
+fn test_share_key_raw_and_json_conflict() {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key")
+        .arg("-k")
+        .arg(test_helpers::fixtures_pub_key(0))
+        .arg("--raw")
+        .arg("--json");
+
+    // clap's conflicts_with emits an error mentioning the conflicting flags.
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("--raw"))
+        .stderr(predicate::str::contains("--json"));
+}
+
+#[test]
+fn test_share_key_raw_default_unchanged() {
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key")
+        .arg("-k")
+        .arg(test_helpers::fixtures_pub_key(0));
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("The public key is safe to share"))
+        .stdout(predicate::str::contains(fixture_pub_key_0()));
+}
