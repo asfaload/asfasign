@@ -215,23 +215,20 @@ fn combine_key_sources<P: AsfaloadPublicKeyTrait>(
                 file_path, e
             ))
         })?;
-        let key_results = lines
+        lines
             .into_iter()
             .filter(|line| !line.trim().is_empty())
-            .map(|line| {
-                P::from_base64(&line).map_err(|e| {
+            .for_each(|line| {
+                let r = P::from_base64(&line).map_err(|e| {
                     crate::error::ClientCliError::SignersFile(format!(
                         "Failed to read public key from file \"{}\": {} for line {}",
                         file_path.display(),
                         e,
                         line
                     ))
-                })
+                });
+                combined.push(r)
             });
-
-        for key_result in key_results {
-            combined.push(key_result);
-        }
     }
 
     combined.into_iter().collect()
