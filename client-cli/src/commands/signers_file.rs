@@ -240,6 +240,7 @@ fn combine_key_sources<P: AsfaloadPublicKeyTrait>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::TempDir;
     use test_helpers::fixtures_pub_key;
 
@@ -402,5 +403,135 @@ mod tests {
         let keys = vec![VALID_PUBKEY_B64.to_string(), "garbage".to_string()];
         let result = combine_key_sources::<AsfaloadPublicKeys>(&keys, &[]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn combine_key_sources_file_with_multiple_valid_keys() {
+        let key0_b64 = fs::read_to_string(fixtures_pub_key(0)).unwrap();
+        let key1_b64 = fs::read_to_string(fixtures_pub_key(1)).unwrap();
+        let key2_b64 = fs::read_to_string(fixtures_pub_key(2)).unwrap();
+
+        let temp_dir = TempDir::new().unwrap();
+        let multi_key_file = temp_dir.path().join("multi.pub");
+        std::fs::write(
+            &multi_key_file,
+            format!(
+                "{}\n{}\n{}",
+                key0_b64.trim(),
+                key1_b64.trim(),
+                key2_b64.trim()
+            ),
+        )
+        .unwrap();
+
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&[], &[multi_key_file]);
+        assert!(result.is_ok(), "Expected Ok, got: {:?}", result.err());
+        let parsed = result.unwrap();
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].to_base64(), key0_b64.trim());
+        assert_eq!(parsed[1].to_base64(), key1_b64.trim());
+        assert_eq!(parsed[2].to_base64(), key2_b64.trim());
+    }
+
+    #[test]
+    fn combine_key_sources_file_with_mixed_key_formats() {
+        // Asfaload-format key from fixture
+        let asfaload_line = fs::read_to_string(fixtures_pub_key(0)).unwrap();
+
+        // SSH-format key from fixture
+        let ssh_line =
+            fs::read_to_string(test_helpers::fixtures_dir().join("git_signing_key.pub")).unwrap();
+
+        let temp_dir = TempDir::new().unwrap();
+        let mixed_file = temp_dir.path().join("mixed.pub");
+        std::fs::write(
+            &mixed_file,
+            format!("{}\n{}", asfaload_line.trim(), ssh_line.trim()),
+        )
+        .unwrap();
+
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&[], &[mixed_file]);
+        assert!(result.is_ok(), "Expected Ok, got: {:?}", result.err());
+        let parsed = result.unwrap();
+        assert_eq!(parsed.len(), 2);
+        // to_base64() always returns asfaload-pub format regardless of input format
+        assert_eq!(parsed[0].to_base64(), asfaload_line.trim());
+        // The SSH-format key serialises back to asfaload-pub format
+        let resolved =
+            fs::read_to_string(test_helpers::fixtures_dir().join("git_signing_key.pub")).unwrap();
+        let pk = AsfaloadPublicKeys::from_base64(resolved.trim()).unwrap();
+        assert_eq!(parsed[1].to_base64(), pk.to_base64());
+    }
+
+    #[test]
+    fn combine_key_sources_file_with_invalid_key_in_middle() {
+        let key0_b64 = fs::read_to_string(fixtures_pub_key(0)).unwrap();
+        let key1_b64 = fs::read_to_string(fixtures_pub_key(1)).unwrap();
+
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("bad_middle.pub");
+        std::fs::write(
+            &file_path,
+            format!("{}\nthis is garbage\n{}", key0_b64.trim(), key1_b64.trim()),
+        )
+        .unwrap();
+
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&[], &[file_path]);
+        assert!(result.is_err(), "Expected error for invalid key in middle");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("this is garbage"),
+            "Error should mention the invalid line, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn combine_key_sources_file_with_empty_lines() {
+        let key0_b64 = fs::read_to_string(fixtures_pub_key(0)).unwrap();
+        let key1_b64 = fs::read_to_string(fixtures_pub_key(1)).unwrap();
+
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("with_blanks.pub");
+        std::fs::write(
+            &file_path,
+            format!("{}\n\n{}\n\n", key0_b64.trim(), key1_b64.trim()),
+        )
+        .unwrap();
+
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&[], &[file_path]);
+        assert!(
+            result.is_ok(),
+            "Expected Ok despite empty lines, got: {:?}",
+            result.err()
+        );
+        let parsed = result.unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].to_base64(), key0_b64.trim());
+        assert_eq!(parsed[1].to_base64(), key1_b64.trim());
+    }
+
+    #[test]
+    fn combine_key_sources_file_with_duplicate_keys_is_accepted() {
+        let key0_b64 = fs::read_to_string(fixtures_pub_key(0)).unwrap();
+
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("dupes.pub");
+        std::fs::write(
+            &file_path,
+            format!("{}\n{}", key0_b64.trim(), key0_b64.trim()),
+        )
+        .unwrap();
+
+        let result = combine_key_sources::<AsfaloadPublicKeys>(&[], &[file_path]);
+        assert!(
+            result.is_ok(),
+            "Duplicate keys are currently accepted, got: {:?}",
+            result.err()
+        );
+        let parsed = result.unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].to_base64(), key0_b64.trim());
+        assert_eq!(parsed[1].to_base64(), key0_b64.trim());
     }
 }
