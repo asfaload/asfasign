@@ -1,7 +1,9 @@
 use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
 use predicates::prelude::*;
 use serde_json::Value;
+use std::fs;
 use tempfile::TempDir;
+use test_helpers::fixtures_pub_key;
 
 const TEST_PASSWORD: &str = "test_password_123";
 
@@ -133,6 +135,107 @@ fn test_new_signers_file_human_output_includes_revocation_keys() {
         .stdout(predicate::str::contains(
             "Revocation keys: 1 (threshold: 1)",
         ));
+}
+
+#[test]
+fn test_new_signers_file_with_multi_key_files_all_groups() {
+    // Use distinct fixture keypairs to avoid master-vs-others conflict
+    // Artifact: key_0 + key_1,  Admin: key_2 + key_3
+    // Master:   key_4 + key_5,  Revocation: key_6 + key_7
+    let temp_dir = TempDir::new().unwrap();
+    let output_file = temp_dir.path().join("signers.json");
+
+    let artifact_file = temp_dir.path().join("artifact.pub");
+    fs::write(
+        &artifact_file,
+        format!(
+            "{}\n{}",
+            fs::read_to_string(fixtures_pub_key(0)).unwrap(),
+            fs::read_to_string(fixtures_pub_key(1)).unwrap()
+        ),
+    )
+    .unwrap();
+
+    let admin_file = temp_dir.path().join("admin.pub");
+    fs::write(
+        &admin_file,
+        format!(
+            "{}\n{}",
+            fs::read_to_string(fixtures_pub_key(2)).unwrap(),
+            fs::read_to_string(fixtures_pub_key(3)).unwrap()
+        ),
+    )
+    .unwrap();
+
+    let master_file = temp_dir.path().join("master.pub");
+    fs::write(
+        &master_file,
+        format!(
+            "{}\n{}",
+            fs::read_to_string(fixtures_pub_key(4)).unwrap(),
+            fs::read_to_string(fixtures_pub_key(5)).unwrap()
+        ),
+    )
+    .unwrap();
+
+    let revocation_file = temp_dir.path().join("revocation.pub");
+    fs::write(
+        &revocation_file,
+        format!(
+            "{}\n{}",
+            fs::read_to_string(fixtures_pub_key(6)).unwrap(),
+            fs::read_to_string(fixtures_pub_key(7)).unwrap()
+        ),
+    )
+    .unwrap();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("new-signers-file")
+        .arg("--json")
+        .arg("--artifact-signer-file")
+        .arg(&artifact_file)
+        .arg("-A")
+        .arg("2")
+        .arg("--admin-key-file")
+        .arg(&admin_file)
+        .arg("-D")
+        .arg("1")
+        .arg("--master-key-file")
+        .arg(&master_file)
+        .arg("-M")
+        .arg("1")
+        .arg("--revocation-key-file")
+        .arg(&revocation_file)
+        .arg("-R")
+        .arg("1")
+        .arg("-o")
+        .arg(&output_file);
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json: Value = serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+
+    assert_eq!(json["artifact_signers_count"], 2);
+    assert_eq!(json["artifact_threshold"], 2);
+    assert_eq!(json["admin_keys_count"], 2);
+    assert_eq!(json["admin_threshold"], 1);
+    assert_eq!(json["master_keys_count"], 2);
+    assert_eq!(json["master_threshold"], 1);
+    assert_eq!(json["revocation_keys_count"], 2);
+    assert_eq!(json["revocation_threshold"], 1);
+    assert!(!json["output_file"].as_str().unwrap().is_empty());
+
+    // Output file should exist and contain valid signers config
+    assert!(output_file.exists());
+    let _config =
+        signers_file_types::parse_signers_config(&fs::read_to_string(&output_file).unwrap())
+            .expect("output file should be a valid signers config");
 }
 
 // -------------------------------------------------------------------
