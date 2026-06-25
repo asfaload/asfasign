@@ -1,5 +1,5 @@
-use std::fs;
-use std::io::Write;
+use std::fs::{self, File};
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -200,14 +200,38 @@ fn combine_key_sources<P: AsfaloadPublicKeyTrait>(
 
     // Add file keys by reading the public key from each file we got
     for file_path in file_keys {
-        let key_result = P::from_file(file_path).map_err(|e| {
+        let f = File::open(file_path).map_err(|e| {
             crate::error::ClientCliError::SignersFile(format!(
-                "Failed to read public key from file {:?}: {}",
+                "Failed to read public key from file {:?}: problem opening file: {}",
                 file_path, e
             ))
-        });
+        })?;
+        let reader = BufReader::new(f);
 
-        combined.push(key_result);
+        let lines: io::Result<Vec<String>> = reader.lines().collect();
+        let lines = lines.map_err(|e| {
+            crate::error::ClientCliError::SignersFile(format!(
+                "Failed to read public key from file {:?}: problem reading lines: {}",
+                file_path, e
+            ))
+        })?;
+        let key_results = lines
+            .into_iter()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                P::from_base64(&line).map_err(|e| {
+                    crate::error::ClientCliError::SignersFile(format!(
+                        "Failed to read public key from file \"{}\": {} for line {}",
+                        file_path.display(),
+                        e,
+                        line
+                    ))
+                })
+            });
+
+        for key_result in key_results {
+            combined.push(key_result);
+        }
     }
 
     combined.into_iter().collect()
