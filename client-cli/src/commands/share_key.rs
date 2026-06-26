@@ -9,10 +9,16 @@ use std::path::Path;
 pub fn handle_share_key_command(public_key: &Path, raw: bool, json: bool) -> Result<()> {
     let pk = match AsfaloadPublicKeys::from_file(public_key) {
         Ok(k) => k,
-        Err(KeyError::ParseError(_)) => {
-            AsfaloadPublicKeys::from_file(public_key.with_extension("pub")).with_context(|| {
-                format!("Error loading public key from {}", public_key.display())
-            })?
+        Err(KeyError::ParseError(e)) => {
+            // Even if we attempt a new .pub path, we report the original error
+            let main_error = format!("Error loading public key from {}", public_key.display());
+            let pub_path = public_key.with_extension("pub");
+            // if pub_path already had the .pub extension, don't attempts again
+            if pub_path != public_key && pub_path.exists() {
+                AsfaloadPublicKeys::from_file(pub_path).with_context(|| main_error)?
+            } else {
+                Err(KeyError::ParseError(e)).with_context(|| main_error)?
+            }
         }
         Err(e) => return Err(e.into()),
     };
