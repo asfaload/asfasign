@@ -1,25 +1,9 @@
 pub mod asfaload;
 
 const OPENSSH_PRIVATE_KEY_PEM_HEADER: &str = "-----BEGIN OPENSSH PRIVATE KEY-----";
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-// Shared utility: append ".pub" to a key file path.
-// Beware, if the path ends with /, the trailing slash is dropped before appending.
-// See https://www.reddit.com/r/rust/comments/ooh5wn/damn_trailing_slash/
-pub(crate) fn append_pub_extension<T: AsRef<Path>>(p: &T) -> Result<PathBuf, KeyError> {
-    let path = p.as_ref();
-    let file_name = path.file_name().ok_or(KeyError::GenericError(
-        "Filename extraction from path failed.".into(),
-    ))?;
-    let mut osstring: OsString = file_name.to_os_string();
-    osstring.push(".pub");
-    let mut pub_path_buf = path.to_path_buf();
-    pub_path_buf.set_file_name(osstring.as_os_str());
-    Ok(pub_path_buf)
-}
-
-use common::errors::keys::{SignError, SignatureError, VerifyError};
+use common::errors::keys::{SignError, SignatureError, VerifyError, append_pub_extension};
 use common::{AsfaloadHashes, errors::keys::KeyError};
 
 /// Resolve secret-key and public-key file paths from a save target,

@@ -132,7 +132,10 @@ impl From<SignatureError> for SignersFileError {
 }
 
 pub mod keys {
-    use std::path::PathBuf;
+    use std::{
+        ffi::OsString,
+        path::{Path, PathBuf},
+    };
 
     use thiserror::Error;
 
@@ -204,6 +207,21 @@ pub mod keys {
         fn from(e: ed25519_dalek::SignatureError) -> Self {
             SignatureError::FormatError(e.to_string())
         }
+    }
+
+    // Shared utility: append ".pub" to a key file path.
+    // Beware, if the path ends with /, the trailing slash is dropped before appending.
+    // See https://www.reddit.com/r/rust/comments/ooh5wn/damn_trailing_slash/
+    pub fn append_pub_extension<T: AsRef<Path> + ?Sized>(p: &T) -> Result<PathBuf, KeyError> {
+        let path = p.as_ref();
+        let file_name = path.file_name().ok_or(KeyError::GenericError(
+            "Filename extraction from path failed.".into(),
+        ))?;
+        let mut osstring: OsString = file_name.to_os_string();
+        osstring.push(".pub");
+        let mut pub_path_buf = path.to_path_buf();
+        pub_path_buf.set_file_name(osstring.as_os_str());
+        Ok(pub_path_buf)
     }
 }
 use keys::*;
