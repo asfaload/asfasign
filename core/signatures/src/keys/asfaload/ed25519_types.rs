@@ -390,9 +390,9 @@ impl EncryptedEd25519Key for SshEncryptedKey {
         let mut private = ssh_key::PrivateKey::from_openssh(&self.pem)
             .map_err(|e| KeyError::ParseError(format!("openssh-key-v1 re-parse failed: {e}")))?;
         if private.is_encrypted() {
-            private = private
-                .decrypt(password.as_bytes())
-                .map_err(|e| KeyError::ParseError(format!("ssh key decryption failed: {e}")))?;
+            private = private.decrypt(password.as_bytes()).map_err(|e| {
+                KeyError::DecryptionFailed(format!("ssh key decryption failed: {e}"))
+            })?;
         }
         let seed: Zeroizing<[u8; 32]> = Zeroizing::new(match private.key_data() {
             ssh_key::private::KeypairData::Ed25519(kp) => kp.private.to_bytes(),
@@ -639,10 +639,10 @@ mod tests {
         assert_eq!(recovered.to_bytes(), seed);
 
         match key.decrypt("wrong") {
-            Err(KeyError::ParseError(msg)) => {
+            Err(KeyError::DecryptionFailed(msg)) => {
                 assert!(msg.contains("decryption") || msg.contains("password"));
             }
-            Err(other) => panic!("expected CreationFailed, got {other:?}"),
+            Err(other) => panic!("expected DecryptionFailed, got {other:?}"),
             Ok(_) => panic!("expected error, got Ok"),
         }
     }
