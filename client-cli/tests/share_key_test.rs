@@ -74,16 +74,70 @@ fn test_share_key_ssh_public_key() {
 }
 
 // -------------------------------------------------------------------
-// Rejecting private keys
+// Private keys: `.pub` sibling auto-discovery
 // -------------------------------------------------------------------
 
 #[test]
-fn test_share_key_rejects_asfaload_private_key() {
-    let (_dir, key_path) = generate_asfaload_keypair();
+fn test_share_key_finds_pub_sibling_when_given_private_key() {
+    // Fixture key_0 has a key_0.pub sibling alongside it.
+    let priv_key = test_helpers::fixtures_keys_dir().join("key_0");
+    let pub_key = fs::read_to_string(test_helpers::fixtures_pub_key(0))
+        .unwrap()
+        .trim()
+        .to_owned();
 
-    // Pass the secret key file instead of the `.pub` file.
+    // Pass the private key file — the command should find the `.pub` sibling.
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("share-key").arg("-k").arg(&key_path);
+    cmd.arg("share-key").arg("-k").arg(&priv_key);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("The public key is safe to share"))
+        .stdout(predicate::str::contains(pub_key));
+}
+
+// Validates that the `-k <path>` handler *appends* `.pub` to the supplied
+// path rather than replacing its existing extension. The private key is staged
+// at `mykey.bla` and the public key at `mykey.bla.pub`; if `share-key` used
+// `Path::with_extension("pub")` instead of appending, it would look for
+// `mykey.pub` (replacing `.bla`), fail to find it, and the command would error.
+// By staging the public key only under the appended name, this test fails under
+// replace-extension semantics and passes under append semantics.
+#[test]
+fn test_share_key_appends_pub_extension_preserving_existing_extension() {
+    let temp_dir = TempDir::new().unwrap();
+    // Private key with an arbitrary extension. Its content isn't parsed as a
+    // public key, so `from_file` returns ParseError and triggers the `.pub`
+    // fallback. We reuse the committed key_0 fixture for stable content.
+    let priv_key = temp_dir.path().join("mykey.bla");
+    fs::copy(test_helpers::fixtures_keys_dir().join("key_0"), &priv_key).unwrap();
+
+    // The public key lives only at the *appended* path. A `with_extension`
+    // implementation would produce `mykey.pub`, which is never created here.
+    let pub_key_path = temp_dir.path().join("mykey.bla.pub");
+    fs::copy(test_helpers::fixtures_pub_key(0), &pub_key_path).unwrap();
+
+    let pub_key = fs::read_to_string(&pub_key_path).unwrap().trim().to_owned();
+    assert!(pub_key.starts_with("asfaload-pub:"));
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key").arg("-k").arg(&priv_key);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("The public key is safe to share"))
+        .stdout(predicate::str::contains(pub_key));
+}
+
+#[test]
+fn test_share_key_rejects_private_key_without_pub_sibling() {
+    let temp_dir = TempDir::new().unwrap();
+    let priv_key = temp_dir.path().join("key");
+    // Copy only the private key fixture — no .pub sidecar.
+    fs::copy(test_helpers::fixtures_keys_dir().join("key_0"), &priv_key).unwrap();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key").arg("-k").arg(&priv_key);
 
     cmd.assert()
         .failure()

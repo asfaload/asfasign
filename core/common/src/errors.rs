@@ -132,14 +132,17 @@ impl From<SignatureError> for SignersFileError {
 }
 
 pub mod keys {
-    use std::path::PathBuf;
+    use std::{
+        ffi::OsString,
+        path::{Path, PathBuf},
+    };
 
     use thiserror::Error;
 
     #[derive(Error, Debug)]
     pub enum KeyError {
-        #[error("Key creation failed: {0}")]
-        CreationFailed(String),
+        #[error("Key parse error: {0}")]
+        ParseError(String),
         #[error("Keypair fs io error")]
         IOError(#[from] std::io::Error),
         #[error("Refusing to overwrite existing files")]
@@ -152,6 +155,8 @@ pub mod keys {
         ImportOnlyFormat(String),
         #[error("Does not recognise this key format: {0}")]
         FormatError(String),
+        #[error("Key decryption failed: {0}")]
+        DecryptionFailed(String),
     }
 
     #[derive(Error, Debug)]
@@ -186,12 +191,6 @@ pub mod keys {
         FileRevoked(PathBuf),
     }
 
-    impl From<ed25519_dalek::SignatureError> for KeyError {
-        fn from(e: ed25519_dalek::SignatureError) -> Self {
-            KeyError::CreationFailed(e.to_string())
-        }
-    }
-
     impl From<ed25519_dalek::SignatureError> for SignError {
         fn from(e: ed25519_dalek::SignatureError) -> Self {
             SignError::SignatureFailed(e.to_string())
@@ -208,6 +207,21 @@ pub mod keys {
         fn from(e: ed25519_dalek::SignatureError) -> Self {
             SignatureError::FormatError(e.to_string())
         }
+    }
+
+    // Shared utility: append ".pub" to a key file path.
+    // Beware, if the path ends with /, the trailing slash is dropped before appending.
+    // See https://www.reddit.com/r/rust/comments/ooh5wn/damn_trailing_slash/
+    pub fn append_pub_extension<T: AsRef<Path> + ?Sized>(p: &T) -> Result<PathBuf, KeyError> {
+        let path = p.as_ref();
+        let file_name = path.file_name().ok_or(KeyError::GenericError(
+            "Filename extraction from path failed.".into(),
+        ))?;
+        let mut osstring: OsString = file_name.to_os_string();
+        osstring.push(".pub");
+        let mut pub_path_buf = path.to_path_buf();
+        pub_path_buf.set_file_name(osstring.as_os_str());
+        Ok(pub_path_buf)
     }
 }
 use keys::*;

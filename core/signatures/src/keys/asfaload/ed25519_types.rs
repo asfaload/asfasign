@@ -111,8 +111,10 @@ impl AsfaloadPublicKeyTrait for AsfaloadEd25519PublicKey {
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
         let bytes: [u8; 32] = data
             .try_into()
-            .map_err(|_| KeyError::CreationFailed("ed25519 public key must be 32 bytes".into()))?;
-        let vk = VerifyingKey::from_bytes(&bytes)?;
+            .map_err(|_| KeyError::ParseError("ed25519 public key must be 32 bytes".into()))?;
+        let vk = VerifyingKey::from_bytes(&bytes).map_err(|e| {
+            KeyError::ParseError(format!("Problem parsing ed25519 key from bytes: {e}"))
+        })?;
         Ok(vk.into())
     }
 
@@ -121,13 +123,13 @@ impl AsfaloadPublicKeyTrait for AsfaloadEd25519PublicKey {
         if let Some(rest) = s.strip_prefix(ASFALOAD_PUB_PREFIX) {
             let bytes = STANDARD_NO_PAD
                 .decode(rest.trim())
-                .map_err(|e| KeyError::CreationFailed(format!("base64 decode failed: {}", e)))?;
+                .map_err(|e| KeyError::ParseError(format!("base64 decode failed: {}", e)))?;
             return Self::from_bytes(&bytes);
         }
         if let Some(rest) = s.strip_prefix(SSH_ED25519_PREFIX) {
             return parse_ssh_ed25519_wire(rest.trim());
         }
-        Err(KeyError::CreationFailed(format!(
+        Err(KeyError::ParseError(format!(
             "unrecognised public-key prefix: expected '{}' or '{}', got input starting with '{}'",
             ASFALOAD_PUB_PREFIX,
             SSH_ED25519_PREFIX,
@@ -164,7 +166,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadEd25519PublicKey {
 
     fn from_filename(n: String) -> Result<Self, KeyError> {
         let rest = n.strip_prefix(ASFALOAD_PUB_PREFIX).ok_or_else(|| {
-            KeyError::CreationFailed(format!(
+            KeyError::ParseError(format!(
                 "expected '{}' prefix on filename",
                 ASFALOAD_PUB_PREFIX
             ))
@@ -182,31 +184,31 @@ fn parse_ssh_ed25519_wire(s: &str) -> Result<AsfaloadEd25519PublicKey, KeyError>
     let b64 = s
         .split_whitespace()
         .next()
-        .ok_or_else(|| KeyError::CreationFailed("empty ssh-ed25519 public key line".into()))?;
+        .ok_or_else(|| KeyError::ParseError("empty ssh-ed25519 public key line".into()))?;
     // SSH public keys use standard base64 with padding.
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(b64)
-        .map_err(|e| KeyError::CreationFailed(format!("ssh key base64 decode failed: {}", e)))?;
+        .map_err(|e| KeyError::ParseError(format!("ssh key base64 decode failed: {}", e)))?;
     const TYPE_TAG: &[u8] = b"ssh-ed25519";
     if bytes.len() < 4 + TYPE_TAG.len() + 4 + 32 {
-        return Err(KeyError::CreationFailed(
+        return Err(KeyError::ParseError(
             "ssh-ed25519 wire blob too short".into(),
         ));
     }
     let type_len = u32::from_be_bytes(bytes[0..4].try_into().unwrap()) as usize;
     if type_len != TYPE_TAG.len() {
-        return Err(KeyError::CreationFailed("not an ssh-ed25519 key".into()));
+        return Err(KeyError::ParseError("not an ssh-ed25519 key".into()));
     }
     // type_len == TYPE_TAG.len() == 11; 4 + 11 = 15, well within the 51-byte minimum verified above
     if &bytes[4..4 + type_len] != TYPE_TAG {
-        return Err(KeyError::CreationFailed("not an ssh-ed25519 key".into()));
+        return Err(KeyError::ParseError("not an ssh-ed25519 key".into()));
     }
     let after_type = 4 + type_len;
     // after_type + 4 + 32 <= bytes.len() guaranteed by the initial length check above
     let key_len =
         u32::from_be_bytes(bytes[after_type..after_type + 4].try_into().unwrap()) as usize;
     if key_len != 32 {
-        return Err(KeyError::CreationFailed(format!(
+        return Err(KeyError::ParseError(format!(
             "ssh-ed25519 key must be 32 bytes, got {}",
             key_len
         )));
@@ -214,7 +216,8 @@ fn parse_ssh_ed25519_wire(s: &str) -> Result<AsfaloadEd25519PublicKey, KeyError>
     let key_bytes: [u8; 32] = bytes[after_type + 4..after_type + 4 + 32]
         .try_into()
         .unwrap();
-    let vk = VerifyingKey::from_bytes(&key_bytes)?;
+    let vk = VerifyingKey::from_bytes(&key_bytes)
+        .map_err(|e| KeyError::ParseError(format!("Problem parsing ed25519 key: {e}")))?;
     Ok(vk.into())
 }
 
@@ -234,7 +237,7 @@ impl AsfaloadSecretKeyTrait for AsfaloadEd25519SecretKey {
     fn from_bytes(data: &[u8]) -> Result<Self, KeyError> {
         let bytes: [u8; 32] = data
             .try_into()
-            .map_err(|_| KeyError::CreationFailed("ed25519 secret key must be 32 bytes".into()))?;
+            .map_err(|_| KeyError::ParseError("ed25519 secret key must be 32 bytes".into()))?;
         Ok(SigningKey::from_bytes(&bytes).into())
     }
 
@@ -312,26 +315,26 @@ fn count_keys_in_openssh_pem(pem: &str) -> Result<u32, KeyError> {
         .collect();
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(body.as_bytes())
-        .map_err(|e| KeyError::CreationFailed(format!("pem body not valid base64: {}", e)))?;
+        .map_err(|e| KeyError::ParseError(format!("pem body not valid base64: {}", e)))?;
     const MAGIC: &[u8] = b"openssh-key-v1\0";
     if bytes.len() < MAGIC.len() || &bytes[..MAGIC.len()] != MAGIC {
-        return Err(KeyError::CreationFailed("not an openssh-key-v1 PEM".into()));
+        return Err(KeyError::ParseError("not an openssh-key-v1 PEM".into()));
     }
     let mut cursor = MAGIC.len();
     // Skip three length-prefixed strings: cipher, kdf, kdfopts.
     for _ in 0..3 {
         if cursor + 4 > bytes.len() {
-            return Err(KeyError::CreationFailed("openssh-key-v1 truncated".into()));
+            return Err(KeyError::ParseError("openssh-key-v1 truncated".into()));
         }
         let len = u32::from_be_bytes(bytes[cursor..cursor + 4].try_into().unwrap()) as usize;
         cursor += 4;
         if cursor.saturating_add(len) > bytes.len() {
-            return Err(KeyError::CreationFailed("openssh-key-v1 truncated".into()));
+            return Err(KeyError::ParseError("openssh-key-v1 truncated".into()));
         }
         cursor += len;
     }
     if cursor + 4 > bytes.len() {
-        return Err(KeyError::CreationFailed(
+        return Err(KeyError::ParseError(
             "openssh-key-v1 nkeys field missing".into(),
         ));
     }
@@ -358,24 +361,22 @@ impl SshEncryptedKey {
 
         let count = count_keys_in_openssh_pem(&pem)?;
         if count != 1 {
-            return Err(KeyError::CreationFailed(format!(
+            return Err(KeyError::ParseError(format!(
                 "multi-key OpenSSH files are not supported (found {count} keys)"
             )));
         }
 
         let parsed = ssh_key::PrivateKey::from_openssh(&pem)
-            .map_err(|e| KeyError::CreationFailed(format!("openssh-key-v1 parse failed: {e}")))?;
+            .map_err(|e| KeyError::ParseError(format!("openssh-key-v1 parse failed: {e}")))?;
 
         // Extract the ed25519 public key from the unencrypted header.
         // The openssh-key-v1 format stores the public key in cleartext even
         // for encrypted private keys, so no password is required here.
         let public_key = match parsed.public_key().key_data() {
             ssh_key::public::KeyData::Ed25519(pk) => VerifyingKey::from_bytes(&pk.0)
-                .map_err(|e| KeyError::CreationFailed(format!("ed25519 pk invalid: {e}")))?,
+                .map_err(|e| KeyError::ParseError(format!("ed25519 pk invalid: {e}")))?,
             _ => {
-                return Err(KeyError::CreationFailed(
-                    "OpenSSH key is not ed25519".into(),
-                ));
+                return Err(KeyError::ParseError("OpenSSH key is not ed25519".into()));
             }
         };
 
@@ -389,18 +390,17 @@ impl EncryptedEd25519Key for SshEncryptedKey {
     }
 
     fn decrypt(&self, password: &str) -> Result<SigningKey, KeyError> {
-        let mut private = ssh_key::PrivateKey::from_openssh(&self.pem).map_err(|e| {
-            KeyError::CreationFailed(format!("openssh-key-v1 re-parse failed: {e}"))
-        })?;
+        let mut private = ssh_key::PrivateKey::from_openssh(&self.pem)
+            .map_err(|e| KeyError::ParseError(format!("openssh-key-v1 re-parse failed: {e}")))?;
         if private.is_encrypted() {
-            private = private
-                .decrypt(password.as_bytes())
-                .map_err(|e| KeyError::CreationFailed(format!("ssh key decryption failed: {e}")))?;
+            private = private.decrypt(password.as_bytes()).map_err(|e| {
+                KeyError::DecryptionFailed(format!("ssh key decryption failed: {e}"))
+            })?;
         }
         let seed: Zeroizing<[u8; 32]> = Zeroizing::new(match private.key_data() {
             ssh_key::private::KeypairData::Ed25519(kp) => kp.private.to_bytes(),
             _ => {
-                return Err(KeyError::CreationFailed(
+                return Err(KeyError::ParseError(
                     "decrypted ssh key is not ed25519".into(),
                 ));
             }
@@ -458,8 +458,8 @@ mod tests {
     fn public_key_rejects_unknown_prefix() {
         let err = AsfaloadEd25519PublicKey::from_base64("ed25519:somebase64").unwrap_err();
         match err {
-            KeyError::CreationFailed(_) => {}
-            other => panic!("expected CreationFailed, got {other:?}"),
+            KeyError::ParseError(_) => {}
+            other => panic!("expected ParseError, got {other:?}"),
         }
     }
 
@@ -642,10 +642,10 @@ mod tests {
         assert_eq!(recovered.to_bytes(), seed);
 
         match key.decrypt("wrong") {
-            Err(KeyError::CreationFailed(msg)) => {
+            Err(KeyError::DecryptionFailed(msg)) => {
                 assert!(msg.contains("decryption") || msg.contains("password"));
             }
-            Err(other) => panic!("expected CreationFailed, got {other:?}"),
+            Err(other) => panic!("expected DecryptionFailed, got {other:?}"),
             Ok(_) => panic!("expected error, got Ok"),
         }
     }
@@ -658,10 +658,10 @@ mod tests {
             std::fs::read_to_string(&pem_path).expect("fixture tests/fixtures/ssh/rsa_key missing");
 
         match SshEncryptedKey::from_pem(pem) {
-            Err(common::errors::keys::KeyError::CreationFailed(msg)) => {
+            Err(common::errors::keys::KeyError::ParseError(msg)) => {
                 assert!(msg.contains("not ed25519"), "got: {msg}");
             }
-            Err(other) => panic!("expected CreationFailed, got {other:?}"),
+            Err(other) => panic!("expected ParseError, got {other:?}"),
             Ok(_) => panic!("expected rejection"),
         }
     }

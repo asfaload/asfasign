@@ -62,7 +62,7 @@ impl AsfaloadKeyPairs {
                 let kp = AsfaloadKeyPair::<AsfaloadKeysBlob>::new_with_argon2_params(pw, params)?;
                 Ok(Self::Asfaload(kp))
             }
-            KeyFormat::OpenSsh => Err(KeyError::CreationFailed(
+            KeyFormat::OpenSsh => Err(KeyError::ImportOnlyFormat(
                 "cannot generate an openssh-format keypair; asfaload is read-only for SSH".into(),
             )),
         }
@@ -170,7 +170,7 @@ impl AsfaloadPublicKeyTrait for AsfaloadPublicKeys {
             let pk = AsfaloadEd25519PublicKey::from_base64(s)?;
             return Ok(Self::Asfaload(pk));
         }
-        Err(KeyError::CreationFailed(format!(
+        Err(KeyError::ParseError(format!(
             "unrecognised public-key prefix in input starting with: {}",
             s.chars().take(32).collect::<String>()
         )))
