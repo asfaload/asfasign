@@ -188,12 +188,6 @@ pub mod keys {
         FileRevoked(PathBuf),
     }
 
-    impl From<ed25519_dalek::SignatureError> for KeyError {
-        fn from(e: ed25519_dalek::SignatureError) -> Self {
-            KeyError::ParseError(e.to_string())
-        }
-    }
-
     impl From<ed25519_dalek::SignatureError> for SignError {
         fn from(e: ed25519_dalek::SignatureError) -> Self {
             SignError::SignatureFailed(e.to_string())

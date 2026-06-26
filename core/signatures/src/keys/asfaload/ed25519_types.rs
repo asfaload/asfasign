@@ -112,7 +112,9 @@ impl AsfaloadPublicKeyTrait for AsfaloadEd25519PublicKey {
         let bytes: [u8; 32] = data
             .try_into()
             .map_err(|_| KeyError::ParseError("ed25519 public key must be 32 bytes".into()))?;
-        let vk = VerifyingKey::from_bytes(&bytes)?;
+        let vk = VerifyingKey::from_bytes(&bytes).map_err(|e| {
+            KeyError::ParseError(format!("Problem parsing ed25519 key from bytes: {e}"))
+        })?;
         Ok(vk.into())
     }
 
@@ -214,7 +216,8 @@ fn parse_ssh_ed25519_wire(s: &str) -> Result<AsfaloadEd25519PublicKey, KeyError>
     let key_bytes: [u8; 32] = bytes[after_type + 4..after_type + 4 + 32]
         .try_into()
         .unwrap();
-    let vk = VerifyingKey::from_bytes(&key_bytes)?;
+    let vk = VerifyingKey::from_bytes(&key_bytes)
+        .map_err(|e| KeyError::ParseError(format!("Problem parsing ed25519 key: {e}")))?;
     Ok(vk.into())
 }
 
