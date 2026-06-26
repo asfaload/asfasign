@@ -379,7 +379,7 @@ fn sk_from_file_wrong_ssh_passphrase_returns_creation_failed() -> Result<()> {
     std::fs::write(&path, &pem)?;
 
     match AsfaloadSecretKeys::from_file(&path, "wrong") {
-        Err(KeyError::CreationFailed(_)) => Ok(()),
+        Err(KeyError::ParseError(_)) => Ok(()),
         Err(other) => panic!("expected CreationFailed, got {other:?}"),
         Ok(_) => panic!("expected an error, got Ok"),
     }

@@ -87,15 +87,15 @@ impl AsfaloadKeyPair<AsfaloadKeysBlob> {
     pub fn from_string(s: &str) -> Result<Self, KeyError> {
         let trimmed = s.trim();
         let body = trimmed.strip_prefix(ASFALOAD_PRIV_PREFIX).ok_or_else(|| {
-            KeyError::CreationFailed(format!(
+            KeyError::ParseError(format!(
                 "not an asfaload private key (missing '{ASFALOAD_PRIV_PREFIX}' prefix)"
             ))
         })?;
         let blob_vec = STANDARD_NO_PAD
             .decode(body.trim())
-            .map_err(|e| KeyError::CreationFailed(format!("base64 decode failed: {e}")))?;
+            .map_err(|e| KeyError::ParseError(format!("base64 decode failed: {e}")))?;
         let bytes: [u8; format::TOTAL_LEN] = blob_vec.as_slice().try_into().map_err(|_| {
-            KeyError::CreationFailed(format!(
+            KeyError::ParseError(format!(
                 "asfaload-priv blob must be {} bytes, got {}",
                 format::TOTAL_LEN,
                 blob_vec.len()
@@ -119,13 +119,13 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<SshEncryptedKey> {
     type SecretKey = AsfaloadEd25519SecretKey;
 
     fn new(_password: &str) -> Result<Self, KeyError> {
-        Err(KeyError::CreationFailed(
+        Err(KeyError::ParseError(
             "cannot generate an openssh-format keypair; asfaload is read-only for SSH".into(),
         ))
     }
 
     fn save<T: AsRef<Path>>(&self, _p: T) -> Result<&Self, KeyError> {
-        Err(KeyError::CreationFailed(
+        Err(KeyError::ParseError(
             "cannot save an openssh-format keypair; asfaload does not write SSH format".into(),
         ))
     }
@@ -258,7 +258,7 @@ mod tests {
         let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_file(&path).unwrap();
         let err = kp.save(tmp.path().join("copy")).unwrap_err();
         match err {
-            KeyError::CreationFailed(msg) => {
+            KeyError::ParseError(msg) => {
                 assert!(msg.contains("openssh") || msg.contains("SSH"));
             }
             other => panic!("expected CreationFailed, got {other:?}"),

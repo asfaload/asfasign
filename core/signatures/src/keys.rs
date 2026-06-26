@@ -69,10 +69,7 @@ impl std::str::FromStr for KeyFormat {
         match s {
             "asfaload" => Ok(KeyFormat::Asfaload),
             "openssh" => Ok(KeyFormat::OpenSsh),
-            _ => Err(KeyError::CreationFailed(format!(
-                "Unknown key format: {}",
-                s
-            ))),
+            _ => Err(KeyError::ParseError(format!("Unknown key format: {}", s))),
         }
     }
 }

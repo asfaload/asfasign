@@ -139,7 +139,7 @@ pub mod keys {
     #[derive(Error, Debug)]
     pub enum KeyError {
         #[error("Key creation failed: {0}")]
-        CreationFailed(String),
+        ParseError(String),
         #[error("Keypair fs io error")]
         IOError(#[from] std::io::Error),
         #[error("Refusing to overwrite existing files")]
@@ -188,7 +188,7 @@ pub mod keys {
 
     impl From<ed25519_dalek::SignatureError> for KeyError {
         fn from(e: ed25519_dalek::SignatureError) -> Self {
-            KeyError::CreationFailed(e.to_string())
+            KeyError::ParseError(e.to_string())
         }
     }
 
