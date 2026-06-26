@@ -318,7 +318,7 @@ fn sk_from_file_rejects_unknown_prefix_without_kdf() -> Result<()> {
                 "error should include the path, got: {msg}"
             );
         }
-        Err(other) => panic!("expected CreationFailed, got {other:?}"),
+        Err(other) => panic!("expected FormatError, got {other:?}"),
         Ok(_) => panic!("expected an error, got Ok"),
     }
     Ok(())
@@ -399,7 +399,7 @@ fn pk_from_file_rejects_unknown_prefix() -> Result<()> {
             );
             Ok(())
         }
-        Err(other) => panic!("expected CreationFailed, got {other:?}"),
+        Err(other) => panic!("expected FormatError, got {other:?}"),
         Ok(_) => panic!("expected an error, got Ok"),
     }
 }
@@ -480,7 +480,7 @@ fn ed25519_sk_from_file_rejects_unknown_prefix() -> Result<()> {
 
     match crate::keys::asfaload::AsfaloadEd25519SecretKey::from_file(&path, "any-password") {
         Err(KeyError::FormatError(_msg)) => Ok(()),
-        Err(other) => panic!("expected CreationFailed, got {other:?}"),
+        Err(other) => panic!("expected FormatError, got {other:?}"),
         Ok(_) => panic!("expected an error, got Ok"),
     }
 }
