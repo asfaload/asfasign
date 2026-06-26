@@ -74,16 +74,37 @@ fn test_share_key_ssh_public_key() {
 }
 
 // -------------------------------------------------------------------
-// Rejecting private keys
+// Private keys: `.pub` sibling auto-discovery
 // -------------------------------------------------------------------
 
 #[test]
-fn test_share_key_rejects_asfaload_private_key() {
-    let (_dir, key_path) = generate_asfaload_keypair();
+fn test_share_key_finds_pub_sibling_when_given_private_key() {
+    // Fixture key_0 has a key_0.pub sibling alongside it.
+    let priv_key = test_helpers::fixtures_keys_dir().join("key_0");
+    let pub_key = fs::read_to_string(test_helpers::fixtures_pub_key(0))
+        .unwrap()
+        .trim()
+        .to_owned();
 
-    // Pass the secret key file instead of the `.pub` file.
+    // Pass the private key file — the command should find the `.pub` sibling.
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
-    cmd.arg("share-key").arg("-k").arg(&key_path);
+    cmd.arg("share-key").arg("-k").arg(&priv_key);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("The public key is safe to share"))
+        .stdout(predicate::str::contains(pub_key));
+}
+
+#[test]
+fn test_share_key_rejects_private_key_without_pub_sibling() {
+    let temp_dir = TempDir::new().unwrap();
+    let priv_key = temp_dir.path().join("key");
+    // Copy only the private key fixture — no .pub sidecar.
+    fs::copy(test_helpers::fixtures_keys_dir().join("key_0"), &priv_key).unwrap();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("share-key").arg("-k").arg(&priv_key);
 
     cmd.assert()
         .failure()
