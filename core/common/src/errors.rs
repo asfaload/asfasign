@@ -138,7 +138,7 @@ pub mod keys {
 
     #[derive(Error, Debug)]
     pub enum KeyError {
-        #[error("Key creation failed: {0}")]
+        #[error("Key parse error: {0}")]
         ParseError(String),
         #[error("Keypair fs io error")]
         IOError(#[from] std::io::Error),
@@ -152,6 +152,8 @@ pub mod keys {
         ImportOnlyFormat(String),
         #[error("Does not recognise this key format: {0}")]
         FormatError(String),
+        #[error("Key decryption failed: {0}")]
+        DecryptionFailed(String),
     }
 
     #[derive(Error, Debug)]
