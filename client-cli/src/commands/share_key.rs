@@ -2,7 +2,7 @@ use crate::commands::keys_helpers::share_pub_key_message;
 use crate::output::ShareKeyOutput;
 use anstream::println;
 use anyhow::{Context, Result};
-use features_lib::errors::keys::KeyError;
+use features_lib::errors::keys::{KeyError, append_pub_extension};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys};
 use std::path::Path;
 
@@ -12,9 +12,8 @@ pub fn handle_share_key_command(public_key: &Path, raw: bool, json: bool) -> Res
         Err(KeyError::ParseError(e)) => {
             // Even if we attempt a new .pub path, we report the original error
             let main_error = format!("Error loading public key from {}", public_key.display());
-            let pub_path = public_key.with_extension("pub");
-            // if pub_path already had the .pub extension, don't attempts again
-            if pub_path != public_key && pub_path.exists() {
+            let pub_path = append_pub_extension(public_key).with_context(|| main_error.clone())?;
+            if pub_path.exists() {
                 AsfaloadPublicKeys::from_file(pub_path).with_context(|| main_error)?
             } else {
                 Err(KeyError::ParseError(e)).with_context(|| main_error)?
