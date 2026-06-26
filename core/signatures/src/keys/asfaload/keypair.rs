@@ -119,13 +119,13 @@ impl<'a> AsfaloadKeyPairTrait<'a> for AsfaloadKeyPair<SshEncryptedKey> {
     type SecretKey = AsfaloadEd25519SecretKey;
 
     fn new(_password: &str) -> Result<Self, KeyError> {
-        Err(KeyError::ParseError(
+        Err(KeyError::ImportOnlyFormat(
             "cannot generate an openssh-format keypair; asfaload is read-only for SSH".into(),
         ))
     }
 
     fn save<T: AsRef<Path>>(&self, _p: T) -> Result<&Self, KeyError> {
-        Err(KeyError::ParseError(
+        Err(KeyError::ImportOnlyFormat(
             "cannot save an openssh-format keypair; asfaload does not write SSH format".into(),
         ))
     }
@@ -258,10 +258,10 @@ mod tests {
         let kp = AsfaloadKeyPair::<SshEncryptedKey>::from_file(&path).unwrap();
         let err = kp.save(tmp.path().join("copy")).unwrap_err();
         match err {
-            KeyError::ParseError(msg) => {
+            KeyError::ImportOnlyFormat(msg) => {
                 assert!(msg.contains("openssh") || msg.contains("SSH"));
             }
-            other => panic!("expected CreationFailed, got {other:?}"),
+            other => panic!("expected ImportOnlyFormat, got {other:?}"),
         }
     }
 }
