@@ -1,5 +1,6 @@
 use crate::{
     cli::{Cli, Commands, DEFAULT_BACKEND},
+    error::ClientCliError,
     utils::{
         PasswordConfirmation::{RequireConfirmation, WithoutConfirmation},
         get_password,
@@ -13,6 +14,7 @@ pub mod sign_pending;
 pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
+use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
 
 pub mod download;
 pub mod ping;
@@ -172,7 +174,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             ))?;
         }
         Commands::SignPending {
-            file_path,
+            file_path: file_path_in,
             secret_key_args,
             password_args,
             backend_url_args,
@@ -192,9 +194,35 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .backend_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
+
             let runtime = tokio::runtime::Runtime::new()?;
+            let file_path = match file_path_in {
+                Some(p) => p.clone(),
+                None => {
+                    // need to select interactively
+                    // This path is currently not tested, but it uses tested components.
+                    // Leaving as it for now as testing it would introduce some complexity that might
+                    // not be worth it.
+                    let client = admin_lib::v1::Client::new(url.clone());
+                    let secret_key = AsfaloadSecretKeys::from_file(
+                        secret_key_args.secret_key.clone(),
+                        &password,
+                    )?;
+                    let response = runtime.block_on(client.get_pending_signatures(&secret_key))?;
+                    let proposals = response.file_paths;
+                    match inquire::Select::new("File to sign", proposals).prompt() {
+                        Ok(choice) => choice,
+                        Err(_) => {
+                            return Err(anyhow::Error::new(ClientCliError::InvalidInput(
+                                "Selection cancelled or failed: no path to sign was provided"
+                                    .into(),
+                            )));
+                        }
+                    }
+                }
+            };
             runtime.block_on(sign_pending::handle_sign_pending_command(
-                file_path,
+                &file_path,
                 &url,
                 &secret_key_args.secret_key,
                 password.as_str(),
