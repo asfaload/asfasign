@@ -199,7 +199,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             let file_path = match file_path_in {
                 Some(p) => p.clone(),
                 None => {
-                    // need to select interactively
+                    // need to select interactively as no path passed on command line.
                     // This path is currently not tested, but it uses tested components.
                     // Leaving as it for now as testing it would introduce some complexity that might
                     // not be worth it.
@@ -210,13 +210,17 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     )?;
                     let response = runtime.block_on(client.get_pending_signatures(&secret_key))?;
                     let proposals = response.file_paths;
-                    match inquire::Select::new("File to sign", proposals).prompt() {
-                        Ok(choice) => choice,
-                        Err(_) => {
-                            return Err(anyhow::Error::new(ClientCliError::InvalidInput(
-                                "Selection cancelled or failed: no path to sign was provided"
-                                    .into(),
-                            )));
+                    if proposals.is_empty() {
+                        return Err(anyhow::Error::new(ClientCliError::NoPendingSignature));
+                    } else {
+                        match inquire::Select::new("File to sign", proposals).prompt() {
+                            Ok(choice) => choice,
+                            Err(_) => {
+                                return Err(anyhow::Error::new(ClientCliError::InvalidInput(
+                                    "Selection cancelled or failed: no path to sign was provided"
+                                        .into(),
+                                )));
+                            }
                         }
                     }
                 }
