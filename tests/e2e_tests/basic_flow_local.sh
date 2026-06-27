@@ -263,6 +263,13 @@ assert_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2"
 expect_fail "Sign signers file with key0 (already completed)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
 
+# Test interactive sign-pending when no pending signature is available:
+# no file_path arg triggers the interactive path, which fetches pending
+# signatures from the backend; key2 has none → NoPendingSignature error.
+expect_fail_json "Interactive sign-pending with no pending signatures" \
+    '.error == "No pending signature found"' \
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password "$key_password"
+
 ################################################################################
 section "Release Registration and Signing"
 ################################################################################

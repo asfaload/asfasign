@@ -185,8 +185,8 @@ pub enum Commands {
 
     /// Sign a pending file (fetch, sign, submit)
     SignPending {
-        /// Path to the pending file (relative path in mirror)
-        file_path: String,
+        /// Path to the pending file (relative path in mirror). Prompted for select if missing.
+        file_path: Option<String>,
 
         #[command(flatten)]
         secret_key_args: SecretKeyArgs,

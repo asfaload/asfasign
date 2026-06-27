@@ -36,13 +36,21 @@ pub async fn handle_sign_pending_command(
 ) -> Result<SubmitSignatureResponse> {
     // Load secret key and derive public key
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
-    let public_key = AsfaloadPublicKeys::from_secret_key(&secret_key)?;
+    handle_sign_pending_sec_key(file_path, backend_url, &secret_key, json).await
+}
 
+pub async fn handle_sign_pending_sec_key(
+    file_path: &str,
+    backend_url: &str,
+    secret_key: &AsfaloadSecretKeys,
+    json: bool,
+) -> Result<SubmitSignatureResponse> {
+    let public_key = AsfaloadPublicKeys::from_secret_key(secret_key)?;
     // Create REST client
     let client = admin_lib::v1::Client::new(backend_url);
 
     // Fetch all files that need signing
-    let files_to_sign = client.fetch_files_to_sign(file_path, &secret_key).await?;
+    let files_to_sign = client.fetch_files_to_sign(file_path, secret_key).await?;
 
     // Sign each file
     let mut signatures: HashMap<String, AsfaloadSignatures> = HashMap::new();
@@ -55,7 +63,7 @@ pub async fn handle_sign_pending_command(
 
     // Submit all signatures to backend
     let response = client
-        .submit_signatures(file_path, &public_key, &signatures, &secret_key)
+        .submit_signatures(file_path, &public_key, &signatures, secret_key)
         .await?;
 
     // Display result

@@ -48,6 +48,9 @@ pub enum ClientCliError {
 
     #[error("JSON serialization error: {0}")]
     JsonSerializationError(#[from] serde_json::Error),
+
+    #[error("No pending signature found")]
+    NoPendingSignature,
 }
 
 // FIXME: remove this, creates more confusion than necessary
