@@ -1,3 +1,5 @@
+use std::io::IsTerminal;
+
 use crate::{
     cli::{Cli, Commands, DEFAULT_BACKEND},
     error::ClientCliError,
@@ -212,7 +214,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     let proposals = response.file_paths;
                     if proposals.is_empty() {
                         return Err(anyhow::Error::new(ClientCliError::NoPendingSignature));
-                    } else {
+                    } else if std::io::stdin().is_terminal() {
                         match inquire::Select::new("File to sign", proposals).prompt() {
                             Ok(choice) => choice,
                             Err(_) => {
@@ -222,6 +224,10 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                                 )));
                             }
                         }
+                    } else {
+                        return Err(anyhow::Error::msg(
+                            "Not a tty and no path to sign was passed.",
+                        ));
                     }
                 }
             };
