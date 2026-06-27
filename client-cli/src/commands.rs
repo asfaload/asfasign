@@ -192,6 +192,8 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 WithoutConfirmation,
                 true,
             )?;
+            let secret_key =
+                AsfaloadSecretKeys::from_file(secret_key_args.secret_key.clone(), &password)?;
             let url = backend_url_args
                 .backend_url
                 .clone()
@@ -206,10 +208,6 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     // Leaving as it for now as testing it would introduce some complexity that might
                     // not be worth it.
                     let client = admin_lib::v1::Client::new(url.clone());
-                    let secret_key = AsfaloadSecretKeys::from_file(
-                        secret_key_args.secret_key.clone(),
-                        &password,
-                    )?;
                     let response = runtime.block_on(client.get_pending_signatures(&secret_key))?;
                     let proposals = response.file_paths;
                     if proposals.is_empty() {
@@ -231,11 +229,10 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     }
                 }
             };
-            runtime.block_on(sign_pending::handle_sign_pending_command(
+            runtime.block_on(sign_pending::handle_sign_pending_sec_key(
                 &file_path,
                 &url,
-                &secret_key_args.secret_key,
-                password.as_str(),
+                &secret_key,
                 json_args.json,
             ))?;
         }
