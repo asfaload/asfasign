@@ -89,8 +89,8 @@ SIGNERS_FILE_ON_FS="$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/$SIGNERS_FILE_NAME"
 
 run_step "Create signers file with 2 SSH ed25519 artifact signers (threshold 2)" \
     cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
-        --artifact-signer-file "$SSH_KEY_1.pub" \
-        --artifact-signer-file "$SSH_KEY_2.pub" \
+        --artifact-signers-file "$SSH_KEY_1.pub" \
+        --artifact-signers-file "$SSH_KEY_2.pub" \
         -A 2 \
         -o "$SIGNERS_FILE_ON_FS"
 

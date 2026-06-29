@@ -238,14 +238,14 @@ hidden_step_before() {
             # The howto assumes the new signers file is already pushed; stage the
             # exact content the tape will produce locally, at its forge URL.
             "$CLI" new-signers-file \
-                --artifact-signer-file "$FIXTURE/home/.asfaload/key_0.pub" \
-                --artifact-signer-file "$FIXTURE/home/.asfaload/key_1.pub" \
-                --artifact-signer-file "$FIXTURE/home/.asfaload/key_2.pub" \
-                --artifact-signer-file "$FIXTURE/home/.asfaload/key_3.pub" \
+                --artifact-signers-file "$FIXTURE/home/.asfaload/key_0.pub" \
+                --artifact-signers-file "$FIXTURE/home/.asfaload/key_1.pub" \
+                --artifact-signers-file "$FIXTURE/home/.asfaload/key_2.pub" \
+                --artifact-signers-file "$FIXTURE/home/.asfaload/key_3.pub" \
                 --artifact-threshold 3 \
-                --revocation-key-file "$FIXTURE/home/.asfaload/key_4.pub" \
-                --revocation-key-file "$FIXTURE/home/.asfaload/key_5.pub" \
-                --revocation-key-file "$FIXTURE/home/.asfaload/key_6.pub" \
+                --revocation-keys-file "$FIXTURE/home/.asfaload/key_4.pub" \
+                --revocation-keys-file "$FIXTURE/home/.asfaload/key_5.pub" \
+                --revocation-keys-file "$FIXTURE/home/.asfaload/key_6.pub" \
                 --revocation-threshold 2 \
                 --output-file "$FIXTURE/fileserver/$DEMO_PROJECT/asfaload.signers/index_v2.json" \
                 >/dev/null

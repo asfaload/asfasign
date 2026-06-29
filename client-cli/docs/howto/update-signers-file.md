@@ -16,14 +16,14 @@ Generate a new signers file with the updated set of keys and thresholds:
 
 ```sh
 asfaload-cli new-signers-file \
-    --artifact-signer-file alice.pub \
-    --artifact-signer-file bob.pub \
-    --artifact-signer-file carol.pub \
-    --artifact-signer-file dave.pub \
+    --artifact-signers-file alice.pub \
+    --artifact-signers-file bob.pub \
+    --artifact-signers-file carol.pub \
+    --artifact-signers-file dave.pub \
     --artifact-threshold 3 \
-    --revocation-key-file revoke1.pub \
-    --revocation-key-file revoke2.pub \
-    --revocation-key-file revoke3.pub \
+    --revocation-keys-file revoke1.pub \
+    --revocation-keys-file revoke2.pub \
+    --revocation-keys-file revoke3.pub \
     --revocation-threshold 2 \
     --output-file signers_v2.json
 ```

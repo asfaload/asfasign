@@ -27,9 +27,9 @@ echo "It contains some random text for demonstration purposes" >>/tmp/file-to-si
 # 3. Create signers file with the 3 public keys and threshold of 2
 echo "3. Creating signers file..."
 cargo run --quiet -- new-signers-file \
-  --artifact-signer-file /tmp/new-keys/key1.pub \
-  --artifact-signer-file /tmp/new-keys/key2.pub \
-  --artifact-signer-file /tmp/new-keys/key3.pub \
+  --artifact-signers-file /tmp/new-keys/key1.pub \
+  --artifact-signers-file /tmp/new-keys/key2.pub \
+  --artifact-signers-file /tmp/new-keys/key3.pub \
   --artifact-threshold 2 \
   --output-file /tmp/new-signers-file
 

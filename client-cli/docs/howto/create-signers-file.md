@@ -23,9 +23,9 @@ carol.pub
 
 ```sh
 asfaload-cli new-signers-file \
-    --artifact-signer-file alice.pub \
-    --artifact-signer-file bob.pub \
-    --artifact-signer-file carol.pub \
+    --artifact-signers-file alice.pub \
+    --artifact-signers-file bob.pub \
+    --artifact-signers-file carol.pub \
     --artifact-threshold 2 \
     --output-file signers.json
 ```
@@ -84,13 +84,13 @@ Revocation keys can revoke signed releases. Useful to have a separate set of key
 
 ```sh
 asfaload-cli new-signers-file \
-    --artifact-signer-file alice.pub \
-    --artifact-signer-file bob.pub \
-    --artifact-signer-file carol.pub \
+    --artifact-signers-file alice.pub \
+    --artifact-signers-file bob.pub \
+    --artifact-signers-file carol.pub \
     --artifact-threshold 2 \
-    --revocation-key-file revoke1.pub \
-    --revocation-key-file revoke2.pub \
-    --revocation-key-file revoke3.pub \
+    --revocation-keys-file revoke1.pub \
+    --revocation-keys-file revoke2.pub \
+    --revocation-keys-file revoke3.pub \
     --revocation-threshold 2 \
     --output-file signers.json
 ```
@@ -101,10 +101,10 @@ Admin keys can propose signers file updates:
 
 ```sh
 asfaload-cli new-signers-file \
-    --artifact-signer-file alice.pub \
-    --artifact-signer-file bob.pub \
+    --artifact-signers-file alice.pub \
+    --artifact-signers-file bob.pub \
     --artifact-threshold 2 \
-    --admin-key-file admin.pub \
+    --admin-keys-file admin.pub \
     --admin-threshold 1 \
     --output-file signers.json
 ```
@@ -116,7 +116,7 @@ You can pass public keys as base64 strings instead of files. This is handy when 
 ```sh
 asfaload-cli new-signers-file \
     --artifact-signer "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8" \
-    --artifact-signer-file bob.pub \
+    --artifact-signers-file bob.pub \
     --artifact-threshold 1 \
     --output-file signers.json
 ```
