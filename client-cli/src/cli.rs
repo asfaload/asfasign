@@ -119,7 +119,7 @@ pub enum Commands {
 
         /// Artifact signer public key file (can be repeated, combines with --artifact-signer)
         #[arg(long)]
-        artifact_signer_file: Vec<PathBuf>,
+        artifact_signers_file: Vec<PathBuf>,
 
         /// Threshold for artifact signers
         #[arg(long, short = 'A')]
@@ -131,7 +131,7 @@ pub enum Commands {
 
         /// Admin public key file (can be repeated, combines with --admin-key)
         #[arg(long)]
-        admin_key_file: Vec<PathBuf>,
+        admin_keys_file: Vec<PathBuf>,
 
         /// Threshold for admin keys (required if admin keys are provided)
         #[arg(long, short = 'D')]
@@ -143,7 +143,7 @@ pub enum Commands {
 
         /// Master public key file (can be repeated, combines with --master-key)
         #[arg(long)]
-        master_key_file: Vec<PathBuf>,
+        master_keys_file: Vec<PathBuf>,
 
         /// Threshold for master keys (required if master keys are provided)
         #[arg(long, short = 'M')]
@@ -155,7 +155,7 @@ pub enum Commands {
 
         /// Revocation public key file (can be repeated, combines with --revocation-key)
         #[arg(long)]
-        revocation_key_file: Vec<PathBuf>,
+        revocation_keys_file: Vec<PathBuf>,
 
         /// Threshold for revocation keys (required if revocation keys are provided)
         #[arg(long, short = 'R')]
