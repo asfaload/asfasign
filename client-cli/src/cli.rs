@@ -161,9 +161,9 @@ pub enum Commands {
         #[arg(long, short = 'R')]
         revocation_threshold: Option<u32>,
 
-        /// Path to the signers file to be created
-        #[arg(long, short)]
-        output_file: PathBuf,
+        /// Path to the signers file to be created; if omitted, writes to stdout (required with --json)
+        #[arg(long, short, required_if_eq("json", "true"))]
+        output_file: Option<PathBuf>,
 
         #[command(flatten)]
         json_args: JsonArgs,
