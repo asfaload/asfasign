@@ -129,6 +129,26 @@ asfaload-cli share-key -k alice.pub --raw
 
 See [Share a public key](share-public-key.md) for more details.
 
+## Passing keys from a single file
+
+For a longer signer list, repeating `--artifact-signers-file` quickly gets verbose. Each `*-keys-file` option reads **one key per line**, so you can collect several keys in a single text file and pass it once:
+
+```sh
+# signers.txt  (one base64 public key per line)
+asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+asfaload-pub:9wX6TbqMn2pPJ5vLV4R5gazKc2sQ7rH8oY3tV1uWfQk
+asfaload-pub:7yQ4Tm1VxLpHoC2dRsKuVwMqY3nJbZ8iPtXaVeF9fBg
+```
+
+```sh
+asfaload-cli new-signers-file \
+    --af signers.txt \
+    -A 2 \
+    -o signers.json
+```
+
+The short alias `--af` (= `--artifact-signers-file`) keeps the command readable. The same `--df`, `--mf`, and `--rf` aliases exist for admin, master, and revocation key files.
+
 ## Next step
 
 [Register the repository](register-repo.md) with the backend so it knows where to find your signers file.

@@ -1,6 +1,6 @@
 # `asfaload-cli new-signers-file`
 
-- **Usage**: `asfaload-cli new-signers-file [OPTIONS] -o <OUTPUT_FILE>`
+- **Usage**: `asfaload-cli new-signers-file [OPTIONS] --artifact-threshold <ARTIFACT_THRESHOLD>`
 - **Source**: [`src/commands/signers_file.rs`](../../src/commands/signers_file.rs)
 
 Create a new signers file that defines who can sign artifacts, administer, and manage the project. At minimum, one artifact signer and its threshold are required.
@@ -11,13 +11,13 @@ Create a new signers file that defines who can sign artifacts, administer, and m
 
 Every signers file needs at least one artifact signer.
 
-#### `-a --artifact-signer <BASE64_KEY>`
+#### `-a --artifact-signer <PUB_KEY>`
 
 Public key as a base64 string. Repeatable.
 
-#### `--artifact-signers-file <PATH>`
+#### `--artifact-signers-file <FILE_PATH>` (`--af`)
 
-Path to a `.pub` key file. Repeatable. Combines with `--artifact-signer`.
+Path to a file holding public keys, **one per line**. Repeatable. Combines with `--artifact-signer`.
 
 #### `-A --artifact-threshold <N>`
 
@@ -25,13 +25,13 @@ Number of artifact signers required to complete a signature. Must be between 1 a
 
 ### Admin keys (optional)
 
-#### `-d --admin-key <BASE64_KEY>`
+#### `-d --admin-key <PUB_KEY>`
 
 Admin public key as a base64 string. Repeatable.
 
-#### `--admin-keys-file <PATH>`
+#### `--admin-keys-file <FILE_PATH>` (`--df`)
 
-Path to an admin `.pub` key file. Repeatable.
+Path to a file holding admin public keys, **one per line**. Repeatable. Combines with `--admin-key`.
 
 #### `-D --admin-threshold <N>`
 
@@ -39,13 +39,13 @@ Required when admin keys are provided. Number of admins required to approve chan
 
 ### Master keys (optional)
 
-#### `-m --master-key <BASE64_KEY>`
+#### `-m --master-key <PUB_KEY>`
 
 Master public key as a base64 string. Repeatable.
 
-#### `--master-keys-file <PATH>`
+#### `--master-keys-file <FILE_PATH>` (`--mf`)
 
-Path to a master `.pub` key file. Repeatable.
+Path to a file holding master public keys, **one per line**. Repeatable. Combines with `--master-key`.
 
 #### `-M --master-threshold <N>`
 
@@ -53,13 +53,13 @@ Required when master keys are provided.
 
 ### Revocation keys (optional)
 
-#### `-r --revocation-key <BASE64_KEY>`
+#### `-r --revocation-key <PUB_KEY>`
 
 Revocation public key as a base64 string. Repeatable.
 
-#### `--revocation-keys-file <PATH>`
+#### `--revocation-keys-file <FILE_PATH>` (`--rf`)
 
-Path to a revocation `.pub` key file. Repeatable.
+Path to a file holding revocation public keys, **one per line**. Repeatable. Combines with `--revocation-key`.
 
 #### `-R --revocation-threshold <N>`
 
@@ -67,9 +67,9 @@ Required when revocation keys are provided.
 
 ### General
 
-#### `-o --output-file <PATH>`
+#### `-o --output-file <OUTPUT_FILE>`
 
-Path for the new signers file. The file must not already exist — the command refuses to overwrite. Parent directories are created automatically.
+Path for the new signers file. The file must not already exist — the command refuses to overwrite. Parent directories are created automatically. Required when `--json` is used; otherwise the signers file is printed to stdout if omitted.
 
 #### `--json`
 
@@ -114,6 +114,12 @@ JSON (with `--json`):
         -a "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8" \
         --artifact-signers-file bob.pub \
         -A 1 \
+        -o signers.json
+
+    # one key per line in a single file (--af is an alias for --artifact-signers-file)
+    asfaload-cli new-signers-file \
+        --af signers.txt \
+        -A 2 \
         -o signers.json
 
 ## Exit codes
