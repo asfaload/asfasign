@@ -59,22 +59,22 @@ printf '%sGenerating fixture files...%s ' "$DIM" "$RESET"
 
 # Generate signers file 1 (3 artifact signers, threshold 2)
 cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
-    --artifact-signer-file "$KEY_0.pub" \
-    --artifact-signer-file "$KEY_1.pub" \
-    --artifact-signer-file "$KEY_2.pub" \
+    --artifact-signers-file "$KEY_0.pub" \
+    --artifact-signers-file "$KEY_1.pub" \
+    --artifact-signers-file "$KEY_2.pub" \
     -A 2 \
     -o "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_1${_SIGNERS_SUFFIX}.json"
 
 # Generate signers file 2 (4 artifact signers threshold 3, 3 revocation keys threshold 2)
 cargo run --quiet --manifest-path "$base_dir/client-cli/Cargo.toml" -- new-signers-file \
-    --artifact-signer-file "$KEY_0.pub" \
-    --artifact-signer-file "$KEY_1.pub" \
-    --artifact-signer-file "$KEY_2.pub" \
-    --artifact-signer-file "$KEY_3.pub" \
+    --artifact-signers-file "$KEY_0.pub" \
+    --artifact-signers-file "$KEY_1.pub" \
+    --artifact-signers-file "$KEY_2.pub" \
+    --artifact-signers-file "$KEY_3.pub" \
     -A 3 \
-    --revocation-key-file "$KEY_4.pub" \
-    --revocation-key-file "$KEY_5.pub" \
-    --revocation-key-file "$KEY_6.pub" \
+    --revocation-keys-file "$KEY_4.pub" \
+    --revocation-keys-file "$KEY_5.pub" \
+    --revocation-keys-file "$KEY_6.pub" \
     -R 2 \
     -o "$FS_PROJECT_DIR/$HIDDEN_SIGNERS_DIR/signers_file_2${_SIGNERS_SUFFIX}.json"
 

@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::error::{ClientCliError, Result};
@@ -34,7 +34,7 @@ fn get_group_info<P: AsfaloadPublicKeyTrait>(
 /// * `master_key` - List of master public keys (base64 strings)
 /// * `master_key_file` - List of master public key files (.pub files)
 /// * `master_threshold` - Threshold for master keys (optional)
-/// * `output_file` - Path to the output signers file
+/// * `output_file` - Path to the output signers file; when None, written to stdout
 ///
 /// # Returns
 /// * `Result<()>` - Ok if the command was handled successfully, Err otherwise
@@ -52,29 +52,32 @@ pub fn handle_new_signers_file_command(
     revocation_key: &[String],
     revocation_key_file: &[PathBuf],
     revocation_threshold: Option<u32>,
-    output_file: &Path,
+    output_file: &Option<PathBuf>,
     json: bool,
 ) -> Result<()> {
-    // We do not geve a default name to the file, so we cannot work
-    // with the path to a dir.
-    if output_file.is_dir() {
-        return Err(crate::error::ClientCliError::InvalidInput(format!(
-            "Output file {:?} is a directory but it must be the path to a new file.",
-            output_file
-        )));
-    }
-    // Check if the output file already exists
-    if output_file.exists() {
-        return Err(crate::error::ClientCliError::InvalidInput(format!(
-            "Output file {:?} already exists, refusing to overwrite",
-            output_file
-        )));
-    }
+    // Do output file validations early
+    if let Some(output_file) = output_file {
+        // We do not geve a default name to the file, so we cannot work
+        // with the path to a dir.
+        if output_file.is_dir() {
+            return Err(crate::error::ClientCliError::InvalidInput(format!(
+                "Output file {:?} is a directory but it must be the path to a new file.",
+                output_file
+            )));
+        }
+        // Check if the output file already exists
+        if output_file.exists() {
+            return Err(crate::error::ClientCliError::InvalidInput(format!(
+                "Output file {:?} already exists, refusing to overwrite",
+                output_file
+            )));
+        }
 
-    // Get parent directory and create it if it doesn't exist
-    if let Some(parent_dir) = output_file.parent() {
-        ensure_dir_exists(parent_dir)?;
-    }
+        // Get parent directory and create it if it doesn't exist
+        if let Some(parent_dir) = output_file.parent() {
+            ensure_dir_exists(parent_dir)?;
+        }
+    };
 
     // Combine string and file-based artifact signers
     let all_artifact_signers: Vec<AsfaloadPublicKeys> =
@@ -117,37 +120,62 @@ pub fn handle_new_signers_file_command(
     })?;
 
     // Serialize to JSON
-    let json_content = signers_config.to_json().map_err(|e| {
+    let signers_file_content = signers_config.to_json().map_err(|e| {
         crate::error::ClientCliError::SignersFile(format!(
             "Failed to serialize signers config: {}",
             e
         ))
     })?;
 
-    // Write to file
-    let mut file = fs::File::create(output_file).map_err(|e| {
-        crate::error::ClientCliError::SignersFile(format!("Failed to create signers file: {}", e))
-    })?;
-
-    file.write_all(json_content.as_bytes()).map_err(|e| {
-        crate::error::ClientCliError::SignersFile(format!("Failed to write signers file: {}", e))
-    })?;
-
-    if json {
-        let output = crate::output::NewSignersFileOutput {
-            output_file: output_file.to_string_lossy().to_string(),
-            artifact_signers_count: all_artifact_signers_count,
-            artifact_threshold,
-            admin_keys_count: all_admin_keys_count,
-            admin_threshold,
-            master_keys_count: all_master_keys_count,
-            master_threshold,
-            revocation_keys_count: all_revocation_keys_count,
-            revocation_threshold,
+    // Define lambdas to make match (-o flag, --json flag) below readable.
+    // -------------------------------------------------------------------
+    // Write signers file to disk
+    let write_signers_file =
+        |p: &PathBuf| -> std::result::Result<(), crate::error::ClientCliError> {
+            let mut file = fs::File::create_new(p).map_err(|e| {
+                crate::error::ClientCliError::SignersFile(format!(
+                    "Failed to create signers file at {}: {}",
+                    p.display(),
+                    e
+                ))
+            })?;
+            file.write_all(signers_file_content.as_bytes())
+                .map_err(|e| {
+                    let _ = fs::remove_file(p);
+                    crate::error::ClientCliError::SignersFile(format!(
+                        "Failed to write signers file at {}: {}",
+                        p.display(),
+                        e
+                    ))
+                })?;
+            Ok(())
         };
-        println!("{}", serde_json::to_string(&output)?);
-    } else {
-        println!("Signers file created successfully at: {:?}", output_file);
+    // Print signers file to stdout
+    let print_signers_file_content = || {
+        // We have posix json content, with trailing \n, so no println!
+        print!("{}", signers_file_content);
+    };
+    // Print the --json flag output
+    let print_json_output =
+        |signers_file_destination| -> std::result::Result<(), crate::error::ClientCliError> {
+            let output = crate::output::NewSignersFileOutput {
+                output_file: signers_file_destination,
+                artifact_signers_count: all_artifact_signers_count,
+                artifact_threshold,
+                admin_keys_count: all_admin_keys_count,
+                admin_threshold,
+                master_keys_count: all_master_keys_count,
+                master_threshold,
+                revocation_keys_count: all_revocation_keys_count,
+                revocation_threshold,
+            };
+            println!("{}", serde_json::to_string(&output)?);
+            Ok(())
+        };
+
+    // Print a human overview of the file written to disk
+    let print_human_overview = |p: &PathBuf| {
+        println!("Signers file created successfully at: {}", p.display());
         println!(
             "Artifact signers: {} (threshold: {})",
             all_artifact_signers_count, artifact_threshold
@@ -166,7 +194,28 @@ pub fn handle_new_signers_file_command(
             "Revocation keys: {} (threshold: {})",
             all_revocation_keys_count,
             revocation_threshold.map_or("none".to_string(), |t| t.to_string())
-        );
+        )
+    };
+
+    match (output_file, json) {
+        // -o and --json
+        (Some(p), true) => {
+            write_signers_file(p)?;
+            print_json_output(p.to_string_lossy().to_string())?;
+        }
+        // -o, no --json
+        (Some(p), false) => {
+            write_signers_file(p)?;
+            print_human_overview(p)
+        }
+        // no -o, --json
+        (None, true) => {
+            return Err(crate::error::ClientCliError::InvalidInput(
+                "Cannot output to stdout with --json flag".to_string(),
+            ));
+        }
+        // no -o, no --json
+        (None, false) => print_signers_file_content(),
     }
 
     Ok(())

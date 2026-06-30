@@ -15,7 +15,7 @@ Every signers file needs at least one artifact signer.
 
 Public key as a base64 string. Repeatable.
 
-#### `--artifact-signer-file <PATH>`
+#### `--artifact-signers-file <PATH>`
 
 Path to a `.pub` key file. Repeatable. Combines with `--artifact-signer`.
 
@@ -29,7 +29,7 @@ Number of artifact signers required to complete a signature. Must be between 1 a
 
 Admin public key as a base64 string. Repeatable.
 
-#### `--admin-key-file <PATH>`
+#### `--admin-keys-file <PATH>`
 
 Path to an admin `.pub` key file. Repeatable.
 
@@ -43,7 +43,7 @@ Required when admin keys are provided. Number of admins required to approve chan
 
 Master public key as a base64 string. Repeatable.
 
-#### `--master-key-file <PATH>`
+#### `--master-keys-file <PATH>`
 
 Path to a master `.pub` key file. Repeatable.
 
@@ -57,7 +57,7 @@ Required when master keys are provided.
 
 Revocation public key as a base64 string. Repeatable.
 
-#### `--revocation-key-file <PATH>`
+#### `--revocation-keys-file <PATH>`
 
 Path to a revocation `.pub` key file. Repeatable.
 
@@ -93,26 +93,26 @@ JSON (with `--json`):
 
     # minimal: two artifact signers, threshold of 2
     asfaload-cli new-signers-file \
-        --artifact-signer-file alice.pub \
-        --artifact-signer-file bob.pub \
+        --artifact-signers-file alice.pub \
+        --artifact-signers-file bob.pub \
         -A 2 \
         -o signers.json
 
     # with admin and revocation groups
     asfaload-cli new-signers-file \
-        --artifact-signer-file alice.pub \
-        --artifact-signer-file bob.pub \
+        --artifact-signers-file alice.pub \
+        --artifact-signers-file bob.pub \
         -A 2 \
-        --admin-key-file admin.pub \
+        --admin-keys-file admin.pub \
         -D 1 \
-        --revocation-key-file revoke.pub \
+        --revocation-keys-file revoke.pub \
         -R 1 \
         -o signers.json
 
     # mix base64 strings and files
     asfaload-cli new-signers-file \
         -a "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8" \
-        --artifact-signer-file bob.pub \
+        --artifact-signers-file bob.pub \
         -A 1 \
         -o signers.json
 

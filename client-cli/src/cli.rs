@@ -119,7 +119,7 @@ pub enum Commands {
 
         /// Artifact signer public key file (can be repeated, combines with --artifact-signer)
         #[arg(long)]
-        artifact_signer_file: Vec<PathBuf>,
+        artifact_signers_file: Vec<PathBuf>,
 
         /// Threshold for artifact signers
         #[arg(long, short = 'A')]
@@ -131,7 +131,7 @@ pub enum Commands {
 
         /// Admin public key file (can be repeated, combines with --admin-key)
         #[arg(long)]
-        admin_key_file: Vec<PathBuf>,
+        admin_keys_file: Vec<PathBuf>,
 
         /// Threshold for admin keys (required if admin keys are provided)
         #[arg(long, short = 'D')]
@@ -143,7 +143,7 @@ pub enum Commands {
 
         /// Master public key file (can be repeated, combines with --master-key)
         #[arg(long)]
-        master_key_file: Vec<PathBuf>,
+        master_keys_file: Vec<PathBuf>,
 
         /// Threshold for master keys (required if master keys are provided)
         #[arg(long, short = 'M')]
@@ -155,15 +155,15 @@ pub enum Commands {
 
         /// Revocation public key file (can be repeated, combines with --revocation-key)
         #[arg(long)]
-        revocation_key_file: Vec<PathBuf>,
+        revocation_keys_file: Vec<PathBuf>,
 
         /// Threshold for revocation keys (required if revocation keys are provided)
         #[arg(long, short = 'R')]
         revocation_threshold: Option<u32>,
 
-        /// Path to the signers file to be created
-        #[arg(long, short)]
-        output_file: PathBuf,
+        /// Path to the signers file to be created; if omitted, writes to stdout (required with --json)
+        #[arg(long, short, required_if_eq("json", "true"))]
+        output_file: Option<PathBuf>,
 
         #[command(flatten)]
         json_args: JsonArgs,
