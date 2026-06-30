@@ -139,7 +139,15 @@ pub fn handle_new_signers_file_command(
                     e
                 ))
             })?;
-            file.write_all(signers_file_content.as_bytes())?;
+            file.write_all(signers_file_content.as_bytes())
+                .map_err(|e| {
+                    let _ = fs::remove_file(p);
+                    crate::error::ClientCliError::SignersFile(format!(
+                        "Failed to write signers file at {}: {}",
+                        p.display(),
+                        e
+                    ))
+                })?;
             Ok(())
         };
     // Print signers file to stdout
