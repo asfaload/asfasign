@@ -114,11 +114,11 @@ pub enum Commands {
     /// Operations related to signers files
     NewSignersFile {
         /// Artifact signer public key as base64 string (can be repeated)
-        #[arg(long, short)]
+        #[arg(long, short, value_name = "PUB_KEY")]
         artifact_signer: Vec<String>,
 
-        /// Artifact signer public key file (can be repeated, combines with --artifact-signer)
-        #[arg(long)]
+        /// File with artifact signers public keys, one per line
+        #[arg(long, visible_alias = "af", value_name = "FILE_PATH")]
         artifact_signers_file: Vec<PathBuf>,
 
         /// Threshold for artifact signers
@@ -126,11 +126,11 @@ pub enum Commands {
         artifact_threshold: u32,
 
         /// Admin public key string as base64 string (can be repeated)
-        #[arg(long, short = 'd')]
+        #[arg(long, short = 'd', value_name = "PUB_KEY")]
         admin_key: Vec<String>,
 
-        /// Admin public key file (can be repeated, combines with --admin-key)
-        #[arg(long)]
+        /// File with admins public keys, one per line
+        #[arg(long, visible_alias = "df", value_name = "FILE_PATH")]
         admin_keys_file: Vec<PathBuf>,
 
         /// Threshold for admin keys (required if admin keys are provided)
@@ -138,11 +138,11 @@ pub enum Commands {
         admin_threshold: Option<u32>,
 
         /// Master public key string as base64 string (can be repeated)
-        #[arg(long, short)]
+        #[arg(long, short, value_name = "PUB_KEY")]
         master_key: Vec<String>,
 
-        /// Master public key file (can be repeated, combines with --master-key)
-        #[arg(long)]
+        /// File with masters public keys, one per line
+        #[arg(long, visible_alias = "mf", value_name = "FILE_PATH")]
         master_keys_file: Vec<PathBuf>,
 
         /// Threshold for master keys (required if master keys are provided)
@@ -150,11 +150,11 @@ pub enum Commands {
         master_threshold: Option<u32>,
 
         /// Revocation public key string as base64 string (can be repeated)
-        #[arg(long, short)]
+        #[arg(long, short, value_name = "PUB_KEY")]
         revocation_key: Vec<String>,
 
-        /// Revocation public key file (can be repeated, combines with --revocation-key)
-        #[arg(long)]
+        /// File with revocation public keys, one per line
+        #[arg(long, visible_alias = "rf", value_name = "FILE_PATH")]
         revocation_keys_file: Vec<PathBuf>,
 
         /// Threshold for revocation keys (required if revocation keys are provided)
