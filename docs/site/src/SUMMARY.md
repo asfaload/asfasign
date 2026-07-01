@@ -2,6 +2,10 @@
 
 [Introduction](index.md)
 
+# Concepts
+
+- [Concepts](concepts/index.md)
+
 # Client CLI
 
 - [How-to Guides](client-cli/howto/index.md)

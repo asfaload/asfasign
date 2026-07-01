@@ -99,6 +99,7 @@ docs-copy-demos:
 ## Build documentation site
 docs: docs-copy-demos
 	@mkdir -p docs/site/src/client-cli docs/site/src/rest-api
+	@ln -sfn ../../concepts docs/site/src/concepts
 	@ln -sfn ../../../../client-cli/docs/howto docs/site/src/client-cli/howto
 	@ln -sfn ../../../../client-cli/docs/manual docs/site/src/client-cli/manual
 	@ln -sfn ../../../../rest-api/docs/manual docs/site/src/rest-api/manual
@@ -107,6 +108,7 @@ docs: docs-copy-demos
 ## Serve documentation site locally for preview
 docs-serve: docs-copy-demos
 	@mkdir -p docs/site/src/client-cli docs/site/src/rest-api
+	@ln -sfn ../../concepts docs/site/src/concepts
 	@ln -sfn ../../../../client-cli/docs/howto docs/site/src/client-cli/howto
 	@ln -sfn ../../../../client-cli/docs/manual docs/site/src/client-cli/manual
 	@ln -sfn ../../../../rest-api/docs/manual docs/site/src/rest-api/manual
@@ -114,7 +116,7 @@ docs-serve: docs-copy-demos
 
 ## Remove generated documentation files
 docs-clean:
-	rm -rf docs/site/src/client-cli docs/site/src/rest-api docs/site/book
+	rm -rf docs/site/src/concepts docs/site/src/client-cli docs/site/src/rest-api docs/site/book
 	rm -rf $(GIF_DST)
 
 
