@@ -130,7 +130,7 @@ docs-setup-rclone:
 
 ## Deploy generated static site
 docs-deploy: docs-clean docs
-	rclone --config $(RCLONE_CONFIG) sync --verbose ./docs/site/book/ ovh:/home/asfaloc/www/doc/
+	rclone --config $(RCLONE_CONFIG) sync --verbose ./docs/site/book/ ovh:/home/asfaloc/www/docs/
 
 ## Render VHS demos for the client-cli how-tos. DEMO_PROFILE is production by default, set to fast for dev
 demos:
