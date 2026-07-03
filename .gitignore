@@ -13,6 +13,7 @@ mutants.out.old/
 mutants.out/
 
 # Documentation site generated files
+docs/site/src/concepts
 docs/site/src/client-cli/
 docs/site/src/rest-api/
 docs/site/book/

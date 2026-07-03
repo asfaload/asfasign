@@ -12,6 +12,10 @@ The Client CLI documentation explains how to use our command line utility to int
 
 ## Sections
 
+### [Concepts](concepts/index.md)
+
+Foundational terminology used throughout the Asfaload documentation: individual and aggregate signatures, the multisig system, the signers file, and the role-based signer groups.
+
 ### [Client CLI — How-to Guides](client-cli/howto/index.md)
 
 Step-by-step recipes for common operations: generating keys, creating signers files, registering releases, signing, and verification.
