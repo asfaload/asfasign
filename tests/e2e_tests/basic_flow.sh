@@ -50,7 +50,8 @@ base_dir="$(git rev-parse --show-toplevel)"
 
 if [[ -n "${backend:-}" ]] && curl "$backend" --silent > /dev/null 2>&1; then
     printf '%sUsing existing backend at %s%s\n\n' "$DIM" "$backend" "$RESET"
-    if [[ -z "${E2E_GIT_REPO_PATH}" ]]; then
+    # git repo path is required unless we set NO_ASSERT, in which case we can use a remote backend
+    if [[ -z "${E2E_GIT_REPO_PATH}" && -z "${NO_ASSERT:-""}" ]]; then
         echo "E2E_GIT_REPO_PATH unset, you need to set it before calling this script"
         exit 1
     fi
