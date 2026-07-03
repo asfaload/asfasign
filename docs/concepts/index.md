@@ -31,19 +31,23 @@ group has a specific purpose: `artifact_signers` applies to normal operations
 ### Groups
 #### Artifact signers
 
-List the public keys of the signers authorised and expected to sign an artifact, for example a Github Release.
+Lists the public keys of the signers authorised and expected to sign an artifact, for example a Github Release.
+This group is mandatory.
 
 #### Admin keys
 
 Lists the public keys of signers authorised to update the signers file.
+Falls back to artifact_signers if absent or empty.
 
 #### Revocation keys
 
 Lists public keys of signers authorised to revoke an aggregate signature. The
 aggregate signature can be pending, in which case it cannot be completed
 anymore, or complete, in which case it is rendered obsolete.
+Falls back to admin keys if absent.
 
 #### Master keys
 
 These keys cannot be present in another group, and they are meant to be used in emergency operations when admin keys are not usable.
-We encourage to keep these keys offline.
+We encourage keeping these keys offline.
+Optional, but does not fall back to another group if absent.
