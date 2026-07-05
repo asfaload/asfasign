@@ -51,3 +51,16 @@ Falls back to admin keys if absent.
 These keys cannot be present in another group, and they are meant to be used in emergency operations when admin keys are not usable.
 We encourage keeping these keys offline.
 Optional, but does not fall back to another group if absent.
+
+## Trust anchor
+
+When verifying signatures, you need to have an anchor of trust that enables to
+say: because the persons publishing the signers file have done it at that
+location, I trust the fact that they control that location.
+It is similar to Let's Encrypt trusting the fact that you publishing
+information on your domain's website or DNS entry show you are controlling that
+domain.
+With Asfaload we have a similar trust anchor: we trust that when you publish a
+signers file in your Github repository (or any other publishing platform
+supported), it shows you control that repository. This is because only a person
+controlling the repository can create a branch and publish a file there.
