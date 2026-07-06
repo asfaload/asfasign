@@ -70,9 +70,13 @@ pub async fn handle_sign_pending_sec_key(
     if json {
         println!("{}", serde_json::to_string(&response)?);
     } else if response.is_complete {
-        println!("Success! Signature submitted (complete)");
+        println!(
+            "Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature."
+        );
     } else {
-        println!("Success! Signature submitted");
+        println!(
+            "Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures."
+        );
     }
 
     Ok(response)
