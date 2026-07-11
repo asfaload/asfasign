@@ -352,9 +352,12 @@ pub mod models {
         path: String,
         digest: String,
     }
+
+    // The Display implementation is used by Inquire::Select
+    // Changing the format here will change the select prompt used by sign-pending
     impl fmt::Display for PendingFile {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "path: {}, digest: {}", self.path, self.digest)
+            write!(f, "path: {}\n digest: {}\n", self.path, self.digest)
         }
     }
 

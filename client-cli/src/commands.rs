@@ -209,16 +209,17 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     // not be worth it.
                     let client = admin_lib::v1::Client::new(url.clone());
                     let response = runtime.block_on(client.get_pending_signatures(&secret_key))?;
-                    let pendings = response.pending_files;
-                    let proposals: Vec<String> = pendings
-                        .iter()
-                        .map(|p| format!("{}\n{}", p.path(), p.digest()))
-                        .collect();
+                    // We use the pending files as the proposals to be able to extract the path easily.
+                    // If we format it in a custom way here, we will get the string as a response,
+                    // and we need to extract the path from that. Much better to work with FilePending.
+                    // Inquired formats them according to the Display implementation for PendingFile,
+                    let proposals = response.pending_files;
+
                     if proposals.is_empty() {
                         return Err(anyhow::Error::new(ClientCliError::NoPendingSignature));
                     } else if std::io::stdin().is_terminal() {
                         match inquire::Select::new("File to sign", proposals).prompt() {
-                            Ok(choice) => choice,
+                            Ok(choice) => choice.path().to_string(),
                             Err(_) => {
                                 return Err(anyhow::Error::new(ClientCliError::InvalidInput(
                                     "Selection cancelled or failed: no path to sign was provided"
