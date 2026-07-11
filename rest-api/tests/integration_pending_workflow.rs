@@ -55,9 +55,9 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     assert_eq!(response1.status(), 200);
 
     let response1_body: ListPendingResponse = response1.json().await?;
-    println!("Pending files for key1: {:?}", response1_body.file_paths);
-    assert_eq!(response1_body.file_paths.len(), 1);
-    assert_eq!(response1_body.file_paths[0], file_path_str);
+    println!("Pending files for key1: {:?}", response1_body.pending_files);
+    assert_eq!(response1_body.pending_files.len(), 1);
+    assert_eq!(response1_body.pending_files[0], file_path_str);
 
     // ===== Test 2: key1 submits signature =====
     let artifact_path = setup.repo_path().join(file_path_str);
@@ -120,9 +120,9 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     let response3_body: ListPendingResponse = response3.json().await?;
     println!(
         "Pending files for key1 after signing: {:?}",
-        response3_body.file_paths
+        response3_body.pending_files
     );
-    assert!(response3_body.file_paths.is_empty());
+    assert!(response3_body.pending_files.is_empty());
 
     // ===== Test 4: Verify key2 still sees pending file =====
     let auth_info4 = AuthInfo::new("".to_string());
@@ -144,9 +144,9 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     assert_eq!(response4.status(), 200);
 
     let response4_body: ListPendingResponse = response4.json().await?;
-    println!("Pending files for key2: {:?}", response4_body.file_paths);
-    assert_eq!(response4_body.file_paths.len(), 1);
-    assert_eq!(response4_body.file_paths[0], file_path_str);
+    println!("Pending files for key2: {:?}", response4_body.pending_files);
+    assert_eq!(response4_body.pending_files.len(), 1);
+    assert_eq!(response4_body.pending_files[0], file_path_str);
 
     Ok(())
 }

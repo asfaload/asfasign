@@ -280,9 +280,13 @@ pub mod environment {
 }
 
 pub mod models {
-    use std::collections::HashMap;
+    use core::fmt;
+    use std::{collections::HashMap, path::Path};
 
+    use common::sha512_for_file;
     use serde::{Deserialize, Serialize};
+
+    use crate::errors::ApiError;
 
     #[derive(Debug, Serialize)]
     pub struct ErrorResponse {
@@ -344,13 +348,39 @@ pub mod models {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PendingFile {
+        path: String,
+        digest: String,
+    }
+    impl fmt::Display for PendingFile {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "path: {}, digest: {}", self.path, self.digest)
+        }
+    }
+
+    impl PendingFile {
+        pub fn try_new<P: AsRef<Path>>(p: P) -> Result<PendingFile, ApiError> {
+            let path_ref = p.as_ref();
+            let path = path_ref.to_string_lossy().to_string();
+            let digest = sha512_for_file(&path)?.to_string();
+            Ok(PendingFile { path, digest })
+        }
+
+        pub fn path(&self) -> &str {
+            &self.path
+        }
+        pub fn digest(&self) -> &str {
+            &self.digest
+        }
+    }
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     /// Response to a pending signatures list request.
     ///
     /// # Fields
     /// * `file_paths` - List of relative paths to files that need signatures
     ///   from the requesting signer
     pub struct ListPendingResponse {
-        pub file_paths: Vec<String>,
+        pub pending_files: Vec<PendingFile>,
     }
 
     /// Authentication outcome reported by the ping endpoint.

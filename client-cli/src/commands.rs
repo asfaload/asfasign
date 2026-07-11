@@ -209,7 +209,11 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     // not be worth it.
                     let client = admin_lib::v1::Client::new(url.clone());
                     let response = runtime.block_on(client.get_pending_signatures(&secret_key))?;
-                    let proposals = response.file_paths;
+                    let pendings = response.pending_files;
+                    let proposals: Vec<String> = pendings
+                        .iter()
+                        .map(|p| format!("{}\n{}", p.path(), p.digest()))
+                        .collect();
                     if proposals.is_empty() {
                         return Err(anyhow::Error::new(ClientCliError::NoPendingSignature));
                     } else if std::io::stdin().is_terminal() {

@@ -2,10 +2,11 @@ use common::fs::names::{
     find_global_signers_for, revocation_path_for, revocation_signatures_path_for,
     revocation_signers_path_for, subject_path_from_pending_signatures,
 };
+use common::sha512_for_file;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
 use rest_api_types::models::{
-    GetArtifactInfoResponse, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
+    GetArtifactInfoResponse, PendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
 };
 use rest_api_types::{
     FilesToSignResponse, GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
@@ -657,12 +658,13 @@ pub async fn get_pending_signatures_handler(
         })?;
 
     // Extract relative paths and convert from pending signature files to artifact files
-    let file_paths: Vec<String> = pending_files
+    let file_paths: Vec<PendingFile> = pending_files
         .iter()
         .map(|np| {
             let pending_sig_path = np.relative_path();
             let artifact_path = subject_path_from_pending_signatures(&pending_sig_path)?;
-            Ok(artifact_path.to_string_lossy().to_string())
+            let r = PendingFile::try_new(artifact_path)?;
+            Ok(r)
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
 
@@ -672,7 +674,9 @@ pub async fn get_pending_signatures_handler(
         "Returning pending signatures list"
     );
 
-    Ok(Json(ListPendingResponse { file_paths }))
+    Ok(Json(ListPendingResponse {
+        pending_files: file_paths,
+    }))
 }
 
 /// Helper to extract public key from authentication headers.
