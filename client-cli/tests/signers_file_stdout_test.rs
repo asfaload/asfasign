@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha512};
 use std::fs;
 use tempfile::TempDir;
 use test_helpers::fixtures_pub_key;
@@ -173,6 +174,49 @@ fn json_without_output_file_rejected_by_clap() {
         output.stdout.is_empty(),
         "stdout should be empty on parse failure, got: {}",
         String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+/// With `-o` and no `--json`, the human output must include a "Generated
+/// file's digest:" line whose value is the sha512 of the written file.
+#[test]
+fn digest_printed_and_correct_in_human_output() {
+    let pub_key = fixtures_pub_key(0);
+    let temp_dir = TempDir::new().unwrap();
+    let output_file = temp_dir.path().join("signers.json");
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("new-signers-file")
+        .arg("--artifact-signers-file")
+        .arg(&pub_key)
+        .arg("-A")
+        .arg("1")
+        .arg("-o")
+        .arg(&output_file);
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    assert!(
+        stdout.contains("Generated file's digest:"),
+        "stdout should contain 'Generated file's digest:', got: {}",
+        stdout
+    );
+
+    let file_bytes = fs::read(&output_file).unwrap();
+    let hash = Sha512::digest(&file_bytes);
+    let expected = format!("sha512:{}", hex::encode(hash));
+    assert!(
+        stdout.contains(&expected),
+        "stdout should contain the sha512 digest '{}', got: {}",
+        expected,
+        stdout
     );
 }
 
