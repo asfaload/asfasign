@@ -281,7 +281,7 @@ pub mod environment {
 
 pub mod models {
     use core::fmt;
-    use std::{collections::HashMap, path::Path};
+    use std::collections::HashMap;
 
     use common::sha512_for_file;
     use serde::{Deserialize, Serialize};
@@ -359,10 +359,11 @@ pub mod models {
     }
 
     impl PendingFile {
-        pub fn try_new<P: AsRef<Path>>(p: P) -> Result<PendingFile, ApiError> {
-            let path_ref = p.as_ref();
-            let path = path_ref.to_string_lossy().to_string();
-            let digest = sha512_for_file(&path)?.to_string();
+        pub fn try_new(
+            np: &crate::path_validation::NormalisedPaths,
+        ) -> Result<PendingFile, ApiError> {
+            let path = np.relative_path().to_string_lossy().to_string();
+            let digest = sha512_for_file(np.absolute_path())?.to_string();
             Ok(PendingFile { path, digest })
         }
 

@@ -2,7 +2,6 @@ use common::fs::names::{
     find_global_signers_for, revocation_path_for, revocation_signatures_path_for,
     revocation_signers_path_for, subject_path_from_pending_signatures,
 };
-use common::sha512_for_file;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
 use rest_api_types::models::{
@@ -662,8 +661,9 @@ pub async fn get_pending_signatures_handler(
         .iter()
         .map(|np| {
             let pending_sig_path = np.relative_path();
-            let artifact_path = subject_path_from_pending_signatures(&pending_sig_path)?;
-            let r = PendingFile::try_new(artifact_path)?;
+            let artifact_relative = subject_path_from_pending_signatures(&pending_sig_path)?;
+            let artifact_np = build_normalised_absolute_path(np.base_dir(), artifact_relative)?;
+            let r = PendingFile::try_new(&artifact_np)?;
             Ok(r)
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
