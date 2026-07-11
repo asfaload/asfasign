@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use crate::error::{ClientCliError, Result};
 use crate::utils::{ensure_dir_exists, validate_threshold};
-use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig};
+use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig, sha512_for_file};
 
 fn get_group_info<P: AsfaloadPublicKeyTrait>(
     keys: Vec<P>,
@@ -158,6 +158,7 @@ pub fn handle_new_signers_file_command(
     // Print the --json flag output
     let print_json_output =
         |signers_file_destination| -> std::result::Result<(), crate::error::ClientCliError> {
+            let digest = sha512_for_file(&signers_file_destination)?;
             let output = crate::output::NewSignersFileOutput {
                 output_file: signers_file_destination,
                 artifact_signers_count: all_artifact_signers_count,
@@ -168,34 +169,39 @@ pub fn handle_new_signers_file_command(
                 master_threshold,
                 revocation_keys_count: all_revocation_keys_count,
                 revocation_threshold,
+                digest: digest.into(),
             };
             println!("{}", serde_json::to_string(&output)?);
             Ok(())
         };
 
     // Print a human overview of the file written to disk
-    let print_human_overview = |p: &PathBuf| {
-        println!("Signers file created successfully at: {}", p.display());
-        println!(
-            "Artifact signers: {} (threshold: {})",
-            all_artifact_signers_count, artifact_threshold
-        );
-        println!(
-            "Admin keys: {} (threshold: {})",
-            all_admin_keys_count,
-            admin_threshold.map_or("none".to_string(), |t| t.to_string())
-        );
-        println!(
-            "Master keys: {} (threshold: {})",
-            all_master_keys_count,
-            master_threshold.map_or("none".to_string(), |t| t.to_string())
-        );
-        println!(
-            "Revocation keys: {} (threshold: {})",
-            all_revocation_keys_count,
-            revocation_threshold.map_or("none".to_string(), |t| t.to_string())
-        )
-    };
+    let print_human_overview =
+        |p: &PathBuf| -> std::result::Result<(), crate::error::ClientCliError> {
+            let digest = sha512_for_file(p)?;
+            println!("Signers file created successfully at: {}", p.display());
+            println!(
+                "Artifact signers: {} (threshold: {})",
+                all_artifact_signers_count, artifact_threshold
+            );
+            println!(
+                "Admin keys: {} (threshold: {})",
+                all_admin_keys_count,
+                admin_threshold.map_or("none".to_string(), |t| t.to_string())
+            );
+            println!(
+                "Master keys: {} (threshold: {})",
+                all_master_keys_count,
+                master_threshold.map_or("none".to_string(), |t| t.to_string())
+            );
+            println!(
+                "Revocation keys: {} (threshold: {})",
+                all_revocation_keys_count,
+                revocation_threshold.map_or("none".to_string(), |t| t.to_string())
+            );
+            println!("Generated file's digest: {}", digest);
+            Ok(())
+        };
 
     match (output_file, json) {
         // -o and --json
@@ -206,7 +212,7 @@ pub fn handle_new_signers_file_command(
         // -o, no --json
         (Some(p), false) => {
             write_signers_file(p)?;
-            print_human_overview(p)
+            print_human_overview(p)?;
         }
         // no -o, --json
         (None, true) => {
