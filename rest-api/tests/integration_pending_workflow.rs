@@ -57,7 +57,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     let response1_body: ListPendingResponse = response1.json().await?;
     println!("Pending files for key1: {:?}", response1_body.pending_files);
     assert_eq!(response1_body.pending_files.len(), 1);
-    assert_eq!(response1_body.pending_files[0], file_path_str);
+    assert_eq!(response1_body.pending_files[0].path(), file_path_str);
 
     // ===== Test 2: key1 submits signature =====
     let artifact_path = setup.repo_path().join(file_path_str);
@@ -146,7 +146,7 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     let response4_body: ListPendingResponse = response4.json().await?;
     println!("Pending files for key2: {:?}", response4_body.pending_files);
     assert_eq!(response4_body.pending_files.len(), 1);
-    assert_eq!(response4_body.pending_files[0], file_path_str);
+    assert_eq!(response4_body.pending_files[0].path(), file_path_str);
 
     Ok(())
 }

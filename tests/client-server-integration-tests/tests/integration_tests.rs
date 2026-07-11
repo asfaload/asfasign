@@ -106,7 +106,8 @@ mod tests {
 
         let signers_pending_path = file_paths
             .iter()
-            .find(|p| {
+            .find(|pending| {
+                let p = pending.path();
                 p.contains(project_dir_sub.to_string_lossy().as_ref())
                     && p.contains(PENDING_SIGNERS_DIR)
             })
@@ -115,7 +116,7 @@ mod tests {
 
         // Sign the pending signers file to activate it (threshold=all for InitialSignersFile)
         let r = client_cli::commands::sign_pending::handle_sign_pending_command(
-            &signers_pending_path,
+            signers_pending_path.path(),
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
@@ -147,7 +148,7 @@ mod tests {
         .expect("list-pending should succeed");
 
         assert!(
-            file_paths.iter().any(|p| p == &file_path),
+            file_paths.iter().any(|p| p.path() == file_path),
             "Expected pending list to contain '{}', got: {:?}",
             file_path,
             file_paths
@@ -202,7 +203,8 @@ mod tests {
 
         let signers_pending_path = file_paths
             .iter()
-            .find(|p| {
+            .find(|pending| {
+                let p = pending.path();
                 p.contains(project_dir_sub.to_string_lossy().as_ref())
                     && p.contains(PENDING_SIGNERS_DIR)
             })
@@ -210,7 +212,7 @@ mod tests {
             .clone();
 
         let r = client_cli::commands::sign_pending::handle_sign_pending_command(
-            &signers_pending_path,
+            signers_pending_path.path(),
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
@@ -243,7 +245,7 @@ mod tests {
         .expect("list-pending should succeed");
 
         assert!(
-            file_paths.iter().any(|p| p == &file_path),
+            file_paths.iter().any(|p| p.path() == file_path),
             "Expected '{}' in pending list, got: {:?}",
             file_path,
             file_paths
@@ -314,7 +316,8 @@ mod tests {
         // Find the signers file for this project in the pending list
         let signers_pending_path = file_paths
             .iter()
-            .find(|p| {
+            .find(|pending| {
+                let p = pending.path();
                 p.contains(project_dir_sub.to_string_lossy().as_ref())
                     && p.contains(PENDING_SIGNERS_DIR)
             })
@@ -323,7 +326,7 @@ mod tests {
 
         // sign-pending with key[0]: 1 of 3, not yet complete
         let r0 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            &signers_pending_path,
+            signers_pending_path.path(),
             &backend_url,
             &key_paths[0],
             test_harness::TEST_PASSWORD,
@@ -338,7 +341,7 @@ mod tests {
 
         // sign-pending with key[1]: 2 of 3, not yet complete
         let r1 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            &signers_pending_path,
+            signers_pending_path.path(),
             &backend_url,
             &key_paths[1],
             test_harness::TEST_PASSWORD,
@@ -353,7 +356,7 @@ mod tests {
 
         // sign-pending with key[2]: 3 of 3, complete -> signers activate
         let r2 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            &signers_pending_path,
+            signers_pending_path.path(),
             &backend_url,
             &key_paths[2],
             test_harness::TEST_PASSWORD,
@@ -385,7 +388,7 @@ mod tests {
         .expect("list-pending should succeed for key[0]");
 
         assert!(
-            file_paths.iter().any(|p| p == &artifact_path),
+            file_paths.iter().any(|p| p.path() == artifact_path),
             "Expected artifact '{}' in pending list, got: {:?}",
             artifact_path,
             file_paths
