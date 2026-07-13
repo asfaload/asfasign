@@ -7,7 +7,9 @@ use features_lib::{
     AsfaloadSignatures,
 };
 use reqwest::header::CONTENT_TYPE;
-use rest_api_types::models::{UpdateRepoSignersRequest, UpdateRepoSignersResponse};
+use rest_api_types::models::{
+    ClientPendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
+};
 use rest_api_types::{
     FilesToSignResponse, GetSignatureStatusResponse, ListPendingResponse, PingResponse,
     RegisterRepoRequest, RegisterRepoResponse, RevokeFileRequest, RevokeFileResponse,
@@ -190,7 +192,7 @@ impl Client {
     /// auth headers and the request body (avoids signature mismatch).
     pub async fn submit_signatures(
         &self,
-        file_path: &str,
+        pending_file: ClientPendingFile,
         public_key: &AsfaloadPublicKeys,
         signatures: &HashMap<String, AsfaloadSignatures>,
         secret_key: &AsfaloadSecretKeys,
@@ -203,7 +205,7 @@ impl Client {
             .collect();
 
         let request = SubmitSignatureRequest {
-            file_path: file_path.to_string(),
+            pending_file,
             public_key: public_key.to_base64(),
             signatures: sig_map,
         };

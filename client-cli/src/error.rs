@@ -51,6 +51,9 @@ pub enum ClientCliError {
 
     #[error("No pending signature found")]
     NoPendingSignature,
+
+    #[error("Unexpected digest from server ({0}) differs from expected ({1})")]
+    ServerDigestError(String, String),
 }
 
 // FIXME: remove this, creates more confusion than necessary

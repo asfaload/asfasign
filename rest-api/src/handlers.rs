@@ -419,21 +419,14 @@ pub async fn submit_signature_handler(
 
     tracing::info!(
         request_id = %request_id,
-        file_path = %request.file_path,
+        file_path = %request.pending_file,
         "Received submit_signature request"
     );
-
-    // Validate the file path
-    if request.file_path.is_empty() {
-        return Err(ApiError::InvalidRequestBody(
-            "File path cannot be empty".to_string(),
-        ));
-    }
 
     // Normalize and validate the file path
     let file_path = NormalisedPaths::new(
         state.git_repo_path.clone(),
-        PathBuf::from_str(request.file_path.as_ref()).unwrap(),
+        PathBuf::from(request.pending_file.path()),
     )
     .await?;
 
@@ -441,7 +434,7 @@ pub async fn submit_signature_handler(
     if !file_path.absolute_path().exists() {
         return Err(ApiError::InvalidRequestBody(format!(
             "File not found: {}",
-            request.file_path
+            request.pending_file
         )));
     }
 
@@ -459,11 +452,11 @@ pub async fn submit_signature_handler(
     }
 
     // Verify the primary file has a signature
-    let primary_path = PathBuf::from(&request.file_path);
+    let primary_path = PathBuf::from(&request.pending_file.path());
     if !parsed_signatures.contains_key(&primary_path) {
         return Err(ApiError::InvalidRequestBody(format!(
             "No signature provided for primary file: {}",
-            request.file_path
+            request.pending_file
         )));
     }
 
@@ -484,7 +477,7 @@ pub async fn submit_signature_handler(
 
     tracing::info!(
         request_id = %request_id,
-        file_path = %request.file_path,
+        file_path = %request.pending_file,
         is_complete = collector_result.is_complete,
         "Signature collection result"
     );
