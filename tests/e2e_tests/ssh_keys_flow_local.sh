@@ -296,7 +296,7 @@ assert_release_index_exists "$RELEASE_VERSION"
 assert_release_index_pending "$RELEASE_VERSION"
 assert_last_commit_contains "$INDEX_FILE"
 
-RELEASE_SIGN_ARGS=$(release_index_sign_args "$RELEASE_VERSION" "$SSH_KEY_1" "$backend" "$key_password")
+RELEASE_SIGN_ARGS=$(pending_sign_args "$INDEX_FILE" "$SSH_KEY_1" "$backend" "$key_password")
 
 ################################################################################
 section "Sign release index with both SSH keys"
