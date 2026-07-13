@@ -229,9 +229,11 @@ run_step_json "List pending for key0 (should show pending signers)" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
+
 run_step_json "Sign signers file with key0 (submitter signs in second phase)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 # --- Backend: verify 1st signature on pending signers and metadata ---
 assert_pending_signers_signature_count 1
@@ -244,7 +246,7 @@ run_step_json "List pending for key1" \
     cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password $key_password
 run_step_json "Sign signers file with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 # --- Backend: verify 2nd signature on pending signers and metadata ---
 assert_pending_signers_signature_count 2
@@ -254,14 +256,14 @@ assert_pending_metadata_signatures_contain_keys "$KEY_0" "$KEY_1"
 
 run_step_json "Sign signers file with key2 (completes signature)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 # --- Backend: verify signers activated ---
 assert_signers_active
 assert_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2"
 
 expect_fail "Sign signers file with key0 (already completed)" \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 # Test interactive sign-pending when no pending signature is available:
 # no file_path arg triggers the interactive path, which fetches pending
@@ -297,9 +299,11 @@ run_step_json "List pending for key2" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
 
+RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password)
+
 run_step_json "Sign release index with key0" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
 
 assert_release_index_signature_count "0.1" 1
 
@@ -320,7 +324,7 @@ assert_release_index_signature_count "0.1" 1
 
 run_step_json "Sign release index with key1 (completes, threshold=2)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(release_index 0.1)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
 
 # --- Backend: verify release index activated ---
 assert_release_index_active "0.1"
@@ -331,7 +335,7 @@ run_step_json "Check signature status for v0.1 index (complete)" \
     cargo run --quiet -- signature-status --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
 
 expect_fail "Sign release index with key2 (already completed)" \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(release_index 0.1)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
 
 DOWNLOAD_V01="$(mktemp)"
 to_delete_on_filesystem+=("$DOWNLOAD_V01")
@@ -360,9 +364,11 @@ run_step_json "List pending for key0 (should show pending signers)" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
+
 run_step_json "Sign pending signers with key0" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 1
 assert_pending_signers_signatures_contain_keys "$KEY_0"
@@ -370,7 +376,7 @@ assert_pending_metadata_signature_count 1
 assert_pending_metadata_signatures_contain_keys "$KEY_0"
 
 expect_fail "Attempts to re-sign pending signers with key0 (should fail)" \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "List pending for key1 (should show pending)" \
     '.pending_files | length > 0' \
@@ -378,7 +384,7 @@ run_step_json "List pending for key1 (should show pending)" \
 
 run_step_json "Sign pending signers with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 2
 assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1"
@@ -387,7 +393,7 @@ assert_pending_metadata_signatures_contain_keys "$KEY_0" "$KEY_1"
 
 run_step_json "Sign pending signers with key3 (newly added artifact signer)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 3
 assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1" "$KEY_3"
@@ -396,15 +402,15 @@ assert_pending_metadata_signatures_contain_keys "$KEY_0" "$KEY_1" "$KEY_3"
 
 run_step_json "Sign pending signers with key4 (newly added revocation key)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_4" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_4" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "Sign pending signers with key5 (newly added revocation key)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_5" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_5" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "Sign pending signers with key6 (activates new signers file)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_6" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_6" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 # --- Backend: verify new signers activated ---
 assert_signers_active
@@ -433,21 +439,23 @@ run_step_json "List pending for key2" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
 
+RELEASE_0_2_SIGN_ARGS=$(release_index_sign_args 0.2 "$KEY_0" "$backend" $key_password)
+
 run_step_json "Sign release index with key0" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.2)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
 assert_release_index_signature_count "0.2" 1
 
 run_step_json "Sign release index with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(release_index 0.2)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
 assert_release_index_signature_count "0.2" 2
 
 run_step_json "Sign release index with key3 (key2 does not sign)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(release_index 0.2)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
 # --- Backend: verify v0.2 release index activated ---
 assert_release_index_active "0.2"
@@ -485,8 +493,9 @@ run_step_json "List pending for key5 (one expected, key5 can revoke)" \
     '.pending_files | length == 1' \
     cargo run --quiet -- list-pending --secret-key "$KEY_5" -u "$backend" --password $key_password
 
+REVOCATION_SIGN_ARGS=$(pending_sign_args "$REVOCATION_SUFFIX" "$KEY_5" "$backend" $key_password)
 run_step "sign pending revocation for v0.1 (second signer via sign-pending)" \
-    cargo run -- sign-pending --secret-key "$KEY_5" -p $key_password -u "$backend" "$(release_index 0.1).$REVOCATION_SUFFIX.$PENDING_SUFFIX"
+    cargo run -- sign-pending --secret-key "$KEY_5" -p $key_password -u "$backend" $REVOCATION_SIGN_ARGS
 
 # --- Backend: verify v0.1 revoked ---
 assert_release_index_revoked "0.1"

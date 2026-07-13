@@ -235,16 +235,13 @@ run_step "Pending signers contains SSH pubkey 2" \
 section "Activate pending signers (both SSH keys sign)"
 ################################################################################
 
-# Backend path identifier for the pending signers file (same shape as
-# urls_local.sh::pending_signers_file but derived from the file-server
-# origin we already have).
-PENDING_SIGNERS_ID="http/localhost/${FILE_SERVER_PORT}/${FS_PROJECT_NAME}/${PENDING_SIGNERS_DIR}/${SIGNERS_FILE}"
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$SSH_KEY_1" "$backend" "$key_password")
 
 run_step_json "Sign pending signers with SSH key 1 (1st of 2)" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending \
         --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
-        "$PENDING_SIGNERS_ID"
+        $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 1
 assert_pending_metadata_signature_count 1
@@ -257,7 +254,7 @@ run_step_json "Sign pending signers with SSH key 2 (threshold met, activates)" \
     '.is_complete == true' \
     cargo run --quiet -- sign-pending \
         --secret-key "$SSH_KEY_2" -u "$backend" --password "$key_password" \
-        "$PENDING_SIGNERS_ID"
+        $SIGNERS_SIGN_ARGS
 
 # Backend: signers are now active.
 assert_signers_active
@@ -289,8 +286,6 @@ printf 'asfaload ssh e2e artifact v%s' "$RELEASE_VERSION" > "$RELEASE_DIR_ON_FS/
 
 CSUM_URL="${FILE_SERVER_URL}/${FS_PROJECT_NAME}/releases/v${RELEASE_VERSION}/SHA256SUMS"
 ARTIFACT_URL="${FILE_SERVER_URL}/${FS_PROJECT_NAME}/releases/v${RELEASE_VERSION}/${ARTIFACT_NAME}"
-RELEASE_INDEX_ID="http/localhost/${FILE_SERVER_PORT}/${FS_PROJECT_NAME}/releases/v${RELEASE_VERSION}/${INDEX_FILE}"
-
 run_step_json "Register release via SHA256SUMS (SSH key 1 as submitter)" \
     '.success == true' \
     cargo run --quiet -- register-assets \
@@ -301,6 +296,8 @@ assert_release_index_exists "$RELEASE_VERSION"
 assert_release_index_pending "$RELEASE_VERSION"
 assert_last_commit_contains "$INDEX_FILE"
 
+RELEASE_SIGN_ARGS=$(release_index_sign_args "$RELEASE_VERSION" "$SSH_KEY_1" "$backend" "$key_password")
+
 ################################################################################
 section "Sign release index with both SSH keys"
 ################################################################################
@@ -309,7 +306,7 @@ run_step_json "Sign release index with SSH key 1" \
     '.is_complete == false' \
     cargo run --quiet -- sign-pending \
         --secret-key "$SSH_KEY_1" -u "$backend" --password "$key_password" \
-        "$RELEASE_INDEX_ID"
+        $RELEASE_SIGN_ARGS
 
 assert_release_index_signature_count "$RELEASE_VERSION" 1
 
@@ -321,7 +318,7 @@ run_step_json "Sign release index with SSH key 2 (threshold met, activates)" \
     '.is_complete == true' \
     cargo run --quiet -- sign-pending \
         --secret-key "$SSH_KEY_2" -u "$backend" --password "$key_password" \
-        "$RELEASE_INDEX_ID"
+        $RELEASE_SIGN_ARGS
 
 assert_release_index_active "$RELEASE_VERSION"
 
