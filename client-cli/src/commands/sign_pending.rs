@@ -59,7 +59,10 @@ pub async fn handle_sign_pending_sec_key(
     for (path, content) in &files_to_sign {
         // content is &Vec<u8>, as_slice() give a &[u8] and avoids cloning
         let hash = sha512_for_content(content.as_slice())?;
-        if hash.to_string() != pending_file.digest() {
+        // Only verify the digest for the primary file; associated files (e.g. metadata)
+        // are signed without digest pre-verification since pending_file.digest() covers
+        // only the primary file.
+        if *path == pending_file.path() && hash.to_string() != pending_file.digest() {
             return Err(crate::error::ClientCliError::ServerDigestError(
                 hash.to_string(),
                 pending_file.digest(),
