@@ -1007,6 +1007,7 @@ pub mod test_utils_tests {
         };
         use rest_api_types::SubmitSignatureRequest;
         use rest_api_types::SubmitSignatureResponse;
+        use rest_api_types::models::ClientPendingFile;
         use std::collections::HashMap;
 
         let temp_dir = TempDir::new()?;
@@ -1081,7 +1082,7 @@ pub mod test_utils_tests {
         signatures.insert(signers_rel_path.clone(), signature.to_base64());
         signatures.insert(metadata_rel_path, metadata_signature.to_base64());
         let payload = json!(&SubmitSignatureRequest {
-            file_path: signers_rel_path,
+            pending_file: ClientPendingFile::new(signers_rel_path, digest.to_string()),
             public_key: public_key.to_base64(),
             signatures,
         });
@@ -1235,7 +1236,10 @@ pub mod test_utils_tests {
         rest_api_test_helpers::wait_for_server(&config, None).await?;
 
         let payload = json!({
-            "file_path": "nonexistent.txt",
+            "pending_file": {
+                "path": "nonexistent.txt",
+                "digest": "fake_digest_for_nonexistent_file",
+            },
             "public_key": public_key.to_base64(),
             "signatures": {
                 "nonexistent.txt": "invalid_signature"
@@ -1330,6 +1334,7 @@ pub mod test_utils_tests {
             AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait, sha512_for_file,
         };
         use rest_api_types::SubmitSignatureRequest;
+        use rest_api_types::models::ClientPendingFile;
 
         let temp_dir = TempDir::new()?;
         let git_repo_path = temp_dir.path().join("git_repo");
@@ -1371,7 +1376,10 @@ pub mod test_utils_tests {
         let mut signatures = std::collections::HashMap::new();
         signatures.insert("releases/release.tar.gz".to_string(), signature.to_base64());
         let payload = json!(&SubmitSignatureRequest {
-            file_path: "releases/release.tar.gz".to_string(),
+            pending_file: ClientPendingFile::new(
+                "releases/release.tar.gz".to_string(),
+                digest.to_string()
+            ),
             public_key: public_key.to_base64(),
             signatures,
         });
@@ -1521,19 +1529,28 @@ pub mod test_utils_tests {
             let files_body: rest_api_types::FilesToSignResponse = files_resp.json().await?;
 
             // Sign each file
+            let signers_path_str =
+                format!("{}/asfaload.signers.pending/index.json", project_prefix);
             let mut signatures = std::collections::HashMap::new();
+            let mut signers_digest_str = String::new();
             for (path, content_b64) in &files_body.files {
                 let content =
                     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, content_b64)
                         .expect("base64 decode");
                 let hash = features_lib::sha512_for_content(content)?;
+                if *path == signers_path_str {
+                    signers_digest_str = hash.to_string();
+                }
                 let sig = secret_key.sign(&hash)?;
                 signatures.insert(path.clone(), sig.to_base64());
             }
 
             // Submit signatures
             let submit_body = rest_api_types::SubmitSignatureRequest {
-                file_path: format!("{}/asfaload.signers.pending/index.json", project_prefix),
+                pending_file: rest_api_types::models::ClientPendingFile::new(
+                    signers_path_str,
+                    signers_digest_str,
+                ),
                 public_key: public_key.to_base64(),
                 signatures,
             };

@@ -68,7 +68,10 @@ async fn test_pending_workflow_end_to_end() -> Result<()> {
     let mut signatures = std::collections::HashMap::new();
     signatures.insert(file_path_str.to_string(), sig.to_base64());
     let submit_payload = serde_json::json!({
-        "file_path": file_path_str,
+        "pending_file": {
+            "path": file_path_str,
+            "digest": hash.to_string(),
+        },
         "public_key": test_keys.pub_key(0).unwrap().to_base64(),
         "signatures": signatures,
     });
