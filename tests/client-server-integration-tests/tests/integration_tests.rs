@@ -116,7 +116,7 @@ mod tests {
 
         // Sign the pending signers file to activate it (threshold=all for InitialSignersFile)
         let r = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.path(),
+            signers_pending_path.unseal(),
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
@@ -212,7 +212,7 @@ mod tests {
             .clone();
 
         let r = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.path(),
+            signers_pending_path.unseal(),
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
@@ -252,8 +252,14 @@ mod tests {
         );
 
         // Sign the pending file
+        let artifact_client_file = file_paths
+            .iter()
+            .find(|p| p.path() == file_path)
+            .expect("file should be in pending list")
+            .clone()
+            .unseal();
         let sign_response = client_cli::commands::sign_pending::handle_sign_pending_command(
-            &file_path,
+            artifact_client_file,
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
@@ -326,7 +332,7 @@ mod tests {
 
         // sign-pending with key[0]: 1 of 3, not yet complete
         let r0 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.path(),
+            signers_pending_path.unseal(),
             &backend_url,
             &key_paths[0],
             test_harness::TEST_PASSWORD,
@@ -341,7 +347,7 @@ mod tests {
 
         // sign-pending with key[1]: 2 of 3, not yet complete
         let r1 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.path(),
+            signers_pending_path.unseal(),
             &backend_url,
             &key_paths[1],
             test_harness::TEST_PASSWORD,
@@ -356,7 +362,7 @@ mod tests {
 
         // sign-pending with key[2]: 3 of 3, complete -> signers activate
         let r2 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            signers_pending_path.path(),
+            signers_pending_path.unseal(),
             &backend_url,
             &key_paths[2],
             test_harness::TEST_PASSWORD,
@@ -394,9 +400,16 @@ mod tests {
             file_paths
         );
 
+        let artifact_client_file = file_paths
+            .iter()
+            .find(|p| p.path() == artifact_path)
+            .expect("artifact should be in pending list")
+            .clone()
+            .unseal();
+
         // sign with key[0]: 1 of 2, not complete
         let r3 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            &artifact_path,
+            artifact_client_file.clone(),
             &backend_url,
             &key_paths[0],
             test_harness::TEST_PASSWORD,
@@ -411,7 +424,7 @@ mod tests {
 
         // sign with key[1]: 2 of 2, complete
         let r4 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            &artifact_path,
+            artifact_client_file.clone(),
             &backend_url,
             &key_paths[1],
             test_harness::TEST_PASSWORD,
@@ -426,7 +439,7 @@ mod tests {
 
         // --- Phase 5: Signing after completion should error ---
         let r5 = client_cli::commands::sign_pending::handle_sign_pending_command(
-            &artifact_path,
+            artifact_client_file.clone(),
             &backend_url,
             &key_paths[2],
             test_harness::TEST_PASSWORD,
