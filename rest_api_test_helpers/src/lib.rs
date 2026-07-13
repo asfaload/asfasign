@@ -506,7 +506,10 @@ impl TestSetup {
         signatures.insert(self.artifact_path.clone(), sig.to_base64());
 
         let submit_payload = serde_json::json!({
-            "file_path": self.artifact_path,
+            "pending_file": {
+                "path": self.artifact_path,
+                "digest": hash.to_string(),
+            },
             "public_key": public_key.to_base64(),
             "signatures": signatures,
         });
