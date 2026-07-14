@@ -551,6 +551,22 @@ mod tests {
 
     use anyhow::Result;
     #[tokio::test]
+    async fn test_new_empty_requested_path_is_rejected() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        let result = NormalisedPaths::new(base_path, "").await;
+        match result {
+            Err(ApiError::InvalidFilePath(s)) => {
+                assert_eq!(s, "Requested (relative path) cannot be empty")
+            }
+            Err(e) => panic!("Expected InvalidFilePath, got {}", e),
+            Ok(_) => panic!("Expected InvalidFilePath, got ok result"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_normalised_path_join() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path();
