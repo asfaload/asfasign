@@ -52,7 +52,7 @@ pub enum ClientCliError {
     #[error("No pending signature found")]
     NoPendingSignature,
 
-    #[error("Unexpected digest from server ({0}) differs from expected ({1})")]
+    #[error("Computed digest ({0}) does not match the digest advertised by the server ({1})")]
     ServerDigestError(String, String),
 }
 
