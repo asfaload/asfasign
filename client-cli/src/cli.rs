@@ -189,7 +189,7 @@ pub enum Commands {
         #[arg(requires = "digest")]
         file_path: Option<String>,
 
-        #[arg(long)]
+        #[arg(long, requires = "file_path")]
         digest: Option<String>,
 
         #[command(flatten)]
