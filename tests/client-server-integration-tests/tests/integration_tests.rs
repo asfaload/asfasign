@@ -274,6 +274,98 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_sign_pending_server_digest_mismatch() {
+        use client_cli::error::ClientCliError;
+        use rest_api_types::models::ClientPendingFile;
+
+        let state = test_harness::initialize().await;
+        let guard = state.lock().await;
+        let git_repo_path = guard.server.git_repo_path();
+        let secret_key_path = guard.secret_key_paths[0].clone();
+        let backend_url = guard.server.base_url();
+        drop(guard);
+
+        let secret_key = features_lib::AsfaloadSecretKeys::from_file(
+            &secret_key_path,
+            test_harness::TEST_PASSWORD,
+        )
+        .expect("Failed to load secret key");
+        let public_key = features_lib::AsfaloadPublicKeys::from_secret_key(&secret_key)
+            .expect("Failed to derive public key");
+
+        let (project_dir_sub, file_path) =
+            test_harness::unique_test_paths("sign_pending_digest_mismatch", "artifact.txt");
+        let project_dir = git_repo_path.join(&project_dir_sub);
+        fs::create_dir_all(&project_dir).expect("Failed to create project dir");
+
+        let signers_config =
+            SignersConfig::with_artifact_signers_only(1, (vec![public_key.clone()], 1))
+                .expect("Failed to build signers config");
+        let signers_content = signers_config
+            .to_json()
+            .expect("Failed to serialize signers config");
+
+        initialize_signers_file_with_pending_sigs(&project_dir, &signers_content, &public_key);
+
+        // Sign the pending signers file to activate it
+        let file_paths = client_cli::commands::list_pending::handle_list_pending_command(
+            &backend_url,
+            &secret_key_path,
+            test_harness::TEST_PASSWORD,
+            false,
+        )
+        .await
+        .expect("list-pending should succeed");
+
+        let signers_pending_path = file_paths
+            .iter()
+            .find(|pending| {
+                let p = pending.path();
+                p.contains(project_dir_sub.to_string_lossy().as_ref())
+                    && p.contains(PENDING_SIGNERS_DIR)
+            })
+            .expect("Signers file should be in pending list")
+            .clone();
+
+        client_cli::commands::sign_pending::handle_sign_pending_command(
+            signers_pending_path.unseal(),
+            &backend_url,
+            &secret_key_path,
+            test_harness::TEST_PASSWORD,
+            false,
+        )
+        .await
+        .expect("sign-pending for signers should succeed");
+
+        // Create artifact and its pending signatures file
+        test_harness::create_file_in_repo(&file_path, "artifact content")
+            .await
+            .expect("Failed to create artifact file");
+        test_harness::create_pending_signatures_for(&file_path)
+            .await
+            .expect("Failed to create pending signatures file");
+
+        // Supply the correct path but a wrong digest — simulates a tampered or
+        // mismatched server response
+        let tampered = ClientPendingFile::new(file_path.clone(), "wrongdigest".to_string());
+
+        let err = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
+            tampered,
+            &backend_url,
+            &secret_key,
+            false,
+        )
+        .await
+        .expect_err("Should fail due to digest mismatch");
+
+        assert!(
+            matches!(err, ClientCliError::ServerDigestError(..)),
+            "Expected ServerDigestError, got: {:?}",
+            err
+        );
+    }
+
     // ========================================
     // MULTI-SIGNER WORKFLOW TEST
     // ========================================
