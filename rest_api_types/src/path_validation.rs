@@ -22,10 +22,17 @@ pub struct NormalisedPaths {
 impl NormalisedPaths {
     pub async fn new<P1: AsRef<Path>, P2: AsRef<Path>>(
         base_repo_path: P1,
-        requested_path: P2,
+        requested_path_in: P2,
     ) -> Result<Self, ApiError> {
+        let requested_path = requested_path_in.as_ref();
+        if requested_path.as_os_str().is_empty() {
+            return Err(ApiError::InvalidFilePath(
+                "Requested (relative path) cannot be empty".into(),
+            ));
+        }
         let base_path = base_repo_path.as_ref().to_path_buf();
-        let req_path = requested_path.as_ref().to_path_buf();
+        let req_path = requested_path.to_path_buf();
+
         tokio::task::spawn_blocking(move || Self::new_sync(base_path, req_path))
             .await
             .map_err(ApiError::from)?
@@ -543,6 +550,22 @@ mod tests {
     }
 
     use anyhow::Result;
+    #[tokio::test]
+    async fn test_new_empty_requested_path_is_rejected() -> Result<()> {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path();
+
+        let result = NormalisedPaths::new(base_path, "").await;
+        match result {
+            Err(ApiError::InvalidFilePath(s)) => {
+                assert_eq!(s, "Requested (relative path) cannot be empty")
+            }
+            Err(e) => panic!("Expected InvalidFilePath, got {}", e),
+            Ok(_) => panic!("Expected InvalidFilePath, got ok result"),
+        }
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_normalised_path_join() -> Result<()> {
         let temp_dir = TempDir::new().unwrap();

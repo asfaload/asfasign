@@ -121,7 +121,7 @@ section "Signers File Activation"
 ################################################################################
 
 run_step_json "List pending for key0 (should show pending signers)" \
-    '.file_paths | length > 0' \
+    '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
 run_step_json "Sign signers file with key0 (submitter signs in second phase)" \
@@ -135,7 +135,7 @@ assert_pending_metadata_signature_count 1
 assert_pending_metadata_signatures_contain_keys "$KEY_0"
 
 run_step_json "List pending for key1" \
-    '.file_paths | length > 0' \
+    '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password $key_password
 run_step_json "Sign signers file with key1" \
     '.is_complete == false' \
@@ -182,7 +182,7 @@ expect_fail "Download unsigned artifact (v0.1, 0 signatures)" \
     cargo run --quiet -- download -o "$tmp" -u "$backend" $(artifact_url 0.1)
 
 run_step_json "List pending for key3" \
-    '.file_paths | length > 0' \
+    '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
 
 run_step_json "Sign release index with key1" \
@@ -245,7 +245,7 @@ assert_pending_metadata_signature_count 0
 assert_pending_signers_contain_keys "$KEY_0" "$KEY_1" "$KEY_2" "$KEY_3"
 
 run_step_json "List pending for key0 (should show pending signers)" \
-    '.file_paths | length > 0' \
+    '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
 run_step_json "Sign pending signers with key0" \
@@ -261,7 +261,7 @@ expect_fail "Attempts to re-sign pending signers with key0 (should fail)" \
     cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
 
 run_step_json "List pending for key1 (should show pending)" \
-    '.file_paths | length > 0' \
+    '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password $key_password
 
 run_step_json "Sign pending signers with key1" \
@@ -318,7 +318,7 @@ assert_release_index_exists "0.2"
 assert_release_index_pending "0.2"
 
 run_step_json "List pending for key3" \
-    '.file_paths | length > 0' \
+    '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_2" -u "$backend" --password $key_password
 
 run_step_json "Sign release index with key1" \
@@ -366,11 +366,11 @@ run_step "Download artifact (v0.1), not yet revoked as need 2 signatures" \
 assert_artifact_hash_matches "0.1" "artifact.bin" "$DOWNLOAD_V01_bis"
 
 run_step_json "List pending for key1 (none expected, key1 cannot revoke)" \
-    '.file_paths | length == 0' \
+    '.pending_files | length == 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
 run_step_json "List pending for key5 (one expected, key1 can revoke)" \
-    '.file_paths | length == 1' \
+    '.pending_files | length == 1' \
     cargo run --quiet -- list-pending --secret-key "$KEY_5" -u "$backend" --password $key_password
 
 run_step "sign pending revocation for v0.1 (second signer via sign-pending)" \

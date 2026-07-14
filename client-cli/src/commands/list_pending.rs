@@ -1,6 +1,7 @@
 use crate::error::Result;
 use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
+use rest_api_types::models::PendingFile;
 
 /// Handle the list-pending command.
 ///
@@ -22,7 +23,7 @@ pub async fn handle_list_pending_command(
     secret_key_path: &std::path::PathBuf,
     password: &str,
     json: bool,
-) -> Result<Vec<String>> {
+) -> Result<Vec<PendingFile>> {
     // 1. Load secret key
     let secret_key = AsfaloadSecretKeys::from_file(secret_key_path, password)?;
 
@@ -33,14 +34,14 @@ pub async fn handle_list_pending_command(
     // 3. Display results
     if json {
         println!("{}", serde_json::to_string(&response)?);
-    } else if response.file_paths.is_empty() {
+    } else if response.pending_files.is_empty() {
         println!("No pending signatures found.");
     } else {
         println!("Files requiring your signature:");
-        for path in &response.file_paths {
+        for path in &response.pending_files {
             println!("  - {}", path);
         }
     }
 
-    Ok(response.file_paths)
+    Ok(response.pending_files)
 }

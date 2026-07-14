@@ -186,7 +186,11 @@ pub enum Commands {
     /// Sign a pending file (fetch, sign, submit)
     SignPending {
         /// Path to the pending file (relative path in mirror). Prompted for select if missing.
+        #[arg(requires = "digest")]
         file_path: Option<String>,
+
+        #[arg(long, requires = "file_path")]
+        digest: Option<String>,
 
         #[command(flatten)]
         secret_key_args: SecretKeyArgs,

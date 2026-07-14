@@ -17,6 +17,7 @@ pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
 use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
+use rest_api_types::models::ClientPendingFile;
 
 pub mod download;
 pub mod ping;
@@ -177,6 +178,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
         }
         Commands::SignPending {
             file_path: file_path_in,
+            digest,
             secret_key_args,
             password_args,
             backend_url_args,
@@ -200,8 +202,8 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 .unwrap_or_else(|| DEFAULT_BACKEND.to_string());
 
             let runtime = tokio::runtime::Runtime::new()?;
-            let file_path = match file_path_in {
-                Some(p) => p.clone(),
+            let pending_file = match file_path_in {
+                Some(p) => ClientPendingFile::new(p.clone(), digest.clone().unwrap()),
                 None => {
                     // need to select interactively as no path passed on command line.
                     // This path is currently not tested, but it uses tested components.
@@ -209,12 +211,14 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     // not be worth it.
                     let client = admin_lib::v1::Client::new(url.clone());
                     let response = runtime.block_on(client.get_pending_signatures(&secret_key))?;
-                    let proposals = response.file_paths;
+                    // Inquired formats proposals according to the Display implementation for PendingFile,
+                    let proposals = response.pending_files;
+
                     if proposals.is_empty() {
                         return Err(anyhow::Error::new(ClientCliError::NoPendingSignature));
                     } else if std::io::stdin().is_terminal() {
                         match inquire::Select::new("File to sign", proposals).prompt() {
-                            Ok(choice) => choice,
+                            Ok(choice) => choice.unseal(),
                             Err(_) => {
                                 return Err(anyhow::Error::new(ClientCliError::InvalidInput(
                                     "Selection cancelled or failed: no path to sign was provided"
@@ -230,7 +234,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 }
             };
             runtime.block_on(sign_pending::handle_sign_pending_sec_key(
-                &file_path,
+                pending_file,
                 &url,
                 &secret_key,
                 json_args.json,

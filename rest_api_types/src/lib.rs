@@ -280,9 +280,13 @@ pub mod environment {
 }
 
 pub mod models {
+    use core::fmt;
     use std::collections::HashMap;
 
+    use common::sha512_for_file;
     use serde::{Deserialize, Serialize};
+
+    use crate::errors::ApiError;
 
     #[derive(Debug, Serialize)]
     pub struct ErrorResponse {
@@ -312,11 +316,11 @@ pub mod models {
     /// Request to submit signatures for a specific file.
     ///
     /// # Fields
-    /// * `file_path` - Relative path to the file being signed
+    /// * `pending_file` - relative file path and digest
     /// * `public_key` - Base64-encoded public key of the signer
     /// * `signatures` - Map of file path to base64-encoded signature data
     pub struct SubmitSignatureRequest {
-        pub file_path: String,
+        pub pending_file: ClientPendingFile,
         pub public_key: String,
         pub signatures: HashMap<String, String>,
     }
@@ -343,6 +347,72 @@ pub mod models {
         pub is_complete: bool,
     }
 
+    // This struct can be initialised by the client without access to the file on disk, but it has
+    // to provide the digest of said file.
+    // The PendingFile can only be built for files accessible on disk, by the server.
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ClientPendingFile {
+        pub path: String,
+        pub digest: String,
+    }
+
+    impl ClientPendingFile {
+        pub fn new(path: String, digest: String) -> ClientPendingFile {
+            ClientPendingFile { path, digest }
+        }
+        pub fn path(&self) -> &str {
+            &self.path
+        }
+        pub fn digest(&self) -> &str {
+            &self.digest
+        }
+    }
+
+    impl fmt::Display for ClientPendingFile {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "path: {}\ndigest: {}\n", self.path(), self.digest())
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PendingFile {
+        path: String,
+        digest: String,
+    }
+
+    // The Display implementation is used by Inquire::Select
+    // Changing the format here will change the select prompt used by sign-pending
+    impl fmt::Display for PendingFile {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "path: {}\n digest: {}\n", self.path, self.digest)
+        }
+    }
+
+    impl PendingFile {
+        pub fn try_new(
+            np: &crate::path_validation::NormalisedPaths,
+        ) -> Result<PendingFile, ApiError> {
+            let path = np.relative_path().to_string_lossy().to_string();
+            let digest = sha512_for_file(np.absolute_path())?.to_string();
+            Ok(PendingFile { path, digest })
+        }
+
+        pub fn path(&self) -> &str {
+            &self.path
+        }
+        pub fn digest(&self) -> &str {
+            &self.digest
+        }
+
+        /// Get a ClientPendingFile from self. Transitions from a verified instance
+        /// (with digest computed from disk) to an untrustable instance (eg received by the server)
+        pub fn unseal(&self) -> ClientPendingFile {
+            ClientPendingFile {
+                path: self.path().into(),
+                digest: self.digest().into(),
+            }
+        }
+    }
     #[derive(Debug, Clone, Serialize, Deserialize)]
     /// Response to a pending signatures list request.
     ///
@@ -350,7 +420,7 @@ pub mod models {
     /// * `file_paths` - List of relative paths to files that need signatures
     ///   from the requesting signer
     pub struct ListPendingResponse {
-        pub file_paths: Vec<String>,
+        pub pending_files: Vec<PendingFile>,
     }
 
     /// Authentication outcome reported by the ping endpoint.

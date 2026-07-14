@@ -116,7 +116,7 @@ section "Initial Signers File Activation"
 ################################################################################
 
 run_step_json "List pending for key0 (should show pending signers)" \
-    '.file_paths | length > 0' \
+    '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
 run_step_json "Sign signers file with key0" \
@@ -129,7 +129,7 @@ assert_pending_metadata_signature_count 1
 assert_pending_metadata_signatures_contain_keys "$KEY_0"
 
 run_step_json "List pending for key1" \
-    '.file_paths | length > 0' \
+    '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_1" -u "$backend" --password $key_password
 
 run_step_json "Sign signers file with key1" \
@@ -185,11 +185,11 @@ assert_pending_signers_contain_keys "$KEY_5" "$KEY_6" "$KEY_7"
 assert_pending_signers_contain_master_keys "$KEY_8" "$KEY_9"
 
 run_step_json "List pending for key3 (should show pending signers)" \
-    '.file_paths | length > 0' \
+    '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_3" -u "$backend" --password $key_password
 
 run_step_json "List pending for key5 (should show pending)" \
-    '.file_paths | length > 0' \
+    '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_5" -u "$backend" --password $key_password
 
 ################################################################################

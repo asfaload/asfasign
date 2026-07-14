@@ -1,6 +1,7 @@
 use features_lib::{AsfaloadKeyPairTrait, AsfaloadKeyPairs};
 use predicates::prelude::*;
 use serde_json::Value;
+use sha2::{Digest, Sha512};
 use std::fs;
 use tempfile::TempDir;
 use test_helpers::fixtures_pub_key;
@@ -104,6 +105,51 @@ fn test_new_signers_file_json_output() {
     assert_eq!(json["master_keys_count"], 0);
     assert!(json["master_threshold"].is_null());
     assert!(!json["output_file"].as_str().unwrap().is_empty());
+}
+
+#[test]
+fn test_new_signers_file_json_digest_present_and_correct() {
+    let pub_key = fixtures_pub_key(0);
+    let temp_dir = TempDir::new().unwrap();
+    let output_file = temp_dir.path().join("signers.json");
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("new-signers-file")
+        .arg("--json")
+        .arg("--artifact-signers-file")
+        .arg(&pub_key)
+        .arg("-A")
+        .arg("1")
+        .arg("-o")
+        .arg(&output_file);
+
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json: Value = serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+
+    let digest_str = json["digest"]
+        .as_str()
+        .expect("digest field should be a string");
+    assert!(!digest_str.is_empty(), "digest should not be empty");
+    assert!(
+        digest_str.starts_with("sha512:"),
+        "digest should start with 'sha512:', got: {}",
+        digest_str
+    );
+
+    let file_bytes = fs::read(&output_file).unwrap();
+    let hash = Sha512::digest(&file_bytes);
+    let expected = format!("sha512:{}", hex::encode(hash));
+    assert_eq!(
+        digest_str, expected,
+        "json digest does not match the file's actual sha512"
+    );
 }
 
 #[test]

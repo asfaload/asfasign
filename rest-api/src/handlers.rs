@@ -2,10 +2,11 @@ use common::fs::names::{
     find_global_signers_for, revocation_path_for, revocation_signatures_path_for,
     revocation_signers_path_for, subject_path_from_pending_signatures,
 };
+use common::sha512_for_file;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
 use rest_api_types::models::{
-    GetArtifactInfoResponse, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
+    GetArtifactInfoResponse, PendingFile, UpdateRepoSignersRequest, UpdateRepoSignersResponse,
 };
 use rest_api_types::{
     FilesToSignResponse, GetSignatureStatusResponse, GetSignersChainResponse, ListPendingResponse,
@@ -419,21 +420,14 @@ pub async fn submit_signature_handler(
 
     tracing::info!(
         request_id = %request_id,
-        file_path = %request.file_path,
+        file_path = %request.pending_file,
         "Received submit_signature request"
     );
-
-    // Validate the file path
-    if request.file_path.is_empty() {
-        return Err(ApiError::InvalidRequestBody(
-            "File path cannot be empty".to_string(),
-        ));
-    }
 
     // Normalize and validate the file path
     let file_path = NormalisedPaths::new(
         state.git_repo_path.clone(),
-        PathBuf::from_str(request.file_path.as_ref()).unwrap(),
+        PathBuf::from(request.pending_file.path()),
     )
     .await?;
 
@@ -441,10 +435,17 @@ pub async fn submit_signature_handler(
     if !file_path.absolute_path().exists() {
         return Err(ApiError::InvalidRequestBody(format!(
             "File not found: {}",
-            request.file_path
+            request.pending_file
         )));
     }
 
+    // Consistency check of digest sent
+    let digest_on_disk = sha512_for_file(file_path.absolute_path())?;
+    if request.pending_file.digest() != digest_on_disk.to_string() {
+        return Err(ApiError::DigestMismatch(
+            "Digest sent is different from digest of file on disk at path sent.".into(),
+        ));
+    }
     // Parse public key from base64 string
     let public_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|_| ApiError::InvalidRequestBody("Invalid public key format".to_string()))?;
@@ -459,11 +460,11 @@ pub async fn submit_signature_handler(
     }
 
     // Verify the primary file has a signature
-    let primary_path = PathBuf::from(&request.file_path);
+    let primary_path = PathBuf::from(&request.pending_file.path());
     if !parsed_signatures.contains_key(&primary_path) {
         return Err(ApiError::InvalidRequestBody(format!(
             "No signature provided for primary file: {}",
-            request.file_path
+            request.pending_file
         )));
     }
 
@@ -484,7 +485,7 @@ pub async fn submit_signature_handler(
 
     tracing::info!(
         request_id = %request_id,
-        file_path = %request.file_path,
+        file_path = %request.pending_file,
         is_complete = collector_result.is_complete,
         "Signature collection result"
     );
@@ -657,12 +658,14 @@ pub async fn get_pending_signatures_handler(
         })?;
 
     // Extract relative paths and convert from pending signature files to artifact files
-    let file_paths: Vec<String> = pending_files
+    let file_paths: Vec<PendingFile> = pending_files
         .iter()
         .map(|np| {
             let pending_sig_path = np.relative_path();
-            let artifact_path = subject_path_from_pending_signatures(&pending_sig_path)?;
-            Ok(artifact_path.to_string_lossy().to_string())
+            let artifact_relative = subject_path_from_pending_signatures(&pending_sig_path)?;
+            let artifact_np = build_normalised_absolute_path(np.base_dir(), artifact_relative)?;
+            let r = PendingFile::try_new(&artifact_np)?;
+            Ok(r)
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
 
@@ -672,7 +675,9 @@ pub async fn get_pending_signatures_handler(
         "Returning pending signatures list"
     );
 
-    Ok(Json(ListPendingResponse { file_paths }))
+    Ok(Json(ListPendingResponse {
+        pending_files: file_paths,
+    }))
 }
 
 /// Helper to extract public key from authentication headers.
