@@ -2,6 +2,7 @@ use common::fs::names::{
     find_global_signers_for, revocation_path_for, revocation_signatures_path_for,
     revocation_signers_path_for, subject_path_from_pending_signatures,
 };
+use common::sha512_for_file;
 use constants::SIGNERS_DIR;
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadSignatureTrait, SignersConfig};
 use rest_api_types::models::{
@@ -438,6 +439,13 @@ pub async fn submit_signature_handler(
         )));
     }
 
+    // Consistency check of digest sent
+    let digest_on_disk = sha512_for_file(file_path.absolute_path())?;
+    if request.pending_file.digest() != digest_on_disk.to_string() {
+        return Err(ApiError::DigestMismatch(
+            "Digest sent is different from digest of file on disk at path sent.".into(),
+        ));
+    }
     // Parse public key from base64 string
     let public_key = features_lib::AsfaloadPublicKeys::from_base64(&request.public_key)
         .map_err(|_| ApiError::InvalidRequestBody("Invalid public key format".to_string()))?;
