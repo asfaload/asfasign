@@ -51,7 +51,7 @@ pub async fn handle_sign_pending_sec_key(
 
     // Fetch all files that need signing
     let files_to_sign = client
-        .fetch_files_to_sign(&pending_file.path(), secret_key)
+        .fetch_files_to_sign(pending_file.path(), secret_key)
         .await?;
 
     // Sign each file
@@ -65,7 +65,7 @@ pub async fn handle_sign_pending_sec_key(
         if *path == pending_file.path() && hash.to_string() != pending_file.digest() {
             return Err(crate::error::ClientCliError::ServerDigestError(
                 hash.to_string(),
-                pending_file.digest(),
+                pending_file.digest().into(),
             ));
         }
         let signature = secret_key.sign(&hash)?;

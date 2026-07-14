@@ -360,11 +360,11 @@ pub mod models {
         pub fn new(path: String, digest: String) -> ClientPendingFile {
             ClientPendingFile { path, digest }
         }
-        pub fn path(&self) -> String {
-            self.path.clone()
+        pub fn path(&self) -> &str {
+            &self.path
         }
-        pub fn digest(&self) -> String {
-            self.digest.clone()
+        pub fn digest(&self) -> &str {
+            &self.digest
         }
     }
 
