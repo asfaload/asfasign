@@ -1276,6 +1276,62 @@ pub mod test_utils_tests {
     }
 
     #[tokio::test]
+    async fn test_submit_signature_rejects_wrong_digest() -> Result<(), anyhow::Error> {
+        use features_lib::AsfaloadPublicKeyTrait;
+        use rest_api_test_helpers::TestSetupBuilder;
+
+        let setup = TestSetupBuilder::new()
+            .with_artifact("releases/artifact.bin")
+            .build()
+            .await?;
+
+        let public_key = setup.test_keys().pub_key(0).unwrap();
+        let secret_key = setup.test_keys().sec_key(0).unwrap();
+
+        // Valid path, but digest does not match the file on disk
+        let wrong_digest = "sha512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+        let payload = serde_json::json!({
+            "pending_file": {
+                "path": setup.artifact_path(),
+                "digest": wrong_digest,
+            },
+            "public_key": public_key.to_base64(),
+            "signatures": {
+                setup.artifact_path(): "invalid_signature",
+            },
+        });
+
+        let payload_string = payload.to_string();
+        let auth = create_auth_headers_with_key(secret_key, &payload_string).await;
+
+        let response = setup
+            .client()
+            .post(url_for("signatures", setup.port()))
+            .header(HEADER_TIMESTAMP, &auth.timestamp)
+            .header(HEADER_NONCE, &auth.nonce)
+            .header(HEADER_SIGNATURE, &auth.signature)
+            .header(HEADER_PUBLIC_KEY, &auth.public_key)
+            .json(&payload)
+            .send()
+            .await?;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body: serde_json::Value = response.json().await?;
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains("digest"),
+            "Expected digest mismatch error, got: {}",
+            body
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_revoke_fully_signed_artifact() -> Result<(), anyhow::Error> {
         use features_lib::{
             AsfaloadPublicKeyTrait, AsfaloadSecretKeyTrait, AsfaloadSignatureTrait,
