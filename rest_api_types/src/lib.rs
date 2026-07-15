@@ -352,8 +352,8 @@ pub mod models {
     // The PendingFile can only be built for files accessible on disk, by the server.
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ClientPendingFile {
-        pub path: String,
-        pub digest: String,
+        path: String,
+        digest: String,
     }
 
     impl ClientPendingFile {
@@ -384,7 +384,7 @@ pub mod models {
     // Changing the format here will change the select prompt used by sign-pending
     impl fmt::Display for PendingFile {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "path: {}\n digest: {}\n", self.path, self.digest)
+            write!(f, "path: {}\ndigest: {}\n", self.path, self.digest)
         }
     }
 
@@ -417,7 +417,7 @@ pub mod models {
     /// Response to a pending signatures list request.
     ///
     /// # Fields
-    /// * `file_paths` - List of relative paths to files that need signatures
+    /// * `pending_files` - list of information (relative path and digest) of files awaiting signature
     ///   from the requesting signer
     pub struct ListPendingResponse {
         pub pending_files: Vec<PendingFile>,

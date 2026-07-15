@@ -108,7 +108,7 @@ mod tests {
             .iter()
             .find(|pending| {
                 let p = pending.path();
-                p.contains(project_dir_sub.to_string_lossy().as_ref())
+                p.starts_with(&format!("{}/", project_dir_sub.to_string_lossy()))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
             .expect("Signers file should be in pending list")
@@ -205,7 +205,7 @@ mod tests {
             .iter()
             .find(|pending| {
                 let p = pending.path();
-                p.contains(project_dir_sub.to_string_lossy().as_ref())
+                p.starts_with(&format!("{}/", project_dir_sub.to_string_lossy()))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
             .expect("Signers file should be in pending list")
@@ -322,7 +322,7 @@ mod tests {
             .iter()
             .find(|pending| {
                 let p = pending.path();
-                p.contains(project_dir_sub.to_string_lossy().as_ref())
+                p.starts_with(&format!("{}/", project_dir_sub.to_string_lossy()))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
             .expect("Signers file should be in pending list")
@@ -416,7 +416,7 @@ mod tests {
             .iter()
             .find(|pending| {
                 let p = pending.path();
-                p.contains(project_dir_sub.to_string_lossy().as_ref())
+                p.starts_with(&format!("{}/", project_dir_sub.to_string_lossy()))
                     && p.contains(PENDING_SIGNERS_DIR)
             })
             .expect("Signers file should be in pending list")

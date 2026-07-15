@@ -119,9 +119,10 @@ run_step_json "List pending for key0 (should show pending signers)" \
     '.pending_files | length > 0' \
     cargo run --quiet -- list-pending --secret-key "$KEY_0" -u "$backend" --password $key_password
 
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
 run_step_json "Sign signers file with key0" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 1
 assert_pending_signers_signatures_contain_keys "$KEY_0"
@@ -134,7 +135,7 @@ run_step_json "List pending for key1" \
 
 run_step_json "Sign signers file with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 2
 assert_pending_signers_signatures_contain_keys "$KEY_0" "$KEY_1"
@@ -143,21 +144,21 @@ assert_pending_metadata_signatures_contain_keys "$KEY_0" "$KEY_1"
 
 run_step_json "Sign signers file with key2" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 3
 assert_pending_metadata_signature_count 3
 
 run_step_json "Sign signers file with key3 (master key)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 4
 assert_pending_metadata_signature_count 4
 
 run_step_json "Sign signers file with key4 (master key, completes activation)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_4" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_4" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 # --- Backend: verify signers activated ---
 assert_signers_active
@@ -196,9 +197,10 @@ run_step_json "List pending for key5 (should show pending)" \
 section "Signature Collection for Update Activation"
 ################################################################################
 
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_3" "$backend" $key_password)
 run_step_json "Sign pending with key3 (submitter signs in second phase)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 1
 assert_pending_signers_signatures_contain_keys "$KEY_3"
@@ -207,35 +209,35 @@ assert_pending_metadata_signatures_contain_keys "$KEY_3"
 
 run_step_json "Sign pending with key5 (new artifact signer)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_5" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_5" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 2
 assert_pending_metadata_signature_count 2
 
 run_step_json "Sign pending with key6 (new artifact signer)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_6" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_6" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 3
 assert_pending_metadata_signature_count 3
 
 run_step_json "Sign pending with key7 (new artifact signer)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_7" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_7" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 4
 assert_pending_metadata_signature_count 4
 
 run_step_json "Sign pending with key8 (new master key)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_8" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_8" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_pending_signers_signature_count 5
 assert_pending_metadata_signature_count 5
 
 run_step_json "Sign pending with key9 (new master key, completes update)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_9" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_9" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 # --- Backend: verify new signers activated ---
 assert_signers_active

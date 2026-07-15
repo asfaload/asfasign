@@ -191,17 +191,18 @@ assert_pending_metadata_exist
 section "Signers File Activation"
 ################################################################################
 
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
 run_step_json "Sign signers file with key0" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "Sign signers file with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "Sign signers file with key2 (completes)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_2" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_signers_active
 
@@ -213,13 +214,14 @@ run_step_json "Register release v0.1" \
     '.success == true' \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --csum-file $(csum_file_url 0.1)
 
+RELEASE_0_1_SIGN_ARGS=$(release_index_sign_args 0.1 "$KEY_0" "$backend" $key_password)
 run_step_json "Sign release v0.1 with key0" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.1)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
 
 run_step_json "Sign release v0.1 with key1 (completes, threshold=2)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(release_index 0.1)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_1_SIGN_ARGS
 
 assert_release_index_active "0.1"
 
@@ -234,29 +236,30 @@ run_step_json "Update signers file with key0" \
 assert_pending_signers_exist
 assert_pending_metadata_exist
 
+SIGNERS_SIGN_ARGS=$(pending_signers_sign_args "$KEY_0" "$backend" $key_password)
 run_step_json "Sign pending signers with key0" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "Sign pending signers with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "Sign pending signers with key3 (newly added artifact signer)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "Sign pending signers with key4 (newly added revocation key)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_4" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_4" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "Sign pending signers with key5 (newly added revocation key)" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_5" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_5" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 run_step_json "Sign pending signers with key6 (activates new signers file)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_6" -u "$backend" --password $key_password $(pending_signers_file)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_6" -u "$backend" --password $key_password $SIGNERS_SIGN_ARGS
 
 assert_signers_active
 
@@ -268,17 +271,18 @@ run_step_json "Register release v0.2" \
     '.success == true' \
     cargo run --quiet -- register-assets --secret-key "$KEY_2" -u "$backend" --password $key_password --csum-file $(csum_file_url 0.2)
 
+RELEASE_0_2_SIGN_ARGS=$(release_index_sign_args 0.2 "$KEY_0" "$backend" $key_password)
 run_step_json "Sign release v0.2 with key0" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $(release_index 0.2)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_0" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
 run_step_json "Sign release v0.2 with key1" \
     '.is_complete == false' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $(release_index 0.2)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_1" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
 run_step_json "Sign release v0.2 with key3 (completes, threshold=3)" \
     '.is_complete == true' \
-    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $(release_index 0.2)
+    cargo run --quiet -- sign-pending --secret-key "$KEY_3" -u "$backend" --password $key_password $RELEASE_0_2_SIGN_ARGS
 
 assert_release_index_active "0.2"
 
