@@ -3,7 +3,6 @@ use axum::Router;
 use rest_api_types::{errors::ApiError, rustls::setup_crypto_provider};
 use std::net::SocketAddr;
 use tokio::signal;
-use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
 
@@ -17,24 +16,9 @@ pub async fn run_server(config: &AppConfig) -> Result<(), ApiError> {
     tracing::debug!("Selecting rustls crypto provider");
     setup_crypto_provider();
     let app_state = init_state(config.clone())?;
-    let governor_conf = GovernorConfigBuilder::default()
-        // Beware, `.per_second(10) is not 10 req/s. From the doc: "Set the interval after which one element of
-        // the quota is replenished in seconds."
-        // To allow 10 rqs/s, we do `.per_millisecond(100)` to replenish an element after 100ms, ie
-        // 10 request are allowed per second.
-        // https://docs.rs/tower_governor/latest/tower_governor/governor/struct.GovernorConfigBuilder.html#method.per_second
-        .per_millisecond(100)
-        .burst_size(20)
-        .finish()
-        .ok_or_else(|| {
-            ApiError::ServerConfigError(rest_api_types::errors::ServerConfigError::InvalidConfig(
-                "Invalid rate limiter configuration: failed to build governor config".to_string(),
-            ))
-        })?;
 
     let app = Router::new()
         .nest("/v1", v1_router(app_state.clone()))
-        .layer(GovernorLayer::new(governor_conf))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(
