@@ -352,8 +352,8 @@ pub mod models {
     // The PendingFile can only be built for files accessible on disk, by the server.
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ClientPendingFile {
-        pub path: String,
-        pub digest: String,
+        path: String,
+        digest: String,
     }
 
     impl ClientPendingFile {
