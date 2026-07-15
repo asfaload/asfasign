@@ -384,7 +384,7 @@ pub mod models {
     // Changing the format here will change the select prompt used by sign-pending
     impl fmt::Display for PendingFile {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "path: {}\n digest: {}\n", self.path, self.digest)
+            write!(f, "path: {}\ndigest: {}\n", self.path, self.digest)
         }
     }
 
