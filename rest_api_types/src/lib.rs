@@ -417,7 +417,7 @@ pub mod models {
     /// Response to a pending signatures list request.
     ///
     /// # Fields
-    /// * `file_paths` - List of relative paths to files that need signatures
+    /// * `pending_files` - list of information (relative path and digest) of files awaiting signature
     ///   from the requesting signer
     pub struct ListPendingResponse {
         pub pending_files: Vec<PendingFile>,
