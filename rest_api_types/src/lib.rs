@@ -423,6 +423,21 @@ pub mod models {
         pub pending_files: Vec<PendingFile>,
     }
 
+    impl ListPendingResponse {
+        pub fn filter(&self, digest_filter: &str) -> Self {
+            let filtered_list = self
+                .pending_files
+                .iter()
+                .filter(|item| item.digest() == digest_filter)
+                .cloned()
+                .collect();
+
+            ListPendingResponse {
+                pending_files: filtered_list,
+            }
+        }
+    }
+
     /// Authentication outcome reported by the ping endpoint.
     ///
     /// The enum makes invalid combinations unrepresentable: a success always

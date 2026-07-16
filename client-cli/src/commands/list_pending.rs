@@ -1,7 +1,6 @@
 use crate::error::Result;
 use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
-use rest_api_types::ListPendingResponse;
 use rest_api_types::models::PendingFile;
 
 /// Handle the list-pending command.
@@ -33,21 +32,9 @@ pub async fn handle_list_pending_command(
     let client = admin_lib::v1::Client::new(backend_url);
     let response = client.get_pending_signatures(&secret_key).await?;
 
-    let filtered_list = match digest_filter {
-        Some(filter) => {
-            let l: Vec<PendingFile> = response
-                .pending_files
-                .iter()
-                .filter(|item| item.digest() == filter)
-                .cloned()
-                .collect();
-            l
-        }
-        None => response.pending_files,
-    };
-
-    let filtered_response = ListPendingResponse {
-        pending_files: filtered_list,
+    let filtered_response = match digest_filter {
+        Some(filter) => response.filter(&filter),
+        None => response,
     };
 
     // 3. Display results
