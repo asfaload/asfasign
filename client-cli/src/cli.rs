@@ -37,6 +37,13 @@ pub struct BackendUrlArgs {
 }
 
 #[derive(clap::Args, Debug)]
+pub struct DigestFilter {
+    /// Only consider pending file with this sh512 checksum
+    #[arg(long, visible_alias = "df")]
+    pub digest_filter: Option<String>,
+}
+
+#[derive(clap::Args, Debug)]
 pub struct JsonArgs {
     /// Output results as JSON
     #[arg(long)]
@@ -184,6 +191,9 @@ pub enum Commands {
 
         #[command(flatten)]
         backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        digest_filter: DigestFilter,
 
         #[command(flatten)]
         json_args: JsonArgs,

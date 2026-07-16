@@ -154,6 +154,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            digest_filter,
         } => {
             let password = get_password(
                 password_args.password.clone(),
@@ -174,6 +175,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &url,
                 &secret_key_args.secret_key,
                 password.as_str(),
+                digest_filter.digest_filter.clone(),
                 json_args.json,
             ))?;
         }

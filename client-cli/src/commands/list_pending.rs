@@ -1,6 +1,7 @@
 use crate::error::Result;
 use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
+use rest_api_types::ListPendingResponse;
 use rest_api_types::models::PendingFile;
 
 /// Handle the list-pending command.
@@ -22,6 +23,7 @@ pub async fn handle_list_pending_command(
     backend_url: &str,
     secret_key_path: &std::path::PathBuf,
     password: &str,
+    digest_filter: Option<String>,
     json: bool,
 ) -> Result<Vec<PendingFile>> {
     // 1. Load secret key
@@ -31,17 +33,34 @@ pub async fn handle_list_pending_command(
     let client = admin_lib::v1::Client::new(backend_url);
     let response = client.get_pending_signatures(&secret_key).await?;
 
+    let filtered_list = match digest_filter {
+        Some(filter) => {
+            let l: Vec<PendingFile> = response
+                .pending_files
+                .iter()
+                .filter(|item| item.digest() == filter)
+                .cloned()
+                .collect();
+            l
+        }
+        None => response.pending_files,
+    };
+
+    let filtered_response = ListPendingResponse {
+        pending_files: filtered_list,
+    };
+
     // 3. Display results
     if json {
-        println!("{}", serde_json::to_string(&response)?);
-    } else if response.pending_files.is_empty() {
+        println!("{}", serde_json::to_string(&filtered_response)?);
+    } else if filtered_response.pending_files.is_empty() {
         println!("No pending signatures found.");
     } else {
         println!("Files requiring your signature:");
-        for path in &response.pending_files {
+        for path in &filtered_response.pending_files {
             println!("  - {}", path);
         }
     }
 
-    Ok(response.pending_files)
+    Ok(filtered_response.pending_files)
 }
