@@ -46,6 +46,7 @@ mod tests {
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
+            None,
             false,
         )
         .await
@@ -99,6 +100,7 @@ mod tests {
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
+            None,
             false,
         )
         .await
@@ -142,6 +144,7 @@ mod tests {
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
+            None,
             false,
         )
         .await
@@ -196,6 +199,7 @@ mod tests {
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
+            None,
             false,
         )
         .await
@@ -239,6 +243,7 @@ mod tests {
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
+            None,
             false,
         )
         .await
@@ -313,6 +318,7 @@ mod tests {
             &backend_url,
             &secret_key_path,
             test_harness::TEST_PASSWORD,
+            None,
             false,
         )
         .await
@@ -406,6 +412,7 @@ mod tests {
             &backend_url,
             &key_paths[0],
             test_harness::TEST_PASSWORD,
+            None,
             false,
         )
         .await
@@ -480,6 +487,7 @@ mod tests {
             &backend_url,
             &key_paths[0],
             test_harness::TEST_PASSWORD,
+            None,
             false,
         )
         .await
