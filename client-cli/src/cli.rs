@@ -168,6 +168,12 @@ pub enum Commands {
         #[command(flatten)]
         json_args: JsonArgs,
     },
+    GetDigest {
+        file: String,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
     /// List files requiring your signature from the backend
     ListPending {
         #[command(flatten)]
@@ -366,6 +372,7 @@ impl Commands {
             Self::Revoke { .. } => "REVOKE",
             Self::Ping { .. } => "PING",
             Self::Download { .. } => "DOWNLOAD",
+            Self::GetDigest { .. } => "GET_DIGEST",
         }
     }
 
@@ -397,6 +404,7 @@ impl Commands {
             | Self::UpdateSigners { json_args, .. }
             | Self::Revoke { json_args, .. }
             | Self::Ping { json_args, .. } => json_args.json,
+            Self::GetDigest { json_args, .. } => json_args.json,
             Self::Download { .. } => false,
         }
     }

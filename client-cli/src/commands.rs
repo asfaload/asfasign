@@ -20,6 +20,7 @@ use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
 use rest_api_types::models::ClientPendingFile;
 
 pub mod download;
+pub mod get_digest;
 pub mod ping;
 pub mod register_assets;
 pub mod register_repo;
@@ -444,6 +445,10 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &url,
                 forge_type_str,
             ))?;
+        }
+        Commands::GetDigest { file, json_args } => {
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(get_digest::handle_get_digest_command(file, json_args.json))?;
         }
     }
     Ok(())
