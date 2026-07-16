@@ -756,6 +756,7 @@ dependencies = [
  "constants",
  "ed25519-dalek",
  "hex",
+ "mockito",
  "reqwest",
  "serde",
  "serde_json",

@@ -1018,3 +1018,60 @@ mod asfaload_common_tests {
         assert!(s.contains("\n  \"a\": 1"));
     }
 }
+
+#[cfg(test)]
+mod sha512_for_url_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sha512_for_url_matches_sha512_for_content() {
+        let content = b"hello from url";
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/file")
+            .with_status(200)
+            .with_body(content.as_ref())
+            .create_async()
+            .await;
+
+        let url = url::Url::parse(&format!("{}/file", server.url())).unwrap();
+        let hash = sha512_for_url(url).await.unwrap();
+        let expected = sha512_for_content(content.as_ref()).unwrap();
+        assert_eq!(hash, expected);
+    }
+
+    #[tokio::test]
+    async fn sha512_for_url_errors_on_http_failure() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/file")
+            .with_status(500)
+            .with_body("internal error")
+            .create_async()
+            .await;
+
+        let url = url::Url::parse(&format!("{}/file", server.url())).unwrap();
+        let result = sha512_for_url(url).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::Other);
+        assert!(err.to_string().contains("500"));
+    }
+
+    #[tokio::test]
+    async fn sha512_for_url_errors_on_empty_body() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/empty")
+            .with_status(200)
+            .with_body("")
+            .create_async()
+            .await;
+
+        let url = url::Url::parse(&format!("{}/empty", server.url())).unwrap();
+        let result = sha512_for_url(url).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+}
