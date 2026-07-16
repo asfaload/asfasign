@@ -2,6 +2,22 @@ use predicates::prelude::*;
 
 const FIXTURE_PASSWORD: &str = "password";
 
+const DIGEST_A: &str = concat!(
+    "sha512:",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+);
+const DIGEST_B: &str = concat!(
+    "sha512:",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+);
+const DIGEST_NON_MATCHING: &str = concat!(
+    "sha512:",
+    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+);
+
 fn fixture_key_path() -> std::path::PathBuf {
     test_helpers::fixtures_keys_dir().join("key_0")
 }
@@ -40,7 +56,7 @@ fn sign_pending_digest_filter_no_match_fails_with_no_pending() {
         .with_header("content-type", "application/json")
         .with_body(pending_response_json(&[(
             "releases/v1/file-a.tar.gz",
-            "sha512:aaaa",
+            DIGEST_A,
         )]))
         .create();
 
@@ -51,7 +67,7 @@ fn sign_pending_digest_filter_no_match_fails_with_no_pending() {
         .arg("-u")
         .arg(server.url())
         .arg("--digest-filter")
-        .arg("sha512:does-not-exist")
+        .arg(DIGEST_NON_MATCHING)
         .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
 
     cmd.assert()
@@ -72,8 +88,8 @@ fn sign_pending_digest_filter_excludes_non_matching_digest() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(pending_response_json(&[
-            ("releases/v1/file-a.tar.gz", "sha512:aaaa"),
-            ("releases/v1/file-b.tar.gz", "sha512:bbbb"),
+            ("releases/v1/file-a.tar.gz", DIGEST_A),
+            ("releases/v1/file-b.tar.gz", DIGEST_B),
         ]))
         .create();
 
@@ -84,7 +100,7 @@ fn sign_pending_digest_filter_excludes_non_matching_digest() {
         .arg("-u")
         .arg(server.url())
         .arg("--digest-filter")
-        .arg("sha512:no-match")
+        .arg(DIGEST_NON_MATCHING)
         .env("ASFALOAD_SIGN_PENDING_PASSWORD", FIXTURE_PASSWORD);
 
     cmd.assert()

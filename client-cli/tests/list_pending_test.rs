@@ -5,6 +5,22 @@ use tempfile::TempDir;
 
 const TEST_PASSWORD: &str = "test_password_123";
 
+const DIGEST_A: &str = concat!(
+    "sha512:",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+);
+const DIGEST_B: &str = concat!(
+    "sha512:",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+);
+const DIGEST_NON_MATCHING: &str = concat!(
+    "sha512:",
+    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+);
+
 fn generate_test_keypair() -> (TempDir, std::path::PathBuf) {
     let temp_dir = TempDir::new().unwrap();
     let key_path = temp_dir.path().join("test_key");
@@ -47,8 +63,8 @@ fn list_pending_no_filter_shows_all_files() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(pending_response_json(&[
-            ("releases/v1/file-a.tar.gz", "sha512:aaaa"),
-            ("releases/v1/file-b.tar.gz", "sha512:bbbb"),
+            ("releases/v1/file-a.tar.gz", DIGEST_A),
+            ("releases/v1/file-b.tar.gz", DIGEST_B),
         ]))
         .create();
 
@@ -79,8 +95,8 @@ fn list_pending_digest_filter_keeps_matching_file() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(pending_response_json(&[
-            ("releases/v1/file-a.tar.gz", "sha512:aaaa"),
-            ("releases/v1/file-b.tar.gz", "sha512:bbbb"),
+            ("releases/v1/file-a.tar.gz", DIGEST_A),
+            ("releases/v1/file-b.tar.gz", DIGEST_B),
         ]))
         .create();
 
@@ -91,7 +107,7 @@ fn list_pending_digest_filter_keeps_matching_file() {
         .arg("-u")
         .arg(server.url())
         .arg("--digest-filter")
-        .arg("sha512:aaaa")
+        .arg(DIGEST_A)
         .env("ASFALOAD_LIST_PENDING_PASSWORD", TEST_PASSWORD);
 
     cmd.assert()
@@ -109,8 +125,8 @@ fn list_pending_digest_filter_excludes_non_matching_file() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(pending_response_json(&[
-            ("releases/v1/file-a.tar.gz", "sha512:aaaa"),
-            ("releases/v1/file-b.tar.gz", "sha512:bbbb"),
+            ("releases/v1/file-a.tar.gz", DIGEST_A),
+            ("releases/v1/file-b.tar.gz", DIGEST_B),
         ]))
         .create();
 
@@ -121,7 +137,7 @@ fn list_pending_digest_filter_excludes_non_matching_file() {
         .arg("-u")
         .arg(server.url())
         .arg("--digest-filter")
-        .arg("sha512:bbbb")
+        .arg(DIGEST_B)
         .env("ASFALOAD_LIST_PENDING_PASSWORD", TEST_PASSWORD);
 
     cmd.assert()
@@ -144,7 +160,7 @@ fn list_pending_digest_filter_no_match_shows_empty_message() {
         .with_header("content-type", "application/json")
         .with_body(pending_response_json(&[(
             "releases/v1/file-a.tar.gz",
-            "sha512:aaaa",
+            DIGEST_A,
         )]))
         .create();
 
@@ -155,7 +171,7 @@ fn list_pending_digest_filter_no_match_shows_empty_message() {
         .arg("-u")
         .arg(server.url())
         .arg("--digest-filter")
-        .arg("sha512:does-not-exist")
+        .arg(DIGEST_NON_MATCHING)
         .env("ASFALOAD_LIST_PENDING_PASSWORD", TEST_PASSWORD);
 
     cmd.assert()
@@ -176,8 +192,8 @@ fn list_pending_digest_filter_json_contains_only_matching_file() {
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(pending_response_json(&[
-            ("releases/v1/file-a.tar.gz", "sha512:aaaa"),
-            ("releases/v1/file-b.tar.gz", "sha512:bbbb"),
+            ("releases/v1/file-a.tar.gz", DIGEST_A),
+            ("releases/v1/file-b.tar.gz", DIGEST_B),
         ]))
         .create();
 
@@ -188,7 +204,7 @@ fn list_pending_digest_filter_json_contains_only_matching_file() {
         .arg("-u")
         .arg(server.url())
         .arg("--digest-filter")
-        .arg("sha512:aaaa")
+        .arg(DIGEST_A)
         .arg("--json")
         .env("ASFALOAD_LIST_PENDING_PASSWORD", TEST_PASSWORD)
         .output()
@@ -206,7 +222,7 @@ fn list_pending_digest_filter_json_contains_only_matching_file() {
         .as_array()
         .expect("pending_files should be array");
     assert_eq!(files.len(), 1);
-    assert_eq!(files[0]["digest"].as_str().unwrap(), "sha512:aaaa");
+    assert_eq!(files[0]["digest"].as_str().unwrap(), DIGEST_A);
     assert!(files[0]["path"].as_str().unwrap().contains("file-a.tar.gz"));
 }
 
@@ -220,7 +236,7 @@ fn list_pending_digest_filter_no_match_json_returns_empty_array() {
         .with_header("content-type", "application/json")
         .with_body(pending_response_json(&[(
             "releases/v1/file-a.tar.gz",
-            "sha512:aaaa",
+            DIGEST_A,
         )]))
         .create();
 
@@ -231,7 +247,7 @@ fn list_pending_digest_filter_no_match_json_returns_empty_array() {
         .arg("-u")
         .arg(server.url())
         .arg("--digest-filter")
-        .arg("sha512:no-match")
+        .arg(DIGEST_NON_MATCHING)
         .arg("--json")
         .env("ASFALOAD_LIST_PENDING_PASSWORD", TEST_PASSWORD)
         .output()
