@@ -185,6 +185,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             secret_key_args,
             password_args,
             backend_url_args,
+            digest_filter,
             json_args,
         } => {
             let password = get_password(
@@ -213,7 +214,12 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     // Leaving as it for now as testing it would introduce some complexity that might
                     // not be worth it.
                     let client = admin_lib::v1::Client::new(url.clone());
-                    let response = runtime.block_on(client.get_pending_signatures(&secret_key))?;
+                    let server_response =
+                        runtime.block_on(client.get_pending_signatures(&secret_key))?;
+                    let response = match digest_filter.digest_filter.clone() {
+                        Some(s) => server_response.filter(&s),
+                        None => server_response,
+                    };
                     // Inquired formats proposals according to the Display implementation for PendingFile,
                     let proposals = response.pending_files;
 
