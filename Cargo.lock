@@ -764,6 +764,7 @@ dependencies = [
  "test_helpers",
  "thiserror 2.0.18",
  "tokio",
+ "url",
 ]
 
 [[package]]

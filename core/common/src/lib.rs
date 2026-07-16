@@ -128,6 +128,39 @@ pub fn sha512_for_file<P: AsRef<Path>>(path_in: P) -> Result<AsfaloadHashes, std
         Ok(AsfaloadHashes::Sha512(result))
     }
 }
+pub async fn sha512_for_url(url_in: url::Url) -> Result<AsfaloadHashes, std::io::Error> {
+    let io_err = |e: reqwest::Error| std::io::Error::other(e.to_string());
+
+    let mut response = reqwest::Client::new()
+        .get(url_in.as_str())
+        .send()
+        .await
+        .map_err(io_err)?;
+
+    if !response.status().is_success() {
+        return Err(std::io::Error::other(format!(
+            "HTTP {}: {}",
+            response.status(),
+            url_in
+        )));
+    }
+
+    let mut hasher = Sha512::new();
+    let mut bytes_hashed: u64 = 0;
+    while let Some(chunk) = response.chunk().await.map_err(io_err)? {
+        hasher.update(&chunk);
+        bytes_hashed += chunk.len() as u64;
+    }
+
+    if bytes_hashed == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "We don't compute the sha of an empty value",
+        ));
+    }
+
+    Ok(AsfaloadHashes::Sha512(hasher.finalize()))
+}
 
 // We distincuish 3 types of signed files, which have different criteria
 // used to determine if their signature is complete.
