@@ -283,7 +283,7 @@ pub mod models {
     use core::fmt;
     use std::collections::HashMap;
 
-    use common::sha512_for_file;
+    use common::{AsfaloadHashes, sha512_for_file};
     use serde::{Deserialize, Serialize};
 
     use crate::errors::ApiError;
@@ -424,11 +424,12 @@ pub mod models {
     }
 
     impl ListPendingResponse {
-        pub fn filter(&self, digest_filter: &str) -> Self {
+        pub fn filter(&self, digest_filter: &AsfaloadHashes) -> Self {
+            let digest_str = digest_filter.to_string();
             let filtered_list = self
                 .pending_files
                 .iter()
-                .filter(|item| item.digest() == digest_filter)
+                .filter(|item| item.digest() == digest_str)
                 .cloned()
                 .collect();
 
