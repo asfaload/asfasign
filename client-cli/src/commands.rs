@@ -16,6 +16,7 @@ pub mod sign_pending;
 pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
+use common::AsfaloadHashes;
 use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
 use rest_api_types::models::ClientPendingFile;
 
@@ -217,7 +218,12 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     let server_response =
                         runtime.block_on(client.get_pending_signatures(&secret_key))?;
                     let response = match digest_filter.digest_filter.clone() {
-                        Some(s) => server_response.filter(&s),
+                        Some(s) => {
+                            let parsed = s
+                                .parse::<AsfaloadHashes>()
+                                .map_err(|e| anyhow::Error::new(ClientCliError::InvalidInput(e)))?;
+                            server_response.filter(&parsed)
+                        }
                         None => server_response,
                     };
                     // Inquired formats proposals according to the Display implementation for PendingFile,

@@ -1,4 +1,5 @@
-use crate::error::Result;
+use crate::error::{ClientCliError, Result};
+use common::AsfaloadHashes;
 use features_lib::AsfaloadSecretKeyTrait;
 use features_lib::AsfaloadSecretKeys;
 use rest_api_types::models::PendingFile;
@@ -33,7 +34,12 @@ pub async fn handle_list_pending_command(
     let response = client.get_pending_signatures(&secret_key).await?;
 
     let filtered_response = match digest_filter {
-        Some(filter) => response.filter(&filter),
+        Some(filter) => {
+            let parsed = filter
+                .parse::<AsfaloadHashes>()
+                .map_err(ClientCliError::InvalidInput)?;
+            response.filter(&parsed)
+        }
         None => response,
     };
 
