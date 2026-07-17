@@ -6,6 +6,8 @@ use std::process::Command;
 use zxcvbn::{Score, zxcvbn};
 
 use crate::error::{ClientCliError, Result};
+use bishop::{BishopArt, DrawingOptions};
+use common::AsfaloadHashes;
 
 /// Ensures a directory exists, creating it if necessary
 pub fn ensure_dir_exists(path: &Path) -> Result<()> {
@@ -186,4 +188,41 @@ fn read_password_from_command(command_str: &str) -> Result<String> {
         String::from_utf8(output.stdout).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
     Ok(password.trim_end_matches(['\r', '\n']).to_string())
+}
+
+pub fn bishop_art(hash: &AsfaloadHashes) -> String {
+    let bytes = match hash {
+        AsfaloadHashes::Sha512(d) => d.as_slice(),
+    };
+    let opts = DrawingOptions {
+        top_text: "SHA512 64".to_string(),
+        ..Default::default()
+    };
+    BishopArt::new().chain(bytes).draw_with_opts(&opts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::AsfaloadHashes;
+    use sha2::{Digest, Sha512};
+
+    #[test]
+    fn bishop_art_contains_framed_borders() {
+        let bytes = Sha512::digest(b"deterministic test input");
+        let hash = AsfaloadHashes::Sha512(bytes);
+        let art = bishop_art(&hash);
+        assert!(
+            art.contains("+---[SHA512 64]---+"),
+            "expected top border with label"
+        );
+        assert!(art.contains("+"), "expected bottom border");
+    }
+
+    #[test]
+    fn bishop_art_is_deterministic() {
+        let bytes = Sha512::digest(b"same input");
+        let hash = AsfaloadHashes::Sha512(bytes);
+        assert_eq!(bishop_art(&hash), bishop_art(&hash));
+    }
 }
