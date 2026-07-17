@@ -128,6 +128,39 @@ pub fn sha512_for_file<P: AsRef<Path>>(path_in: P) -> Result<AsfaloadHashes, std
         Ok(AsfaloadHashes::Sha512(result))
     }
 }
+pub async fn sha512_for_url(url_in: url::Url) -> Result<AsfaloadHashes, std::io::Error> {
+    let io_err = |e: reqwest::Error| std::io::Error::other(e.to_string());
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(io_err)?;
+
+    let mut response = client.get(url_in.as_str()).send().await.map_err(io_err)?;
+
+    if !response.status().is_success() {
+        return Err(std::io::Error::other(format!(
+            "HTTP {}: {}",
+            response.status(),
+            url_in
+        )));
+    }
+
+    let mut hasher = Sha512::new();
+    let mut bytes_hashed: u64 = 0;
+    while let Some(chunk) = response.chunk().await.map_err(io_err)? {
+        hasher.update(&chunk);
+        bytes_hashed += chunk.len() as u64;
+    }
+
+    if bytes_hashed == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "We don't compute the sha of an empty value",
+        ));
+    }
+
+    Ok(AsfaloadHashes::Sha512(hasher.finalize()))
+}
 
 // We distincuish 3 types of signed files, which have different criteria
 // used to determine if their signature is complete.
@@ -983,5 +1016,62 @@ mod asfaload_common_tests {
         assert!(!s.ends_with("\n\n"));
         // pretty format preserved (multi-line, indented)
         assert!(s.contains("\n  \"a\": 1"));
+    }
+}
+
+#[cfg(test)]
+mod sha512_for_url_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sha512_for_url_matches_sha512_for_content() {
+        let content = b"hello from url";
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/file")
+            .with_status(200)
+            .with_body(content.as_ref())
+            .create_async()
+            .await;
+
+        let url = url::Url::parse(&format!("{}/file", server.url())).unwrap();
+        let hash = sha512_for_url(url).await.unwrap();
+        let expected = sha512_for_content(content.as_ref()).unwrap();
+        assert_eq!(hash, expected);
+    }
+
+    #[tokio::test]
+    async fn sha512_for_url_errors_on_http_failure() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/file")
+            .with_status(500)
+            .with_body("internal error")
+            .create_async()
+            .await;
+
+        let url = url::Url::parse(&format!("{}/file", server.url())).unwrap();
+        let result = sha512_for_url(url).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::Other);
+        assert!(err.to_string().contains("500"));
+    }
+
+    #[tokio::test]
+    async fn sha512_for_url_errors_on_empty_body() {
+        let mut server = mockito::Server::new_async().await;
+        let _m = server
+            .mock("GET", "/empty")
+            .with_status(200)
+            .with_body("")
+            .create_async()
+            .await;
+
+        let url = url::Url::parse(&format!("{}/empty", server.url())).unwrap();
+        let result = sha512_for_url(url).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     }
 }

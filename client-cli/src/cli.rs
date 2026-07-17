@@ -37,6 +37,13 @@ pub struct BackendUrlArgs {
 }
 
 #[derive(clap::Args, Debug)]
+pub struct DigestFilter {
+    /// Only consider pending file with this sh512 checksum
+    #[arg(long, visible_alias = "df")]
+    pub digest_filter: Option<String>,
+}
+
+#[derive(clap::Args, Debug)]
 pub struct JsonArgs {
     /// Output results as JSON
     #[arg(long)]
@@ -168,6 +175,12 @@ pub enum Commands {
         #[command(flatten)]
         json_args: JsonArgs,
     },
+    GetDigest {
+        file: String,
+
+        #[command(flatten)]
+        json_args: JsonArgs,
+    },
     /// List files requiring your signature from the backend
     ListPending {
         #[command(flatten)]
@@ -178,6 +191,9 @@ pub enum Commands {
 
         #[command(flatten)]
         backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        digest_filter: DigestFilter,
 
         #[command(flatten)]
         json_args: JsonArgs,
@@ -200,6 +216,9 @@ pub enum Commands {
 
         #[command(flatten)]
         backend_url_args: BackendUrlArgs,
+
+        #[command(flatten)]
+        digest_filter: DigestFilter,
 
         #[command(flatten)]
         json_args: JsonArgs,
@@ -366,6 +385,7 @@ impl Commands {
             Self::Revoke { .. } => "REVOKE",
             Self::Ping { .. } => "PING",
             Self::Download { .. } => "DOWNLOAD",
+            Self::GetDigest { .. } => "GET_DIGEST",
         }
     }
 
@@ -397,6 +417,7 @@ impl Commands {
             | Self::UpdateSigners { json_args, .. }
             | Self::Revoke { json_args, .. }
             | Self::Ping { json_args, .. } => json_args.json,
+            Self::GetDigest { json_args, .. } => json_args.json,
             Self::Download { .. } => false,
         }
     }

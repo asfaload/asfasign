@@ -283,7 +283,7 @@ pub mod models {
     use core::fmt;
     use std::collections::HashMap;
 
-    use common::sha512_for_file;
+    use common::{AsfaloadHashes, sha512_for_file};
     use serde::{Deserialize, Serialize};
 
     use crate::errors::ApiError;
@@ -353,17 +353,17 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ClientPendingFile {
         path: String,
-        digest: String,
+        digest: AsfaloadHashes,
     }
 
     impl ClientPendingFile {
-        pub fn new(path: String, digest: String) -> ClientPendingFile {
+        pub fn new(path: String, digest: AsfaloadHashes) -> ClientPendingFile {
             ClientPendingFile { path, digest }
         }
         pub fn path(&self) -> &str {
             &self.path
         }
-        pub fn digest(&self) -> &str {
+        pub fn digest(&self) -> &AsfaloadHashes {
             &self.digest
         }
     }
@@ -377,7 +377,7 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PendingFile {
         path: String,
-        digest: String,
+        digest: AsfaloadHashes,
     }
 
     // The Display implementation is used by Inquire::Select
@@ -393,14 +393,14 @@ pub mod models {
             np: &crate::path_validation::NormalisedPaths,
         ) -> Result<PendingFile, ApiError> {
             let path = np.relative_path().to_string_lossy().to_string();
-            let digest = sha512_for_file(np.absolute_path())?.to_string();
+            let digest = sha512_for_file(np.absolute_path())?;
             Ok(PendingFile { path, digest })
         }
 
         pub fn path(&self) -> &str {
             &self.path
         }
-        pub fn digest(&self) -> &str {
+        pub fn digest(&self) -> &AsfaloadHashes {
             &self.digest
         }
 
@@ -409,7 +409,7 @@ pub mod models {
         pub fn unseal(&self) -> ClientPendingFile {
             ClientPendingFile {
                 path: self.path().into(),
-                digest: self.digest().into(),
+                digest: self.digest().clone(),
             }
         }
     }
@@ -421,6 +421,21 @@ pub mod models {
     ///   from the requesting signer
     pub struct ListPendingResponse {
         pub pending_files: Vec<PendingFile>,
+    }
+
+    impl ListPendingResponse {
+        pub fn filter(&self, digest_filter: &AsfaloadHashes) -> Self {
+            let filtered_list = self
+                .pending_files
+                .iter()
+                .filter(|item| item.digest() == digest_filter)
+                .cloned()
+                .collect();
+
+            ListPendingResponse {
+                pending_files: filtered_list,
+            }
+        }
     }
 
     /// Authentication outcome reported by the ping endpoint.

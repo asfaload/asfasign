@@ -62,10 +62,10 @@ pub async fn handle_sign_pending_sec_key(
         // Only verify the digest for the primary file; associated files (e.g. metadata)
         // are signed without digest pre-verification since pending_file.digest() covers
         // only the primary file.
-        if *path == pending_file.path() && hash.to_string() != pending_file.digest() {
+        if *path == pending_file.path() && hash != *pending_file.digest() {
             return Err(crate::error::ClientCliError::ServerDigestError(
                 hash.to_string(),
-                pending_file.digest().into(),
+                pending_file.digest().clone(),
             ));
         }
         let signature = secret_key.sign(&hash)?;

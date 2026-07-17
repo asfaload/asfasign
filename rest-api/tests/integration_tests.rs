@@ -1082,7 +1082,7 @@ pub mod test_utils_tests {
         signatures.insert(signers_rel_path.clone(), signature.to_base64());
         signatures.insert(metadata_rel_path, metadata_signature.to_base64());
         let payload = json!(&SubmitSignatureRequest {
-            pending_file: ClientPendingFile::new(signers_rel_path, digest.to_string()),
+            pending_file: ClientPendingFile::new(signers_rel_path, digest),
             public_key: public_key.to_base64(),
             signatures,
         });
@@ -1238,7 +1238,7 @@ pub mod test_utils_tests {
         let payload = json!({
             "pending_file": {
                 "path": "nonexistent.txt",
-                "digest": "fake_digest_for_nonexistent_file",
+                "digest": format!("sha512:{}", "a".repeat(128)),
             },
             "public_key": public_key.to_base64(),
             "signatures": {
@@ -1432,10 +1432,7 @@ pub mod test_utils_tests {
         let mut signatures = std::collections::HashMap::new();
         signatures.insert("releases/release.tar.gz".to_string(), signature.to_base64());
         let payload = json!(&SubmitSignatureRequest {
-            pending_file: ClientPendingFile::new(
-                "releases/release.tar.gz".to_string(),
-                digest.to_string()
-            ),
+            pending_file: ClientPendingFile::new("releases/release.tar.gz".to_string(), digest),
             public_key: public_key.to_base64(),
             signatures,
         });
@@ -1588,14 +1585,14 @@ pub mod test_utils_tests {
             let signers_path_str =
                 format!("{}/asfaload.signers.pending/index.json", project_prefix);
             let mut signatures = std::collections::HashMap::new();
-            let mut signers_digest_str = String::new();
+            let mut signers_digest: Option<common::AsfaloadHashes> = None;
             for (path, content_b64) in &files_body.files {
                 let content =
                     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, content_b64)
                         .expect("base64 decode");
                 let hash = features_lib::sha512_for_content(content)?;
                 if *path == signers_path_str {
-                    signers_digest_str = hash.to_string();
+                    signers_digest = Some(hash.clone());
                 }
                 let sig = secret_key.sign(&hash)?;
                 signatures.insert(path.clone(), sig.to_base64());
@@ -1605,7 +1602,7 @@ pub mod test_utils_tests {
             let submit_body = rest_api_types::SubmitSignatureRequest {
                 pending_file: rest_api_types::models::ClientPendingFile::new(
                     signers_path_str,
-                    signers_digest_str,
+                    signers_digest.expect("signers digest not found in files response"),
                 ),
                 public_key: public_key.to_base64(),
                 signatures,

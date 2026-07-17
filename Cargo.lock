@@ -643,6 +643,7 @@ dependencies = [
  "chrono",
  "clap",
  "client-lib",
+ "common",
  "features_lib",
  "forge-url",
  "hex",
@@ -756,6 +757,7 @@ dependencies = [
  "constants",
  "ed25519-dalek",
  "hex",
+ "mockito",
  "reqwest",
  "serde",
  "serde_json",
@@ -764,6 +766,7 @@ dependencies = [
  "test_helpers",
  "thiserror 2.0.18",
  "tokio",
+ "url",
 ]
 
 [[package]]

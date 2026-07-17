@@ -16,10 +16,12 @@ pub mod sign_pending;
 pub mod signature_status;
 pub mod signers_file;
 use anyhow::Result;
+use common::AsfaloadHashes;
 use features_lib::{AsfaloadSecretKeyTrait, AsfaloadSecretKeys};
 use rest_api_types::models::ClientPendingFile;
 
 pub mod download;
+pub mod get_digest;
 pub mod ping;
 pub mod register_assets;
 pub mod register_repo;
@@ -153,6 +155,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             password_args,
             backend_url_args,
             json_args,
+            digest_filter,
         } => {
             let password = get_password(
                 password_args.password.clone(),
@@ -173,6 +176,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &url,
                 &secret_key_args.secret_key,
                 password.as_str(),
+                digest_filter.digest_filter.clone(),
                 json_args.json,
             ))?;
         }
@@ -182,6 +186,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
             secret_key_args,
             password_args,
             backend_url_args,
+            digest_filter,
             json_args,
         } => {
             let password = get_password(
@@ -203,14 +208,32 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
 
             let runtime = tokio::runtime::Runtime::new()?;
             let pending_file = match file_path_in {
-                Some(p) => ClientPendingFile::new(p.clone(), digest.clone().unwrap()),
+                Some(p) => {
+                    // If we have a file_path_in, clap enforces the presence of a digest too.
+                    let parsed = digest
+                        .as_deref()
+                        .unwrap()
+                        .parse::<AsfaloadHashes>()
+                        .map_err(|e| anyhow::Error::new(ClientCliError::InvalidInput(e)))?;
+                    ClientPendingFile::new(p.clone(), parsed)
+                }
                 None => {
                     // need to select interactively as no path passed on command line.
                     // This path is currently not tested, but it uses tested components.
                     // Leaving as it for now as testing it would introduce some complexity that might
                     // not be worth it.
                     let client = admin_lib::v1::Client::new(url.clone());
-                    let response = runtime.block_on(client.get_pending_signatures(&secret_key))?;
+                    let server_response =
+                        runtime.block_on(client.get_pending_signatures(&secret_key))?;
+                    let response = match digest_filter.digest_filter.as_deref() {
+                        Some(s) => {
+                            let parsed = s
+                                .parse::<AsfaloadHashes>()
+                                .map_err(|e| anyhow::Error::new(ClientCliError::InvalidInput(e)))?;
+                            server_response.filter(&parsed)
+                        }
+                        None => server_response,
+                    };
                     // Inquired formats proposals according to the Display implementation for PendingFile,
                     let proposals = response.pending_files;
 
@@ -444,6 +467,10 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 &url,
                 forge_type_str,
             ))?;
+        }
+        Commands::GetDigest { file, json_args } => {
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(get_digest::handle_get_digest_command(file, json_args.json))?;
         }
     }
     Ok(())
