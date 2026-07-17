@@ -201,3 +201,38 @@ fn get_digest_file_and_url_same_content_produce_same_hash() {
     assert!(url_out.status.success());
     assert_eq!(file_out.stdout, url_out.stdout);
 }
+
+#[test]
+fn get_digest_file_shows_bishop_art_in_default_mode() {
+    let mut file = NamedTempFile::new().unwrap();
+    file.write_all(b"known content for bishop test").unwrap();
+    file.flush().unwrap();
+
+    let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
+    cmd.arg("get-digest").arg(file.path());
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("+---[SHA512 64]---+"));
+}
+
+#[test]
+fn get_digest_json_mode_no_bishop_art() {
+    let mut file = NamedTempFile::new().unwrap();
+    file.write_all(b"json mode content").unwrap();
+    file.flush().unwrap();
+
+    let output = assert_cmd::cargo_bin_cmd!("asfaload-cli")
+        .arg("get-digest")
+        .arg("--json")
+        .arg(file.path())
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        !stdout.contains("+---[SHA512 64]---+"),
+        "JSON mode must not contain bishop art"
+    );
+}
