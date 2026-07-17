@@ -208,7 +208,15 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
 
             let runtime = tokio::runtime::Runtime::new()?;
             let pending_file = match file_path_in {
-                Some(p) => ClientPendingFile::new(p.clone(), digest.clone().unwrap()),
+                Some(p) => {
+                    // If we have a file_path_in, clap enforces the presence of a digest too.
+                    let parsed = digest
+                        .clone()
+                        .unwrap()
+                        .parse::<AsfaloadHashes>()
+                        .map_err(|e| anyhow::Error::new(ClientCliError::InvalidInput(e)))?;
+                    ClientPendingFile::new(p.clone(), parsed)
+                }
                 None => {
                     // need to select interactively as no path passed on command line.
                     // This path is currently not tested, but it uses tested components.

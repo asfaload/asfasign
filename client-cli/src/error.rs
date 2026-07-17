@@ -1,3 +1,4 @@
+use common::AsfaloadHashes;
 use features_lib::errors::AggregateSignatureError;
 use features_lib::errors::keys::{KeyError, SignError, SignatureError, VerifyError};
 use thiserror::Error;
@@ -53,7 +54,7 @@ pub enum ClientCliError {
     NoPendingSignature,
 
     #[error("Computed digest ({0}) does not match the digest advertised by the server ({1})")]
-    ServerDigestError(String, String),
+    ServerDigestError(String, AsfaloadHashes),
 }
 
 // FIXME: remove this, creates more confusion than necessary

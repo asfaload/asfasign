@@ -441,7 +441,7 @@ pub async fn submit_signature_handler(
 
     // Consistency check of digest sent
     let digest_on_disk = sha512_for_file(file_path.absolute_path())?;
-    if request.pending_file.digest() != digest_on_disk.to_string() {
+    if *request.pending_file.digest() != digest_on_disk {
         return Err(ApiError::DigestMismatch(
             "Digest sent is different from digest of file on disk at path sent.".into(),
         ));

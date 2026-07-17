@@ -353,17 +353,17 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ClientPendingFile {
         path: String,
-        digest: String,
+        digest: AsfaloadHashes,
     }
 
     impl ClientPendingFile {
-        pub fn new(path: String, digest: String) -> ClientPendingFile {
+        pub fn new(path: String, digest: AsfaloadHashes) -> ClientPendingFile {
             ClientPendingFile { path, digest }
         }
         pub fn path(&self) -> &str {
             &self.path
         }
-        pub fn digest(&self) -> &str {
+        pub fn digest(&self) -> &AsfaloadHashes {
             &self.digest
         }
     }
@@ -377,7 +377,7 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PendingFile {
         path: String,
-        digest: String,
+        digest: AsfaloadHashes,
     }
 
     // The Display implementation is used by Inquire::Select
@@ -393,14 +393,14 @@ pub mod models {
             np: &crate::path_validation::NormalisedPaths,
         ) -> Result<PendingFile, ApiError> {
             let path = np.relative_path().to_string_lossy().to_string();
-            let digest = sha512_for_file(np.absolute_path())?.to_string();
+            let digest = sha512_for_file(np.absolute_path())?;
             Ok(PendingFile { path, digest })
         }
 
         pub fn path(&self) -> &str {
             &self.path
         }
-        pub fn digest(&self) -> &str {
+        pub fn digest(&self) -> &AsfaloadHashes {
             &self.digest
         }
 
@@ -409,7 +409,7 @@ pub mod models {
         pub fn unseal(&self) -> ClientPendingFile {
             ClientPendingFile {
                 path: self.path().into(),
-                digest: self.digest().into(),
+                digest: self.digest().clone(),
             }
         }
     }
@@ -425,11 +425,10 @@ pub mod models {
 
     impl ListPendingResponse {
         pub fn filter(&self, digest_filter: &AsfaloadHashes) -> Self {
-            let digest_str = digest_filter.to_string();
             let filtered_list = self
                 .pending_files
                 .iter()
-                .filter(|item| item.digest() == digest_str)
+                .filter(|item| item.digest() == digest_filter)
                 .cloned()
                 .collect();
 
