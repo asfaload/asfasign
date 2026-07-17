@@ -655,6 +655,7 @@ dependencies = [
  "chrono",
  "clap",
  "client-lib",
+ "colored",
  "common",
  "features_lib",
  "forge-url",

@@ -6,7 +6,8 @@ use std::process::Command;
 use zxcvbn::{Score, zxcvbn};
 
 use crate::error::{ClientCliError, Result};
-use bishop::{BishopArt, DrawingOptions};
+use bishop::BishopArt;
+use colored::Colorize;
 use common::AsfaloadHashes;
 
 /// Ensures a directory exists, creating it if necessary
@@ -194,11 +195,81 @@ pub fn bishop_art(hash: &AsfaloadHashes) -> String {
     let bytes = match hash {
         AsfaloadHashes::Sha512(d) => d.as_slice(),
     };
-    let opts = DrawingOptions {
-        top_text: "SHA512 64".to_string(),
-        ..Default::default()
+
+    // Horizontal and vertical block fractions interleaved by fill level (1/8 steps).
+    // At each level horizontal comes first: ▏▁ ▎▂ ▍▃ ▌▄ ▋▅ ▊▆ then ▇█.
+    let chars: Vec<char> = " ▏▁▎▂▍▃▌▄▋▅▊▆▇█SE".chars().collect();
+    let chr_ln = chars.len();
+    let chr_sub_ln = chr_ln as isize - 2;
+
+    let result = BishopArt::new().chain(bytes).result();
+    let (w, h) = (result.width(), result.height());
+    let field = result.field();
+
+    // Map a raw visit count to a colored string.
+    // colored respects NO_COLOR and TTY detection automatically.
+    let cell_str = |v: isize| -> String {
+        let c = match v {
+            -1 => chars[chr_ln - 2], // S
+            -2 => chars[chr_ln - 1], // E
+            v if v >= 0 && v < chr_sub_ln => chars[v as usize],
+            _ => chars[(chr_sub_ln - 1) as usize], // saturated / chr_last
+        }
+        .to_string();
+        // Colors cycle through 6 hue families so no two adjacent visit counts
+        // share the same tint: red·blue·green·magenta·cyan·yellow (regular),
+        // then the same cycle again in bright variants.
+        match v {
+            0 => c,
+            -1 => c.bright_white().bold().to_string(),
+            -2 => c.bright_white().bold().to_string(),
+            1 => c.bright_black().to_string(),
+            2 => c.red().to_string(),
+            3 => c.blue().to_string(),
+            4 => c.green().to_string(),
+            5 => c.magenta().to_string(),
+            6 => c.cyan().to_string(),
+            7 => c.yellow().to_string(),
+            8 => c.bright_red().to_string(),
+            9 => c.bright_blue().to_string(),
+            10 => c.bright_green().to_string(),
+            11 => c.bright_magenta().to_string(),
+            12 => c.bright_cyan().to_string(),
+            13 => c.bright_yellow().to_string(),
+            _ => c.white().bold().to_string(),
+        }
     };
-    BishopArt::new().chain(bytes).draw_with_opts(&opts)
+
+    // Replicate the bishop crate's frame rendering so the borders match exactly.
+    let render_frame = |text: &str| -> String {
+        let mut s = String::from("+");
+        if text.is_empty() {
+            s.extend(std::iter::repeat('-').take(w));
+        } else {
+            let text_ln = text.chars().count();
+            let fill = w.saturating_sub(text_ln).saturating_sub(2);
+            let dash = fill / 2;
+            let pad = fill % 2;
+            s.extend(std::iter::repeat('-').take(dash));
+            s.push('[');
+            s.push_str(text);
+            s.push(']');
+            s.extend(std::iter::repeat('-').take(dash + pad));
+        }
+        s.push_str("+\n");
+        s
+    };
+
+    let mut out = render_frame("SHA512 64");
+    for y in 0..h {
+        out.push('|');
+        for x in 0..w {
+            out.push_str(&cell_str(*field.get(x, y)));
+        }
+        out.push_str("|\n");
+    }
+    out.push_str(&render_frame(""));
+    out
 }
 
 #[cfg(test)]
