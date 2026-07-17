@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::error::{ClientCliError, Result};
-use crate::utils::{ensure_dir_exists, validate_threshold};
+use crate::utils::{bishop_art, ensure_dir_exists, validate_threshold};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig, sha512_for_file};
 
 fn get_group_info<P: AsfaloadPublicKeyTrait>(
@@ -200,6 +200,7 @@ pub fn handle_new_signers_file_command(
                 revocation_threshold.map_or("none".to_string(), |t| t.to_string())
             );
             println!("Generated file's digest: {}", digest);
+            println!("{}", bishop_art(&digest));
             Ok(())
         };
 
