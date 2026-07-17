@@ -282,6 +282,7 @@ mod tests {
     #[tokio::test]
     async fn test_sign_pending_server_digest_mismatch() {
         use client_cli::error::ClientCliError;
+        use common::AsfaloadHashes;
         use rest_api_types::models::ClientPendingFile;
 
         let state = test_harness::initialize().await;
@@ -354,7 +355,8 @@ mod tests {
 
         // Supply the correct path but a wrong digest — simulates a tampered or
         // mismatched server response
-        let tampered = ClientPendingFile::new(file_path.clone(), "wrongdigest".to_string());
+        let tampered =
+            ClientPendingFile::new(file_path.clone(), AsfaloadHashes::Sha512([0u8; 64].into()));
 
         let err = client_cli::commands::sign_pending::handle_sign_pending_sec_key(
             tampered,
