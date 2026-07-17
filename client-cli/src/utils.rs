@@ -260,6 +260,8 @@ pub fn bishop_art(hash: &AsfaloadHashes) -> String {
         s
     };
 
+    let bottom_label = format!("{}…", &hex::encode(bytes)[..8]);
+
     let mut out = render_frame("SHA512 64");
     for y in 0..h {
         out.push('|');
@@ -268,7 +270,7 @@ pub fn bishop_art(hash: &AsfaloadHashes) -> String {
         }
         out.push_str("|\n");
     }
-    out.push_str(&render_frame(""));
+    out.push_str(&render_frame(&bottom_label));
     out
 }
 
