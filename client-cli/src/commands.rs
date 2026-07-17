@@ -211,7 +211,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                 Some(p) => {
                     // If we have a file_path_in, clap enforces the presence of a digest too.
                     let parsed = digest
-                        .clone()
+                        .as_deref()
                         .unwrap()
                         .parse::<AsfaloadHashes>()
                         .map_err(|e| anyhow::Error::new(ClientCliError::InvalidInput(e)))?;
@@ -225,7 +225,7 @@ pub fn handle_command(cli: &Cli) -> Result<()> {
                     let client = admin_lib::v1::Client::new(url.clone());
                     let server_response =
                         runtime.block_on(client.get_pending_signatures(&secret_key))?;
-                    let response = match digest_filter.digest_filter.clone() {
+                    let response = match digest_filter.digest_filter.as_deref() {
                         Some(s) => {
                             let parsed = s
                                 .parse::<AsfaloadHashes>()
