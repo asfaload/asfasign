@@ -650,6 +650,7 @@ dependencies = [
  "anstyle",
  "anyhow",
  "assert_cmd",
+ "base64",
  "bishop",
  "chrono",
  "clap",
