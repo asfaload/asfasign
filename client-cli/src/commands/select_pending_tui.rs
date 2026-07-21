@@ -141,7 +141,10 @@ fn filtered_indices(files: &[PendingFile], filter: &str) -> Vec<usize> {
     files
         .iter()
         .enumerate()
-        .filter(|(_, f)| f.path().to_lowercase().contains(&lower))
+        .filter(|(_, f)| {
+            f.path().to_lowercase().contains(&lower)
+                || f.digest().to_string().to_lowercase().contains(&lower)
+        })
         .map(|(i, _)| i)
         .collect()
 }
