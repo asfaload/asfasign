@@ -6,6 +6,10 @@ use std::process::Command;
 use zxcvbn::{Score, zxcvbn};
 
 use crate::error::{ClientCliError, Result};
+use bishop::BishopArt;
+use colored::Colorize;
+use common::AsfaloadHashes;
+use features_lib::HashAlgorithm;
 
 /// Ensures a directory exists, creating it if necessary
 pub fn ensure_dir_exists(path: &Path) -> Result<()> {
@@ -186,4 +190,134 @@ fn read_password_from_command(command_str: &str) -> Result<String> {
         String::from_utf8(output.stdout).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
     Ok(password.trim_end_matches(['\r', '\n']).to_string())
+}
+
+pub fn label_for_hash(algo: HashAlgorithm) -> String {
+    algo.to_string()
+}
+
+pub fn bishop_art(hash: &AsfaloadHashes) -> String {
+    let (bytes, algo) = match hash {
+        AsfaloadHashes::Sha512(d) => (d.as_slice(), HashAlgorithm::Sha512),
+    };
+    let label = label_for_hash(algo);
+
+    // Horizontal and vertical block fractions interleaved by fill level (1/8 steps).
+    // At each level horizontal comes first: ▏▁ ▎▂ ▍▃ ▌▄ ▋▅ ▊▆ then ▇█.
+    let chars: Vec<char> = " ▏▁▎▂▍▃▌▄▋▅▊▆▇█SE".chars().collect();
+    let chr_ln = chars.len();
+    let chr_sub_ln = chr_ln as isize - 2;
+
+    let result = BishopArt::new().chain(bytes).result();
+    let (w, h) = (result.width(), result.height());
+    let field = result.field();
+
+    // Map a raw visit count to a colored string.
+    // colored respects NO_COLOR and TTY detection automatically.
+    let cell_str = |v: isize| -> String {
+        let c = match v {
+            -1 => chars[chr_ln - 2], // S
+            -2 => chars[chr_ln - 1], // E
+            v if v >= 0 && v < chr_sub_ln => chars[v as usize],
+            _ => chars[(chr_sub_ln - 1) as usize], // saturated / chr_last
+        }
+        .to_string();
+        // Colors cycle through 6 hue families so no two adjacent visit counts
+        // share the same tint: red·blue·green·magenta·cyan·yellow (regular),
+        // then the same cycle again in bright variants.
+        match v {
+            0 => c,
+            -1 => c.bright_white().bold().to_string(),
+            -2 => c.bright_white().bold().to_string(),
+            1 => c.bright_black().to_string(),
+            2 => c.red().to_string(),
+            3 => c.blue().to_string(),
+            4 => c.green().to_string(),
+            5 => c.magenta().to_string(),
+            6 => c.cyan().to_string(),
+            7 => c.yellow().to_string(),
+            8 => c.bright_red().to_string(),
+            9 => c.bright_blue().to_string(),
+            10 => c.bright_green().to_string(),
+            11 => c.bright_magenta().to_string(),
+            12 => c.bright_cyan().to_string(),
+            13 => c.bright_yellow().to_string(),
+            _ => c.white().bold().to_string(),
+        }
+    };
+
+    // Replicate the bishop crate's frame rendering so the borders match exactly.
+    let render_frame = |text: &str| -> String {
+        let mut s = String::from("+");
+        if text.is_empty() {
+            s.extend(std::iter::repeat_n('-', w));
+        } else {
+            let text_ln = text.chars().count();
+            let fill = w.saturating_sub(text_ln).saturating_sub(2);
+            let dash = fill / 2;
+            let pad = fill % 2;
+            s.extend(std::iter::repeat_n('-', dash));
+            s.push('[');
+            s.push_str(text);
+            s.push(']');
+            s.extend(std::iter::repeat_n('-', dash + pad));
+        }
+        s.push_str("+\n");
+        s
+    };
+
+    let hex_str = hex::encode(bytes);
+    let bottom_label = format!("{}…", &hex_str[..hex_str.len().min(8)]);
+
+    let mut out = render_frame(&label);
+    for y in 0..h {
+        out.push('|');
+        for x in 0..w {
+            out.push_str(&cell_str(*field.get(x, y)));
+        }
+        out.push_str("|\n");
+    }
+    out.push_str(&render_frame(&bottom_label));
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::AsfaloadHashes;
+    use sha2::{Digest, Sha512};
+
+    #[test]
+    fn bishop_art_contains_framed_borders() {
+        let bytes = Sha512::digest(b"deterministic test input");
+        let hash = AsfaloadHashes::Sha512(bytes);
+        let art = bishop_art(&hash);
+        assert!(
+            art.contains(&format!("[{}]", label_for_hash(HashAlgorithm::Sha512))),
+            "expected top border with label"
+        );
+        assert!(
+            art.lines().last().unwrap().starts_with('+'),
+            "expected bottom border"
+        );
+    }
+
+    #[test]
+    fn bishop_art_is_deterministic() {
+        let bytes = Sha512::digest(b"same input");
+        let hash = AsfaloadHashes::Sha512(bytes);
+        assert_eq!(bishop_art(&hash), bishop_art(&hash));
+    }
+
+    #[test]
+    fn bishop_art_label_matches_hash_variant() {
+        let bytes = Sha512::digest(b"label test");
+        let hash = AsfaloadHashes::Sha512(bytes);
+        let art = bishop_art(&hash);
+        // For the Sha512 variant, the top-border label is "SHA-512".
+        assert!(
+            art.contains(&format!("[{}]", label_for_hash(HashAlgorithm::Sha512))),
+            "top border must contain the label for the Sha512 variant"
+        );
+    }
 }
