@@ -12,7 +12,7 @@ use ratatui::{
     layout::{Constraint, Layout},
     style::{Modifier, Style},
     text::Text,
-    widgets::{Block, List, ListItem, ListState, Paragraph},
+    widgets::{Block, List, ListItem, ListState, Paragraph, Wrap},
 };
 use rest_api_types::models::{ClientPendingFile, PendingFile};
 
@@ -54,8 +54,9 @@ fn draw(
             .highlight_style(Style::default().add_modifier(Modifier::BOLD));
         f.render_stateful_widget(list, panels[0], list_state);
 
-        let art_para =
-            Paragraph::new(art_text).block(Block::bordered().title(" Bishop fingerprint "));
+        let art_para = Paragraph::new(art_text)
+            .block(Block::bordered().title(" Bishop fingerprint "))
+            .wrap(Wrap { trim: false });
         f.render_widget(art_para, panels[1]);
 
         let hints = Paragraph::new("  ↑/k prev   ↓/j next   enter confirm   esc cancel");
