@@ -244,17 +244,17 @@ pub fn bishop_art(hash: &AsfaloadHashes) -> String {
     let render_frame = |text: &str| -> String {
         let mut s = String::from("+");
         if text.is_empty() {
-            s.extend(std::iter::repeat('-').take(w));
+            s.extend(std::iter::repeat_n('-', w));
         } else {
             let text_ln = text.chars().count();
             let fill = w.saturating_sub(text_ln).saturating_sub(2);
             let dash = fill / 2;
             let pad = fill % 2;
-            s.extend(std::iter::repeat('-').take(dash));
+            s.extend(std::iter::repeat_n('-', dash));
             s.push('[');
             s.push_str(text);
             s.push(']');
-            s.extend(std::iter::repeat('-').take(dash + pad));
+            s.extend(std::iter::repeat_n('-', dash + pad));
         }
         s.push_str("+\n");
         s
@@ -305,8 +305,7 @@ mod tests {
         let bytes = Sha512::digest(b"label test");
         let hash = AsfaloadHashes::Sha512(bytes);
         let art = bishop_art(&hash);
-        // The top border label must be derived from the variant, not hardcoded.
-        // For Sha512 (64-byte output) the expected label is "SHA512 64".
+        // For the Sha512 variant, the top-border label is "SHA512 64".
         assert!(
             art.contains("+---[SHA512 64]---+"),
             "top border must contain 'SHA512 64' for the Sha512 variant"
