@@ -192,8 +192,8 @@ fn read_password_from_command(command_str: &str) -> Result<String> {
 }
 
 pub fn bishop_art(hash: &AsfaloadHashes) -> String {
-    let bytes = match hash {
-        AsfaloadHashes::Sha512(d) => d.as_slice(),
+    let (bytes, label) = match hash {
+        AsfaloadHashes::Sha512(d) => (d.as_slice(), "SHA512 64"),
     };
 
     // Horizontal and vertical block fractions interleaved by fill level (1/8 steps).
@@ -260,9 +260,10 @@ pub fn bishop_art(hash: &AsfaloadHashes) -> String {
         s
     };
 
-    let bottom_label = format!("{}…", &hex::encode(bytes)[..8]);
+    let hex_str = hex::encode(bytes);
+    let bottom_label = format!("{}…", &hex_str[..hex_str.len().min(8)]);
 
-    let mut out = render_frame("SHA512 64");
+    let mut out = render_frame(label);
     for y in 0..h {
         out.push('|');
         for x in 0..w {
@@ -297,5 +298,18 @@ mod tests {
         let bytes = Sha512::digest(b"same input");
         let hash = AsfaloadHashes::Sha512(bytes);
         assert_eq!(bishop_art(&hash), bishop_art(&hash));
+    }
+
+    #[test]
+    fn bishop_art_label_matches_hash_variant() {
+        let bytes = Sha512::digest(b"label test");
+        let hash = AsfaloadHashes::Sha512(bytes);
+        let art = bishop_art(&hash);
+        // The top border label must be derived from the variant, not hardcoded.
+        // For Sha512 (64-byte output) the expected label is "SHA512 64".
+        assert!(
+            art.contains("+---[SHA512 64]---+"),
+            "top border must contain 'SHA512 64' for the Sha512 variant"
+        );
     }
 }
