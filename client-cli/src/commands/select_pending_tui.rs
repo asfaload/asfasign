@@ -65,6 +65,10 @@ fn draw(
 }
 
 pub fn select_pending_file(files: Vec<PendingFile>) -> Result<ClientPendingFile, ClientCliError> {
+    if files.is_empty() {
+        return Err(ClientCliError::NoPendingSignature);
+    }
+
     let count = files.len();
 
     execute!(io::stdout(), EnterAlternateScreen)
