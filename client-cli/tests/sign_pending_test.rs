@@ -1,3 +1,5 @@
+use client_cli::utils::label_for_hash;
+use features_lib::HashAlgorithm;
 use predicates::prelude::*;
 use sha2::{Digest, Sha512};
 
@@ -111,7 +113,7 @@ fn sign_pending_digest_filter_excludes_non_matching_digest() {
 }
 
 #[test]
-fn sign_pending_json_mode_no_bishop_art() {
+fn sign_pending_explicit_path_no_bishop_art() {
     use base64::Engine;
 
     let content = b"test file content for json signing";
@@ -157,8 +159,9 @@ fn sign_pending_json_mode_no_bishop_art() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).unwrap();
+    let label_bracket = format!("[{}]", label_for_hash(HashAlgorithm::Sha512));
     assert!(
-        !stdout.contains("+---[SHA512 64]---+"),
-        "JSON mode must not contain bishop art"
+        !stdout.contains(&label_bracket),
+        "explicit-path mode must not contain bishop art framing"
     );
 }

@@ -1,3 +1,5 @@
+use client_cli::utils::label_for_hash;
+use features_lib::HashAlgorithm;
 use predicates::prelude::*;
 use sha2::{Digest, Sha512};
 use std::io::Write;
@@ -211,9 +213,10 @@ fn get_digest_file_shows_bishop_art_in_default_mode() {
     let mut cmd = assert_cmd::cargo_bin_cmd!("asfaload-cli");
     cmd.arg("get-digest").arg(file.path());
 
+    let label = label_for_hash(HashAlgorithm::Sha512);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("+---[SHA512 64]---+"));
+        .stdout(predicate::str::contains(format!("[{}]", label)));
 }
 
 #[test]
@@ -231,8 +234,9 @@ fn get_digest_json_mode_no_bishop_art() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
+    let label = label_for_hash(HashAlgorithm::Sha512);
     assert!(
-        !stdout.contains("+---[SHA512 64]---+"),
+        !stdout.contains(&format!("[{}]", label)),
         "JSON mode must not contain bishop art"
     );
 }

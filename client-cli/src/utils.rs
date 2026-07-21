@@ -9,6 +9,7 @@ use crate::error::{ClientCliError, Result};
 use bishop::BishopArt;
 use colored::Colorize;
 use common::AsfaloadHashes;
+use features_lib::HashAlgorithm;
 
 /// Ensures a directory exists, creating it if necessary
 pub fn ensure_dir_exists(path: &Path) -> Result<()> {
@@ -191,10 +192,15 @@ fn read_password_from_command(command_str: &str) -> Result<String> {
     Ok(password.trim_end_matches(['\r', '\n']).to_string())
 }
 
+pub fn label_for_hash(algo: HashAlgorithm) -> String {
+    algo.to_string()
+}
+
 pub fn bishop_art(hash: &AsfaloadHashes) -> String {
-    let (bytes, label) = match hash {
-        AsfaloadHashes::Sha512(d) => (d.as_slice(), "SHA512 64"),
+    let (bytes, algo) = match hash {
+        AsfaloadHashes::Sha512(d) => (d.as_slice(), HashAlgorithm::Sha512),
     };
+    let label = label_for_hash(algo);
 
     // Horizontal and vertical block fractions interleaved by fill level (1/8 steps).
     // At each level horizontal comes first: ▏▁ ▎▂ ▍▃ ▌▄ ▋▅ ▊▆ then ▇█.
@@ -263,7 +269,7 @@ pub fn bishop_art(hash: &AsfaloadHashes) -> String {
     let hex_str = hex::encode(bytes);
     let bottom_label = format!("{}…", &hex_str[..hex_str.len().min(8)]);
 
-    let mut out = render_frame(label);
+    let mut out = render_frame(&label);
     for y in 0..h {
         out.push('|');
         for x in 0..w {
@@ -287,10 +293,13 @@ mod tests {
         let hash = AsfaloadHashes::Sha512(bytes);
         let art = bishop_art(&hash);
         assert!(
-            art.contains("+---[SHA512 64]---+"),
+            art.contains(&format!("[{}]", label_for_hash(HashAlgorithm::Sha512))),
             "expected top border with label"
         );
-        assert!(art.contains("+"), "expected bottom border");
+        assert!(
+            art.lines().last().unwrap().starts_with('+'),
+            "expected bottom border"
+        );
     }
 
     #[test]
@@ -305,10 +314,10 @@ mod tests {
         let bytes = Sha512::digest(b"label test");
         let hash = AsfaloadHashes::Sha512(bytes);
         let art = bishop_art(&hash);
-        // For the Sha512 variant, the top-border label is "SHA512 64".
+        // For the Sha512 variant, the top-border label is "SHA-512".
         assert!(
-            art.contains("+---[SHA512 64]---+"),
-            "top border must contain 'SHA512 64' for the Sha512 variant"
+            art.contains(&format!("[{}]", label_for_hash(HashAlgorithm::Sha512))),
+            "top border must contain the label for the Sha512 variant"
         );
     }
 }
