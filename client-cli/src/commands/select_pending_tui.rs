@@ -29,37 +29,66 @@ impl Drop for TerminalGuard {
     }
 }
 
+fn filtered_indices(files: &[PendingFile], filter: &str) -> Vec<usize> {
+    if filter.is_empty() {
+        return (0..files.len()).collect();
+    }
+    let lower = filter.to_lowercase();
+    files
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| f.path().to_lowercase().contains(&lower))
+        .map(|(i, _)| i)
+        .collect()
+}
+
 fn draw(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     files: &[PendingFile],
+    filter: &str,
     list_state: &mut ListState,
 ) -> io::Result<()> {
-    let count = files.len();
-    let index = list_state.selected().unwrap_or(0);
-    let mut art_text: Text<'static> = bishop_art(files[index].digest())
-        .into_text()
-        .unwrap_or_default();
-    art_text.push_line(String::new());
-    art_text.push_line(files[index].digest().to_string());
+    let indices = filtered_indices(files, filter);
+    let file_index = indices.get(list_state.selected().unwrap_or(0)).copied();
 
     terminal.draw(|f| {
         let outer = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(f.area());
         let panels = Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
             .split(outer[0]);
 
-        let items: Vec<ListItem> = files.iter().map(|pf| ListItem::new(pf.path())).collect();
+        let left = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(panels[0]);
+
+        let filter_para = Paragraph::new(filter).block(Block::bordered().title(" Filter "));
+        f.render_widget(filter_para, left[0]);
+
+        let items: Vec<ListItem> = indices
+            .iter()
+            .map(|&i| ListItem::new(files[i].path()))
+            .collect();
+        let list_title = format!(" Pending files ({}/{}) ", indices.len(), files.len());
         let list = List::new(items)
-            .block(Block::bordered().title(format!(" Pending files ({}) ", count)))
+            .block(Block::bordered().title(list_title))
             .highlight_symbol("> ")
             .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-        f.render_stateful_widget(list, panels[0], list_state);
+        f.render_stateful_widget(list, left[1], list_state);
 
+        let art_text: Text<'static> = if let Some(idx) = file_index {
+            let mut t = bishop_art(files[idx].digest())
+                .into_text()
+                .unwrap_or_default();
+            t.push_line(String::new());
+            t.push_line(files[idx].digest().to_string());
+            t
+        } else {
+            Text::from("No matches")
+        };
         let art_para = Paragraph::new(art_text)
             .block(Block::bordered().title(" Bishop fingerprint "))
             .wrap(Wrap { trim: false });
         f.render_widget(art_para, panels[1]);
 
-        let hints = Paragraph::new("  ↑/k prev   ↓/j next   enter confirm   esc cancel");
+        let hints =
+            Paragraph::new("  type to filter   ↑/↓ navigate   enter confirm   esc clear/cancel");
         f.render_widget(hints, outer[1]);
     })?;
     Ok(())
@@ -70,8 +99,6 @@ pub fn select_pending_file(files: Vec<PendingFile>) -> Result<ClientPendingFile,
         return Err(ClientCliError::NoPendingSignature);
     }
 
-    let count = files.len();
-
     execute!(io::stdout(), EnterAlternateScreen)
         .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
     let _guard = TerminalGuard;
@@ -81,35 +108,64 @@ pub fn select_pending_file(files: Vec<PendingFile>) -> Result<ClientPendingFile,
     let mut terminal =
         Terminal::new(backend).map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
 
+    let mut filter = String::new();
     let mut list_state = ListState::default();
     list_state.select(Some(0));
 
-    draw(&mut terminal, &files, &mut list_state)
+    draw(&mut terminal, &files, &filter, &mut list_state)
         .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
 
     loop {
         match event::read() {
             Ok(Event::Key(key)) => match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    let i = list_state.selected().unwrap_or(0);
-                    list_state.select(Some((i + count - 1) % count));
-                    draw(&mut terminal, &files, &mut list_state)
+                KeyCode::Up => {
+                    let indices = filtered_indices(&files, &filter);
+                    let count = indices.len();
+                    if count > 0 {
+                        let i = list_state.selected().unwrap_or(0);
+                        list_state.select(Some((i + count - 1) % count));
+                    }
+                    draw(&mut terminal, &files, &filter, &mut list_state)
                         .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    let i = list_state.selected().unwrap_or(0);
-                    list_state.select(Some((i + 1) % count));
-                    draw(&mut terminal, &files, &mut list_state)
+                KeyCode::Down => {
+                    let indices = filtered_indices(&files, &filter);
+                    let count = indices.len();
+                    if count > 0 {
+                        let i = list_state.selected().unwrap_or(0);
+                        list_state.select(Some((i + 1) % count));
+                    }
+                    draw(&mut terminal, &files, &filter, &mut list_state)
                         .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
                 }
                 KeyCode::Enter => {
-                    let i = list_state.selected().unwrap_or(0);
-                    return Ok(files[i].unseal());
+                    let indices = filtered_indices(&files, &filter);
+                    if let Some(&file_idx) = indices.get(list_state.selected().unwrap_or(0)) {
+                        return Ok(files[file_idx].unseal());
+                    }
                 }
-                KeyCode::Esc | KeyCode::Char('q') => {
-                    return Err(ClientCliError::InvalidInput(
-                        "Selection cancelled or failed: no path to sign was provided".into(),
-                    ));
+                KeyCode::Esc => {
+                    if filter.is_empty() {
+                        return Err(ClientCliError::InvalidInput(
+                            "Selection cancelled or failed: no path to sign was provided".into(),
+                        ));
+                    }
+                    filter.clear();
+                    list_state.select(Some(0));
+                    draw(&mut terminal, &files, &filter, &mut list_state)
+                        .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
+                }
+                KeyCode::Backspace => {
+                    filter.pop();
+                    list_state.select(Some(0));
+                    draw(&mut terminal, &files, &filter, &mut list_state)
+                        .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
+                }
+                KeyCode::Char(c) => {
+                    filter.push(c);
+                    list_state.select(Some(0));
+                    draw(&mut terminal, &files, &filter, &mut list_state)
+                        .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
                 }
                 _ => {}
             },
