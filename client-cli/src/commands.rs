@@ -11,6 +11,7 @@ use crate::{
 
 pub mod keys;
 pub mod list_pending;
+pub mod select_pending_tui;
 pub mod share_key;
 pub mod sign_pending;
 pub mod signature_status;
