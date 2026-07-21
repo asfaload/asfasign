@@ -11,7 +11,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Layout},
     style::{Modifier, Style},
-    text::Text,
+    text::{Line, Span, Text},
     widgets::{Block, List, ListItem, ListState, Paragraph, Wrap},
 };
 use rest_api_types::models::{ClientPendingFile, PendingFile};
@@ -26,6 +26,110 @@ impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
         let _ = terminal::disable_raw_mode();
+    }
+}
+
+struct FilterInput {
+    value: String,
+    // byte index into value; always on a char boundary
+    cursor: usize,
+}
+
+impl FilterInput {
+    fn new() -> Self {
+        Self {
+            value: String::new(),
+            cursor: 0,
+        }
+    }
+
+    fn insert(&mut self, c: char) {
+        self.value.insert(self.cursor, c);
+        self.cursor += c.len_utf8();
+    }
+
+    fn backspace(&mut self) {
+        if self.cursor > 0 {
+            let start = self.value[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map_or(0, |(i, _)| i);
+            self.value.drain(start..self.cursor);
+            self.cursor = start;
+        }
+    }
+
+    fn delete(&mut self) {
+        if self.cursor < self.value.len() {
+            let end = self.value[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map_or(self.value.len(), |(i, _)| self.cursor + i);
+            self.value.drain(self.cursor..end);
+        }
+    }
+
+    fn move_left(&mut self) {
+        if self.cursor > 0 {
+            self.cursor = self.value[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map_or(0, |(i, _)| i);
+        }
+    }
+
+    fn move_right(&mut self) {
+        if self.cursor < self.value.len() {
+            self.cursor = self.value[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map_or(self.value.len(), |(i, _)| self.cursor + i);
+        }
+    }
+
+    fn home(&mut self) {
+        self.cursor = 0;
+    }
+
+    fn end(&mut self) {
+        self.cursor = self.value.len();
+    }
+
+    fn clear(&mut self) {
+        self.value.clear();
+        self.cursor = 0;
+    }
+
+    fn is_empty(&self) -> bool {
+        self.value.is_empty()
+    }
+
+    fn as_str(&self) -> &str {
+        &self.value
+    }
+
+    fn to_line(&self) -> Line<'static> {
+        let before = self.value[..self.cursor].to_owned();
+        let (cursor_str, after) = if self.cursor < self.value.len() {
+            let end = self.value[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map_or(self.value.len(), |(i, _)| self.cursor + i);
+            (
+                self.value[self.cursor..end].to_owned(),
+                self.value[end..].to_owned(),
+            )
+        } else {
+            (" ".to_owned(), String::new())
+        };
+        Line::from(vec![
+            Span::raw(before),
+            Span::styled(
+                cursor_str,
+                Style::default().add_modifier(Modifier::REVERSED),
+            ),
+            Span::raw(after),
+        ])
     }
 }
 
@@ -45,10 +149,10 @@ fn filtered_indices(files: &[PendingFile], filter: &str) -> Vec<usize> {
 fn draw(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     files: &[PendingFile],
-    filter: &str,
+    filter: &FilterInput,
     list_state: &mut ListState,
 ) -> io::Result<()> {
-    let indices = filtered_indices(files, filter);
+    let indices = filtered_indices(files, filter.as_str());
     let file_index = indices.get(list_state.selected().unwrap_or(0)).copied();
 
     terminal.draw(|f| {
@@ -58,7 +162,8 @@ fn draw(
 
         let left = Layout::vertical([Constraint::Length(3), Constraint::Min(0)]).split(panels[0]);
 
-        let filter_para = Paragraph::new(filter).block(Block::bordered().title(" Filter "));
+        let filter_para =
+            Paragraph::new(filter.to_line()).block(Block::bordered().title(" Filter "));
         f.render_widget(filter_para, left[0]);
 
         let items: Vec<ListItem> = indices
@@ -87,8 +192,9 @@ fn draw(
             .wrap(Wrap { trim: false });
         f.render_widget(art_para, panels[1]);
 
-        let hints =
-            Paragraph::new("  type to filter   ↑/↓ navigate   enter confirm   esc clear/cancel");
+        let hints = Paragraph::new(
+            "  type to filter   ←/→ cursor   ↑/↓ select   enter confirm   esc clear/cancel",
+        );
         f.render_widget(hints, outer[1]);
     })?;
     Ok(())
@@ -108,7 +214,7 @@ pub fn select_pending_file(files: Vec<PendingFile>) -> Result<ClientPendingFile,
     let mut terminal =
         Terminal::new(backend).map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
 
-    let mut filter = String::new();
+    let mut filter = FilterInput::new();
     let mut list_state = ListState::default();
     list_state.select(Some(0));
 
@@ -119,7 +225,7 @@ pub fn select_pending_file(files: Vec<PendingFile>) -> Result<ClientPendingFile,
         match event::read() {
             Ok(Event::Key(key)) => match key.code {
                 KeyCode::Up => {
-                    let indices = filtered_indices(&files, &filter);
+                    let indices = filtered_indices(&files, filter.as_str());
                     let count = indices.len();
                     if count > 0 {
                         let i = list_state.selected().unwrap_or(0);
@@ -129,7 +235,7 @@ pub fn select_pending_file(files: Vec<PendingFile>) -> Result<ClientPendingFile,
                         .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
                 }
                 KeyCode::Down => {
-                    let indices = filtered_indices(&files, &filter);
+                    let indices = filtered_indices(&files, filter.as_str());
                     let count = indices.len();
                     if count > 0 {
                         let i = list_state.selected().unwrap_or(0);
@@ -138,8 +244,40 @@ pub fn select_pending_file(files: Vec<PendingFile>) -> Result<ClientPendingFile,
                     draw(&mut terminal, &files, &filter, &mut list_state)
                         .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
                 }
+                KeyCode::Left => {
+                    filter.move_left();
+                    draw(&mut terminal, &files, &filter, &mut list_state)
+                        .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
+                }
+                KeyCode::Right => {
+                    filter.move_right();
+                    draw(&mut terminal, &files, &filter, &mut list_state)
+                        .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
+                }
+                KeyCode::Home => {
+                    filter.home();
+                    draw(&mut terminal, &files, &filter, &mut list_state)
+                        .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
+                }
+                KeyCode::End => {
+                    filter.end();
+                    draw(&mut terminal, &files, &filter, &mut list_state)
+                        .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
+                }
+                KeyCode::Delete => {
+                    filter.delete();
+                    list_state.select(Some(0));
+                    draw(&mut terminal, &files, &filter, &mut list_state)
+                        .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
+                }
+                KeyCode::Backspace => {
+                    filter.backspace();
+                    list_state.select(Some(0));
+                    draw(&mut terminal, &files, &filter, &mut list_state)
+                        .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
+                }
                 KeyCode::Enter => {
-                    let indices = filtered_indices(&files, &filter);
+                    let indices = filtered_indices(&files, filter.as_str());
                     if let Some(&file_idx) = indices.get(list_state.selected().unwrap_or(0)) {
                         return Ok(files[file_idx].unseal());
                     }
@@ -155,14 +293,8 @@ pub fn select_pending_file(files: Vec<PendingFile>) -> Result<ClientPendingFile,
                     draw(&mut terminal, &files, &filter, &mut list_state)
                         .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
                 }
-                KeyCode::Backspace => {
-                    filter.pop();
-                    list_state.select(Some(0));
-                    draw(&mut terminal, &files, &filter, &mut list_state)
-                        .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
-                }
                 KeyCode::Char(c) => {
-                    filter.push(c);
+                    filter.insert(c);
                     list_state.select(Some(0));
                     draw(&mut terminal, &files, &filter, &mut list_state)
                         .map_err(|e| ClientCliError::InvalidInput(e.to_string()))?;
