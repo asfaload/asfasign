@@ -218,25 +218,3 @@ fn get_digest_file_shows_bishop_art_in_default_mode() {
         .success()
         .stdout(predicate::str::contains(format!("[{}]", label)));
 }
-
-#[test]
-fn get_digest_json_mode_no_bishop_art() {
-    let mut file = NamedTempFile::new().unwrap();
-    file.write_all(b"json mode content").unwrap();
-    file.flush().unwrap();
-
-    let output = assert_cmd::cargo_bin_cmd!("asfaload-cli")
-        .arg("get-digest")
-        .arg("--json")
-        .arg(file.path())
-        .output()
-        .unwrap();
-
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let label = label_for_hash(HashAlgorithm::Sha512);
-    assert!(
-        !stdout.contains(&format!("[{}]", label)),
-        "JSON mode must not contain bishop art"
-    );
-}

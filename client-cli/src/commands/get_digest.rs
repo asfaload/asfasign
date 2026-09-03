@@ -3,11 +3,12 @@ use std::path::PathBuf;
 use common::{sha512_for_file, sha512_for_url};
 use serde::Serialize;
 
-use crate::utils::bishop_art;
+use crate::utils::{bishop_art, bishop_plain};
 
 #[derive(Debug, Clone, Serialize)]
 struct GetDigestOutput {
     digest: String,
+    bishop_art: String,
 }
 
 pub async fn handle_get_digest_command(file: &str, json: bool) -> anyhow::Result<()> {
@@ -26,8 +27,10 @@ pub async fn handle_get_digest_command(file: &str, json: bool) -> anyhow::Result
         })
     }?;
     if json {
+        let bishop_art = bishop_plain(&digest);
         let output = GetDigestOutput {
             digest: digest.to_string(),
+            bishop_art,
         };
         println!("{}", serde_json::to_string(&output)?);
     } else {
