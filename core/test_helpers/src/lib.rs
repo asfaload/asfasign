@@ -38,6 +38,9 @@ pub fn fixtures_keys_dir() -> PathBuf {
 pub fn fixtures_pub_key(n: usize) -> PathBuf {
     fixtures_keys_dir().join(format!("key_{}.pub", n))
 }
+pub fn fixtures_sec_key(n: usize) -> PathBuf {
+    fixtures_keys_dir().join(format!("key_{}", n))
+}
 pub fn fixtures_asfaload_pub_key(n: usize) -> PathBuf {
     fixtures_keys_dir().join(format!("key_{}.pub", n))
 }

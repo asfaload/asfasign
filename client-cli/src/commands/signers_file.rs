@@ -5,7 +5,10 @@ use std::str::FromStr;
 
 use crate::error::{ClientCliError, Result};
 use crate::utils::{bishop_art, ensure_dir_exists, validate_threshold};
-use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig, sha512_for_file};
+use features_lib::{
+    ASFALOAD_PRIV_PREFIX, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig,
+    sha512_for_file,
+};
 
 fn get_group_info<P: AsfaloadPublicKeyTrait>(
     keys: Vec<P>,
@@ -276,14 +279,22 @@ fn combine_key_sources<P: AsfaloadPublicKeyTrait>(
             .map(|line| line.trim().to_string())
             .filter(|line| !line.is_empty())
             .for_each(|line| {
-                let r = P::from_base64(&line).map_err(|e| {
-                    crate::error::ClientCliError::SignersFile(format!(
-                        "Failed to read public key from file \"{}\": {} for line {}",
+                let r = if line.starts_with(ASFALOAD_PRIV_PREFIX) {
+                    Err(crate::error::ClientCliError::SignersFile(format!(
+                        "Found a secret key, you need to pass public keys to build the signers file.\nIn file \"{}\" for line {}",
                         file_path.display(),
-                        e,
-                        line
+                        line.chars().take(20).collect::<String>()),
                     ))
-                });
+                } else {
+                    P::from_base64(&line).map_err(|e| {
+                        crate::error::ClientCliError::SignersFile(format!(
+                            "Failed to read public key from file \"{}\": {} for line {}",
+                            file_path.display(),
+                            e,
+                            line
+                        ))
+                    })
+                };
                 combined.push(r)
             });
     }
@@ -296,7 +307,7 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
-    use test_helpers::fixtures_pub_key;
+    use test_helpers::{fixtures_pub_key, fixtures_sec_key};
 
     // A valid public key base64 string (from fixtures key_0)
     const VALID_PUBKEY_B64: &str = "asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8";
@@ -536,6 +547,90 @@ mod tests {
         assert!(
             err_msg.contains("this is garbage"),
             "Error should mention the invalid line, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn combine_key_sources_file_with_secret_key_names_file_and_offending_line() {
+        // Fixture private key: passing it where public
+        // keys are expected must fail, and the error must name the file and
+        // the offending line.
+        let secret_key_line = fs::read_to_string(fixtures_sec_key(0))
+            .unwrap()
+            .trim()
+            .to_string();
+        assert!(
+            secret_key_line.starts_with(ASFALOAD_PRIV_PREFIX),
+            "Fixture should hold a secret key, got: {}",
+            secret_key_line
+        );
+
+        let key0_b64 = fs::read_to_string(fixtures_pub_key(0)).unwrap();
+
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("with_secret_key.pub");
+        std::fs::write(
+            &file_path,
+            format!("{}\n{}\n", key0_b64.trim(), secret_key_line),
+        )
+        .unwrap();
+
+        let result =
+            combine_key_sources::<AsfaloadPublicKeys>(&[], std::slice::from_ref(&file_path));
+        let err_msg = match result {
+            Err(e) => e.to_string(),
+            Ok(keys) => panic!("Passing a secret key must fail, got ok value {:?}", keys),
+        };
+        assert!(
+            err_msg.contains("Found a secret key"),
+            "Expected secret key error message, got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains(file_path.display().to_string().as_str()),
+            "Error should contain the file holding the secret key, got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains(&secret_key_line.chars().take(20).collect::<String>()),
+            "Error should contain the start of the offending line, got: {}",
+            err_msg
+        );
+        assert!(
+            !err_msg.contains(secret_key_line.as_str()),
+            "Error should not contain the whole line, to not leak secret keys. Got: {}",
+            err_msg
+        );
+        assert!(
+            !err_msg.contains(key0_b64.trim()),
+            "Error should not point at the valid public key, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn combine_key_sources_file_with_short_secret_key_line_does_not_panic() {
+        // The error message shows the start of the offending line; a line
+        // shorter than the truncation length must yield an error, not a panic.
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("with_short_secret_key.pub");
+        std::fs::write(&file_path, "asfaload-priv:abc\n").unwrap();
+
+        let result =
+            combine_key_sources::<AsfaloadPublicKeys>(&[], std::slice::from_ref(&file_path));
+        let err_msg = match result {
+            Err(e) => e.to_string(),
+            Ok(keys) => panic!("Passing a secret key must fail, got ok value {:?}", keys),
+        };
+        assert!(
+            err_msg.contains("Found a secret key"),
+            "Expected secret key error message, got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("asfaload-priv:abc"),
+            "A short line is shown in full as it cannot be truncated further, got: {}",
             err_msg
         );
     }
