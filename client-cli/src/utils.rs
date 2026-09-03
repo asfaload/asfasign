@@ -337,4 +337,57 @@ mod tests {
             "top border must contain the label for the Sha512 variant"
         );
     }
+
+    /// Remove ANSI escape sequences (of the form ESC [ ... m) from a string.
+    /// Only SGR sequences are emitted by the coloring code, so this is
+    /// sufficient to recover the plain rendering.
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' {
+                for follow_up in chars.by_ref() {
+                    if follow_up == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn bishop_plain_has_no_ansi_codes() {
+        // Run without forcing colorization: this matches the piped usage of
+        // the JSON output (e.g. `asfaload-cli get-digest f --json | jq -r
+        // '.bishop_art'`), where the art must be plain. The case of a
+        // mix-up with the colored rendering is covered by the integration
+        // tests, which force colorization in the CLI subprocess.
+        let bytes = Sha512::digest(b"plain art test");
+        let hash = AsfaloadHashes::Sha512(bytes);
+        let plain = bishop_plain(&hash);
+        assert!(
+            !plain.contains('\x1b'),
+            "plain bishop art must not contain ANSI escape codes"
+        );
+    }
+
+    #[test]
+    fn bishop_plain_matches_colored_art_stripped_of_ansi() {
+        // Note: colorization is not forced here, as toggling the colored
+        // crate's global override races with other tests in this binary.
+        // The rendering paths are structurally identical; this checks the
+        // plain output equals the colored one with ANSI codes removed.
+        let bytes = Sha512::digest(b"plain and colored art comparison");
+        let hash = AsfaloadHashes::Sha512(bytes);
+        let plain = bishop_plain(&hash);
+        let colored = bishop_art(&hash);
+        assert_eq!(
+            plain,
+            strip_ansi(&colored),
+            "plain art must be the colored art without ANSI codes"
+        );
+    }
 }
