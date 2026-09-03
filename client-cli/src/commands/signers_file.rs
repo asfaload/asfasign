@@ -5,8 +5,10 @@ use std::str::FromStr;
 
 use crate::error::{ClientCliError, Result};
 use crate::utils::{bishop_art, ensure_dir_exists, validate_threshold};
-use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig, sha512_for_file};
-use signatures::keys::asfaload::ASFALOAD_PRIV_PREFIX;
+use features_lib::{
+    ASFALOAD_PRIV_PREFIX, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig,
+    sha512_for_file,
+};
 
 fn get_group_info<P: AsfaloadPublicKeyTrait>(
     keys: Vec<P>,
