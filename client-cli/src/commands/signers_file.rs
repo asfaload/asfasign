@@ -576,8 +576,10 @@ mod tests {
 
         let result =
             combine_key_sources::<AsfaloadPublicKeys>(&[], std::slice::from_ref(&file_path));
-        assert!(result.is_err(), "Passing a secret key must fail");
-        let err_msg = result.unwrap_err().to_string();
+        let err_msg = match result {
+            Err(e) => e.to_string(),
+            Ok(keys) => panic!("Passing a secret key must fail, got ok value {:?}", keys),
+        };
         assert!(
             err_msg.contains("Found a secret key"),
             "Expected secret key error message, got: {}",
