@@ -196,7 +196,22 @@ pub fn label_for_hash(algo: HashAlgorithm) -> String {
     algo.to_string()
 }
 
+#[derive(PartialEq)]
+enum BishopRender {
+    Plain,
+    Colored,
+}
+
+/// Return string to be rendered as colored, as it includes ANSI codes
 pub fn bishop_art(hash: &AsfaloadHashes) -> String {
+    bishop_art_inner(hash, BishopRender::Colored)
+}
+
+/// Return plain version, without ANSI codes
+pub fn bishop_plain(hash: &AsfaloadHashes) -> String {
+    bishop_art_inner(hash, BishopRender::Plain)
+}
+fn bishop_art_inner(hash: &AsfaloadHashes, render_kind: BishopRender) -> String {
     let (bytes, algo) = match hash {
         AsfaloadHashes::Sha512(d) => (d.as_slice(), HashAlgorithm::Sha512),
     };
@@ -226,6 +241,8 @@ pub fn bishop_art(hash: &AsfaloadHashes) -> String {
         // share the same tint: red·blue·green·magenta·cyan·yellow (regular),
         // then the same cycle again in bright variants.
         match v {
+            // Short-circuit to render without ANSI code if plain rendering
+            _ if render_kind == BishopRender::Plain => c,
             0 => c,
             -1 => c.bright_white().bold().to_string(),
             -2 => c.bright_white().bold().to_string(),
