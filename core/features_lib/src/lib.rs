@@ -21,6 +21,8 @@ pub use signatures::keys::AsfaloadPublicKeyTrait;
 pub use signatures::keys::AsfaloadSecretKeyTrait;
 pub use signatures::keys::AsfaloadSignatureTrait;
 pub use signatures::keys::KeyFormat;
+pub use signatures::keys::asfaload::ASFALOAD_PRIV_PREFIX;
+pub use signatures::keys::asfaload::ASFALOAD_PUB_PREFIX;
 
 // Re-export the types directly
 pub use signatures::signatures_file::{SignaturesFile, TaggedSignature};
