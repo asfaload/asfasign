@@ -218,3 +218,48 @@ fn get_digest_file_shows_bishop_art_in_default_mode() {
         .success()
         .stdout(predicate::str::contains(format!("[{}]", label)));
 }
+
+#[test]
+fn get_digest_json_output_contains_bishop_art() {
+    let content = b"json bishop art content";
+    let mut file = NamedTempFile::new().unwrap();
+    file.write_all(content).unwrap();
+    file.flush().unwrap();
+
+    let output = assert_cmd::cargo_bin_cmd!("asfaload-cli")
+        .arg("get-digest")
+        .arg("--json")
+        .arg(file.path())
+        // Force colorization in the subprocess: without it, the colored crate
+        // disables colors for non-TTY stdout and a plain/colored mix-up would
+        // go unnoticed.
+        .env("CLICOLOR_FORCE", "1")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+
+    let bishop_art = json["bishop_art"]
+        .as_str()
+        .expect("bishop_art field should be a string");
+    assert!(!bishop_art.is_empty(), "bishop_art should not be empty");
+    assert!(
+        !bishop_art.contains('\x1b'),
+        "bishop_art in JSON mode must be plain, without ANSI codes"
+    );
+
+    // The art must be the plain rendering of the file's digest.
+    let hash = common::AsfaloadHashes::Sha512(Sha512::digest(content));
+    assert_eq!(
+        bishop_art,
+        client_cli::utils::bishop_plain(&hash),
+        "bishop_art must match the plain rendering of the file digest"
+    );
+}
