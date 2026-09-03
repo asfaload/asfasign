@@ -6,6 +6,7 @@ use std::str::FromStr;
 use crate::error::{ClientCliError, Result};
 use crate::utils::{bishop_art, ensure_dir_exists, validate_threshold};
 use features_lib::{AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig, sha512_for_file};
+use signatures::keys::asfaload::ASFALOAD_PRIV_PREFIX;
 
 fn get_group_info<P: AsfaloadPublicKeyTrait>(
     keys: Vec<P>,
@@ -276,14 +277,22 @@ fn combine_key_sources<P: AsfaloadPublicKeyTrait>(
             .map(|line| line.trim().to_string())
             .filter(|line| !line.is_empty())
             .for_each(|line| {
-                let r = P::from_base64(&line).map_err(|e| {
-                    crate::error::ClientCliError::SignersFile(format!(
-                        "Failed to read public key from file \"{}\": {} for line {}",
+                let r = if line.starts_with(ASFALOAD_PRIV_PREFIX) {
+                    Err(crate::error::ClientCliError::SignersFile(format!(
+                        "Found a secret key, you need to pass public keys to build the signers file.\nIn file \"{}\" for line {}",
                         file_path.display(),
-                        e,
-                        line
+                        line.chars().take(20).collect::<String>()),
                     ))
-                });
+                } else {
+                    P::from_base64(&line).map_err(|e| {
+                        crate::error::ClientCliError::SignersFile(format!(
+                            "Failed to read public key from file \"{}\": {} for line {}",
+                            file_path.display(),
+                            e,
+                            line
+                        ))
+                    })
+                };
                 combined.push(r)
             });
     }
