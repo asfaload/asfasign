@@ -94,7 +94,7 @@ The trailing digest and bishop art are a fingerprint of the created file; see [`
 
 JSON (with `--json`):
 
-    {"output_file":"signers.json","artifact_signers_count":3,"artifact_threshold":2,"admin_keys_count":1,"admin_threshold":1,"master_keys_count":0,"master_threshold":null,"revocation_keys_count":0,"revocation_threshold":null,"digest":"sha512:2e2fde4e..."}
+    {"output_file":"signers.json","artifact_signers_count":3,"artifact_threshold":2,"admin_keys_count":1,"admin_threshold":1,"master_keys_count":0,"master_threshold":null,"revocation_keys_count":0,"revocation_threshold":null,"digest":"sha512:2e2fde4e...","bishop_art":"+----[SHA-512]----+\n|▍  ▏ ▏   ▎▃▎▏▍▂ ▏|\n| ...             |\n+---[2e2fde4e…]---+"}
 
 ## Examples
 
