@@ -11,7 +11,7 @@ This command is offline: it only reads a local public key file and never contact
 
 ### `-k --public-key <PATH>`
 
-Path to the public key file to share (asfaload or OpenSSH ed25519). Required.
+Path to the public key file to share (asfaload or OpenSSH ed25519). Required. If the path does not contain a parseable public key, the command retries with `.pub` appended to the path — so passing the secret key path also works, as long as its `.pub` sibling exists.
 
 ### `-r --raw`
 

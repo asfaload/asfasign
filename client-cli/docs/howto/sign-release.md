@@ -15,15 +15,26 @@ After a release is [registered](register-release.md), artifact signers must prov
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey
 ```
 
+Each pending file is listed with its path, its digest, and a bishop art block derived from the digest:
+
 ```
 Files requiring your signature:
-  - https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+  - path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
+digest: sha512:2e2fde4ead7c6846656431dd4f2d2f3013e2b35d31fc32978fc03a32f54034589d65ab6666a72aab3835bf409dc7b86fdab6b2f488486c4012c0acffc41438d7
+
++----[SHA-512]----+
+|▍  ▏ ▏   ▎▃▎▏▍▂ ▏|
+| ...             |
++---[2e2fde4e…]---+
 ```
 
 ### 2. Sign the release index
 
+Copy the path **and** the digest from the output above:
+
 ```sh
 asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
+    --digest sha512:2e2fde4e... \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json
 ```
 
@@ -32,13 +43,13 @@ The command fetches all files associated with the release, hashes each one, sign
 If more signatures are needed:
 
 ```
-Success! Signature submitted
+Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.
 ```
 
 When the threshold is met:
 
 ```
-Success! Signature submitted (complete)
+Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature.
 ```
 
 ![Demo: sign a release](demos/sign-release.gif)
@@ -67,8 +78,8 @@ https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json: complete
 With three artifact signers and a threshold of 2, only two need to sign:
 
 ```
-alice: asfaload-cli sign-pending --secret-key alice.key ...  → "submitted"
-bob:   asfaload-cli sign-pending --secret-key bob.key ...    → "submitted (complete)"
+alice: asfaload-cli sign-pending --secret-key alice.key ...  → "not yet complete"
+bob:   asfaload-cli sign-pending --secret-key bob.key ...    → "now complete"
 # carol doesn't need to sign — threshold already met
 ```
 

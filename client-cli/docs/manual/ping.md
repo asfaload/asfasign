@@ -33,7 +33,7 @@ Emit the backend response as JSON instead of human-readable text.
 
 ## Environment
 
-These variables provide fallbacks for the matching options; an explicit flag always wins.
+These variables provide fallbacks for the matching options. Password sources are tried in the order described in the [manual index](index.md#passwords): flags first (in the order `--password`, `--password-command`, `--password-file`), then environment variables, then an interactive prompt.
 
 - `ASFALOAD_SECRET_KEY` — alternative to `--secret-key`.
 - `ASFALOAD_BACKEND_URL` — alternative to `--backend-url`.

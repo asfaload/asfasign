@@ -3,7 +3,7 @@
 - **Usage**: `asfaload-cli download [OPTIONS] <FILE_URL>`
 - **Source**: [`src/commands/download.rs`](../../src/commands/download.rs)
 
-Download a file and verify its signatures before saving. The command fetches the signers file, index, and signatures from the backend, checks everything is valid, then downloads the actual file and verifies its hash.
+Download a file and verify its signatures before saving. The command fetches the index and its signatures from the backend, validates the full signers chain history, probes for a revocation, and downloads the actual file. The download, chain validation and revocation probe run in parallel: a failed verification or a detected revocation aborts the in-flight download. Signatures are verified once the file is downloaded, then the file hash is checked before saving. Full signers chain validation is always performed; there is no option to skip it.
 
 If the file has been revoked, a warning is printed to stderr and the download is aborted.
 
@@ -35,31 +35,32 @@ Override automatic forge type detection.
 | `gitlab` | GitLab release |
 | `fileserver` | Generic file server |
 
-### `--full-check`
-
-Verify the full signers chain history during download. Without this flag only the current signers file is checked.
-
 ## Environment
 
 - `ASFALOAD_BACKEND_URL` — alternative to `--backend-url` (an explicit `--backend-url` wins).
 
 ## Output
 
-The command prints progress to stdout as each verification step completes:
+The command prints progress to stdout as each step completes:
 
     Starting download: https://github.com/acme/tool/releases/download/v1.0/tool.tar.gz
-    ✓ Downloaded signers file (1234 bytes)
     ✓ Downloaded index file (567 bytes)
     ✓ Downloaded signatures file (890 bytes)
-    ✓ Signatures verified successfully (2 valid)
-    ✓ Signers chain history verified (3 entries)
     Downloading tool.tar.gz
-      Size: 12.50 MB
-    Progress: 100.0% (12.50 MB / 12.50 MB)
+    Progress: 2.00 MB
+    ✓ Signers chain history verified (3 entries)
+    ✓ Signatures verified successfully (2 valid)
     ✓ Download complete (12.50 MB)
     ✓ File hash verified (SHA-256)
     ✓ File saved to: ./tool.tar.gz
     ✓ All done! Verified 2 signature(s)
+
+Notes:
+
+- The file download, signers chain validation, and revocation probe run in parallel, so `Progress:` and `✓ Signers chain history verified` lines may interleave in any order.
+- Progress lines are emitted at milestones (roughly every megabyte), overwriting each other with `\r`; the shown `Progress: 2.00 MB` is one such milestone.
+- If any signature is invalid, a `⚠ Warning: N invalid signature(s)` line precedes the `✓ Signatures verified successfully` line.
+- A `✗ Signers chain verification failed: <reason>` line goes to stderr when chain validation fails.
 
 If the file has been revoked:
 
@@ -75,10 +76,6 @@ If the file has been revoked:
 
     # save to a specific path
     asfaload-cli download -o /tmp/tool.tar.gz \
-        https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
-
-    # verify the full signers chain history
-    asfaload-cli download --full-check \
         https://github.com/acme/tool/releases/download/v1.0/tool-linux-amd64.tar.gz
 
     # override forge detection

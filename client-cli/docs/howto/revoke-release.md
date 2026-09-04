@@ -37,17 +37,19 @@ When the revocation threshold requires multiple signatures, additional revocatio
 asfaload-cli list-pending --secret-key ~/.asfaload/revoke-key-2
 ```
 
-The pending revocation shows up as a path ending in `.revocation.json.pending`:
+The pending revocation shows up as a path ending in `.revocation.json.pending`, together with its digest and bishop art:
 
 ```
 Files requiring your signature:
-  - https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json.revocation.json.pending
+  - path: https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json.revocation.json.pending
+digest: sha512:2e2fde4e...
 ```
 
-Sign it:
+Sign it (copy path and digest from the output above):
 
 ```sh
 asfaload-cli sign-pending --secret-key ~/.asfaload/revoke-key-2 \
+    --digest sha512:2e2fde4e... \
     https/github.com/443/acme/tool/releases/tag/v1.0/asfaload.index.json.revocation.json.pending
 ```
 

@@ -29,8 +29,24 @@ Reference for all `asfaload-cli` commands.
 
 ## Verification
 
+- [`get-digest`](get-digest.md) — compute the SHA-512 digest of a local file or URL
 - [`download`](download.md) — download a file with signature verification
 
 ## Diagnostics
 
 - [`ping`](ping.md) — check backend connectivity and, optionally, your credentials
+
+## Common notes
+
+### Passwords
+
+Password sources are tried in this order: `--password`, then `--password-command`
+(flag or `ASFALOAD_PASSWORD_COMMAND`), then `--password-file` (flag or
+`ASFALOAD_PASSWORD_FILE`), then the command-specific variables
+(`ASFALOAD_<COMMAND>_PASSWORD`, `ASFALOAD_<COMMAND>_PASSWORD_FILE`), then an
+interactive prompt.
+
+### JSON errors
+
+When `--json` is active and a command fails, the error is printed to **stderr**
+as `{"error":"<message>"}` and the process exits non-zero.

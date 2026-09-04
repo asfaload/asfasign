@@ -79,15 +79,22 @@ Emit output as JSON instead of human-readable text.
 
 Human-readable (default):
 
-    Signers file created successfully at: "signers.json"
+    Signers file created successfully at: signers.json
     Artifact signers: 3 (threshold: 2)
     Admin keys: 1 (threshold: 1)
     Master keys: 0 (threshold: none)
     Revocation keys: 0 (threshold: none)
+    Generated file's digest: sha512:2e2fde4e...
+    +----[SHA-512]----+
+    |▍  ▏ ▏   ▎▃▎▏▍▂ ▏|
+    | ...             |
+    +---[2e2fde4e…]---+
+
+The trailing digest and bishop art are a fingerprint of the created file; see [`get-digest`](get-digest.md) for how to recompute and compare it later.
 
 JSON (with `--json`):
 
-    {"output_file":"signers.json","artifact_signers_count":3,"artifact_threshold":2,"admin_keys_count":1,"admin_threshold":1,"master_keys_count":0,"master_threshold":null,"revocation_keys_count":0,"revocation_threshold":null}
+    {"output_file":"signers.json","artifact_signers_count":3,"artifact_threshold":2,"admin_keys_count":1,"admin_threshold":1,"master_keys_count":0,"master_threshold":null,"revocation_keys_count":0,"revocation_threshold":null,"digest":"sha512:2e2fde4e..."}
 
 ## Examples
 

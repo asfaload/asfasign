@@ -1,6 +1,6 @@
 # `asfaload-cli sign-pending`
 
-- **Usage**: `asfaload-cli sign-pending [OPTIONS] -K <SECRET_KEY> <FILE_PATH>`
+- **Usage**: `asfaload-cli sign-pending [OPTIONS] -K <SECRET_KEY> [<FILE_PATH> --digest <DIGEST>]`
 - **Source**: [`src/commands/sign_pending.rs`](../../src/commands/sign_pending.rs)
 
 Sign a pending file. The command fetches all files associated with the given path from the backend, computes a SHA-512 hash of each, signs them with your secret key, and submits the signatures in a single request.
@@ -11,9 +11,15 @@ Use [`list-pending`](list-pending.md) to discover which files need signing.
 
 ### `<FILE_PATH>`
 
-Mirror-relative path to the file to sign, as returned by `list-pending`. For example `https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json`.
+Mirror-relative path to the file to sign, as returned by `list-pending`. For example `https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json`. Optional: if omitted, an interactive selector is shown (see below).
+
+`<FILE_PATH>` and `--digest` are tied together: passing one requires the other.
 
 ## Options
+
+### `--digest <DIGEST>`
+
+The `sha512:<128 hexadecimal characters>` digest of the file to sign, as printed by [`list-pending`](list-pending.md) or [`get-digest`](get-digest.md). Required when `<FILE_PATH>` is given. Before signing, the digest of the fetched file is verified against this value and the command aborts on mismatch.
 
 ### `-K --secret-key <PATH>`
 
@@ -35,13 +41,17 @@ Shell command to run; its standard output is read as the password. Useful for pa
 
 Backend API URL. Defaults to `https://backend.asfaload.com`.
 
+### `--digest-filter <DIGEST>` (`--df`)
+
+Only used when `<FILE_PATH>` is omitted: pre-filters the interactive selection list to pending files matching the given `sha512:<128 hexadecimal characters>` digest. Same value format as `--digest`.
+
 ### `--json`
 
 Emit output as JSON instead of human-readable text.
 
 ## Environment
 
-These variables provide fallbacks for the matching options; an explicit flag always wins.
+These variables provide fallbacks for the matching options. Password sources are tried in the order described in the [manual index](index.md#passwords): flags first (in the order `--password`, `--password-command`, `--password-file`), then environment variables, then an interactive prompt.
 
 - `ASFALOAD_SECRET_KEY` — alternative to `--secret-key`.
 - `ASFALOAD_BACKEND_URL` — alternative to `--backend-url`.
@@ -50,15 +60,21 @@ These variables provide fallbacks for the matching options; an explicit flag alw
 - `ASFALOAD_SIGN_PENDING_PASSWORD` — alternative to `--password` (still supported, lower precedence).
 - `ASFALOAD_SIGN_PENDING_PASSWORD_FILE` — alternative to `--password-file` (still supported, lower precedence).
 
+## Interactive selection
+
+When `<FILE_PATH>` (and therefore `--digest`) is omitted, the command fetches your pending files and, on a terminal, shows an interactive `Select` prompt. Each proposal lists the file path, its digest, and its bishop art so you can visually confirm you are signing the intended file. Use `--digest-filter` to narrow the list beforehand.
+
+If nothing is pending, the command fails with `No pending signature found`. If stdin is not a terminal (e.g. in CI), the command fails with `Not a tty and no path to sign was passed.` — pass `<FILE_PATH>` and `--digest` explicitly in that case.
+
 ## Output
 
-Human-readable (default):
+Human-readable (default), when the aggregate signature is now complete:
 
-    Success! Signature submitted
+    Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature.
 
-When the submission completes the required threshold:
+When other signers must still provide their signatures:
 
-    Success! Signature submitted (complete)
+    Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.
 
 JSON (with `--json`):
 
@@ -68,11 +84,19 @@ JSON (with `--json`):
 
     # sign a pending release index
     asfaload-cli sign-pending -K ~/.asfaload/key \
+        --digest sha512:2e2fde4e... \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
 
     # sign with explicit password (CI usage)
     asfaload-cli sign-pending -K ~/.asfaload/key -p "$PASSWORD" \
+        --digest sha512:2e2fde4e... \
         https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json
+
+    # interactive selection from the pending list
+    asfaload-cli sign-pending -K ~/.asfaload/key
+
+    # interactive selection, restricted to one digest
+    asfaload-cli sign-pending -K ~/.asfaload/key --df sha512:2e2fde4e...
 
 ## Exit codes
 

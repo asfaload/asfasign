@@ -11,11 +11,11 @@ After registration you still need to sign the assets yourself with [`sign-pendin
 
 ### `--github-release-url <URL>`
 
-URL of a GitHub release page. The backend fetches the release assets automatically. Mutually exclusive with `--csum-file`.
+URL of a GitHub release page. The backend fetches the release assets automatically. The host must be a known GitHub host (e.g. `github.com`); anything else is rejected. Mutually exclusive with `--csum-file`.
 
 ### `--csum-file <URL>`
 
-URL of a checksums file. Repeatable — pass once per file. All URLs must share a common parent path. Mutually exclusive with `--github-release-url`.
+URL of a checksums file. Repeatable — pass once per file. All URLs must share the same origin (scheme, host, and port) and a common parent path. Mutually exclusive with `--github-release-url`.
 
 ### `-K --secret-key <PATH>`
 
@@ -43,7 +43,7 @@ Emit output as JSON instead of human-readable text.
 
 ## Environment
 
-These variables provide fallbacks for the matching options; an explicit flag always wins.
+These variables provide fallbacks for the matching options. Password sources are tried in the order described in the [manual index](index.md#passwords): flags first (in the order `--password`, `--password-command`, `--password-file`), then environment variables, then an interactive prompt.
 
 - `ASFALOAD_SECRET_KEY` — alternative to `--secret-key`.
 - `ASFALOAD_BACKEND_URL` — alternative to `--backend-url`.
