@@ -11,9 +11,9 @@ Only files with a complete aggregate signature can be revoked. Files that are st
 
 Standard Asfaload authentication headers, signed by the caller's secret key:
 
-- `X-asfld-timestamp` — Unix timestamp, seconds.
-- `X-asfld-nonce` — random nonce.
-- `X-asfld-sig` — Ed25519 signature over the canonical request string.
+- `X-asfld-timestamp` — request timestamp, RFC 3339 format.
+- `X-asfld-nonce` — random UUID v4, unique per request.
+- `X-asfld-sig` — Ed25519 signature, computed as described in [Authentication](index.md#authentication).
 - `X-asfld-pk` — caller's public key.
 
 ## Request body
@@ -62,8 +62,8 @@ Fields:
 
     curl -sS -X POST 'http://127.0.0.1:3000/v1/revoke' \
       -H 'Content-Type: application/json' \
-      -H 'X-asfld-timestamp: 1712860800' \
-      -H 'X-asfld-nonce: <random-nonce>' \
+      -H 'X-asfld-timestamp: 2024-04-11T20:00:00+00:00' \
+      -H 'X-asfld-nonce: <random-uuid-v4>' \
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>' \
       -d '{

@@ -12,4 +12,5 @@ create-missing = false
 default-theme = "light"
 preferred-dark-theme = "navy"
 additional-js = ["back-to-site.js"]
+additional-css = ["code-first-paint.css"]
 git-repository-url = "https://github.com/asfaload/asfaload"

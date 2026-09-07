@@ -20,7 +20,7 @@ Set `KEEP_FIXTURE=1` to preserve the fixture directory for debugging — the scr
 
 | Profile | `Set TypingSpeed` | `Sleep` lines | `$END_PAUSE` |
 |---------|-------------------|---------------|--------------|
-| `production` (default) | `20ms` | played as written | `6s` |
+| `production` (default) | `20ms` | played as written | `20s` |
 | `fast` | `1ms` | stripped (rendered as comments) | `0s` |
 
 ```sh
@@ -35,7 +35,7 @@ The pace settings are not hard-coded into the tape sources. Each tape is a `.tap
 ```
 Set TypingSpeed $TYPING_SPEED   # → 20ms or 1ms
 $SLEEP 4s                       # → Sleep 4s, or "# 4s" (a comment)
-Sleep $END_PAUSE                # → Sleep 6s or Sleep 0s (always a real Sleep)
+Sleep $END_PAUSE                # → Sleep 20s or Sleep 0s (always a real Sleep)
 ```
 
 ## Embedding in howtos
@@ -115,8 +115,11 @@ These run silently in the driver to bridge demos:
 | `ASFALOAD_DEMO_CSUM_URL` | URL of `SHA256SUMS` for the v1.0 release. |
 | `ASFALOAD_DEMO_ARTIFACT_URL` | URL of the v1.0 artifact for `download`. |
 | `ASFALOAD_DEMO_PENDING_SIGNERS_PATH` | Backend-relative path of the pending signers file (`http/localhost/<port>/...`). |
+| `ASFALOAD_DEMO_PENDING_SIGNERS_DIGEST` | Digest of the pending signers file, looked up from the backend before the tape runs (`sign-pending` requires `--digest`). |
 | `ASFALOAD_DEMO_RELEASE_INDEX_PATH` | Backend-relative path of the v1.0 release index. |
+| `ASFALOAD_DEMO_RELEASE_INDEX_DIGEST` | Digest of the v1.0 release index, looked up from the backend before the tape runs. |
 | `ASFALOAD_DEMO_PENDING_REVOCATION_PATH` | Backend-relative path of the pending revocation file for v1.0. |
+| `ASFALOAD_DEMO_PENDING_REVOCATION_DIGEST` | Digest of the pending revocation file, looked up from the backend before the tape runs. |
 
 ## Adding a new demo
 

@@ -12,9 +12,6 @@ pub async fn handle_download_command(
         .with_starting(|args| {
             println!("Starting download: {}", args.file_url);
         })
-        .with_signers_downloaded(|args| {
-            println!("✓ Downloaded signers file ({} bytes)", args.bytes);
-        })
         .with_index_downloaded(|args| {
             println!("✓ Downloaded index file ({} bytes)", args.bytes);
         })

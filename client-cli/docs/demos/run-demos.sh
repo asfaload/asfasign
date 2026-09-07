@@ -214,10 +214,28 @@ mkdir -p "$TAPES_DIR/out"
 CLI="$REPO_ROOT/target/debug/asfaload-cli"
 PASSWORD_FILE="$FIXTURE/home/.asfaload/.demo-password"
 
+# Digests of the pending files the tapes sign. They depend on backend state
+# created by earlier tapes, so they are filled in hidden_step_before, right
+# before the tape that needs them is rendered.
+PENDING_SIGNERS_DIGEST=""
+RELEASE_INDEX_DIGEST=""
+PENDING_REVOCATION_DIGEST=""
+
+# Extract the digest of a signer's single pending file from list-pending JSON.
+pending_digest() {
+    "$CLI" list-pending --secret-key "$1" \
+        --password-file "$PASSWORD_FILE" -u "$BACKEND_URL" --json \
+        | grep -oP '"digest":"\Ksha512:[0-9a-f]{128}' | head -n1
+}
+
 asfa_sign_pending() {
-    "$CLI" sign-pending --secret-key "$1" \
+    local key="$1" path="$2"
+    local digest
+    digest="$(pending_digest "$key")"
+    "$CLI" sign-pending --secret-key "$key" \
         --password-file "$PASSWORD_FILE" \
-        -u "$BACKEND_URL" "$2" >/dev/null
+        --digest "$digest" \
+        -u "$BACKEND_URL" "$path" >/dev/null
 }
 
 render_tape() {
@@ -234,6 +252,15 @@ render_tape() {
 hidden_step_before() {
     local tape="$1"
     case "$tape" in
+        activate-signers-file.tape)
+            PENDING_SIGNERS_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_0")"
+            ;;
+        sign-release.tape)
+            RELEASE_INDEX_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_0")"
+            ;;
+        revoke-release-cosign.tape)
+            PENDING_REVOCATION_DIGEST="$(pending_digest "$FIXTURE/home/.asfaload/key_5")"
+            ;;
         update-signers-file.tape)
             # The howto assumes the new signers file is already pushed; stage the
             # exact content the tape will produce locally, at its forge URL.
@@ -295,8 +322,11 @@ for tape in "${TAPES[@]}"; do
         ASFALOAD_DEMO_SIGNERS_URL="$SIGNERS_URL" \
         ASFALOAD_DEMO_NEW_SIGNERS_URL="$NEW_SIGNERS_URL" \
         ASFALOAD_DEMO_PENDING_SIGNERS_PATH="$PENDING_SIGNERS_PATH" \
+        ASFALOAD_DEMO_PENDING_SIGNERS_DIGEST="$PENDING_SIGNERS_DIGEST" \
         ASFALOAD_DEMO_RELEASE_INDEX_PATH="$RELEASE_INDEX_PATH" \
+        ASFALOAD_DEMO_RELEASE_INDEX_DIGEST="$RELEASE_INDEX_DIGEST" \
         ASFALOAD_DEMO_PENDING_REVOCATION_PATH="$PENDING_REVOCATION_PATH" \
+        ASFALOAD_DEMO_PENDING_REVOCATION_DIGEST="$PENDING_REVOCATION_DIGEST" \
         ASFALOAD_DEMO_CSUM_URL="$CSUM_URL" \
         ASFALOAD_DEMO_ARTIFACT_URL="$ARTIFACT_URL" \
             vhs "$rendered"

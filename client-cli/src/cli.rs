@@ -38,7 +38,7 @@ pub struct BackendUrlArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct DigestFilter {
-    /// Only consider pending file with this sh512 checksum
+    /// Only consider pending files with this sha512 checksum
     #[arg(long, visible_alias = "df")]
     pub digest_filter: Option<String>,
 }

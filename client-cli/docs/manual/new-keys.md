@@ -37,7 +37,7 @@ Emit output as JSON instead of human-readable text.
 
 ## Environment
 
-These variables provide fallbacks for the matching options; an explicit flag always wins.
+These variables provide fallbacks for the matching options. Password sources are tried in the order described in the [manual index](index.md#passwords): flags first (in the order `--password`, `--password-command`, `--password-file`), then environment variables, then an interactive prompt.
 
 - `ASFALOAD_PASSWORD_FILE` — alternative to `--password-file`.
 - `ASFALOAD_PASSWORD_COMMAND` — alternative to `--password-command`.
@@ -48,12 +48,26 @@ These variables provide fallbacks for the matching options; an explicit flag alw
 
 Human-readable (default):
 
-    Generating keypair with name 'mykey' in directory "/home/user/.asfaload"
-    Public key saved at /home/user/.asfaload/mykey.pub and secret key at /home/user/.asfaload/mykey
+    Generated keypair 'mykey'
+
+      Public key string:  asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+      Public key file: /home/user/.asfaload/mykey.pub
+      Secret key file: /home/user/.asfaload/mykey
+
+    WARNING: Keep the secret key private. Treat it like a password -- never share, copy, or commit it.
+    The public key is safe to share -- that's how others verify your signatures.
+
+    You can share your public key, for example with an admin, with this message:
+
+        I have a key-pair to use with Asfaload. You can use my public
+        key in signers files. Here it is:
+        asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8
+
+The trailing message is the same text printed by [`share-key`](share-key.md); it can be copy-pasted directly when sharing the key.
 
 JSON (with `--json`):
 
-    {"public_key_path":"/home/user/.asfaload/mykey.pub","secret_key_path":"/home/user/.asfaload/mykey"}
+    {"public_key_path":"/home/user/.asfaload/mykey.pub","public_key":"asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8","secret_key_path":"/home/user/.asfaload/mykey"}
 
 ## Examples
 

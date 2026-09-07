@@ -1,0 +1,26 @@
+/*
+ * Neutralize the dark highlight.js stylesheets (tomorrow-night, ayu) which
+ * mdBook loads enabled and only disables once book.js runs at the end of
+ * <body>. Without this, first paint shows ayu's near-black code background,
+ * then it snaps to light grey when book.js applies the theme (flicker).
+ *
+ * mdBook bakes the theme class (e.g. class="light") into <html> at build
+ * time, so these rules apply from the very first paint with no JS.
+ * Values mirror the built-in highlight stylesheets for each theme.
+ */
+.light .hljs,
+.rust .hljs {
+    background: #f6f7f6;
+    color: #000;
+}
+
+.navy .hljs,
+.coal .hljs {
+    background: #1d1f21;
+    color: #c5c8c6;
+}
+
+.ayu .hljs {
+    background: #191f26;
+    color: #e6e1cf;
+}

@@ -59,10 +59,11 @@ Each signer runs:
 ```sh
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey
 asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
+    --digest sha512:2e2fde4e... \
     https/github.com/443/acme/tool/asfaload.signers.pending/index.json
 ```
 
-See [Activate a signers file](activate-signers-file.md) for the full signing flow.
+The digest is taken from the `list-pending` output. See [Activate a signers file](activate-signers-file.md) for the full signing flow.
 
 ## What about existing releases?
 

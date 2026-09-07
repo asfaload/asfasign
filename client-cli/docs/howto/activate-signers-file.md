@@ -17,34 +17,48 @@ Each signer performs steps 1–2 independently.
 asfaload-cli list-pending --secret-key ~/.asfaload/mykey
 ```
 
-If the signers file is waiting for your signature, you'll see:
+If the signers file is waiting for your signature, you'll see its path, its digest, and a bishop art block (a small picture derived from the digest, acting as a visual fingerprint):
 
 ```
 Files requiring your signature:
-  - https/github.com/443/acme/tool/asfaload.signers.pending/index.json
+  - path: https/github.com/443/acme/tool/asfaload.signers.pending/index.json
+digest: sha512:2e2fde4ead7c6846656431dd4f2d2f3013e2b35d31fc32978fc03a32f54034589d65ab6666a72aab3835bf409dc7b86fdab6b2f488486c4012c0acffc41438d7
+
++----[SHA-512]----+
+|▍  ▏ ▏   ▎▃▎▏▍▂ ▏|
+| ▎▁ ▁ E ▏▏▎▎▃▏▎▎▁|
+|▁ ▏▁ ▏   ▎▁▏ ▎▁▍▏|
+|▏▁  ▏  ▏ ▎▂▎▁▁▎▏▂|
+| ▏▏▁  ▏ S▎▎▎▃▏▏▍▏|
+|  ▏▁▁▏▁▏▎▎▁▂▏▁▏ ▏|
+|   ▁▎▏▁▎▂▎▏▏▏    |
+|   ▁▁▁▏▄▃▍▎▏     |
+|    ▁▁▎▍▅▋▍▏     |
++---[2e2fde4e…]---+
 ```
 
 If nothing is pending for you, the output says `No pending signatures found.`
 
 ### 2. Sign the pending signers file
 
-Copy the path from the output above and pass it to `sign-pending`:
+Copy the path **and** the digest from the output above and pass both to `sign-pending`:
 
 ```sh
 asfaload-cli sign-pending --secret-key ~/.asfaload/mykey \
+    --digest sha512:2e2fde4e... \
     https/github.com/443/acme/tool/asfaload.signers.pending/index.json
 ```
 
 If more signatures are needed:
 
 ```
-Success! Signature submitted
+Success! Your signature has been included, but the aggregate signature is not yet complete. Other signers must still provide their signatures.
 ```
 
 When your signature completes the required count (every signer must sign for an initial signers file):
 
 ```
-Success! Signature submitted (complete)
+Success! Your signature has been included and the aggregate signature is now complete. No further signature will be included in this aggregate signature.
 ```
 
 ![Demo: sign the pending signers file](demos/activate-signers-file.gif)
@@ -59,25 +73,34 @@ Signers don't need to sign in any particular order. The workflow looks like:
 
 ```
 alice: asfaload-cli list-pending --secret-key alice.key    → sees pending signers
-alice: asfaload-cli sign-pending --secret-key alice.key ...  → "submitted"
+alice: asfaload-cli sign-pending --secret-key alice.key ...  → "not yet complete"
 
 bob:   asfaload-cli list-pending --secret-key bob.key      → sees pending signers
-bob:   asfaload-cli sign-pending --secret-key bob.key ...    → "submitted"
+bob:   asfaload-cli sign-pending --secret-key bob.key ...    → "not yet complete"
 
 carol: asfaload-cli list-pending --secret-key carol.key    → sees pending signers
-carol: asfaload-cli sign-pending --secret-key carol.key ...  → "submitted (complete)"
+carol: asfaload-cli sign-pending --secret-key carol.key ...  → "now complete"
 ```
 
 ## Scripting the sign step
 
-For CI, supply the password non-interactively:
+For CI, supply the password and digest non-interactively:
 
 ```sh
 asfaload-cli sign-pending \
     --secret-key ~/.asfaload/mykey \
     --password-file "/path/to/password-file" \
+    --digest "sha512:2e2fde4e..." \
     https/github.com/443/acme/tool/asfaload.signers.pending/index.json
 ```
+
+If several files are pending, `--digest-filter` (alias `--df`) restricts both `list-pending` output and the interactive selection of `sign-pending` to a single digest:
+
+```sh
+asfaload-cli list-pending --secret-key ~/.asfaload/mykey --df sha512:2e2fde4e...
+```
+
+On an interactive terminal you can also omit the path and digest entirely: `sign-pending` then shows a selection prompt listing each pending file with its bishop art.
 
 ## Troubleshooting
 
