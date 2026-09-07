@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::error::{ClientCliError, Result};
-use crate::utils::{bishop_art, ensure_dir_exists, validate_threshold};
+use crate::utils::{bishop_art, bishop_plain, ensure_dir_exists, validate_threshold};
 use features_lib::{
     ASFALOAD_PRIV_PREFIX, AsfaloadPublicKeyTrait, AsfaloadPublicKeys, SignersConfig,
     sha512_for_file,
@@ -162,6 +162,7 @@ pub fn handle_new_signers_file_command(
     let print_json_output =
         |signers_file_destination| -> std::result::Result<(), crate::error::ClientCliError> {
             let digest = sha512_for_file(&signers_file_destination)?;
+            let bishop_art = bishop_plain(&digest);
             let output = crate::output::NewSignersFileOutput {
                 output_file: signers_file_destination,
                 artifact_signers_count: all_artifact_signers_count,
@@ -173,6 +174,7 @@ pub fn handle_new_signers_file_command(
                 revocation_keys_count: all_revocation_keys_count,
                 revocation_threshold,
                 digest: digest.into(),
+                bishop_art,
             };
             println!("{}", serde_json::to_string(&output)?);
             Ok(())

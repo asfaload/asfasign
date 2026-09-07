@@ -196,7 +196,22 @@ pub fn label_for_hash(algo: HashAlgorithm) -> String {
     algo.to_string()
 }
 
+#[derive(PartialEq)]
+enum BishopRender {
+    Plain,
+    Colored,
+}
+
+/// Return string to be rendered as colored, as it includes ANSI codes
 pub fn bishop_art(hash: &AsfaloadHashes) -> String {
+    bishop_art_inner(hash, BishopRender::Colored)
+}
+
+/// Return plain version, without ANSI codes
+pub fn bishop_plain(hash: &AsfaloadHashes) -> String {
+    bishop_art_inner(hash, BishopRender::Plain)
+}
+fn bishop_art_inner(hash: &AsfaloadHashes, render_kind: BishopRender) -> String {
     let (bytes, algo) = match hash {
         AsfaloadHashes::Sha512(d) => (d.as_slice(), HashAlgorithm::Sha512),
     };
@@ -226,6 +241,8 @@ pub fn bishop_art(hash: &AsfaloadHashes) -> String {
         // share the same tint: red·blue·green·magenta·cyan·yellow (regular),
         // then the same cycle again in bright variants.
         match v {
+            // Short-circuit to render without ANSI code if plain rendering
+            _ if render_kind == BishopRender::Plain => c,
             0 => c,
             -1 => c.bright_white().bold().to_string(),
             -2 => c.bright_white().bold().to_string(),
@@ -318,6 +335,59 @@ mod tests {
         assert!(
             art.contains(&format!("[{}]", label_for_hash(HashAlgorithm::Sha512))),
             "top border must contain the label for the Sha512 variant"
+        );
+    }
+
+    /// Remove ANSI escape sequences (of the form ESC [ ... m) from a string.
+    /// Only SGR sequences are emitted by the coloring code, so this is
+    /// sufficient to recover the plain rendering.
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c == '\x1b' {
+                for follow_up in chars.by_ref() {
+                    if follow_up == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn bishop_plain_has_no_ansi_codes() {
+        // Run without forcing colorization: this matches the piped usage of
+        // the JSON output (e.g. `asfaload-cli get-digest f --json | jq -r
+        // '.bishop_art'`), where the art must be plain. The case of a
+        // mix-up with the colored rendering is covered by the integration
+        // tests, which force colorization in the CLI subprocess.
+        let bytes = Sha512::digest(b"plain art test");
+        let hash = AsfaloadHashes::Sha512(bytes);
+        let plain = bishop_plain(&hash);
+        assert!(
+            !plain.contains('\x1b'),
+            "plain bishop art must not contain ANSI escape codes"
+        );
+    }
+
+    #[test]
+    fn bishop_plain_matches_colored_art_stripped_of_ansi() {
+        // Note: colorization is not forced here, as toggling the colored
+        // crate's global override races with other tests in this binary.
+        // The rendering paths are structurally identical; this checks the
+        // plain output equals the colored one with ANSI codes removed.
+        let bytes = Sha512::digest(b"plain and colored art comparison");
+        let hash = AsfaloadHashes::Sha512(bytes);
+        let plain = bishop_plain(&hash);
+        let colored = bishop_art(&hash);
+        assert_eq!(
+            plain,
+            strip_ansi(&colored),
+            "plain art must be the colored art without ANSI codes"
         );
     }
 }
