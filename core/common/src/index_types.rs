@@ -2,11 +2,17 @@ use core::fmt;
 
 use serde::{Deserialize, Serialize};
 
+/// Digest of one published file, as recorded in the index.
 #[derive(PartialEq, Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FileChecksum {
     pub file_name: String,
     pub algo: HashAlgorithm,
+    /// Location from which this digest can be re-retrieved without downloading
+    /// the artifact itself. Its exact form depends on how the index was built:
+    /// a GitHub release index reuses the release's REST API URL for all files
+    /// (one request returns every asset's digest), while a checksums-file index
+    /// points at the checksums file holding the hash.
     pub source: String,
     pub hash: String,
 }
