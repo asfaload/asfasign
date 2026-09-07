@@ -69,11 +69,6 @@ pub struct StartingArgs {
 }
 
 #[derive(Clone)]
-pub struct SignersDownloadedArgs {
-    pub bytes: usize,
-}
-
-#[derive(Clone)]
 pub struct IndexDownloadedArgs {
     pub bytes: usize,
 }
@@ -156,7 +151,6 @@ pub struct DownloadResult {
 #[derive(Default)]
 pub struct DownloadCallbacks {
     pub on_starting: Option<Box<dyn Fn(&StartingArgs) + Send>>,
-    pub on_signers_downloaded: Option<Box<dyn Fn(&SignersDownloadedArgs) + Send>>,
     pub on_index_downloaded: Option<Box<dyn Fn(&IndexDownloadedArgs) + Send>>,
     pub on_signatures_downloaded: Option<Box<dyn Fn(&SignaturesDownloadedArgs) + Send>>,
     pub on_signatures_verified: Option<Box<dyn Fn(&SignaturesVerifiedArgs) + Send>>,
@@ -177,14 +171,6 @@ pub struct DownloadCallbacks {
 impl DownloadCallbacks {
     pub fn with_starting<F: Fn(&StartingArgs) + Send + 'static>(mut self, f: F) -> Self {
         self.on_starting = Some(Box::new(f));
-        self
-    }
-
-    pub fn with_signers_downloaded<F: Fn(&SignersDownloadedArgs) + Send + 'static>(
-        mut self,
-        f: F,
-    ) -> Self {
-        self.on_signers_downloaded = Some(Box::new(f));
         self
     }
 
