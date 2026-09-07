@@ -9,7 +9,7 @@ Authenticated endpoints require four HTTP headers, signing the request with the 
 - `X-asfld-timestamp` — request timestamp, [RFC 3339](https://datatracker.ietf.org/doc/html/rfc3339) format (e.g. `2025-06-17T14:03:22.123456789+00:00`).
 - `X-asfld-nonce` — random UUID v4, unique per request.
 - `X-asfld-sig` — base64-encoded (unpadded) Ed25519 signature, computed as described below.
-- `X-asfld-pk` — caller's public key, prefixed with `asfaload-pub:` (e.g. `asfaload-pub:MCowBQ...`), then base64-encoded (unpadded).
+- `X-asfld-pk` — caller's public key in asfaload format: the literal prefix `asfaload-pub:` followed by the base64 encoding (standard alphabet, unpadded) of the 32 raw key bytes (e.g. `asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8`).
 
 ### Computing the signature
 
@@ -28,9 +28,10 @@ Authenticated endpoints require four HTTP headers, signing the request with the 
 Pseudocode:
 
     canonical = timestamp + "##" + nonce + "##" + payload
-    digest    = SHA-512(canonical)          // 64 raw bytes
+    digest    = SHA-512(canonical)                        // 64 raw bytes
     signature = Ed25519-sign(secret key, digest)
-    sig header = base64(signature)          // unpadded
+    sig header = base64(signature)                        // unpadded
+    pk header  = "asfaload-pub:" + base64(public key)     // unpadded, 32 raw bytes
 
 The server rebuilds the canonical request string from the received headers and body, computes its SHA-512 digest, and verifies the signature with the transmitted public key. A request is rejected when its timestamp is older than 5 minutes or more than 10 seconds in the future, when the nonce was already used, or when the signature does not verify.
 
