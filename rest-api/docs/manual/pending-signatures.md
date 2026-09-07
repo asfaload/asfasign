@@ -41,7 +41,7 @@ Fields:
 ### Files pending signature
 
     curl -sS 'http://127.0.0.1:3000/v1/pending_signatures' \
-      -H 'X-asfld-timestamp: 2024-04-11T20:00:00Z' \
+      -H 'X-asfld-timestamp: 2024-04-11T20:00:00+00:00' \
       -H 'X-asfld-nonce: <random-uuid-v4>' \
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>'

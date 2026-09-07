@@ -6,7 +6,7 @@ Reference for the Asfaload REST API.
 
 Authenticated endpoints require four HTTP headers, signing the request with the caller's Ed25519 secret key:
 
-- `X-asfld-timestamp` — request timestamp, [RFC 3339](https://datatracker.ietf.org/doc/html/rfc3339) format (e.g. `2025-06-17T14:03:22.123456789+00:00`).
+- `X-asfld-timestamp` — request timestamp, [RFC 3339](https://datatracker.ietf.org/doc/html/rfc3339) format (e.g. `2025-06-17T14:03:22.123456789+00:00`). It must be in canonical UTC form: offset written as `+00:00` (never `Z` or another offset), and fractional seconds with no trailing zeros (omitted entirely when zero). This is exactly what chrono's `DateTime::<Utc>::to_rfc3339()` emits. The server normalizes any valid RFC 3339 timestamp to this form before verifying the signature, so a validly-signed request with a non-canonical timestamp string is rejected.
 - `X-asfld-nonce` — random UUID v4, unique per request.
 - `X-asfld-sig` — base64-encoded (unpadded) Ed25519 signature, computed as described below.
 - `X-asfld-pk` — caller's public key in asfaload format: the literal prefix `asfaload-pub:` followed by the base64 encoding (standard alphabet, unpadded) of the 32 raw key bytes (e.g. `asfaload-pub:b5S+CxuqICIUn/DGBdMKeTMZCgQcg78ohiWQ1sC00c8`).
@@ -17,7 +17,7 @@ Authenticated endpoints require four HTTP headers, signing the request with the 
 
        {timestamp}##{nonce}##{payload}
 
-   - `timestamp` — the exact string sent in `X-asfld-timestamp`.
+   - `timestamp` — the exact string sent in `X-asfld-timestamp`, which must already be in the canonical form described above.
    - `nonce` — the exact string sent in `X-asfld-nonce`.
    - `payload` — the raw request body as a UTF-8 string. For requests without a body (e.g. `GET /v1/ping`), use the empty string.
 

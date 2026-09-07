@@ -59,7 +59,7 @@ Fields:
 ### Fetch files for a release artifact
 
     curl -sS 'http://127.0.0.1:3000/v1/files-to-sign/https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json' \
-      -H 'X-asfld-timestamp: 2024-04-11T20:00:00Z' \
+      -H 'X-asfld-timestamp: 2024-04-11T20:00:00+00:00' \
       -H 'X-asfld-nonce: <random-uuid-v4>' \
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>'
