@@ -12,7 +12,7 @@ Like initial registration, the update requires all new signers to submit their s
 Standard Asfaload authentication headers, signed by the caller's secret key:
 
 - `X-asfld-timestamp` — request timestamp, RFC 3339 format.
-- `X-asfld-nonce` — random nonce.
+- `X-asfld-nonce` — random UUID v4, unique per request.
 - `X-asfld-sig` — Ed25519 signature over the canonical request string.
 - `X-asfld-pk` — caller's public key.
 
@@ -63,7 +63,7 @@ Fields:
     curl -sS -X POST 'http://127.0.0.1:3000/v1/update_signers' \
       -H 'Content-Type: application/json' \
       -H 'X-asfld-timestamp: 2024-04-11T20:00:00Z' \
-      -H 'X-asfld-nonce: <random-nonce>' \
+      -H 'X-asfld-nonce: <random-uuid-v4>' \
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>' \
       -d '{
