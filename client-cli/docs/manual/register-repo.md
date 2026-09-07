@@ -63,7 +63,7 @@ Human-readable (default):
 
 JSON (with `--json`):
 
-    {"success":true,"project_id":"abc123","message":"","required_signers":["alice","bob"],"signature_submission_url":"https://backend.asfaload.com/projects/abc123/signatures"}
+    {"success":true,"project_id":"abc123","message":"","required_signers":["alice","bob"],"signature_submission_url":"/v1/signatures"}
 
 ## Examples
 
