@@ -404,6 +404,90 @@ mod feature_gated_tests {
     use super::*;
     use tempfile::TempDir;
 
+    async fn build_adder(git_repo: PathBuf) -> GithubReleaseAdder<MockGithubClient> {
+        let url =
+            url::Url::parse("https://github.com/testowner/testrepo/releases/tag/v1.0.0").unwrap();
+        let release_info = parse_release_url(&url, &git_repo).await.unwrap();
+        GithubReleaseAdder {
+            release_url: url,
+            git_repo_path: git_repo,
+            client: MockGithubClient::new(),
+            release_info,
+        }
+    }
+
+    // Gives the added asset its own download url so a regression to
+    // browser_download_url as digest source cannot pass silently.
+    fn release_with_extra_asset(name: &str, digest: Option<&str>) -> Release {
+        let mut value = serde_json::to_value(create_mock_release()).unwrap();
+        let mut asset = value["assets"][0].clone();
+        asset["name"] = serde_json::Value::String(name.to_string());
+        asset["browser_download_url"] =
+            serde_json::Value::String(format!("https://example.com/download/{}", name));
+        if let Some(digest) = digest {
+            asset["digest"] = serde_json::Value::String(digest.to_string());
+        } else {
+            asset.as_object_mut().unwrap().remove("digest");
+        }
+        value["assets"].as_array_mut().unwrap().push(asset);
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[tokio::test]
+    async fn extract_assets_sets_source_to_release_api_url_for_all_assets() {
+        let release = release_with_extra_asset(
+            "other.tar.gz",
+            Some("sha256:1111111111111111111111111111111111111111111111111111111111111111"),
+        );
+
+        let adder = build_adder(TempDir::new().unwrap().path().to_path_buf()).await;
+        let assets = adder.extract_assets(&release);
+
+        assert_eq!(assets.len(), 2);
+        for (asset_info, asset) in assets.iter().zip(release.assets.iter()) {
+            let checksum = asset_info
+                .hash
+                .as_ref()
+                .expect("mocked assets all carry a digest");
+            // The sources is not the asset's download url, but the release's GH rest-api url
+            assert_eq!(checksum.source, release.url.to_string());
+        }
+    }
+
+    #[tokio::test]
+    async fn generate_index_json_serializes_digest_source_as_release_api_url() {
+        let release = release_with_extra_asset(
+            "other.tar.gz",
+            Some("sha256:1111111111111111111111111111111111111111111111111111111111111111"),
+        );
+
+        let adder = build_adder(TempDir::new().unwrap().path().to_path_buf()).await;
+        let assets = adder.extract_assets(&release);
+        let json = adder.generate_index_json(&assets, &release).unwrap();
+
+        // Go through the serialized form, as the index file is what
+        // consumers (e.g. a future check-index command) will read.
+        let index: AsfaloadIndex = serde_json::from_str(&json).unwrap();
+        assert_eq!(index.published_files.len(), 2);
+        for checksum in &index.published_files {
+            assert_eq!(checksum.source, release.url.to_string());
+        }
+    }
+
+    #[tokio::test]
+    async fn assets_without_digest_are_excluded_from_index() {
+        let release = release_with_extra_asset("no-digest.tar.gz", None);
+
+        let adder = build_adder(TempDir::new().unwrap().path().to_path_buf()).await;
+        let assets = adder.extract_assets(&release);
+        let json = adder.generate_index_json(&assets, &release).unwrap();
+
+        let index: AsfaloadIndex = serde_json::from_str(&json).unwrap();
+        assert_eq!(index.published_files.len(), 1);
+        assert_eq!(index.published_files[0].file_name, "test.tar.gz");
+        assert_eq!(index.published_files[0].source, release.url.to_string());
+    }
+
     #[tokio::test]
     async fn generate_index_json_has_trailing_newline() {
         let release = create_mock_release();
