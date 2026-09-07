@@ -33,7 +33,7 @@ Pseudocode:
     sig header = base64(signature)                        // unpadded
     pk header  = "asfaload-pub:" + base64(public key)     // unpadded, 32 raw bytes
 
-The server rebuilds the canonical request string from the received headers and body, computes its SHA-512 digest, and verifies the signature with the transmitted public key. A request is rejected when its timestamp is older than 5 minutes or more than 10 seconds in the future, when the nonce was already used, or when the signature does not verify.
+The server rebuilds the canonical request string from the received headers and body, computes its SHA-512 digest, and verifies the signature with the transmitted public key. A request is rejected when its timestamp's age — truncated to whole minutes — exceeds 5 minutes (so requests up to just under 6 minutes old are accepted), when it is more than 10 seconds in the future, when the nonce was already used, or when the signature does not verify.
 
 ## Registration
 
