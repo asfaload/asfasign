@@ -13,7 +13,7 @@ Standard Asfaload authentication headers, signed by the caller's secret key:
 
 - `X-asfld-timestamp` — request timestamp, RFC 3339 format.
 - `X-asfld-nonce` — random UUID v4, unique per request.
-- `X-asfld-sig` — Ed25519 signature over the canonical request string.
+- `X-asfld-sig` — Ed25519 signature, computed as described in [Authentication](index.md#authentication).
 - `X-asfld-pk` — caller's public key.
 
 ## Request body
