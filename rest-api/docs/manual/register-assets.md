@@ -11,7 +11,7 @@ In GitHub mode, the server fetches the release metadata, downloads all assets, b
 
 Standard Asfaload authentication headers, signed by the caller's secret key:
 
-- `X-asfld-timestamp` — Unix timestamp, seconds.
+- `X-asfld-timestamp` — request timestamp, RFC 3339 format.
 - `X-asfld-nonce` — random nonce.
 - `X-asfld-sig` — Ed25519 signature over the canonical request string.
 - `X-asfld-pk` — caller's public key.
@@ -69,7 +69,7 @@ Fields:
 
     curl -sS -X POST 'http://127.0.0.1:3000/v1/assets' \
       -H 'Content-Type: application/json' \
-      -H 'X-asfld-timestamp: 1712860800' \
+      -H 'X-asfld-timestamp: 2024-04-11T20:00:00Z' \
       -H 'X-asfld-nonce: <random-nonce>' \
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>' \
@@ -83,7 +83,7 @@ Fields:
 
     curl -sS -X POST 'http://127.0.0.1:3000/v1/assets' \
       -H 'Content-Type: application/json' \
-      -H 'X-asfld-timestamp: 1712860800' \
+      -H 'X-asfld-timestamp: 2024-04-11T20:00:00Z' \
       -H 'X-asfld-nonce: <random-nonce>' \
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>' \

@@ -17,7 +17,7 @@ Mirror-relative path to the file. Slashes are preserved (the route uses a catch-
 
 Standard Asfaload authentication headers, signed by the caller's secret key:
 
-- `X-asfld-timestamp` — Unix timestamp, seconds.
+- `X-asfld-timestamp` — request timestamp, RFC 3339 format.
 - `X-asfld-nonce` — random nonce.
 - `X-asfld-sig` — Ed25519 signature over the canonical request string.
 - `X-asfld-pk` — caller's public key.
@@ -59,7 +59,7 @@ Fields:
 ### Fetch files for a release artifact
 
     curl -sS 'http://127.0.0.1:3000/v1/files-to-sign/https/github.com/443/acme/repo/releases/tag/v1.0/asfaload.index.json' \
-      -H 'X-asfld-timestamp: 1712860800' \
+      -H 'X-asfld-timestamp: 2024-04-11T20:00:00Z' \
       -H 'X-asfld-nonce: <random-nonce>' \
       -H 'X-asfld-sig: <base64-signature>' \
       -H 'X-asfld-pk: <base64-public-key>'
