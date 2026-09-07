@@ -196,12 +196,13 @@ impl<C: GithubClientTrait> GithubReleaseAdder<C> {
             .assets
             .iter()
             .map(|asset| {
-                let download_url = asset.browser_download_url.to_string();
                 let hash = asset.digest.as_ref().and_then(|d| {
                     d.strip_prefix("sha256:").map(|hash| FileChecksum {
                         file_name: asset.name.clone(),
                         algo: HashAlgorithm::Sha256,
-                        source: download_url,
+                        // For a github release, the source is the url to get from the GH rest-api
+                        // to retrieve the release info, incl. assets and their digest.
+                        source: release.url.to_string(),
                         hash: hash.to_string(),
                     })
                 });

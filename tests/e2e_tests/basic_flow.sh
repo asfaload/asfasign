@@ -172,6 +172,12 @@ assert_release_index_exists "0.1"
 assert_release_index_pending "0.1"
 assert_last_commit_contains "$INDEX_FILE"
 
+# Validate that the source of the digest is the github rest api url to retrieve release info.
+# This is a one-time test, not warranting a helper. We also hard-code the expected url as it is
+# set by GH. Should not be a problem as we don't expect to replace this v0.1 release.
+published_files_digest_source="$(jq -r '.publishedFiles[0].source' < "$(_release_dir "0.1")/$INDEX_FILE")"
+[[ "$published_files_digest_source" == "https://api.github.com/repos/asfaload/repo_for_e2e_tests/releases/286360244" ]] || { echo "Unexpected published file's digest source"; exit 1; }
+
 # A never-registered release has no index file at all.
 tmp=$(mktemp); to_delete_on_filesystem+=("$tmp")
 expect_fail "Download never-registered artifact (v9.9)" \
