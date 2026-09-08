@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@v2
 
       - name: Run client-server integration tests
         run: cargo test --package client-server-integration-tests
